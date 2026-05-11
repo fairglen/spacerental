@@ -1,0 +1,24 @@
+services:
+  test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: spacerental
+      POSTGRES_PASSWORD: spacerental
+      POSTGRES_DB: spacerental_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spacerental"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  backend-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    environment:
+      TEST_DATABASE_URL: postgresql+asyncpg://spacerental:spacerental@test-db:5432/spacerental_test
+      SECRET_KEY: test-secret-key-32-chars-min-test-test
+    depends_on:
+      test-db:
+        condition: service_healthy
+    command: pytest -v

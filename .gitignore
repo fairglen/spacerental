@@ -1,0 +1,57 @@
+# ── Secrets / local config (NEVER commit) ──────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ── Node / Next.js ─────────────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Python ─────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# ── Test artifacts ─────────────────────────────────────────────
+playwright-report/
+test-results/
+playwright/.cache/
+coverage/
+
+# ── Logs ───────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── OS / Editor ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# ── Docker ─────────────────────────────────────────────────────
+# (no docker artifacts to ignore by default)

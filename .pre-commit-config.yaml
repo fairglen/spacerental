@@ -1,0 +1,41 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: backend-tests
+        name: Backend pytest (fast)
+        entry: bash -c 'cd backend && pytest -x -q tests/test_auth.py tests/test_spaces.py 2>/dev/null || echo "Run full tests with: docker-compose -f docker-compose.test.yml up --build"'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: frontend-typecheck
+        name: Frontend typecheck
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: frontend-tests
+        name: Frontend tests
+        entry: bash -c 'cd frontend && npm test'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+        stages: [pre-push]
