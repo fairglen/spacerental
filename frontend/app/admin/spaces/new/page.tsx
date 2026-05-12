@@ -5,7 +5,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
-import { adminApi, createAuthenticatedApi } from '@/lib/api'
+import { adminApi } from '@/lib/api'
+import { useApi } from '@/lib/hooks/useApi'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,7 +23,7 @@ type FormData = z.infer<typeof schema>
 
 export default function NewSpacePage() {
   const { data: session } = useSession()
-  const api = createAuthenticatedApi(session?.accessToken)
+  const api = useApi()
   const router = useRouter()
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
 
@@ -37,8 +38,8 @@ export default function NewSpacePage() {
 
   return (
     <div className="p-8 max-w-2xl">
-      <h1 className="text-2xl font-bold text-[#1A1A2E] mb-2">Novo Espaço</h1>
-      <p className="text-[#6B7280] text-sm mb-8">Preenche os dados do espaço. Podes adicionar salas depois.</p>
+      <h1 className="text-2xl font-bold text-foreground mb-2">Novo Espaço</h1>
+      <p className="text-muted-foreground text-sm mb-8">Preenche os dados do espaço. Podes adicionar salas depois.</p>
       <Card>
         <CardContent className="p-6">
           <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-5">
@@ -50,7 +51,7 @@ export default function NewSpacePage() {
             <div>
               <Label htmlFor="description">Descrição</Label>
               <textarea id="description" {...register('description')}
-                className="mt-1 flex min-h-[80px] w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3D7A5E]"
+                className="mt-1 flex min-h-[80px] w-full rounded-lg border border-border bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="Descrição breve do espaço..." />
             </div>
             <div>

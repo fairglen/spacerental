@@ -33,7 +33,7 @@ export default function SpacePage({ params }: { params: { id: string } }) {
   if (isLoading) return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-[#F9FAFB] p-8">
+      <div className="min-h-screen bg-background p-8">
         <Skeleton className="h-8 w-64 mb-4" />
         <Skeleton className="h-4 w-48 mb-8" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -49,32 +49,34 @@ export default function SpacePage({ params }: { params: { id: string } }) {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen bg-[#F9FAFB]">
-        <div className="bg-white border-b border-[#E5E7EB] py-10">
+      <main className="min-h-screen bg-background">
+        <div className="bg-white border-b border-border py-10">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <h1 className="text-3xl font-bold text-[#1A1A2E]">{space?.name}</h1>
-            <div className="flex items-center gap-2 mt-2 text-sm text-[#6B7280]">
+            <h1 className="text-3xl font-bold text-foreground">{space?.name}</h1>
+            <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
               <MapPin className="h-4 w-4" /> {space?.address}, {space?.city}
             </div>
-            {space?.description && <p className="mt-3 text-[#6B7280] max-w-2xl">{space.description}</p>}
+            {space?.description && <p className="mt-3 text-muted-foreground max-w-2xl">{space.description}</p>}
             <div className="flex flex-wrap gap-2 mt-3">
               {space?.amenities.map((a) => <Badge key={a} variant="secondary">{a}</Badge>)}
             </div>
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-          <h2 className="text-xl font-semibold text-[#1A1A2E] mb-6">Salas Disponíveis</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-6">Salas Disponíveis</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
             {rooms.filter((r) => r.is_active).map((room) => (
               <RoomCard key={room.id} room={room} onBook={handleBook} />
             ))}
           </div>
           {calendarRoom && (
-            <div className="bg-white rounded-xl border border-[#E5E7EB] p-6">
-              <h3 className="text-lg font-semibold text-[#1A1A2E] mb-4">
+            <div className="bg-white rounded-xl border border-border p-6">
+              <h3 className="text-lg font-semibold text-foreground mb-2">
                 Disponibilidade — {calendarRoom.name}
               </h3>
-              <p className="text-sm text-[#6B7280] mb-4">Clica num slot disponível (verde) para reservar.</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                Clica num slot disponível (verde) para reservar. Na vista Mês, clica num dia para ver os horários disponíveis.
+              </p>
               <BookingCalendar room={calendarRoom} onSlotSelect={handleSlotSelect} />
             </div>
           )}

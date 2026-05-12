@@ -45,44 +45,39 @@ export function Pricing() {
     <section id="precos" className="py-20 bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-[#1A1A2E] mb-4">Preços Transparentes</h2>
-          <p className="text-[#6B7280]">Sem surpresas. Sem contratos. Sem taxas escondidas.</p>
+          <h2 className="text-3xl font-bold text-foreground mb-4">Preços Transparentes</h2>
+          <p className="text-muted-foreground">Sem surpresas. Sem contratos. Sem taxas escondidas.</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
           {plans.map((plan) => (
             <Card
               key={plan.name}
-              className={
-                plan.highlighted ? 'border-[#3D7A5E] border-2 shadow-lg relative' : 'relative'
-              }
+              className={plan.highlighted ? 'border-primary border-2 shadow-lg relative' : 'relative'}
             >
               {plan.badge && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <Badge className="bg-[#3D7A5E] text-white px-3 py-1">{plan.badge}</Badge>
+                  <Badge className="bg-primary text-primary-foreground px-3 py-1">{plan.badge}</Badge>
                 </div>
               )}
               <CardHeader className="text-center pb-2">
                 <CardTitle className="text-lg">{plan.name}</CardTitle>
                 <div className="mt-2">
-                  <span className="text-4xl font-bold text-[#1A1A2E]">{plan.price}</span>
-                  <span className="text-sm text-[#6B7280] ml-1">{plan.unit}</span>
+                  <span className="text-4xl font-bold text-foreground">{plan.price}</span>
+                  <span className="text-sm text-muted-foreground ml-1">{plan.unit}</span>
                 </div>
-                <p className="text-xs text-[#6B7280] mt-1">{plan.desc}</p>
+                <p className="text-xs text-muted-foreground mt-1">{plan.desc}</p>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2 mb-6">
                   {plan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-[#6B7280]">
-                      <Check className="h-4 w-4 text-[#3D7A5E] flex-shrink-0" />
+                    <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Check className="h-4 w-4 text-primary flex-shrink-0" />
                       {f}
                     </li>
                   ))}
                 </ul>
                 <Link href={plan.href} className="block">
-                  <Button
-                    variant={plan.highlighted ? 'default' : 'outline'}
-                    className="w-full"
-                  >
+                  <Button variant={plan.highlighted ? 'default' : 'outline'} className="w-full">
                     {plan.cta}
                   </Button>
                 </Link>
