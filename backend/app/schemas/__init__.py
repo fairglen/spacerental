@@ -3,6 +3,7 @@ from app.schemas.organization import (
     OrganizationCreate,
     OrganizationUpdate,
     OrgMembershipOut,
+    OrgMembershipDetail,
 )
 from app.schemas.user import UserOut, UserRegister, UserLogin, TokenOut
 from app.schemas.space import (
@@ -30,6 +31,7 @@ __all__ = [
     "OrganizationCreate",
     "OrganizationUpdate",
     "OrgMembershipOut",
+    "OrgMembershipDetail",
     "UserOut",
     "UserRegister",
     "UserLogin",

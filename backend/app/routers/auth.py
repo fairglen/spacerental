@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.organization import Organization, OrganizationMember, MemberRole, OrgPlan
 from app.schemas.user import UserOut, UserRegister, UserLogin, TokenOut
-from app.schemas.organization import OrgMembershipOut
+from app.schemas.organization import OrgMembershipOut, OrgMembershipDetail
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -24,6 +24,27 @@ async def _get_highest_role(user: User, db: AsyncSession) -> str:
     if MemberRole.admin in roles:
         return "admin"
     return "member"
+
+
+async def _get_memberships(user: User, db: AsyncSession) -> list[OrgMembershipDetail]:
+    """Fetch the user's memberships joined with their organization rows."""
+    result = await db.execute(
+        select(OrganizationMember, Organization)
+        .join(Organization, Organization.id == OrganizationMember.org_id)
+        .where(OrganizationMember.user_id == user.id)
+        .order_by(Organization.created_at.asc())
+    )
+    return [
+        OrgMembershipDetail(
+            org_id=m.org_id, org_name=o.name, org_slug=o.slug, role=m.role
+        )
+        for m, o in result.all()
+    ]
+
+
+def _memberships_claim(memberships: list[OrgMembershipDetail]) -> list[dict]:
+    """Compact representation included in the JWT claim."""
+    return [{"org_id": str(m.org_id), "role": m.role.value} for m in memberships]
 
 
 async def _create_default_org(user: User, db: AsyncSession) -> OrganizationMember:
@@ -62,12 +83,21 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.flush()
 
-    membership = await _create_default_org(user, db)
+    await _create_default_org(user, db)
     await db.commit()
     await db.refresh(user)
 
     role = "owner"
-    token = create_access_token({"sub": str(user.id), "email": user.email, "name": user.name, "role": role})
+    memberships = await _get_memberships(user, db)
+    token = create_access_token(
+        {
+            "sub": str(user.id),
+            "email": user.email,
+            "name": user.name,
+            "role": role,
+            "memberships": _memberships_claim(memberships),
+        }
+    )
     return TokenOut(access_token=token, user=UserOut.model_validate(user), role=role)
 
 
@@ -83,10 +113,29 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
         )
 
     role = await _get_highest_role(user, db)
-    token = create_access_token({"sub": str(user.id), "email": user.email, "name": user.name, "role": role})
+    memberships = await _get_memberships(user, db)
+    token = create_access_token(
+        {
+            "sub": str(user.id),
+            "email": user.email,
+            "name": user.name,
+            "role": role,
+            "memberships": _memberships_claim(memberships),
+        }
+    )
     return TokenOut(access_token=token, user=UserOut.model_validate(user), role=role)
 
 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):
     return UserOut.model_validate(user)
+
+
+@router.get("/memberships")
+async def memberships(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user's organization memberships with org details."""
+    items = await _get_memberships(user, db)
+    return {"memberships": items}

@@ -3,7 +3,15 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Building2, LogOut, User, Menu, X } from 'lucide-react'
+import { useOrg } from '@/contexts/OrgContext'
 
 const navLinks = [
   { href: '/spaces', label: 'Espaços' },
@@ -11,13 +19,41 @@ const navLinks = [
   { href: '/#precos', label: 'Preços' },
 ]
 
+function OrgSwitcher({ className }: { className?: string }) {
+  const { memberships, currentOrgId, setCurrentOrgId } = useOrg()
+  if (memberships.length === 0) return null
+
+  return (
+    <div className={className}>
+      <Select value={currentOrgId ?? undefined} onValueChange={setCurrentOrgId}>
+        <SelectTrigger aria-label="Organização ativa" className="h-9 min-w-[12rem]">
+          <SelectValue placeholder="Selecionar organização" />
+        </SelectTrigger>
+        <SelectContent>
+          {memberships.map((m) => (
+            <SelectItem key={m.org_id} value={m.org_id}>
+              {m.org_name || 'Organização'}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
 export function Navbar() {
   const { data: session, status } = useSession()
+  const { currentMembership } = useOrg()
   const [mobileOpen, setMobileOpen] = useState(false)
   const isSignedIn = status === 'authenticated'
-  const isAdmin = session?.role === 'admin' || session?.role === 'owner'
+  const isAdminInCurrentOrg =
+    currentMembership?.role === 'admin' || currentMembership?.role === 'owner'
+  // Fall back to the legacy session-level role for the nav link visibility when
+  // memberships haven't loaded yet, so an admin-on-some-org still sees the link.
+  const hasAnyAdminRole =
+    session?.role === 'admin' || session?.role === 'owner' || isAdminInCurrentOrg
 
-  const links = isAdmin ? [...navLinks, { href: '/admin', label: 'Admin' }] : navLinks
+  const links = hasAnyAdminRole ? [...navLinks, { href: '/admin', label: 'Admin' }] : navLinks
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-border bg-white/90 backdrop-blur-sm">
@@ -41,6 +77,7 @@ export function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             {isSignedIn ? (
               <>
+                <OrgSwitcher />
                 <Link href="/dashboard">
                   <Button variant="outline" size="sm">As minhas reservas</Button>
                 </Link>
@@ -98,6 +135,7 @@ export function Navbar() {
           <div className="pt-3 border-t border-border flex flex-col gap-2">
             {isSignedIn ? (
               <>
+                <OrgSwitcher className="w-full" />
                 <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
                   <Button variant="outline" size="sm" className="w-full">As minhas reservas</Button>
                 </Link>

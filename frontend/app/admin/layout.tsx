@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import Link from 'next/link'
 import { LayoutDashboard, Building2, Calendar, Package, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useOrg } from '@/contexts/OrgContext'
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -15,14 +16,42 @@ const navItems = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
+  const { currentMembership, memberships, isLoading } = useOrg()
   const router = useRouter()
   const pathname = usePathname()
 
   useEffect(() => {
-    if (status === 'unauthenticated') router.replace('/sign-in')
-  }, [status, router])
+    if (status === 'unauthenticated') {
+      router.replace('/sign-in')
+      return
+    }
+    if (status !== 'authenticated' || isLoading) return
+    // Need a membership selected, and it must be admin/owner in the active org.
+    const role = currentMembership?.role
+    const isAdmin = role === 'owner' || role === 'admin'
+    // If memberships have loaded but none grant admin in the active org, bounce.
+    if (memberships.length > 0 && !isAdmin) {
+      router.replace('/dashboard')
+    }
+  }, [status, isLoading, currentMembership, memberships, router])
 
-  if (status === 'loading') return null
+  if (status === 'loading' || isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        A carregar…
+      </div>
+    )
+  }
+
+  const role = currentMembership?.role
+  const isAdmin = role === 'owner' || role === 'admin'
+  if (!isAdmin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        A redirecionar…
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-background">

@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase,
-  AvailabilitySlot, AdminStats,
+  AvailabilitySlot, AdminStats, Membership,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -17,6 +17,13 @@ export function createAuthenticatedApi(accessToken: string | null | undefined) {
 }
 
 type Api = ReturnType<typeof createAuthenticatedApi>
+
+// ─── Auth ────────────────────────────────────────────────────────────────
+
+export const authApi = {
+  getMemberships: (api: Api) =>
+    api.get<{ memberships: Membership[] }>('/auth/memberships').then(r => r.data.memberships),
+}
 
 // ─── Public ──────────────────────────────────────────────────────────────
 
@@ -80,7 +87,10 @@ export const adminApi = {
     api.put<{ room: Room }>(`/admin/rooms/${id}`, data).then(r => r.data.room),
 
   getBookings: (params: Record<string, string>, api: Api) =>
-    api.get<{ bookings: Booking[] }>('/admin/bookings', { params }).then(r => r.data.bookings),
+    api.get<{ bookings: Booking[] }>('/admin/bookings', {
+      // Merge with instance defaults (e.g. org_id injected by useApi).
+      params: { ...(api.defaults.params || {}), ...params },
+    }).then(r => r.data.bookings),
 
   updateBooking: (id: string, status: string, api: Api) =>
     api.put<{ booking: Booking }>(`/admin/bookings/${id}`, { status }).then(r => r.data.booking),

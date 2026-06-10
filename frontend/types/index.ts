@@ -90,3 +90,10 @@ export type OrgMembership = {
   org_id: string
   role: 'owner' | 'admin' | 'member'
 }
+
+export type Membership = {
+  org_id: string
+  org_name: string
+  org_slug: string
+  role: 'owner' | 'admin' | 'member'
+}
