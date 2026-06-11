@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase,
-  AvailabilitySlot, AdminStats, Membership,
+  AvailabilitySlot, AdminStats, Membership, User,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -64,9 +64,19 @@ function normPurchase<T extends UserPackagePurchase>(p: T): T {
 
 // ─── Auth ────────────────────────────────────────────────────────────────
 
+export type RegisterResponse = {
+  access_token: string
+  token_type: string
+  user: User
+  role: string
+}
+
 export const authApi = {
   getMemberships: (api: Api) =>
     api.get<{ memberships: Membership[] }>('/auth/memberships').then(r => r.data.memberships),
+
+  register: (data: { email: string; password: string; name: string }) =>
+    apiClient.post<RegisterResponse>('/auth/register', data).then(r => r.data),
 }
 
 // ─── Public ──────────────────────────────────────────────────────────────

@@ -6,11 +6,13 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import axios from 'axios'
 import { Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { authApi } from '@/lib/api'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obrigatório'),
@@ -23,8 +25,6 @@ const schema = z.object({
 })
 type FormData = z.infer<typeof schema>
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
-
 export default function SignUpPage() {
   const router = useRouter()
   const [error, setError] = useState('')
@@ -35,22 +35,16 @@ export default function SignUpPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: data.email, password: data.password, name: data.name }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        setError(err.detail || 'Erro ao criar conta.')
-        setLoading(false)
-        return
-      }
+      await authApi.register({ email: data.email, password: data.password, name: data.name })
       await signIn('credentials', { email: data.email, password: data.password, redirect: false })
       router.push('/dashboard')
       router.refresh()
-    } catch {
-      setError('Erro de ligação. Tenta novamente.')
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail || 'Erro ao criar conta.')
+      } else {
+        setError('Erro de ligação. Tenta novamente.')
+      }
     }
     setLoading(false)
   }

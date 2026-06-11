@@ -71,27 +71,30 @@ async def get_room_availability(
             AvailabilityRule.is_active == True,  # noqa: E712
         )
     )
-    rule = result.scalar_one_or_none()
+    rules = result.scalars().all()
 
-    if rule is None:
+    if not rules:
         # No availability rule for this day — room is closed
         return {"slots": []}
 
-    # Build 1-hour slots within open/close window
-    open_dt = datetime.combine(date, rule.open_time, tzinfo=timezone.utc)
-    close_dt = datetime.combine(date, rule.close_time, tzinfo=timezone.utc)
-
-    slot_starts = []
-    current = open_dt
-    while current + timedelta(hours=1) <= close_dt:
-        slot_starts.append(current)
-        current += timedelta(hours=1)
+    # Build 1-hour slots within each open/close window (multiple windows per day
+    # are supported, e.g. morning + evening).
+    slot_starts: list[datetime] = []
+    windows: list[tuple[datetime, datetime]] = []
+    for rule in rules:
+        open_dt = datetime.combine(date, rule.open_time, tzinfo=timezone.utc)
+        close_dt = datetime.combine(date, rule.close_time, tzinfo=timezone.utc)
+        windows.append((open_dt, close_dt))
+        current = open_dt
+        while current + timedelta(hours=1) <= close_dt:
+            slot_starts.append(current)
+            current += timedelta(hours=1)
 
     if not slot_starts:
         return {"slots": []}
 
-    day_start = datetime.combine(date, rule.open_time, tzinfo=timezone.utc)
-    day_end = datetime.combine(date, rule.close_time, tzinfo=timezone.utc)
+    day_start = min(w[0] for w in windows)
+    day_end = max(w[1] for w in windows)
 
     # Fetch confirmed bookings for this room on this date
     result = await db.execute(
@@ -114,7 +117,7 @@ async def get_room_availability(
         return False
 
     slots: list[AvailabilitySlot] = []
-    for slot_start in slot_starts:
+    for slot_start in sorted(slot_starts):
         slot_end = slot_start + timedelta(hours=1)
         available = not is_slot_taken(slot_start, slot_end)
         slots.append(AvailabilitySlot(start=slot_start, end=slot_end, available=available))

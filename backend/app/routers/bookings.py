@@ -156,7 +156,8 @@ async def cancel_booking(
         )
 
     now = datetime.now(tz=timezone.utc)
-    if booking.start_time.replace(tzinfo=timezone.utc) - now < timedelta(hours=24):
+    # booking.start_time is TIMESTAMPTZ — SQLAlchemy returns an aware UTC datetime.
+    if booking.start_time - now < timedelta(hours=24):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bookings can only be cancelled more than 24 hours in advance",

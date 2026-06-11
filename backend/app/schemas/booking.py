@@ -20,7 +20,6 @@ class BookingOut(BaseModel):
     total_amount: Decimal
     status: BookingStatus
     payment_method: PaymentMethod
-    package_redemption_id: uuid.UUID | None
     notes: str | None
     created_at: datetime
     updated_at: datetime
