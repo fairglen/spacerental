@@ -54,8 +54,22 @@ describe('all wrapped responses', () => {
     expect(Array.isArray(await adminApi.getSpaces(mockApi))).toBe(true)
   })
   it('adminApi.getBookings extracts bookings', async () => {
-    const mockApi = { get: vi.fn().mockResolvedValue({ data: { bookings: [] } }) } as any
+    const mockApi = {
+      defaults: { params: {} },
+      get: vi.fn().mockResolvedValue({ data: { bookings: [] } }),
+    } as any
     expect(Array.isArray(await adminApi.getBookings({}, mockApi))).toBe(true)
+  })
+
+  it('adminApi.getBookings merges instance default params with call params', async () => {
+    const mockApi = {
+      defaults: { params: { org_id: 'org-123' } },
+      get: vi.fn().mockResolvedValue({ data: { bookings: [] } }),
+    } as any
+    await adminApi.getBookings({ status: 'confirmed' }, mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/bookings', {
+      params: { org_id: 'org-123', status: 'confirmed' },
+    })
   })
 })
 

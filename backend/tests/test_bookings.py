@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest_asyncio
 
 from app.auth import create_access_token, hash_password
+from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember, MemberRole
 from app.models.user import User
 
@@ -202,3 +203,39 @@ class TestCancelBooking:
         headers = {"Authorization": f"Bearer {token}"}
         resp = await client.delete(f"/api/v1/bookings/{booking_id}", headers=headers)
         assert resp.status_code == 403
+
+
+class TestCancelBookingTooSoon:
+    async def test_cancel_within_24h_returns_400(
+        self,
+        client,
+        db_session,
+        test_org,
+        test_room,
+        test_user,
+        test_member,
+        auth_headers,
+    ):
+        # Insert directly: create_booking enforces other rules we want to sidestep.
+        start = datetime.now(tz=timezone.utc) + timedelta(hours=1)
+        end = start + timedelta(hours=2)
+        booking = Booking(
+            org_id=test_org.id,
+            room_id=test_room.id,
+            user_id=test_user.id,
+            start_time=start,
+            end_time=end,
+            duration_hours=Decimal("2.00"),
+            total_amount=Decimal("22.00"),
+            status=BookingStatus.confirmed,
+            payment_method=PaymentMethod.hourly,
+        )
+        db_session.add(booking)
+        await db_session.commit()
+        await db_session.refresh(booking)
+
+        resp = await client.delete(
+            f"/api/v1/bookings/{booking.id}", headers=auth_headers
+        )
+        assert resp.status_code == 400, resp.text
+        assert "24" in resp.json()["detail"]
