@@ -6,7 +6,7 @@ from sqlalchemy import select, func, and_, distinct
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user, require_admin
+from app.auth import require_admin
 from app.database import get_db
 from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus
@@ -30,21 +30,14 @@ from app.schemas.user import UserOut
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-def _admin_dep(org_id: uuid.UUID = Query(...), user: User = Depends(get_current_user)):
-    """Dependency factory: pulls org_id from query and checks admin role."""
-    return org_id, user
-
-
 # ─── Dashboard ────────────────────────────────────────────────────────────────
 
 @router.get("/dashboard")
 async def dashboard(
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     total_bookings_result = await db.execute(
         select(func.count(Booking.id)).where(Booking.org_id == org_id)
     )
@@ -97,11 +90,9 @@ async def dashboard(
 @router.get("/spaces")
 async def admin_list_spaces(
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(Space)
         .options(selectinload(Space.rooms))
@@ -116,11 +107,9 @@ async def admin_list_spaces(
 async def admin_create_space(
     body: SpaceCreate,
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     space = Space(
         org_id=org_id,
         name=body.name,
@@ -141,11 +130,9 @@ async def admin_update_space(
     space_id: uuid.UUID,
     body: SpaceUpdate,
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(Space).where(Space.id == space_id, Space.org_id == org_id)
     )
@@ -165,11 +152,9 @@ async def admin_update_space(
 async def admin_delete_space(
     space_id: uuid.UUID,
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(Space).where(Space.id == space_id, Space.org_id == org_id)
     )
@@ -187,11 +172,9 @@ async def admin_create_room(
     space_id: uuid.UUID,
     body: RoomCreate,
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(Space).where(Space.id == space_id, Space.org_id == org_id)
     )
@@ -221,11 +204,9 @@ async def admin_update_room(
     room_id: uuid.UUID,
     body: RoomUpdate,
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(Room).where(Room.id == room_id, Room.org_id == org_id)
     )
@@ -246,12 +227,10 @@ async def admin_set_availability(
     room_id: uuid.UUID,
     body: AvailabilityRulesSetBody,
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Replace all availability rules for a room."""
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(Room).where(Room.id == room_id, Room.org_id == org_id)
     )
@@ -294,11 +273,9 @@ async def admin_list_bookings(
     booking_status: Optional[BookingStatus] = Query(None, alias="status"),
     from_date: Optional[datetime] = Query(None, alias="from"),
     to_date: Optional[datetime] = Query(None, alias="to"),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     filters = [Booking.org_id == org_id]
     if room_id:
         filters.append(Booking.room_id == room_id)
@@ -324,11 +301,9 @@ async def admin_update_booking(
     booking_id: uuid.UUID,
     body: BookingStatusUpdate,
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(Booking).where(Booking.id == booking_id, Booking.org_id == org_id)
     )
@@ -347,12 +322,10 @@ async def admin_update_booking(
 @router.get("/users")
 async def admin_list_users(
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """List all users who have booked in this org."""
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(User)
         .join(Booking, Booking.user_id == User.id)
@@ -368,11 +341,9 @@ async def admin_list_users(
 @router.get("/packages")
 async def admin_list_packages(
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     result = await db.execute(
         select(Package)
         .where(Package.org_id == org_id)
@@ -386,11 +357,9 @@ async def admin_list_packages(
 async def admin_create_package(
     body: PackageCreate,
     org_id: uuid.UUID = Query(...),
-    user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_admin(org_id=org_id, user=user, db=db)
-
     package = Package(
         org_id=org_id,
         name=body.name,
