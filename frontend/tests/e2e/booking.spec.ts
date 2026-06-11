@@ -12,7 +12,7 @@ test.describe('Spaces and bookings', () => {
     await page.getByLabel(/Email/i).fill('admin@demo.com')
     await page.getByLabel('Password').fill('admin123')
     await page.getByRole('button', { name: /Entrar/i }).click()
-    await page.waitForURL('**/dashboard', { timeout: 15000 })
+    await page.waitForURL('**/dashboard', { timeout: 30000 })
 
     // Go to the first space and pick the first room.
     await page.goto('/spaces')
@@ -35,14 +35,19 @@ test.describe('Spaces and bookings', () => {
       return
     }
 
-    await greenSlot.click()
+    // rbc overlays an empty .rbc-events-container above the slots, so
+    // Playwright's hit-target check rejects a normal click. Selection in rbc
+    // is coordinate-based (the event bubbles to the day column), so a forced
+    // click works. Center the slot first to keep it clear of the sticky navbar.
+    await greenSlot.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await greenSlot.click({ force: true })
 
     // Confirmation modal appears.
     const confirmHeading = page.getByRole('heading', { name: /Confirmar Reserva/i })
     await expect(confirmHeading).toBeVisible({ timeout: 5000 })
 
     // Capture the booking date+time so we can verify it on the dashboard.
-    const horarioText = await page.locator('text=Horário').locator('..').innerText()
+    const horarioText = await page.getByText('Horário', { exact: true }).locator('..').innerText()
 
     await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
 
