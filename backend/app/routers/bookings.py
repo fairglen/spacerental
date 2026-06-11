@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -105,7 +106,15 @@ async def create_booking(
         notes=body.notes,
     )
     db.add(booking)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Race with a concurrent booking — DB-level EXCLUDE constraint caught it.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This time slot is already booked",
+        )
     await db.refresh(booking)
 
     # Load room for response
