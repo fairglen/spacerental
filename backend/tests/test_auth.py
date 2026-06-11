@@ -1,6 +1,7 @@
-import pytest
+from sqlalchemy import select
 
 from app.auth import hash_password, verify_password
+from app.models.organization import Organization
 
 
 class TestRegister:
@@ -101,6 +102,26 @@ class TestMe:
         body = resp.json()
         assert body["email"] == test_user.email
         assert body["id"] == str(test_user.id)
+
+
+class TestDefaultOrgSlug:
+    async def test_duplicate_user_name_dedupes_org_slug(self, client, db_session):
+        a = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "a@user.com", "password": "password123", "name": "Maria Silva"},
+        )
+        assert a.status_code == 201, a.text
+        b = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "b@user.com", "password": "password123", "name": "Maria Silva"},
+        )
+        assert b.status_code == 201, b.text
+
+        result = await db_session.execute(
+            select(Organization).where(Organization.slug.like("maria-silva%"))
+        )
+        slugs = sorted(o.slug for o in result.scalars().all())
+        assert slugs == ["maria-silva", "maria-silva-1"]
 
 
 class TestPasswordHashing:

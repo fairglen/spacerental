@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { adminApi, spacesApi, createAuthenticatedApi } from '@/lib/api'
+import { adminApi, spacesApi } from '@/lib/api'
+import { useApi } from '@/lib/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,13 +26,14 @@ type RoomFormData = z.infer<typeof roomSchema>
 
 export default function AdminRoomsPage({ params }: { params: { id: string } }) {
   const { data: session } = useSession()
-  const api = createAuthenticatedApi(session?.accessToken)
+  const api = useApi()
   const qc = useQueryClient()
   const { register, handleSubmit, reset, formState: { errors } } = useForm<RoomFormData>({ resolver: zodResolver(roomSchema) })
 
   const { data, isLoading } = useQuery({
     queryKey: ['space', params.id],
     queryFn: () => spacesApi.get(params.id),
+    enabled: !!session?.accessToken,
   })
   const createRoom = useMutation({
     mutationFn: (formData: RoomFormData) => adminApi.createRoom(params.id, {
@@ -46,8 +48,8 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[#1A1A2E]">Salas — {space?.name ?? '...'}</h1>
-        <p className="text-[#6B7280] text-sm mt-1">Gere as salas deste espaço.</p>
+        <h1 className="text-2xl font-bold text-foreground">Salas — {space?.name ?? '...'}</h1>
+        <p className="text-muted-foreground text-sm mt-1">Gere as salas deste espaço.</p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
@@ -58,12 +60,12 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
                   <div className="h-16 rounded-t-xl" style={{ backgroundColor: room.color + '44' }} />
                   <CardContent className="p-4">
                     <div className="flex justify-between items-start mb-1">
-                      <p className="font-semibold text-[#1A1A2E]">{room.name}</p>
-                      <span className="text-sm font-bold text-[#3D7A5E]">{formatCurrency(room.hourly_rate)}/h</span>
+                      <p className="font-semibold text-foreground">{room.name}</p>
+                      <span className="text-sm font-bold text-primary">{formatCurrency(room.hourly_rate)}/h</span>
                     </div>
-                    <p className="text-xs text-[#6B7280] mb-2">{room.capacity} pessoa{room.capacity > 1 ? 's' : ''}</p>
+                    <p className="text-xs text-muted-foreground mb-2">{room.capacity} pessoa{room.capacity > 1 ? 's' : ''}</p>
                     <div className="flex flex-wrap gap-1">
-                      {room.amenities.slice(0,3).map(a => <Badge key={a} variant="secondary" className="text-xs">{a}</Badge>)}
+                      {room.amenities.slice(0, 3).map(a => <Badge key={a} variant="secondary" className="text-xs">{a}</Badge>)}
                     </div>
                   </CardContent>
                 </Card>

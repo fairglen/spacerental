@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from argon2 import PasswordHasher
@@ -86,16 +86,10 @@ async def get_optional_user(
 
 
 async def require_admin(
-    org_id: uuid.UUID | None = None,
+    org_id: uuid.UUID = Query(...),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    if org_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="org_id is required for admin operations",
-        )
-
     result = await db.execute(
         select(OrganizationMember).where(
             OrganizationMember.user_id == user.id,

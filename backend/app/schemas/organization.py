@@ -35,3 +35,13 @@ class OrgMembershipOut(BaseModel):
 
     org_id: uuid.UUID
     role: MemberRole
+
+
+class OrgMembershipDetail(BaseModel):
+    """Membership with denormalized org fields for the switcher UI."""
+    model_config = ConfigDict(from_attributes=True)
+
+    org_id: uuid.UUID
+    org_name: str
+    org_slug: str
+    role: MemberRole

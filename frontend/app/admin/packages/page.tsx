@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { adminApi, createAuthenticatedApi } from '@/lib/api'
+import { adminApi } from '@/lib/api'
+import { useApi } from '@/lib/hooks/useApi'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +24,7 @@ type FormData = z.infer<typeof schema>
 
 export default function AdminPackagesPage() {
   const { data: session } = useSession()
-  const api = createAuthenticatedApi(session?.accessToken)
+  const api = useApi()
   const qc = useQueryClient()
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
 
@@ -39,8 +40,8 @@ export default function AdminPackagesPage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold text-[#1A1A2E] mb-2">Pacotes de Horas</h1>
-      <p className="text-[#6B7280] text-sm mb-8">Cria e gere os pacotes de horas disponíveis.</p>
+      <h1 className="text-2xl font-bold text-foreground mb-2">Pacotes de Horas</h1>
+      <p className="text-muted-foreground text-sm mb-8">Cria e gere os pacotes de horas disponíveis.</p>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           {isLoading ? <Skeleton className="h-48 rounded-xl" /> : (
@@ -49,11 +50,11 @@ export default function AdminPackagesPage() {
                 <Card key={pkg.id}>
                   <CardContent className="p-4 flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-[#1A1A2E]">{pkg.name}</p>
-                      <p className="text-xs text-[#6B7280] mt-0.5">{pkg.hours}h · válido {pkg.validity_days} dias</p>
+                      <p className="font-medium text-foreground">{pkg.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{pkg.hours}h · válido {pkg.validity_days} dias</p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-bold text-[#3D7A5E]">{formatCurrency(pkg.price)}</span>
+                      <span className="font-bold text-primary">{formatCurrency(pkg.price)}</span>
                       <Badge variant={pkg.is_active ? 'default' : 'secondary'}>{pkg.is_active ? 'Ativo' : 'Inativo'}</Badge>
                     </div>
                   </CardContent>

@@ -22,14 +22,14 @@ export function RoomCard({ room, onBook }: RoomCardProps) {
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between">
           <CardTitle className="text-base">{room.name}</CardTitle>
-          <span className="text-lg font-bold text-[#3D7A5E]">{formatCurrency(room.hourly_rate)}<span className="text-xs font-normal text-[#6B7280]">/h</span></span>
+          <span className="text-lg font-bold text-primary">{formatCurrency(room.hourly_rate)}<span className="text-xs font-normal text-muted-foreground">/h</span></span>
         </div>
-        <div className="flex items-center gap-1 text-xs text-[#6B7280]">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <Users className="h-3 w-3" /> Até {room.capacity} pessoa{room.capacity > 1 ? 's' : ''}
         </div>
       </CardHeader>
       <CardContent>
-        {room.description && <p className="text-sm text-[#6B7280] mb-3 line-clamp-2">{room.description}</p>}
+        {room.description && <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{room.description}</p>}
         <div className="flex flex-wrap gap-1 mb-4">
           {room.amenities.slice(0, 3).map((a) => (
             <Badge key={a} variant="secondary" className="text-xs">{a}</Badge>

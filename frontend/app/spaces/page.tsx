@@ -19,11 +19,11 @@ export default function SpacesPage() {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen bg-[#F9FAFB]">
-        <div className="bg-white border-b border-[#E5E7EB] py-10">
+      <main className="min-h-screen bg-background">
+        <div className="bg-white border-b border-border py-10">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <h1 className="text-3xl font-bold text-[#1A1A2E]">Todos os Espaços</h1>
-            <p className="text-[#6B7280] mt-2">Encontra a sala perfeita para a tua prática.</p>
+            <h1 className="text-3xl font-bold text-foreground">Todos os Espaços</h1>
+            <p className="text-muted-foreground mt-2">Encontra a sala perfeita para a tua prática.</p>
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
@@ -41,22 +41,20 @@ export default function SpacesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(spaces ?? []).map((space) => (
                 <Card key={space.id} className="hover:shadow-md transition-shadow">
-                  <div className="h-48 bg-gradient-to-br from-[#E8F4F0] to-[#A8D5BA]/40 rounded-t-xl flex items-center justify-center text-5xl">
+                  <div className="h-48 bg-gradient-to-br from-accent to-primary-light/40 rounded-t-xl flex items-center justify-center text-5xl">
                     🏢
                   </div>
                   <CardHeader className="pb-2">
                     <CardTitle>{space.name}</CardTitle>
-                    <div className="flex items-center gap-1 text-sm text-[#6B7280]">
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
                       <MapPin className="h-3.5 w-3.5" /> {space.city}
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-[#6B7280] mb-3 line-clamp-2">{space.description}</p>
+                    <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{space.description}</p>
                     <div className="flex flex-wrap gap-1 mb-4">
                       {space.amenities.slice(0, 4).map((a) => (
-                        <Badge key={a} variant="secondary" className="text-xs">
-                          {a}
-                        </Badge>
+                        <Badge key={a} variant="secondary" className="text-xs">{a}</Badge>
                       ))}
                     </div>
                     <Link href={`/spaces/${space.id}`}>

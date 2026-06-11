@@ -6,11 +6,13 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import axios from 'axios'
 import { Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { authApi } from '@/lib/api'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obrigatório'),
@@ -23,8 +25,6 @@ const schema = z.object({
 })
 type FormData = z.infer<typeof schema>
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
-
 export default function SignUpPage() {
   const router = useRouter()
   const [error, setError] = useState('')
@@ -35,39 +35,33 @@ export default function SignUpPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: data.email, password: data.password, name: data.name }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        setError(err.detail || 'Erro ao criar conta.')
-        setLoading(false)
-        return
-      }
+      await authApi.register({ email: data.email, password: data.password, name: data.name })
       await signIn('credentials', { email: data.email, password: data.password, redirect: false })
       router.push('/dashboard')
       router.refresh()
-    } catch {
-      setError('Erro de ligação. Tenta novamente.')
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail || 'Erro ao criar conta.')
+      } else {
+        setError('Erro de ligação. Tenta novamente.')
+      }
     }
     setLoading(false)
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
-            <Building2 className="h-6 w-6 text-[#3D7A5E]" />
-            <span className="text-xl font-bold text-[#1A1A2E]">EspaçoHora</span>
+            <Building2 className="h-6 w-6 text-primary" />
+            <span className="text-xl font-bold text-foreground">EspaçoHora</span>
           </Link>
         </div>
         <Card>
           <CardHeader className="text-center pb-2">
             <CardTitle>Criar conta</CardTitle>
-            <p className="text-sm text-[#6B7280] mt-1">Começa a reservar em segundos</p>
+            <p className="text-sm text-muted-foreground mt-1">Começa a reservar em segundos</p>
           </CardHeader>
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -96,9 +90,9 @@ export default function SignUpPage() {
                 {loading ? 'A criar conta...' : 'Criar Conta'}
               </Button>
             </form>
-            <p className="text-center text-sm text-[#6B7280] mt-4">
+            <p className="text-center text-sm text-muted-foreground mt-4">
               Já tens conta?{' '}
-              <Link href="/sign-in" className="text-[#3D7A5E] font-medium hover:underline">Entrar</Link>
+              <Link href="/sign-in" className="text-primary font-medium hover:underline">Entrar</Link>
             </p>
           </CardContent>
         </Card>

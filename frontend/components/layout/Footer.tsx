@@ -3,12 +3,12 @@ import { Building2, MapPin, Mail } from 'lucide-react'
 
 export function Footer() {
   return (
-    <footer className="bg-[#1A1A2E] text-white">
+    <footer className="bg-foreground text-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <Building2 className="h-5 w-5 text-[#A8D5BA]" />
+              <Building2 className="h-5 w-5 text-primary-light" />
               <span className="text-lg font-bold">EspaçoHora</span>
             </div>
             <p className="text-sm text-gray-400 max-w-xs">
@@ -17,7 +17,7 @@ export function Footer() {
             </p>
           </div>
           <div>
-            <h3 className="font-semibold mb-4 text-[#A8D5BA]">Links</h3>
+            <h3 className="font-semibold mb-4 text-primary-light">Links</h3>
             <ul className="space-y-2 text-sm text-gray-400">
               <li>
                 <Link href="/spaces" className="hover:text-white transition-colors">
@@ -42,7 +42,7 @@ export function Footer() {
             </ul>
           </div>
           <div>
-            <h3 className="font-semibold mb-4 text-[#A8D5BA]">Contacto</h3>
+            <h3 className="font-semibold mb-4 text-primary-light">Contacto</h3>
             <ul className="space-y-2 text-sm text-gray-400">
               <li className="flex items-center gap-2">
                 <MapPin className="h-4 w-4" /> Lisboa, Portugal

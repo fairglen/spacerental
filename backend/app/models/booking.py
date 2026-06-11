@@ -53,11 +53,6 @@ class Booking(Base):
         default=PaymentMethod.hourly,
         server_default="hourly",
     )
-    package_redemption_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("user_package_purchases.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -71,6 +66,3 @@ class Booking(Base):
 
     room: Mapped["Room"] = relationship("Room", back_populates="bookings", lazy="noload")  # noqa: F821
     user: Mapped["User"] = relationship("User", back_populates="bookings", lazy="noload")  # noqa: F821
-    package_redemption: Mapped["UserPackagePurchase | None"] = relationship(  # noqa: F821
-        "UserPackagePurchase", foreign_keys=[package_redemption_id], lazy="noload"
-    )

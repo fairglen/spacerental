@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -105,7 +106,15 @@ async def create_booking(
         notes=body.notes,
     )
     db.add(booking)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Race with a concurrent booking — DB-level EXCLUDE constraint caught it.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This time slot is already booked",
+        )
     await db.refresh(booking)
 
     # Load room for response
@@ -147,7 +156,8 @@ async def cancel_booking(
         )
 
     now = datetime.now(tz=timezone.utc)
-    if booking.start_time.replace(tzinfo=timezone.utc) - now < timedelta(hours=24):
+    # booking.start_time is TIMESTAMPTZ — SQLAlchemy returns an aware UTC datetime.
+    if booking.start_time - now < timedelta(hours=24):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bookings can only be cancelled more than 24 hours in advance",

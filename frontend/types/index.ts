@@ -81,12 +81,19 @@ export type AvailabilitySlot = {
 
 export type AdminStats = {
   total_bookings: number
-  revenue_this_month: number
-  active_spaces: number
-  registered_users: number
+  total_revenue: number
+  occupancy_rate: number
+  active_users: number
 }
 
 export type OrgMembership = {
   org_id: string
+  role: 'owner' | 'admin' | 'member'
+}
+
+export type Membership = {
+  org_id: string
+  org_name: string
+  org_slug: string
   role: 'owner' | 'admin' | 'member'
 }
