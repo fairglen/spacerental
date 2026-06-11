@@ -46,9 +46,9 @@ export default function AdminDashboard() {
           ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
           : <>
               <StatsCard title="Total de Reservas" value={stats?.total_bookings ?? 0} icon={BarChart3} />
-              <StatsCard title="Receita Este Mês" value={formatCurrency(stats?.revenue_this_month ?? 0)} icon={Euro} />
-              <StatsCard title="Espaços Ativos" value={stats?.active_spaces ?? 0} icon={Building2} />
-              <StatsCard title="Utilizadores" value={stats?.registered_users ?? 0} icon={Users} />
+              <StatsCard title="Receita Total" value={formatCurrency(stats?.total_revenue ?? 0)} icon={Euro} />
+              <StatsCard title="Taxa de Ocupação" value={`${stats?.occupancy_rate ?? 0}%`} icon={Building2} />
+              <StatsCard title="Utilizadores Ativos" value={stats?.active_users ?? 0} icon={Users} />
             </>
         }
       </div>

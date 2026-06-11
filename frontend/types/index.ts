@@ -81,9 +81,9 @@ export type AvailabilitySlot = {
 
 export type AdminStats = {
   total_bookings: number
-  revenue_this_month: number
-  active_spaces: number
-  registered_users: number
+  total_revenue: number
+  occupancy_rate: number
+  active_users: number
 }
 
 export type OrgMembership = {
