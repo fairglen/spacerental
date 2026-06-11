@@ -1,6 +1,5 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload

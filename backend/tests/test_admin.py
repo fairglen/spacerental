@@ -1,5 +1,4 @@
-import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.auth import create_access_token, hash_password

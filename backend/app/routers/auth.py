@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.organization import Organization, OrganizationMember, MemberRole, OrgPlan
 from app.schemas.user import UserOut, UserRegister, UserLogin, TokenOut
-from app.schemas.organization import OrgMembershipOut, OrgMembershipDetail
+from app.schemas.organization import OrgMembershipDetail
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

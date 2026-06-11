@@ -11,7 +11,6 @@ from app.database import get_db
 from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus
 from app.models.package import Package
-from app.models.organization import OrganizationMember
 from app.models.user import User
 from app.schemas.space import (
     SpaceOut,

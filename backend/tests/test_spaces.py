@@ -2,8 +2,6 @@ import uuid
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 
-import pytest_asyncio
-
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.space import Space
 

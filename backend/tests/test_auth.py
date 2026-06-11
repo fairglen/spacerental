@@ -1,4 +1,3 @@
-import pytest
 from sqlalchemy import select
 
 from app.auth import hash_password, verify_password
