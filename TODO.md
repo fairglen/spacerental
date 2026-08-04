@@ -22,6 +22,73 @@ The 7-item code-review followup (org_id/multi-org, AdminStats fields, require_ad
 
 Suggested build order within tiers: **2 → 7 → 4 → 1 → 3 → 8 → 6 → 5 → 9.** Stripe unblocks real bookings, rate limiting is cheap and independent, then email + recurring bookings round out the core customer experience before investing in hardening.
 
+**Bugs (below) outrank all of it.** The core booking flow is broken today — shipping more features on top of a booking UI that can't book is the wrong order.
+
+---
+
+## Bugs
+
+### B1 Multi-hour bookings are impossible — a drag always books exactly one hour
+The core booking flow is broken. Selecting 09:00–12:00 on the calendar creates a 09:00–10:00 booking.
+
+**Root cause** (confirmed in code, not speculation): `frontend/components/booking/BookingCalendar.tsx:52` — `handleSelectSlot` destructures only `{ start }` from react-big-calendar's selection payload and **discards `end`**. It then finds the single availability slot whose start matches exactly and calls `onSlotSelect(slot.start, slot.end)`. With `step={60}` and `timeslots={1}`, that is always a one-hour range no matter how far the user dragged.
+
+- **Given** a room with 09:00–12:00 free, **when** I drag across 09:00 to 12:00 in the day view, **then** the modal shows *Duração 3h* and the total is `3 × hourly_rate`, and confirming creates one booking spanning 09:00–12:00.
+- **Given** a drag spanning 09:00–12:00 where 10:00–11:00 is already taken, **when** I release, **then** the selection is rejected with a message naming the unavailable hour — it must not silently book a shorter range or create a booking overlapping the taken slot.
+- **Given** a single click on one free hour, **when** it registers, **then** behavior is unchanged from today (a 1-hour booking).
+- **Given** the drag crosses a boundary the backend rejects, **when** `POST /bookings` returns 409, **then** the modal surfaces the conflict rather than the generic *Erro ao criar reserva*.
+
+### B2 Booking several separate blocks in one day (gaps for lunch) is unverified
+Following from B1: a therapist booking 09:00–12:00 and 14:00–18:00 on the same day must end up with **two** bookings and a free 12:00–14:00, with no accidental merge into one 09:00–18:00 block and no phantom hold over lunch.
+
+- **Given** I book 09:00–12:00 and then 14:00–18:00 on the same room and day, **when** both confirm, **then** `GET /bookings/me` returns two distinct bookings and the calendar shows 12:00–14:00 still free and bookable.
+- **Given** those two bookings exist, **when** another user loads that day's availability, **then** only 09:00–12:00 and 14:00–18:00 read as unavailable.
+
+### B3 Recurring bookings do not exist in the UI (not a regression)
+Recorded because it was reported as broken: there is **no recurrence code anywhere** — `grep -ri "recurr\|repeat\|semanal"` returns nothing across `frontend/` and `backend/app/`. Nothing is broken; the feature was never built. It is **Epic 1**, and story 1.4 is the UI half. No separate bug fix needed — this entry exists so it isn't tracked twice.
+
+### B4 After Stripe lands, the booking flow dead-ends at *Pendente*
+`POST /bookings` now returns a `checkout_url`, but `BookingModal` never navigates to it — `onSuccess` just closes the dialog. The user sees a *Pendente* booking, is never sent to payment, and it can never be confirmed. This was out of the payments agent's file fence, so it shipped incomplete by design.
+
+- **Given** a successful `POST /bookings` response carrying `checkout_url`, **when** the mutation succeeds, **then** the browser navigates to that URL instead of silently closing the modal.
+- **Given** `STRIPE_MODE=stub`, **when** I complete the stub checkout flow locally, **then** the booking reaches `confirmed` and appears as such on the dashboard — no Stripe account required (§10.3).
+
+### B5 E2E coverage for the real booking shapes
+`frontend/tests/e2e/booking.spec.ts` is a smoke test; none of B1/B2 would have been caught by it. Add Playwright specs for the flows people actually perform. These are the regression net for B1, B2 and B4 — write them so they **fail against today's code**.
+
+- **Given** a signed-in user, **when** they book a recurring-style morning block (09:00–12:00, a single multi-hour drag), **then** the dashboard shows one 3-hour booking with the correct total.
+- **Given** a signed-in user, **when** they book 09:00–12:00 and 14:00–18:00 on the same day, **then** two bookings appear and the lunch gap stays bookable.
+- **Given** a booked slot, **when** a second user opens the same day, **then** those hours render as *Ocupado* and are not selectable.
+- **Given** a user cancels a booking, **when** the cancellation succeeds, **then** the freed hours become selectable again on the calendar.
+- **Once Epic 1 ships:** booking a weekly recurring morning generates the expected series, and cancelling one occurrence leaves the rest intact.
+
+---
+
+## Tech Debt
+
+Known-and-accepted shortcuts. Each names why it was deferred, so the next person isn't re-deriving it.
+
+### T1 Alembic migration `0002` can never be applied — **blocker**
+`revision = "0002_drop_booking_package_redemption"` is 36 characters; alembic's `version_num` column is `varchar(32)`. Stamping raises `StringDataRightTruncationError`, so **migrations cannot run against a real database at all.** Found while building Epic 2, left alone because it was outside that PR's file fence. Fix: shorten the id (e.g. `0002_drop_pkg_redemption`) and update the `down_revision` of `0003_stripe_payments` to match. Verify with a real `upgrade → downgrade → upgrade` against a throwaway PG16, since the test suite creates tables via `Base.metadata` and never exercises alembic.
+
+### T2 Ruff's newer rules are not adopted
+CI pins `ruff==0.15.17` with an explicit `select = ["E4","E7","E9","F"]` in `ruff.toml`. Ruff 0.16.1's widened defaults surface ~126 additional findings (`FURB157`, `I001`, …), largely stylistic and mostly in tests. Deliberately not adopted: it was a 126-error cleanup that would have ridden along on unrelated PRs. Worth its own pass — adopt the rules, fix the findings, bump the pin, all in one commit.
+
+### T3 `admin.spec.ts` "admin dashboard loads" is flaky
+Failed a `waitForURL` on the sign-in redirect and passed on retry during the Epic 2 run. Touches no payments code, so it predates that work. A retry-masked flake in an auth redirect is worth diagnosing rather than tolerating — it may be a real race in the sign-in flow, not just test timing.
+
+### T4 `frontend-tests` is path-filtered and silently absent
+`.github/workflows/frontend-tests.yml` only triggers on `paths: ['frontend/**']`. Backend-only PRs show the check as **absent, not skipped** — which reads like "passing" at a glance and doesn't block merge. Fine as-is, but know that a green PR page does not mean frontend tests ran.
+
+### T5 `docker-compose.yml` doesn't forward `STRIPE_*` to the backend
+Stub mode needs nothing (it's the config default), so local dev works out of the box. Live mode requires adding the vars to the `backend` service's `environment:` block. Out of fence for the Epic 2 PR.
+
+### T6 `backend/.env.example` was not updated for Stripe
+The root `.env.example` documents every new var; the backend-local copy was outside the Epic 2 fence. Reconcile the two, or delete the duplicate if the root one is authoritative.
+
+### T7 Booking timestamps rely on exact-millisecond slot matching
+`BookingCalendar` matches selections to availability slots with `parseISO(s.start).getTime() === date.getTime()`. Exact equality against a backend-supplied UTC instant is brittle — it holds for Portugal (UTC+0/+1) but breaks for any non-integer-hour offset, and it's the mechanism behind B1. Whoever fixes B1 should replace the lookup with a range check rather than patching around the equality.
+
 ---
 
 ## Epic 1 — Recurring Bookings
