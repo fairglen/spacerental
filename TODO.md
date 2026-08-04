@@ -2,6 +2,8 @@
 
 User stories for the items CLAUDE.md §11 marks as "intentionally not done yet," plus recurring bookings (design already agreed, no code yet). Each story is scoped to be picked up independently by an AI agent — acceptance criteria are Given/When/Then and name concrete endpoints, models, and files.
 
+**Applies to every story below:** it ships with a way to exercise it locally — no real external account, no paid service, no deployed environment (CLAUDE.md §10.3). Third-party integrations get a stub implementation behind an explicit env-var switch, and the full test suite must pass with zero credentials configured.
+
 The 7-item code-review followup (org_id/multi-org, AdminStats fields, require_admin dependency, booking-overlap constraint, Decimal normalization, dead code, test coverage) is **done** — all landed on `main` through commit `40c05bd`. Not repeated here.
 
 ## Priority

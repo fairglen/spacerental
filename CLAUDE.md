@@ -344,6 +344,20 @@ Concretely, when you touch:
 
 Run the full suite (§8.5 — backend pytest, frontend Vitest, Playwright E2E) before opening a PR. CI runs all three; a red pipeline is not "someone else's problem."
 
+### 10.3 Everything must be runnable and testable locally
+
+**No feature may require a real external account, a paid service, or a deployed environment in order to run or be tested.** If you can't exercise it on a laptop with no credentials, it isn't done.
+
+This applies hardest to the integrations in §11 (Stripe, Seam, Resend/Postmark). For each one:
+
+- **Put the third party behind a thin interface in its own module** (e.g. `app/payments.py`, `app/locks.py`, `app/email.py`) with two implementations: the real client and a local fake. Nothing else in the codebase imports the vendor SDK directly.
+- **Select the implementation with an explicit env var** — `STRIPE_MODE=stub|live`, `SEAM_MODE=stub|live`. Per §9, the switch is explicit and loud: in `live` mode a missing API key raises at startup. **Never silently fall back to the fake** — a stub quietly running in production is worse than a crash.
+- **The full test suite must pass with zero third-party credentials configured**, and tests must never touch the network.
+- **Prefer a real local emulator over a hand-rolled fake** where one exists — `stripe listen --forward-to` for webhooks, Mailpit/Mailhog for email. They catch integration mistakes a fake never will.
+- **The local dev stack (`docker-compose up`) must come up clean on a fresh clone** with only `.env.example` copied to `.env`. If your feature adds a required env var, give it a working default for stub mode and document it in `.env.example`.
+
+**Every PR that adds a feature must include a "How to test this locally" section** with the exact commands — start the stack, seed, hit the endpoint, observe the result. Not a description; runnable commands. If the feature introduces a lasting local workflow (a new service, an emulator, a seeding step), add it to `README.md` too.
+
 ---
 
 ## 11. What's intentionally not done yet
