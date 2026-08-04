@@ -311,7 +311,56 @@ Useful queries:
 
 ---
 
-## 10. What's intentionally not done yet
+## 10. Workflow — worktrees, branching, and testing
+
+### 10.1 Never work on `main`
+
+- **All work happens on a feature branch.** Branch from an up-to-date `main`, named `feat/…`, `fix/…`, `chore/…`, `test/…`, or `docs/…`.
+- **Never commit directly to `main`.** `main` only advances through a reviewed PR merge. If you find yourself on `main` with changes staged, branch first, then commit.
+- **Always work in a git worktree**, not the primary checkout:
+  ```bash
+  git worktree add ../spacerental-<slug> -b feat/<slug> main
+  ```
+  This keeps the main checkout clean and lets parallel workstreams (and parallel agents) coexist without stepping on each other's uncommitted files. Remove it when the branch merges: `git worktree remove ../spacerental-<slug>`.
+- One branch = one coherent change. Per §9, prefer fewer, larger PRs for related work over a scatter of tiny ones.
+
+### 10.2 Every contribution ships with tests
+
+No code change merges without test coverage appropriate to what changed. Pick the *right* level — over-testing at the wrong level is as much a problem as no tests at all.
+
+| Level | Use it for | Where it lives | Do **not** use it for |
+|---|---|---|---|
+| **Unit** | Pure logic with no I/O: pricing/duration math, Pydantic schema validation, `lib/utils.ts` helpers, `lib/api.ts` response-shape extraction. | `backend/tests/test_*.py` (plain functions), `frontend/tests/lib/`, `frontend/tests/components/` | Anything that needs a DB or a live route — that's an integration test. |
+| **Integration** | **The default for any new or changed endpoint.** A real route hit through the `client` fixture against a real PostgreSQL: auth gating, `org_id` isolation, status codes, response wrapping. | `backend/tests/test_<resource>.py` | Standing in for unit tests of pure helpers — it's slower and hides the actual failure. |
+| **E2E** | User-visible flows that cross frontend *and* backend: sign-in, browse → book → see it on the dashboard, admin CRUD. | `frontend/tests/e2e/*.spec.ts` (Playwright) | Per-endpoint coverage. E2E is for flows, not for enumerating API cases — that's what integration tests are for. |
+
+Concretely, when you touch:
+
+- **A backend endpoint** → integration test with at least one happy path *and* one failure path (403 for wrong role, 404 for missing, 409 for conflict). Never mock the DB.
+- **A backend model or migration** → integration test proving the constraint/index actually does what it claims (e.g. an overlapping insert raises).
+- **A frontend component** → component test for rendered behavior and interaction, not for pinning marketing copy (we deleted those once already — don't reintroduce them).
+- **`lib/api.ts`** → a shape-extraction unit test in `frontend/tests/lib/api.test.ts`. This suite exists specifically to stop the wrapped-response bug from §5 recurring.
+- **A user-facing flow** → extend or add a Playwright spec.
+
+Run the full suite (§8.5 — backend pytest, frontend Vitest, Playwright E2E) before opening a PR. CI runs all three; a red pipeline is not "someone else's problem."
+
+### 10.3 Everything must be runnable and testable locally
+
+**No feature may require a real external account, a paid service, or a deployed environment in order to run or be tested.** If you can't exercise it on a laptop with no credentials, it isn't done.
+
+This applies hardest to the integrations in §11 (Stripe, Seam, Resend/Postmark). For each one:
+
+- **Put the third party behind a thin interface in its own module** (e.g. `app/payments.py`, `app/locks.py`, `app/email.py`) with two implementations: the real client and a local fake. Nothing else in the codebase imports the vendor SDK directly.
+- **Select the implementation with an explicit env var** — `STRIPE_MODE=stub|live`, `SEAM_MODE=stub|live`. Per §9, the switch is explicit and loud: in `live` mode a missing API key raises at startup. **Never silently fall back to the fake** — a stub quietly running in production is worse than a crash.
+- **The full test suite must pass with zero third-party credentials configured**, and tests must never touch the network.
+- **Prefer a real local emulator over a hand-rolled fake** where one exists — `stripe listen --forward-to` for webhooks, Mailpit/Mailhog for email. They catch integration mistakes a fake never will.
+- **The local dev stack (`docker-compose up`) must come up clean on a fresh clone** with only `.env.example` copied to `.env`. If your feature adds a required env var, give it a working default for stub mode and document it in `.env.example`.
+
+**Every PR that adds a feature must include a "How to test this locally" section** with the exact commands — start the stack, seed, hit the endpoint, observe the result. Not a description; runnable commands. If the feature introduces a lasting local workflow (a new service, an emulator, a seeding step), add it to `README.md` too.
+
+---
+
+## 11. What's intentionally not done yet
 
 These are deferred for a reason — don't quietly add them without a discussion:
 
@@ -326,8 +375,10 @@ These are deferred for a reason — don't quietly add them without a discussion:
 
 ---
 
-## 11. Things you should never do
+## 12. Things you should never do
 
+- **Never commit directly to `main`** — branch, PR, merge. See §10.1.
+- **Never merge code without tests** at the right level (unit / integration / E2E). See §10.2.
 - **Never commit `.env`** — only `.env.example` is committed.
 - **Never store passwords in plaintext or with reversible encryption** — always Argon2id via `app.auth.hash_password()`.
 - **Never bypass `require_admin`** in admin endpoints by checking the user directly. Use the dependency.
