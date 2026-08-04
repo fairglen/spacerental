@@ -73,6 +73,63 @@ describe('all wrapped responses', () => {
   })
 })
 
+// Checkout responses pair the created resource with the Stripe redirect URL.
+describe('checkout responses', () => {
+  it('bookingsApi.create extracts both booking and checkout_url', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({
+        data: {
+          booking: { id: 'b1', status: 'pending', total_amount: '22.00', duration_hours: '2.0' },
+          checkout_url: 'https://checkout.stripe.stub/cs_stub_abc',
+        },
+      }),
+    } as any
+    const result = await bookingsApi.create({ room_id: 'r1', start_time: 'x', end_time: 'y' }, mockApi)
+    expect(result.checkout_url).toBe('https://checkout.stripe.stub/cs_stub_abc')
+    expect(result.booking.id).toBe('b1')
+    // Stays pending until the Stripe webhook confirms it.
+    expect(result.booking.status).toBe('pending')
+  })
+
+  it('bookingsApi.create forwards payment_method to the API', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({
+        data: { booking: { id: 'b1' }, checkout_url: 'https://checkout.stripe.stub/cs' },
+      }),
+    } as any
+    await bookingsApi.create(
+      { room_id: 'r1', start_time: 'x', end_time: 'y', payment_method: 'hourly' },
+      mockApi,
+    )
+    expect(mockApi.post).toHaveBeenCalledWith('/bookings', {
+      room_id: 'r1', start_time: 'x', end_time: 'y', payment_method: 'hourly',
+    })
+  })
+
+  it('packagesApi.purchase extracts both purchase and checkout_url', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({
+        data: {
+          purchase: {
+            id: 'p1',
+            status: 'pending',
+            hours_total: '10.00',
+            hours_used: '0.00',
+            hours_remaining: '10.00',
+          },
+          checkout_url: 'https://checkout.stripe.stub/cs_stub_def',
+        },
+      }),
+    } as any
+    const result = await packagesApi.purchase('pkg1', 'org1', mockApi)
+    expect(result.checkout_url).toBe('https://checkout.stripe.stub/cs_stub_def')
+    expect(result.purchase.hours_remaining).toBe(10)
+    expect(typeof result.purchase.hours_remaining).toBe('number')
+    // Only the webhook flips this to 'active'.
+    expect(result.purchase.status).toBe('pending')
+  })
+})
+
 // Decimal-as-string from backend → JS number normalization
 describe('decimal field normalization', () => {
   it('spacesApi.get coerces room.hourly_rate from string to number', async () => {
@@ -105,13 +162,16 @@ describe('decimal field normalization', () => {
   it('bookingsApi.create coerces decimals on returned booking', async () => {
     const mockApi = {
       post: vi.fn().mockResolvedValue({
-        data: { booking: { id: 'b1', total_amount: '15.00', duration_hours: '1.5' } },
+        data: {
+          booking: { id: 'b1', total_amount: '15.00', duration_hours: '1.5' },
+          checkout_url: 'https://checkout.stripe.stub/cs_stub_1',
+        },
       }),
     } as any
     const result = await bookingsApi.create({ room_id: 'r1', start_time: 'x', end_time: 'y' }, mockApi)
-    expect(result.total_amount).toBe(15)
-    expect(result.duration_hours).toBe(1.5)
-    expect(typeof result.total_amount).toBe('number')
+    expect(result.booking.total_amount).toBe(15)
+    expect(result.booking.duration_hours).toBe(1.5)
+    expect(typeof result.booking.total_amount).toBe('number')
   })
 
   it('bookingsApi.listMine also normalizes nested room.hourly_rate', async () => {

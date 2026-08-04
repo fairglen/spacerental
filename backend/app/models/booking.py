@@ -1,7 +1,7 @@
 import uuid
 import decimal
 from datetime import datetime
-from sqlalchemy import Text, Numeric, DateTime, ForeignKey, func, Enum as SAEnum
+from sqlalchemy import String, Text, Numeric, DateTime, ForeignKey, func, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -54,6 +54,11 @@ class Booking(Base):
         server_default="hourly",
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stripe Checkout Session that pays for this booking. Unique so a webhook
+    # replay can never confirm two rows; NULL when payments are disabled.
+    stripe_checkout_session_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 
@@ -5,6 +6,7 @@ from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember, MemberRole
 from app.models.user import User
+from app.payments import PaymentProviderError
 
 
 def _future_slot(hours_offset_from_now: int = 24 * 7, duration_hours: int = 2):
@@ -39,7 +41,8 @@ class TestCreateBooking:
         body = resp.json()
         b = body["booking"]
         assert b["room_id"] == str(test_room.id)
-        assert b["status"] == "confirmed"
+        # Payment-first: the webhook, not this request, confirms the booking.
+        assert b["status"] == "pending"
         assert Decimal(b["duration_hours"]) == Decimal("2.00")
         # hourly_rate 11.00 * 2 hours
         assert Decimal(b["total_amount"]) == Decimal("22.00")
@@ -62,6 +65,79 @@ class TestCreateBooking:
         assert second.status_code in (400, 409)
         # We expect 409 specifically per the router
         assert second.status_code == 409
+
+
+class TestBookingCheckout:
+    """Story 2.1 — checkout for hourly bookings."""
+
+    async def test_returns_checkout_url_and_leaves_booking_pending(
+        self, client, auth_headers, test_room, test_member, payments
+    ):
+        start, end = _future_slot()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={
+                "room_id": str(test_room.id),
+                "start_time": start,
+                "end_time": end,
+                "payment_method": "hourly",
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+
+        booking = body["booking"]
+        assert booking["status"] == "pending"
+        assert body["checkout_url"].endswith(f"cs_stub_{uuid.UUID(booking['id']).hex}")
+
+        # The session was opened for the booking's own total, in cents.
+        session = payments.sessions[f"cs_stub_{uuid.UUID(booking['id']).hex}"]
+        assert session["amount_cents"] == 2200
+        assert Decimal(booking["total_amount"]) == Decimal("22.00")
+        assert session["kind"] == "booking"
+        assert session["org_id"] == str(test_room.org_id)
+
+        # Still pending on read-back: nothing but the webhook confirms it.
+        listed = await client.get("/api/v1/bookings/me", headers=auth_headers)
+        assert listed.json()["bookings"][0]["status"] == "pending"
+
+    async def test_package_payment_method_rejected(
+        self, client, auth_headers, test_room, test_member, payments
+    ):
+        start, end = _future_slot()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={
+                "room_id": str(test_room.id),
+                "start_time": start,
+                "end_time": end,
+                "payment_method": "package",
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert payments.sessions == {}
+
+    async def test_checkout_failure_leaves_no_booking(
+        self, client, auth_headers, test_room, test_member, payments, monkeypatch
+    ):
+        async def boom(**_kwargs):
+            raise PaymentProviderError("card network down")
+
+        monkeypatch.setattr(payments, "create_checkout_session", boom)
+
+        start, end = _future_slot()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 502, resp.text
+
+        # The slot must not stay locked by a booking nobody can pay for.
+        listed = await client.get("/api/v1/bookings/me", headers=auth_headers)
+        assert listed.json()["bookings"] == []
 
 
 class TestListMyBookings:

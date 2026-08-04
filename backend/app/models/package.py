@@ -1,11 +1,18 @@
+import enum
 import uuid
 import decimal
 from datetime import datetime
-from sqlalchemy import Integer, Boolean, Numeric, DateTime, ForeignKey, func
+from sqlalchemy import Integer, Boolean, Numeric, DateTime, ForeignKey, func, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String
 from app.database import Base
+
+
+class PurchaseStatus(str, enum.Enum):
+    pending = "pending"
+    active = "active"
+    cancelled = "cancelled"
 
 
 class Package(Base):
@@ -68,6 +75,18 @@ class UserPackagePurchase(Base):
         Numeric(5, 2), nullable=False, default=decimal.Decimal("0"), server_default="0"
     )
     hours_remaining: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    # A purchase only becomes `active` — i.e. its hours become spendable —
+    # once Stripe confirms payment. Defaults to active so the payments-off
+    # POC path keeps working unchanged.
+    status: Mapped[PurchaseStatus] = mapped_column(
+        SAEnum(PurchaseStatus, name="purchase_status"),
+        nullable=False,
+        default=PurchaseStatus.active,
+        server_default="active",
+    )
+    stripe_checkout_session_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True
+    )
     purchased_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

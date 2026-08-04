@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 
 import pytest
 import pytest_asyncio
@@ -28,6 +29,45 @@ from app.models.organization import (  # noqa: E402
     OrgPlan,
 )
 from app.models.space import Space, Room, AvailabilityRule  # noqa: E402
+from app.payments import (  # noqa: E402
+    CheckoutKind,
+    StubPaymentGateway,
+    get_payment_gateway,
+)
+
+TEST_STRIPE_WEBHOOK_SECRET = "whsec_test_not_a_real_secret"
+
+
+def checkout_completed_event(
+    *,
+    session_id: str,
+    kind: CheckoutKind,
+    reference_id,
+    org_id,
+    payment_status: str = "paid",
+    event_type: str = "checkout.session.completed",
+) -> bytes:
+    """Serialize a Stripe `checkout.session.completed` payload."""
+    return json.dumps(
+        {
+            "id": "evt_test_1",
+            "object": "event",
+            "type": event_type,
+            "data": {
+                "object": {
+                    "id": session_id,
+                    "object": "checkout.session",
+                    "payment_status": payment_status,
+                    "client_reference_id": str(reference_id),
+                    "metadata": {
+                        "kind": kind.value,
+                        "reference_id": str(reference_id),
+                        "org_id": str(org_id),
+                    },
+                }
+            },
+        }
+    ).encode()
 
 
 @pytest.fixture(scope="session")
@@ -118,6 +158,26 @@ async def client(session_factory, db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def payments(client) -> StubPaymentGateway:
+    """The stub payment gateway the app under test will use.
+
+    It is the same StubPaymentGateway that STRIPE_MODE=stub serves in dev, so
+    tests exercise the production checkout/webhook code path — pinned to a
+    known webhook secret so payloads can be signed here. No network, and no
+    Stripe credentials required to run the suite.
+    """
+    gateway = StubPaymentGateway(
+        webhook_secret=TEST_STRIPE_WEBHOOK_SECRET,
+        currency="eur",
+        success_url="http://test/success",
+        cancel_url="http://test/cancel",
+    )
+    app.dependency_overrides[get_payment_gateway] = lambda: gateway
+    yield gateway
+    app.dependency_overrides.pop(get_payment_gateway, None)
 
 
 @pytest_asyncio.fixture
