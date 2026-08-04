@@ -1,0 +1,22 @@
+# Ruff configuration.
+#
+# The rule set is selected EXPLICITLY rather than relying on ruff's defaults.
+# Defaults change between ruff releases: 0.16.1 widened them and turned 126
+# pre-existing lint errors red in CI on code nobody had touched, breaking
+# unrelated PRs. An explicit `select` makes the lint result depend on this
+# file instead of on which ruff version happened to get installed.
+#
+# Keep this in sync with the pinned version in .github/workflows/lint.yml
+# and the `rev` in .pre-commit-config.yaml.
+
+target-version = "py312"
+line-length = 100
+
+[lint]
+# ruff's historical default set: pycodestyle errors, pyflakes.
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# Alembic migrations are generated; unused imports in the template preamble
+# are expected and not worth hand-editing after every autogenerate.
+"backend/alembic/versions/*" = ["F401"]
