@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.ratelimit import PUBLIC_TIER, rate_limit
 from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus
 from app.schemas.space import SpaceOut, RoomOut, AvailabilitySlot
@@ -14,6 +15,7 @@ router = APIRouter(tags=["spaces"])
 
 
 @router.get("/spaces")
+@rate_limit(PUBLIC_TIER)
 async def list_spaces(db: AsyncSession = Depends(get_db)):
     """List all active spaces (public)."""
     result = await db.execute(
@@ -24,6 +26,7 @@ async def list_spaces(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/spaces/{space_id}")
+@rate_limit(PUBLIC_TIER)
 async def get_space(space_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Space detail with rooms (public)."""
     result = await db.execute(
@@ -44,6 +47,7 @@ async def get_space(space_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/rooms/{room_id}/availability")
+@rate_limit(PUBLIC_TIER)
 async def get_room_availability(
     room_id: uuid.UUID,
     date: date = Query(..., description="Date in YYYY-MM-DD format"),

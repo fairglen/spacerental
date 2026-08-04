@@ -8,6 +8,20 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # ── Rate limiting ────────────────────────────────────────────────────
+    RATE_LIMIT_ENABLED: bool = True
+    # Auth tier: credential endpoints. Strict, because each accepted request
+    # costs an Argon2 hash (m=64MB) and is the surface for credential stuffing.
+    RATE_LIMIT_AUTH_MAX_REQUESTS: int = 10
+    RATE_LIMIT_AUTH_WINDOW_SECONDS: int = 60
+    # Public tier: unauthenticated reads. Looser — a single visitor browsing
+    # spaces and flipping through calendar days legitimately makes many calls.
+    RATE_LIMIT_PUBLIC_MAX_REQUESTS: int = 120
+    RATE_LIMIT_PUBLIC_WINDOW_SECONDS: int = 60
+    # Only enable behind a proxy that overwrites X-Forwarded-For; see the
+    # trust note in app/ratelimit.py:client_identity.
+    RATE_LIMIT_TRUST_FORWARDED_FOR: bool = False
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]

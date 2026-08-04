@@ -18,6 +18,7 @@ os.environ["SECRET_KEY"] = "test-secret-key-32-chars-min-test-test"
 
 from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
+from app.ratelimit import limiter  # noqa: E402
 from app.auth import hash_password, create_access_token  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.models.organization import (  # noqa: E402
@@ -35,6 +36,20 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Clear throttling state around every test.
+
+    The limiter is process-global and every ASGI-transport request arrives from
+    the same client address, so without this the auth-tier budget would be shared
+    by the whole session and unrelated tests would start seeing 429s in whatever
+    order pytest happens to run them.
+    """
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
 @pytest_asyncio.fixture

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.database import get_db
+from app.ratelimit import AUTH_TIER, rate_limit
 from app.models.user import User
 from app.models.organization import Organization, OrganizationMember, MemberRole, OrgPlan
 from app.schemas.user import UserOut, UserRegister, UserLogin, TokenOut
@@ -74,6 +75,7 @@ async def _create_default_org(user: User, db: AsyncSession) -> OrganizationMembe
 
 
 @router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+@rate_limit(AUTH_TIER)
 async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none() is not None:
@@ -102,6 +104,7 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenOut)
+@rate_limit(AUTH_TIER)
 async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()

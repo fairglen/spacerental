@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
+from app.ratelimit import RateLimitMiddleware, limiter
 from app.routers import auth, spaces, bookings, packages, admin
 
 
@@ -18,6 +19,17 @@ app = FastAPI(
     version="1.0.0",
     description="Production-ready backend for the SpaceRental platform",
     lifespan=lifespan,
+)
+
+# Registered before CORS so CORS ends up the OUTER layer: 429 responses still
+# carry CORS headers (the browser would otherwise report an opaque network
+# error), and preflight OPTIONS are answered by CORS without spending quota.
+# `app.router.routes` is passed by reference so routers included below are
+# matched too.
+app.add_middleware(
+    RateLimitMiddleware,
+    routes=app.router.routes,
+    limiter=limiter,
 )
 
 app.add_middleware(
