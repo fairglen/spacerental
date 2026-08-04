@@ -68,9 +68,23 @@ export type UserPackagePurchase = {
   hours_total: number
   hours_used: number
   hours_remaining: number
+  // Hours only become spendable once Stripe confirms the payment.
+  status: 'pending' | 'active' | 'cancelled'
   purchased_at: string
   expires_at: string
   package?: Package
+}
+
+// POST /bookings and POST /packages/{id}/purchase both return the created
+// resource alongside the Stripe Checkout URL the user must be sent to.
+export type BookingCheckout = {
+  booking: Booking
+  checkout_url: string
+}
+
+export type PackagePurchaseCheckout = {
+  purchase: UserPackagePurchase
+  checkout_url: string
 }
 
 export type AvailabilitySlot = {

@@ -6,6 +6,7 @@ from app.config import settings
 from app.database import init_db
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.routers import auth, spaces, bookings, packages, admin
+from app.routers import webhooks
 
 
 @asynccontextmanager
@@ -47,6 +48,7 @@ app.include_router(spaces.router, prefix=API_PREFIX)
 app.include_router(bookings.router, prefix=API_PREFIX)
 app.include_router(packages.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
+app.include_router(webhooks.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["health"])

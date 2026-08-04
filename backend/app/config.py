@@ -22,6 +22,18 @@ class Settings(BaseSettings):
     # trust note in app/ratelimit.py:client_identity.
     RATE_LIMIT_TRUST_FORWARDED_FOR: bool = False
 
+    # ── Stripe ────────────────────────────────────────────────────────────
+    # "stub" runs the whole checkout → webhook flow locally with no Stripe
+    # account; "live" talks to the real API and then both keys below are
+    # mandatory — app.payments.validate_payment_settings() raises at import
+    # rather than letting the stub run in production.
+    STRIPE_MODE: str = "stub"
+    STRIPE_SECRET_KEY: str | None = None
+    STRIPE_WEBHOOK_SECRET: str | None = None
+    STRIPE_CURRENCY: str = "eur"
+    STRIPE_SUCCESS_URL: str = "http://localhost:3000/dashboard?pagamento=sucesso"
+    STRIPE_CANCEL_URL: str = "http://localhost:3000/dashboard?pagamento=cancelado"
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]

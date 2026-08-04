@@ -7,10 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models.package import Package, UserPackagePurchase
+from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.organization import OrganizationMember
 from app.models.user import User
-from app.schemas.package import PackageOut, UserPackagePurchaseOut, PackagePurchaseBody
+from app.payments import (
+    CheckoutKind,
+    PaymentGateway,
+    PaymentProviderError,
+    get_payment_gateway,
+)
+from app.schemas.package import (
+    PackageOut,
+    PackagePurchaseBody,
+    PackagePurchaseCheckoutOut,
+    UserPackagePurchaseOut,
+)
 
 router = APIRouter(prefix="/packages", tags=["packages"])
 
@@ -37,8 +48,14 @@ async def purchase_package(
     body: PackagePurchaseBody,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    gateway: PaymentGateway = Depends(get_payment_gateway),
 ):
-    """Purchase a package."""
+    """Purchase a package.
+
+    Same Checkout Session + webhook pattern as bookings: the purchase is
+    recorded `pending` and only the `checkout.session.completed` webhook marks
+    it `active`, i.e. makes its hours spendable.
+    """
     result = await db.execute(
         select(Package).where(
             Package.id == package_id,
@@ -76,12 +93,33 @@ async def purchase_package(
         hours_remaining=hours_total,
         purchased_at=now,
         expires_at=expires_at,
+        status=PurchaseStatus.pending,
     )
     db.add(purchase)
     await db.flush()
+
+    try:
+        session = await gateway.create_checkout_session(
+            amount=package.price,
+            description=f"{package.name} — {package.hours}h",
+            kind=CheckoutKind.package_purchase,
+            reference_id=purchase.id,
+            org_id=purchase.org_id,
+        )
+    except PaymentProviderError as exc:
+        # get_db rolls back on the raised exception — no dangling purchase.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not start the payment session",
+        ) from exc
+    purchase.stripe_checkout_session_id = session.id
+    await db.flush()
     await db.refresh(purchase)
 
-    return {"purchase": UserPackagePurchaseOut.model_validate(purchase)}
+    return PackagePurchaseCheckoutOut(
+        purchase=UserPackagePurchaseOut.model_validate(purchase),
+        checkout_url=session.url,
+    )
 
 
 @router.get("/me")

@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase,
   AvailabilitySlot, AdminStats, Membership, User,
+  BookingCheckout, PackagePurchaseCheckout,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -102,8 +103,16 @@ export const bookingsApi = {
   listMine: (api: Api) =>
     api.get<{ bookings: Booking[] }>('/bookings/me').then(r => r.data.bookings.map(normBooking)),
 
-  create: (data: { room_id: string; start_time: string; end_time: string; notes?: string }, api: Api) =>
-    api.post<{ booking: Booking }>('/bookings', data).then(r => normBooking(r.data.booking)),
+  // The booking comes back `pending` with a Stripe Checkout URL — it is the
+  // webhook, not this response, that confirms it.
+  create: (
+    data: { room_id: string; start_time: string; end_time: string; notes?: string; payment_method?: 'hourly' },
+    api: Api,
+  ) =>
+    api.post<BookingCheckout>('/bookings', data).then(r => ({
+      booking: normBooking(r.data.booking),
+      checkout_url: r.data.checkout_url,
+    })),
 
   cancel: (id: string, api: Api) =>
     api.delete(`/bookings/${id}`),
@@ -118,8 +127,11 @@ export const packagesApi = {
     api.get<{ purchases: UserPackagePurchase[] }>('/packages/me').then(r => r.data.purchases.map(normPurchase)),
 
   purchase: (packageId: string, orgId: string, api: Api) =>
-    api.post<{ purchase: UserPackagePurchase }>(`/packages/${packageId}/purchase`, { org_id: orgId })
-      .then(r => normPurchase(r.data.purchase)),
+    api.post<PackagePurchaseCheckout>(`/packages/${packageId}/purchase`, { org_id: orgId })
+      .then(r => ({
+        purchase: normPurchase(r.data.purchase),
+        checkout_url: r.data.checkout_url,
+      })),
 }
 
 // ─── Admin ───────────────────────────────────────────────────────────────

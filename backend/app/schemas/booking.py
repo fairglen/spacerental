@@ -32,6 +32,15 @@ class BookingCreate(BaseModel):
     start_time: datetime
     end_time: datetime
     notes: str | None = None
+    payment_method: PaymentMethod = PaymentMethod.hourly
+
+
+class BookingCheckoutOut(BaseModel):
+    """POST /bookings response: the pending booking plus the Checkout URL the
+    client must send the user to in order to confirm it."""
+
+    booking: BookingOut
+    checkout_url: str
 
 
 class BookingStatusUpdate(BaseModel):

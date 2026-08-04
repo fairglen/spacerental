@@ -13,7 +13,13 @@ from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.space import Room
 from app.models.organization import OrganizationMember
 from app.models.user import User
-from app.schemas.booking import BookingOut, BookingCreate
+from app.payments import (
+    CheckoutKind,
+    PaymentGateway,
+    PaymentProviderError,
+    get_payment_gateway,
+)
+from app.schemas.booking import BookingOut, BookingCreate, BookingCheckoutOut
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
@@ -39,8 +45,22 @@ async def create_booking(
     body: BookingCreate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    gateway: PaymentGateway = Depends(get_payment_gateway),
 ):
-    """Create a new booking. Checks for time overlap before inserting."""
+    """Create a new booking. Checks for time overlap before inserting.
+
+    The booking is created `pending` alongside a Checkout Session; only the
+    `checkout.session.completed` webhook promotes it to `confirmed`. It holds
+    the slot meanwhile — the overlap check counts pending bookings.
+    """
+    if body.payment_method is PaymentMethod.package:
+        # Package redemption has no charge path yet — accepting it here would
+        # hand out free bookings.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Paying with a package is not supported yet",
+        )
+
     # Fetch room
     result = await db.execute(
         select(Room).where(Room.id == body.room_id, Room.is_active == True)  # noqa: E712
@@ -101,7 +121,7 @@ async def create_booking(
         end_time=body.end_time,
         duration_hours=duration_hours,
         total_amount=total_amount,
-        status=BookingStatus.confirmed,
+        status=BookingStatus.pending,
         payment_method=PaymentMethod.hourly,
         notes=body.notes,
     )
@@ -115,6 +135,24 @@ async def create_booking(
             status_code=status.HTTP_409_CONFLICT,
             detail="This time slot is already booked",
         )
+
+    try:
+        session = await gateway.create_checkout_session(
+            amount=total_amount,
+            description=f"{room.name} — {duration_hours}h",
+            kind=CheckoutKind.booking,
+            reference_id=booking.id,
+            org_id=booking.org_id,
+        )
+    except PaymentProviderError as exc:
+        # Nothing is committed: get_db rolls back on the raised exception, so
+        # no unpayable booking is left holding the slot.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not start the payment session",
+        ) from exc
+    booking.stripe_checkout_session_id = session.id
+    await db.flush()
     await db.refresh(booking)
 
     # Load room for response
@@ -125,7 +163,9 @@ async def create_booking(
     )
     booking = result.scalar_one()
 
-    return {"booking": BookingOut.model_validate(booking)}
+    return BookingCheckoutOut(
+        booking=BookingOut.model_validate(booking), checkout_url=session.url
+    )
 
 
 @router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
