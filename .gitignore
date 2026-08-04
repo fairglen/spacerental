@@ -55,3 +55,7 @@ Thumbs.db
 
 # ── Docker ─────────────────────────────────────────────────────
 # (no docker artifacts to ignore by default)
+
+# ── Claude Code ────────────────────────────────────────────────
+.claude/worktrees/
+.claude/settings.local.json
