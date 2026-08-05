@@ -1,7 +1,7 @@
 """stripe checkout session ids and purchase status
 
 Revision ID: 0003_stripe_payments
-Revises: 0002_drop_booking_package_redemption
+Revises: 0002_drop_pkg_redemption
 Create Date: 2026-08-04
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "0003_stripe_payments"
-down_revision = "0002_drop_booking_package_redemption"
+down_revision = "0002_drop_pkg_redemption"
 branch_labels = None
 depends_on = None
 
