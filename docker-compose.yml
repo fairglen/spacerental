@@ -24,6 +24,19 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required — copy .env.example to .env}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       CORS_ORIGINS: http://localhost:3000
+      # Defaults mirror app/config.py so a fresh clone comes up in stub mode
+      # with nothing set. The keys are forwarded empty rather than omitted:
+      # app.payments.validate_payment_settings() treats empty as missing, so
+      # STRIPE_MODE=live without keys still dies at boot instead of silently
+      # running the stub.
+      STRIPE_MODE: ${STRIPE_MODE:-stub}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_CURRENCY: ${STRIPE_CURRENCY:-eur}
+      # Browser redirect targets, so localhost is correct here (CLAUDE.md §6.3
+      # governs container-to-container calls, not URLs handed to the user).
+      STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-http://localhost:3000/dashboard?pagamento=sucesso}
+      STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-http://localhost:3000/dashboard?pagamento=cancelado}
     depends_on:
       db:
         condition: service_healthy

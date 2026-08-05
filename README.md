@@ -61,7 +61,7 @@ Then re-login — the Admin link will appear in the navbar.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # fill in values
+cp ../.env.example .env  # the repo root holds the single env template
 # Start Postgres separately (e.g. via OrbStack or brew)
 uvicorn app.main:app --reload
 ```
