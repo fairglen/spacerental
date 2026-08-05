@@ -53,6 +53,12 @@ Recorded because it was reported as broken: there is **no recurrence code anywhe
 - **Given** a successful `POST /bookings` response carrying `checkout_url`, **when** the mutation succeeds, **then** the browser navigates to that URL instead of silently closing the modal.
 - **Given** `STRIPE_MODE=stub`, **when** I complete the stub checkout flow locally, **then** the booking reaches `confirmed` and appears as such on the dashboard — no Stripe account required (§10.3).
 
+### B6 The booking page still tells users to click, now that dragging works
+`frontend/app/spaces/[id]/page.tsx:78` reads *"Clica num slot disponível (verde) para reservar."* Once B1 lands, dragging across several hours is the primary way to book more than one hour — and nothing on the page says so. Users will keep making one-hour bookings because that is what the instructions describe.
+
+- **Given** the booking page, **when** it renders, **then** the copy explains both interactions: click one hour, or drag across several to book a longer block.
+- Portuguese copy, consistent in tone with the surrounding text (§9). Out of the B1 agent's file fence, so it shipped unchanged.
+
 ### B5 E2E coverage for the real booking shapes
 `frontend/tests/e2e/booking.spec.ts` is a smoke test; none of B1/B2 would have been caught by it. Add Playwright specs for the flows people actually perform. These are the regression net for B1, B2 and B4 — write them so they **fail against today's code**.
 
@@ -80,6 +86,11 @@ The chain describes a path *from* a schema that no longer exists *to* one `creat
 Invisible to CI for the same reason as T1 — `conftest.py` builds tables from `Base.metadata` and never invokes alembic, so 87 passing tests say nothing about this.
 
 Fix is a real piece of work, not a patch: author a genuine baseline migration reflecting current `Base.metadata`, reconcile `0001`–`0003` against it (likely collapsing them), decide whether `init_db()`'s `create_all` should survive at all outside tests, and add a CI job that runs `alembic upgrade head` against an empty database so this can never regress silently. Do **not** paper over it with `IF NOT EXISTS` guards — that hides the divergence instead of fixing it.
+
+### T10 The stub checkout URL is not reachable, so the local payment flow can't be walked in a browser
+`backend/app/payments.py:282` returns `url=f"https://checkout.stripe.stub/{session_id}"`. That hostname does not resolve, so once the frontend follows `checkout_url` (B4), a human clicking through locally lands on a connection error. The E2E suite only gets past it by intercepting the route.
+
+This partially undercuts §10.3: the flow is *automatable* locally but not *walkable* locally, and §10.3 exists so a person can see the thing work on a laptop. Fix by having the stub gateway serve a real local page — a minimal backend-rendered checkout stub with pay/cancel buttons that redirect to `STRIPE_SUCCESS_URL`/`STRIPE_CANCEL_URL` and fire the `checkout.session.completed` webhook. Then E2E needs no interception either, which makes the test closer to the real thing.
 
 ### T9 `RATE_LIMIT_*` settings are not forwarded to the compose stack
 Same class of drift as T5, found while fixing it. `backend/app/config.py` declares six `RATE_LIMIT_*` settings; `docker-compose.yml` forwards **zero** of them, so tuning any of them in `.env` has no effect on the dev stack — including `RATE_LIMIT_ENABLED` and `RATE_LIMIT_TRUST_FORWARDED_FOR`, the one you must flip when deploying behind a real proxy.
