@@ -81,6 +81,13 @@ Invisible to CI for the same reason as T1 — `conftest.py` builds tables from `
 
 Fix is a real piece of work, not a patch: author a genuine baseline migration reflecting current `Base.metadata`, reconcile `0001`–`0003` against it (likely collapsing them), decide whether `init_db()`'s `create_all` should survive at all outside tests, and add a CI job that runs `alembic upgrade head` against an empty database so this can never regress silently. Do **not** paper over it with `IF NOT EXISTS` guards — that hides the divergence instead of fixing it.
 
+### T9 `RATE_LIMIT_*` settings are not forwarded to the compose stack
+Same class of drift as T5, found while fixing it. `backend/app/config.py` declares six `RATE_LIMIT_*` settings; `docker-compose.yml` forwards **zero** of them, so tuning any of them in `.env` has no effect on the dev stack — including `RATE_LIMIT_ENABLED` and `RATE_LIMIT_TRUST_FORWARDED_FOR`, the one you must flip when deploying behind a real proxy.
+
+Deliberately left out of the T5 PR rather than ridden along on it. Fix is the same shape: add them to the `backend` service's `environment:` block with defaults mirroring `config.py`, and document them in the root `.env.example`.
+
+Worth generalizing while you're there: every time a setting is added to `config.py`, compose has to be updated by hand or it silently doesn't apply. A test asserting that every `Settings` field appears in `docker-compose.yml` would close the class of bug rather than this instance of it.
+
 ### T1 Alembic migration `0002` can never be applied — **blocker**
 `revision = "0002_drop_booking_package_redemption"` is 36 characters; alembic's `version_num` column is `varchar(32)`. Stamping raises `StringDataRightTruncationError`, so **migrations cannot run against a real database at all.** Found while building Epic 2, left alone because it was outside that PR's file fence. Fix: shorten the id (e.g. `0002_drop_pkg_redemption`) and update the `down_revision` of `0003_stripe_payments` to match. Verify with a real `upgrade → downgrade → upgrade` against a throwaway PG16, since the test suite creates tables via `Base.metadata` and never exercises alembic.
 
