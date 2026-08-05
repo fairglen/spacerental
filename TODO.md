@@ -68,6 +68,19 @@ Recorded because it was reported as broken: there is **no recurrence code anywhe
 
 Known-and-accepted shortcuts. Each names why it was deferred, so the next person isn't re-deriving it.
 
+### T8 Alembic and `Base.metadata.create_all` are two competing sources of schema truth — **blocker**
+Discovered while proving T1. The revision-id fix in T1 is real, but it does not make migrations work: **`alembic upgrade head` cannot succeed against any database, empty or existing.** Verified against a throwaway PostgreSQL 16 — every migration in the chain fails independently:
+
+- **There is no baseline migration.** `0001` calls `create_index` and `op.execute` but never `create_table`. Tables are only ever created by `Base.metadata.create_all` in `database.py:42`, invoked from `main.py` startup. On an empty database `alembic upgrade head` dies at `0001` with `UndefinedTableError: relation "bookings" does not exist`.
+- **`0001` duplicates what `create_all` already did.** Against an `init_db()`-built schema it dies with `DuplicateTableError: relation "ix_bookings_room_id_start_time" already exists` — `create_all` creates the same four indexes.
+- **`0002` and `0003` target a schema state the models no longer have.** `0002` fails with `UndefinedColumnError` on `bookings.package_redemption_id` (dropped from the models, so `create_all` never makes it); `0003` fails with `DuplicateColumnError` on `stripe_checkout_session_id` (already created by `create_all`).
+
+The chain describes a path *from* a schema that no longer exists *to* one `create_all` already produces. Consequence: the app cannot be deployed with a migration-based workflow at all, and any environment where you can't drop and recreate the database is unreachable.
+
+Invisible to CI for the same reason as T1 — `conftest.py` builds tables from `Base.metadata` and never invokes alembic, so 87 passing tests say nothing about this.
+
+Fix is a real piece of work, not a patch: author a genuine baseline migration reflecting current `Base.metadata`, reconcile `0001`–`0003` against it (likely collapsing them), decide whether `init_db()`'s `create_all` should survive at all outside tests, and add a CI job that runs `alembic upgrade head` against an empty database so this can never regress silently. Do **not** paper over it with `IF NOT EXISTS` guards — that hides the divergence instead of fixing it.
+
 ### T1 Alembic migration `0002` can never be applied — **blocker**
 `revision = "0002_drop_booking_package_redemption"` is 36 characters; alembic's `version_num` column is `varchar(32)`. Stamping raises `StringDataRightTruncationError`, so **migrations cannot run against a real database at all.** Found while building Epic 2, left alone because it was outside that PR's file fence. Fix: shorten the id (e.g. `0002_drop_pkg_redemption`) and update the `down_revision` of `0003_stripe_payments` to match. Verify with a real `upgrade → downgrade → upgrade` against a throwaway PG16, since the test suite creates tables via `Base.metadata` and never exercises alembic.
 
