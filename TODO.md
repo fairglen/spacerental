@@ -53,6 +53,12 @@ Recorded because it was reported as broken: there is **no recurrence code anywhe
 - **Given** a successful `POST /bookings` response carrying `checkout_url`, **when** the mutation succeeds, **then** the browser navigates to that URL instead of silently closing the modal.
 - **Given** `STRIPE_MODE=stub`, **when** I complete the stub checkout flow locally, **then** the booking reaches `confirmed` and appears as such on the dashboard — no Stripe account required (§10.3).
 
+### B6 The booking page still tells users to click, now that dragging works
+`frontend/app/spaces/[id]/page.tsx:78` reads *"Clica num slot disponível (verde) para reservar."* Once B1 lands, dragging across several hours is the primary way to book more than one hour — and nothing on the page says so. Users will keep making one-hour bookings because that is what the instructions describe.
+
+- **Given** the booking page, **when** it renders, **then** the copy explains both interactions: click one hour, or drag across several to book a longer block.
+- Portuguese copy, consistent in tone with the surrounding text (§9). Out of the B1 agent's file fence, so it shipped unchanged.
+
 ### B5 E2E coverage for the real booking shapes
 `frontend/tests/e2e/booking.spec.ts` is a smoke test; none of B1/B2 would have been caught by it. Add Playwright specs for the flows people actually perform. These are the regression net for B1, B2 and B4 — write them so they **fail against today's code**.
 
@@ -67,6 +73,31 @@ Recorded because it was reported as broken: there is **no recurrence code anywhe
 ## Tech Debt
 
 Known-and-accepted shortcuts. Each names why it was deferred, so the next person isn't re-deriving it.
+
+### T8 Alembic and `Base.metadata.create_all` are two competing sources of schema truth — **blocker**
+Discovered while proving T1. The revision-id fix in T1 is real, but it does not make migrations work: **`alembic upgrade head` cannot succeed against any database, empty or existing.** Verified against a throwaway PostgreSQL 16 — every migration in the chain fails independently:
+
+- **There is no baseline migration.** `0001` calls `create_index` and `op.execute` but never `create_table`. Tables are only ever created by `Base.metadata.create_all` in `database.py:42`, invoked from `main.py` startup. On an empty database `alembic upgrade head` dies at `0001` with `UndefinedTableError: relation "bookings" does not exist`.
+- **`0001` duplicates what `create_all` already did.** Against an `init_db()`-built schema it dies with `DuplicateTableError: relation "ix_bookings_room_id_start_time" already exists` — `create_all` creates the same four indexes.
+- **`0002` and `0003` target a schema state the models no longer have.** `0002` fails with `UndefinedColumnError` on `bookings.package_redemption_id` (dropped from the models, so `create_all` never makes it); `0003` fails with `DuplicateColumnError` on `stripe_checkout_session_id` (already created by `create_all`).
+
+The chain describes a path *from* a schema that no longer exists *to* one `create_all` already produces. Consequence: the app cannot be deployed with a migration-based workflow at all, and any environment where you can't drop and recreate the database is unreachable.
+
+Invisible to CI for the same reason as T1 — `conftest.py` builds tables from `Base.metadata` and never invokes alembic, so 87 passing tests say nothing about this.
+
+Fix is a real piece of work, not a patch: author a genuine baseline migration reflecting current `Base.metadata`, reconcile `0001`–`0003` against it (likely collapsing them), decide whether `init_db()`'s `create_all` should survive at all outside tests, and add a CI job that runs `alembic upgrade head` against an empty database so this can never regress silently. Do **not** paper over it with `IF NOT EXISTS` guards — that hides the divergence instead of fixing it.
+
+### T10 The stub checkout URL is not reachable, so the local payment flow can't be walked in a browser
+`backend/app/payments.py:282` returns `url=f"https://checkout.stripe.stub/{session_id}"`. That hostname does not resolve, so once the frontend follows `checkout_url` (B4), a human clicking through locally lands on a connection error. The E2E suite only gets past it by intercepting the route.
+
+This partially undercuts §10.3: the flow is *automatable* locally but not *walkable* locally, and §10.3 exists so a person can see the thing work on a laptop. Fix by having the stub gateway serve a real local page — a minimal backend-rendered checkout stub with pay/cancel buttons that redirect to `STRIPE_SUCCESS_URL`/`STRIPE_CANCEL_URL` and fire the `checkout.session.completed` webhook. Then E2E needs no interception either, which makes the test closer to the real thing.
+
+### T9 `RATE_LIMIT_*` settings are not forwarded to the compose stack
+Same class of drift as T5, found while fixing it. `backend/app/config.py` declares six `RATE_LIMIT_*` settings; `docker-compose.yml` forwards **zero** of them, so tuning any of them in `.env` has no effect on the dev stack — including `RATE_LIMIT_ENABLED` and `RATE_LIMIT_TRUST_FORWARDED_FOR`, the one you must flip when deploying behind a real proxy.
+
+Deliberately left out of the T5 PR rather than ridden along on it. Fix is the same shape: add them to the `backend` service's `environment:` block with defaults mirroring `config.py`, and document them in the root `.env.example`.
+
+Worth generalizing while you're there: every time a setting is added to `config.py`, compose has to be updated by hand or it silently doesn't apply. A test asserting that every `Settings` field appears in `docker-compose.yml` would close the class of bug rather than this instance of it.
 
 ### T1 Alembic migration `0002` can never be applied — **blocker**
 `revision = "0002_drop_booking_package_redemption"` is 36 characters; alembic's `version_num` column is `varchar(32)`. Stamping raises `StringDataRightTruncationError`, so **migrations cannot run against a real database at all.** Found while building Epic 2, left alone because it was outside that PR's file fence. Fix: shorten the id (e.g. `0002_drop_pkg_redemption`) and update the `down_revision` of `0003_stripe_payments` to match. Verify with a real `upgrade → downgrade → upgrade` against a throwaway PG16, since the test suite creates tables via `Base.metadata` and never exercises alembic.
