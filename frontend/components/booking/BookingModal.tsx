@@ -19,6 +19,24 @@ interface BookingModalProps {
   onClose: () => void
 }
 
+/**
+ * HTTP status of a failed request, without importing axios into a component
+ * (§9 keeps API concerns in lib/api.ts). Undefined for network-level failures.
+ */
+function statusOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return undefined
+  const response = (error as { response?: unknown }).response
+  if (typeof response !== 'object' || response === null || !('status' in response)) return undefined
+  const status = (response as { status?: unknown }).status
+  return typeof status === 'number' ? status : undefined
+}
+
+function errorMessage(error: unknown): string {
+  return statusOf(error) === 409
+    ? 'Este horário já está reservado. Escolhe outro intervalo no calendário.'
+    : 'Erro ao criar reserva. Tenta novamente.'
+}
+
 export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   const { data: session, status } = useSession()
   const queryClient = useQueryClient()
@@ -27,19 +45,25 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   const total = room ? duration * room.hourly_rate : 0
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!room || !start || !end) throw new Error('Missing data')
       const api = createAuthenticatedApi(session?.accessToken)
-      return bookingsApi.create({
+      const result = await bookingsApi.create({
         room_id: room.id,
         start_time: start.toISOString(),
         end_time: end.toISOString(),
       }, api)
+      // Without a Checkout URL the booking is stranded at "Pendente" with no way
+      // to pay for it — surface that instead of closing on a dead end.
+      if (!result.checkout_url) throw new Error('Booking created without a checkout_url')
+      return result
     },
-    onSuccess: () => {
+    onSuccess: ({ checkout_url }) => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['availability'] })
-      onClose()
+      // Payment confirms the booking (the Stripe webhook flips it to
+      // `confirmed`), so the flow continues at Checkout, not back on the page.
+      window.location.assign(checkout_url)
     },
   })
 
@@ -85,8 +109,8 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
             </p>
           )}
           {mutation.isError && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
-              Erro ao criar reserva. Tenta novamente.
+            <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              {errorMessage(mutation.error)}
             </p>
           )}
         </div>
