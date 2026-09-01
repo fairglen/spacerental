@@ -75,7 +75,7 @@ export default function SpacePage({ params }: { params: { id: string } }) {
                 Disponibilidade — {calendarRoom.name}
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Clica num slot verde para uma hora ou arrasta para vários. Na vista Mês, clica num dia para ver os horários.
+                Clica num slot verde para reservar uma hora ou arrasta por vários slots para reservar várias horas. Na vista Mês, clica num dia para ver os horários disponíveis.
               </p>
               <BookingCalendar room={calendarRoom} onSlotSelect={handleSlotSelect} />
             </div>
