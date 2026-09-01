@@ -114,6 +114,10 @@ before uvicorn starts, so `docker-compose up` on a fresh clone comes up
 migrated. Only `backend/tests/conftest.py` builds tables straight from
 `Base.metadata`, because each test wants a throwaway schema in milliseconds.
 
+If you already have a local `pgdata` volume from before this change, it likely
+contains tables but no `alembic_version`, so `alembic upgrade head` will fail at
+boot. The simplest fix is to recreate the DB with `docker-compose down -v`; if
+you need to keep the data and the schema matches, run `docker-compose exec backend alembic stamp head` once.
 After changing a model:
 
 ```bash
