@@ -43,7 +43,7 @@ Creates: 1 space (Espaço Calmo, Lisboa), 3 rooms at €11/h, 2 packages, and a 
 ### 4. Register your own user
 Visit http://localhost:3000/sign-up — any email/password (min 8 chars) works locally.
 
-To promote an existing user to admin:
+To promote an existing user to admin (owner by default):
 ```bash
 docker-compose exec backend python -m app.promote_admin YOUR_EMAIL
 ```
