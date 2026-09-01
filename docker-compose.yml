@@ -24,6 +24,13 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required — copy .env.example to .env}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       CORS_ORIGINS: http://localhost:3000
+      # ── Rate limiting (in-process, per client IP) ────────────────────────
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_AUTH_MAX_REQUESTS: ${RATE_LIMIT_AUTH_MAX_REQUESTS:-10}
+      RATE_LIMIT_AUTH_WINDOW_SECONDS: ${RATE_LIMIT_AUTH_WINDOW_SECONDS:-60}
+      RATE_LIMIT_PUBLIC_MAX_REQUESTS: ${RATE_LIMIT_PUBLIC_MAX_REQUESTS:-120}
+      RATE_LIMIT_PUBLIC_WINDOW_SECONDS: ${RATE_LIMIT_PUBLIC_WINDOW_SECONDS:-60}
+      RATE_LIMIT_TRUST_FORWARDED_FOR: ${RATE_LIMIT_TRUST_FORWARDED_FOR:-false}
       # Defaults mirror app/config.py so a fresh clone comes up in stub mode
       # with nothing set. The keys are forwarded empty rather than omitted:
       # app.payments.validate_payment_settings() treats empty as missing, so
