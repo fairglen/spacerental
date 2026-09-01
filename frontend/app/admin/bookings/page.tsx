@@ -6,6 +6,7 @@ import { pt } from 'date-fns/locale'
 import { Check, X } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
+import { useOrg } from '@/contexts/OrgContext'
 import { formatCurrency, STATUS_COLORS, STATUS_LABELS } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,12 +16,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 export default function AdminBookingsPage() {
   const { data: session } = useSession()
   const api = useApi()
+  const { currentOrgId } = useOrg()
   const qc = useQueryClient()
 
   const { data: bookings, isLoading } = useQuery({
-    queryKey: ['admin', 'bookings', 'all'],
+    queryKey: ['admin', 'bookings', 'all', currentOrgId],
     queryFn: () => adminApi.getBookings({}, api),
-    enabled: !!session?.accessToken,
+    enabled: !!session?.accessToken && !!currentOrgId,
   })
   const updateMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => adminApi.updateBooking(id, status, api),

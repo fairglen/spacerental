@@ -23,7 +23,7 @@ from app.schemas.space import (
     AvailabilityRuleOut,
 )
 from app.schemas.booking import BookingOut, BookingStatusUpdate
-from app.schemas.package import PackageOut, PackageCreate
+from app.schemas.package import PackageOut, PackageCreate, PackageUpdate
 from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -221,6 +221,30 @@ async def admin_update_room(
     return {"room": RoomOut.model_validate(room)}
 
 
+@router.get("/rooms/{room_id}/availability")
+async def admin_get_availability(
+    room_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Current availability rules for a room, for pre-filling the admin edit form."""
+    result = await db.execute(
+        select(Room).where(Room.id == room_id, Room.org_id == org_id)
+    )
+    room = result.scalar_one_or_none()
+    if room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+
+    rules_result = await db.execute(
+        select(AvailabilityRule)
+        .where(AvailabilityRule.room_id == room_id)
+        .order_by(AvailabilityRule.day_of_week)
+    )
+    rules = rules_result.scalars().all()
+    return {"rules": [AvailabilityRuleOut.model_validate(r) for r in rules]}
+
+
 @router.post("/rooms/{room_id}/availability")
 async def admin_set_availability(
     room_id: uuid.UUID,
@@ -367,6 +391,30 @@ async def admin_create_package(
         validity_days=body.validity_days,
     )
     db.add(package)
+    await db.flush()
+    await db.refresh(package)
+    return {"package": PackageOut.model_validate(package)}
+
+
+@router.put("/packages/{package_id}")
+async def admin_update_package(
+    package_id: uuid.UUID,
+    body: PackageUpdate,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Edit a package's price/hours/validity, or soft-deactivate it via is_active=false."""
+    result = await db.execute(
+        select(Package).where(Package.id == package_id, Package.org_id == org_id)
+    )
+    package = result.scalar_one_or_none()
+    if package is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Package not found")
+
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(package, field, value)
+
     await db.flush()
     await db.refresh(package)
     return {"package": PackageOut.model_validate(package)}

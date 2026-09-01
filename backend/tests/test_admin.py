@@ -1,9 +1,11 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember, MemberRole
+from app.models.package import Package
 from app.models.user import User
 
 
@@ -173,6 +175,124 @@ class TestAdminPackages:
         assert body["package"]["name"] == "10-hour pack"
         assert body["package"]["hours"] == 10
         assert body["package"]["validity_days"] == 180
+
+    async def test_admin_update_package(self, client, admin_headers, db_session, test_org):
+        package = Package(
+            org_id=test_org.id,
+            name="5-hour pack",
+            hours=5,
+            price=Decimal("50.00"),
+            validity_days=90,
+        )
+        db_session.add(package)
+        await db_session.commit()
+        await db_session.refresh(package)
+
+        resp = await client.put(
+            f"/api/v1/admin/packages/{package.id}",
+            params={"org_id": str(test_org.id)},
+            json={"price": "45.00", "is_active": False},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()["package"]
+        assert Decimal(body["price"]) == Decimal("45.00")
+        assert body["is_active"] is False
+        # Untouched fields survive a partial update.
+        assert body["hours"] == 5
+        assert body["name"] == "5-hour pack"
+
+    async def test_admin_update_package_not_found(self, client, admin_headers, test_org):
+        resp = await client.put(
+            f"/api/v1/admin/packages/{uuid.uuid4()}",
+            params={"org_id": str(test_org.id)},
+            json={"is_active": False},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 404
+
+    async def test_admin_update_package_requires_admin_role(
+        self, client, auth_headers, db_session, test_org
+    ):
+        package = Package(
+            org_id=test_org.id,
+            name="5-hour pack",
+            hours=5,
+            price=Decimal("50.00"),
+            validity_days=90,
+        )
+        db_session.add(package)
+        await db_session.commit()
+        await db_session.refresh(package)
+
+        resp = await client.put(
+            f"/api/v1/admin/packages/{package.id}",
+            params={"org_id": str(test_org.id)},
+            json={"is_active": False},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+
+class TestAdminAvailability:
+    async def test_admin_get_availability_rules(
+        self, client, admin_headers, test_org, test_room
+    ):
+        # test_room fixture seeds Mon-Sat 08:00-20:00 (6 rules, Sunday closed).
+        resp = await client.get(
+            f"/api/v1/admin/rooms/{test_room.id}/availability",
+            params={"org_id": str(test_org.id)},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        rules = resp.json()["rules"]
+        assert len(rules) == 6
+        assert {r["day_of_week"] for r in rules} == set(range(6))
+        assert all(r["open_time"] == "08:00:00" for r in rules)
+
+    async def test_admin_get_availability_rules_room_not_found(
+        self, client, admin_headers, test_org
+    ):
+        resp = await client.get(
+            f"/api/v1/admin/rooms/{uuid.uuid4()}/availability",
+            params={"org_id": str(test_org.id)},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 404
+
+    async def test_admin_set_availability_replaces_all_rules(
+        self, client, admin_headers, test_org, test_room
+    ):
+        resp = await client.post(
+            f"/api/v1/admin/rooms/{test_room.id}/availability",
+            params={"org_id": str(test_org.id)},
+            json={"rules": [{"day_of_week": 0, "open_time": "09:00:00", "close_time": "18:00:00"}]},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        rules = resp.json()["rules"]
+        assert len(rules) == 1
+        assert rules[0]["day_of_week"] == 0
+        assert rules[0]["open_time"] == "09:00:00"
+
+        # The replace-all semantics: the previously-seeded Tue-Sat rules are gone.
+        follow_up = await client.get(
+            f"/api/v1/admin/rooms/{test_room.id}/availability",
+            params={"org_id": str(test_org.id)},
+            headers=admin_headers,
+        )
+        assert len(follow_up.json()["rules"]) == 1
+
+    async def test_admin_set_availability_requires_admin_role(
+        self, client, auth_headers, test_org, test_room
+    ):
+        resp = await client.post(
+            f"/api/v1/admin/rooms/{test_room.id}/availability",
+            params={"org_id": str(test_org.id)},
+            json={"rules": []},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 403
 
 
 class TestAdminAccessControl:

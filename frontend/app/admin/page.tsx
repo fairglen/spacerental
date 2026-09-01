@@ -7,6 +7,7 @@ import { pt } from 'date-fns/locale'
 import { BarChart3, Euro, Building2, Users, Plus } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
+import { useOrg } from '@/contexts/OrgContext'
 import { formatCurrency, STATUS_COLORS, STATUS_LABELS } from '@/lib/utils'
 import { StatsCard } from '@/components/admin/StatsCard'
 import { Button } from '@/components/ui/button'
@@ -17,16 +18,17 @@ import { Skeleton } from '@/components/ui/skeleton'
 export default function AdminDashboard() {
   const { data: session } = useSession()
   const api = useApi()
+  const { currentOrgId } = useOrg()
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['admin', 'dashboard'],
+    queryKey: ['admin', 'dashboard', currentOrgId],
     queryFn: () => adminApi.getDashboard(api),
-    enabled: !!session?.accessToken,
+    enabled: !!session?.accessToken && !!currentOrgId,
   })
   const { data: bookings, isLoading: bookingsLoading } = useQuery({
-    queryKey: ['admin', 'bookings'],
+    queryKey: ['admin', 'bookings', currentOrgId],
     queryFn: () => adminApi.getBookings({}, api),
-    enabled: !!session?.accessToken,
+    enabled: !!session?.accessToken && !!currentOrgId,
   })
 
   return (
