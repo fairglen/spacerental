@@ -1,5 +1,11 @@
 name: Frontend Tests
 
+# NOTE: Path filters on pull_request mean this check is absent (not skipped) on backend-only PRs.
+# This is intentional and safe — backend-only changes don't need frontend tests to run.
+# If this workflow is ever added as a required status check in branch protection,
+# the absence won't block merge because GitHub doesn't require checks that don't run.
+# See TODO.md T4 for context.
+
 on:
   push:
     branches: [main]
