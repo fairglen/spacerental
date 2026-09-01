@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { bookingsApi, createAuthenticatedApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
+import { statusOf } from '@/lib/httpError'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -17,18 +18,6 @@ interface BookingModalProps {
   start: Date | null
   end: Date | null
   onClose: () => void
-}
-
-/**
- * HTTP status of a failed request, without importing axios into a component
- * (§9 keeps API concerns in lib/api.ts). Undefined for network-level failures.
- */
-function statusOf(error: unknown): number | undefined {
-  if (typeof error !== 'object' || error === null || !('response' in error)) return undefined
-  const response = (error as { response?: unknown }).response
-  if (typeof response !== 'object' || response === null || !('status' in response)) return undefined
-  const status = (response as { status?: unknown }).status
-  return typeof status === 'number' ? status : undefined
 }
 
 function errorMessage(error: unknown): string {

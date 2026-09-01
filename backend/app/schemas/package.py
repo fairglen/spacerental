@@ -47,6 +47,10 @@ class UserPackagePurchaseOut(BaseModel):
     status: PurchaseStatus
     purchased_at: datetime
     expires_at: datetime
+    # Callers (the dashboard, B12) show the package name next to the balance —
+    # without this the frontend has nothing to render but a generic "Pacote".
+    # Requires the router to eager-load `.package` (it's `lazy="noload"`).
+    package: PackageOut
 
 
 class PackagePurchaseBody(BaseModel):
