@@ -1,12 +1,16 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import email
 from app.database import get_db
+from app.email import EmailGateway, get_email_gateway
 from app.models.booking import Booking, BookingStatus
 from app.models.package import PurchaseStatus, UserPackagePurchase
+from app.models.space import Room
 from app.payments import (
     CheckoutKind,
     CheckoutSessionInfo,
@@ -32,10 +36,18 @@ def _required_uuid(raw: str | None, field: str) -> uuid.UUID:
 
 
 async def _confirm_booking(
-    db: AsyncSession, *, booking_id: uuid.UUID, org_id: uuid.UUID, session_id: str
+    db: AsyncSession,
+    *,
+    booking_id: uuid.UUID,
+    org_id: uuid.UUID,
+    session_id: str,
+    background_tasks: BackgroundTasks,
+    email_gateway: EmailGateway,
 ) -> bool:
     result = await db.execute(
-        select(Booking).where(
+        select(Booking)
+        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .where(
             Booking.id == booking_id,
             Booking.org_id == org_id,
             Booking.stripe_checkout_session_id == session_id,
@@ -45,6 +57,18 @@ async def _confirm_booking(
     if booking is None or booking.status is not BookingStatus.pending:
         return False
     booking.status = BookingStatus.confirmed
+
+    email.enqueue_email(
+        background_tasks,
+        email_gateway,
+        email.booking_confirmation_email(
+            to=booking.user.email,
+            space_name=booking.room.space.name,
+            room_name=booking.room.name,
+            start_time=booking.start_time,
+            end_time=booking.end_time,
+        ),
+    )
     return True
 
 
@@ -65,7 +89,13 @@ async def _activate_purchase(
     return True
 
 
-async def _apply_checkout_completion(db: AsyncSession, session: CheckoutSessionInfo) -> bool:
+async def _apply_checkout_completion(
+    db: AsyncSession,
+    session: CheckoutSessionInfo,
+    *,
+    background_tasks: BackgroundTasks,
+    email_gateway: EmailGateway,
+) -> bool:
     # Async payment methods complete the session before the money lands.
     if session.payment_status != "paid":
         return False
@@ -83,7 +113,12 @@ async def _apply_checkout_completion(db: AsyncSession, session: CheckoutSessionI
 
     if session.kind == CheckoutKind.booking.value:
         return await _confirm_booking(
-            db, booking_id=reference_id, org_id=org_id, session_id=session.id
+            db,
+            booking_id=reference_id,
+            org_id=org_id,
+            session_id=session.id,
+            background_tasks=background_tasks,
+            email_gateway=email_gateway,
         )
     return await _activate_purchase(
         db, purchase_id=reference_id, org_id=org_id, session_id=session.id
@@ -93,8 +128,10 @@ async def _apply_checkout_completion(db: AsyncSession, session: CheckoutSessionI
 @router.post("/stripe")
 async def stripe_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     gateway: PaymentGateway = Depends(get_payment_gateway),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
 ):
     """Payment provider event sink.
 
@@ -122,5 +159,10 @@ async def stripe_webhook(
     if event.type != CHECKOUT_COMPLETED or event.checkout_session is None:
         return {"received": True, "handled": False}
 
-    handled = await _apply_checkout_completion(db, event.checkout_session)
+    handled = await _apply_checkout_completion(
+        db,
+        event.checkout_session,
+        background_tasks=background_tasks,
+        email_gateway=email_gateway,
+    )
     return {"received": True, "handled": handled}

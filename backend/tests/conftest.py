@@ -34,6 +34,7 @@ from app.payments import (  # noqa: E402
     StubPaymentGateway,
     get_payment_gateway,
 )
+from app.email import StubEmailGateway, get_email_gateway  # noqa: E402
 
 TEST_STRIPE_WEBHOOK_SECRET = "whsec_test_not_a_real_secret"
 
@@ -178,6 +179,20 @@ async def payments(client) -> StubPaymentGateway:
     app.dependency_overrides[get_payment_gateway] = lambda: gateway
     yield gateway
     app.dependency_overrides.pop(get_payment_gateway, None)
+
+
+@pytest_asyncio.fixture
+async def emails(client) -> StubEmailGateway:
+    """The stub email gateway the app under test will use.
+
+    Same StubEmailGateway that EMAIL_MODE=stub serves in dev — `.sent` is the
+    observable side effect tests assert against instead of a Resend
+    dashboard. No network, no credentials required to run the suite.
+    """
+    gateway = StubEmailGateway()
+    app.dependency_overrides[get_email_gateway] = lambda: gateway
+    yield gateway
+    app.dependency_overrides.pop(get_email_gateway, None)
 
 
 @pytest_asyncio.fixture
