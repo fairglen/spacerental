@@ -103,15 +103,20 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
   async function openAvailability(room: Room) {
     setAvailabilityRoom(room)
     setDayRows(defaultDayRows())
-    const rules = await adminApi.getAvailability(room.id, api)
-    setDayRows(
-      DAYS.map(({ day_of_week }) => {
-        const rule = rules.find((r) => r.day_of_week === day_of_week)
-        return rule
-          ? { enabled: true, open_time: rule.open_time.slice(0, 5), close_time: rule.close_time.slice(0, 5) }
-          : { enabled: false, open_time: '09:00', close_time: '18:00' }
-      }),
-    )
+    try {
+      const rules = await adminApi.getAvailability(room.id, api)
+      setDayRows(
+        DAYS.map(({ day_of_week }) => {
+          const rule = rules.find((r) => r.day_of_week === day_of_week)
+          return rule
+            ? { enabled: true, open_time: rule.open_time.slice(0, 5), close_time: rule.close_time.slice(0, 5) }
+            : { enabled: false, open_time: '09:00', close_time: '18:00' }
+        }),
+      )
+    } catch (err) {
+      console.error('Failed to load availability rules', err)
+      setAvailabilityRoom(null)
+    }
   }
 
   function updateDayRow(index: number, patch: Partial<DayRow>) {
