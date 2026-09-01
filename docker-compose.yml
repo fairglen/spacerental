@@ -44,6 +44,14 @@ services:
       # governs container-to-container calls, not URLs handed to the user).
       STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-http://localhost:3000/dashboard?pagamento=sucesso}
       STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-http://localhost:3000/dashboard?pagamento=cancelado}
+      # Same stub/live shape as Stripe above: stub (default) just logs the
+      # email and requires nothing; live calls Resend and RESEND_API_KEY
+      # becomes mandatory — app.email.validate_email_settings() dies at boot
+      # without it rather than silently running the stub.
+      EMAIL_MODE: ${EMAIL_MODE:-stub}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-EspaçoHora <no-reply@espacohora.pt>}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy

@@ -1,13 +1,15 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, and_, distinct
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import email
 from app.auth import require_admin
 from app.database import get_db
+from app.email import EmailGateway, get_email_gateway
 from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus
 from app.models.package import Package
@@ -323,20 +325,55 @@ async def admin_list_bookings(
 async def admin_update_booking(
     booking_id: uuid.UUID,
     body: BookingStatusUpdate,
+    background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
 ):
     result = await db.execute(
-        select(Booking).where(Booking.id == booking_id, Booking.org_id == org_id)
+        select(Booking)
+        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .where(Booking.id == booking_id, Booking.org_id == org_id)
     )
     booking = result.scalar_one_or_none()
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
+    # Captured before the status mutation and the refresh below expire the
+    # relationships — app.email has no DB session and cannot lazy-load them.
+    previous_status = booking.status
+    recipient_email = booking.user.email
+    space_name = booking.room.space.name
+    room_name = booking.room.name
+    start_time = booking.start_time
+    end_time = booking.end_time
+
     booking.status = body.status
     await db.flush()
     await db.refresh(booking)
+
+    if body.status != previous_status and body.status in (
+        BookingStatus.confirmed,
+        BookingStatus.cancelled,
+    ):
+        build_message = (
+            email.booking_confirmation_email
+            if body.status == BookingStatus.confirmed
+            else email.booking_cancellation_email
+        )
+        email.enqueue_email(
+            background_tasks,
+            email_gateway,
+            build_message(
+                to=recipient_email,
+                space_name=space_name,
+                room_name=room_name,
+                start_time=start_time,
+                end_time=end_time,
+            ),
+        )
+
     return {"booking": BookingOut.model_validate(booking)}
 
 

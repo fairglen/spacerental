@@ -34,6 +34,20 @@ class Settings(BaseSettings):
     STRIPE_SUCCESS_URL: str = "http://localhost:3000/dashboard?pagamento=sucesso"
     STRIPE_CANCEL_URL: str = "http://localhost:3000/dashboard?pagamento=cancelado"
 
+    # ── Email ────────────────────────────────────────────────────────────
+    # "stub" (default) records what would be sent (log + in-memory list) with
+    # no account, no credentials, no network; "live" calls the real Resend
+    # API and RESEND_API_KEY then becomes mandatory —
+    # app.email.validate_email_settings() raises at import rather than
+    # letting the stub run in production.
+    EMAIL_MODE: str = "stub"
+    RESEND_API_KEY: str | None = None
+    EMAIL_FROM_ADDRESS: str = "EspaçoHora <no-reply@espacohora.pt>"
+    # Base URL used to build links inside outgoing emails (e.g. "cancel this
+    # booking"). This is handed to the user's mail client, so localhost is
+    # correct here — unlike backend-to-backend calls (CLAUDE.md §6.3).
+    FRONTEND_URL: str = "http://localhost:3000"
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]

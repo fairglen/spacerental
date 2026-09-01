@@ -1,14 +1,16 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select, and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import email
 from app.auth import get_current_user
 from app.database import get_db
+from app.email import EmailGateway, get_email_gateway
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.space import Room
 from app.models.organization import OrganizationMember
@@ -171,12 +173,16 @@ async def create_booking(
 @router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_booking(
     booking_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
 ):
     """Cancel own booking if start_time is more than 24h in the future."""
     result = await db.execute(
-        select(Booking).where(Booking.id == booking_id)
+        select(Booking)
+        .options(selectinload(Booking.room).selectinload(Room.space))
+        .where(Booking.id == booking_id)
     )
     booking = result.scalar_one_or_none()
 
@@ -204,3 +210,15 @@ async def cancel_booking(
         )
 
     booking.status = BookingStatus.cancelled
+
+    email.enqueue_email(
+        background_tasks,
+        email_gateway,
+        email.booking_cancellation_email(
+            to=user.email,
+            space_name=booking.room.space.name,
+            room_name=booking.room.name,
+            start_time=booking.start_time,
+            end_time=booking.end_time,
+        ),
+    )
