@@ -187,24 +187,24 @@ def booking_confirmation_email(
         "Pode cancelar esta reserva (até 24 horas antes do início) em:\n"
         f"{cancel_url}\n"
     )
-        from html import escape
+    from html import escape
 
-        safe_space_name = escape(space_name)
-        safe_room_name = escape(room_name)
-        safe_date_str = escape(date_str)
-        safe_time_str = escape(time_str)
-        safe_cancel_url = escape(cancel_url, quote=True)
+    safe_space_name = escape(space_name)
+    safe_room_name = escape(room_name)
+    safe_date_str = escape(date_str)
+    safe_time_str = escape(time_str)
+    safe_cancel_url = escape(cancel_url, quote=True)
 
-        html_body = (
-            "<p>A sua reserva foi confirmada!</p>"
-            "<ul>"
-            f"<li><strong>Espaço:</strong> {safe_space_name}</li>"
-            f"<li><strong>Sala:</strong> {safe_room_name}</li>"
-            f"<li><strong>Data:</strong> {safe_date_str}</li>"
-            f"<li><strong>Horário:</strong> {safe_time_str}</li>"
-            "</ul>"
-            f'<p><a href="{safe_cancel_url}">Cancelar reserva</a></p>'
-        )
+    html_body = (
+        "<p>A sua reserva foi confirmada!</p>"
+        "<ul>"
+        f"<li><strong>Espaço:</strong> {safe_space_name}</li>"
+        f"<li><strong>Sala:</strong> {safe_room_name}</li>"
+        f"<li><strong>Data:</strong> {safe_date_str}</li>"
+        f"<li><strong>Horário:</strong> {safe_time_str}</li>"
+        "</ul>"
+        f'<p><a href="{safe_cancel_url}">Cancelar reserva</a></p>'
+    )
     return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
 
 
