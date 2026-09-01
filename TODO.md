@@ -108,8 +108,8 @@ CI pins `ruff==0.15.17` with an explicit `select = ["E4","E7","E9","F"]` in `ruf
 ### T3 `admin.spec.ts` "admin dashboard loads" is flaky
 Failed a `waitForURL` on the sign-in redirect and passed on retry during the Epic 2 run. Touches no payments code, so it predates that work. A retry-masked flake in an auth redirect is worth diagnosing rather than tolerating — it may be a real race in the sign-in flow, not just test timing.
 
-### T4 `frontend-tests` is path-filtered and silently absent
-`.github/workflows/frontend-tests.yml` only triggers on `paths: ['frontend/**']`. Backend-only PRs show the check as **absent, not skipped** — which reads like "passing" at a glance and doesn't block merge. Fine as-is, but know that a green PR page does not mean frontend tests ran.
+### T4 `frontend-tests` is path-filtered and silently absent — ✅ Documented as intentional
+`.github/workflows/frontend-tests.yml` only triggers on `paths: ['frontend/**']` (consistent with `backend-tests.yml` triggering only on `backend/**`). Backend-only PRs show the check as **absent, not skipped** — this is GitHub Actions' expected behavior and saves CI time. Note: if this workflow were ever configured as a **required** status check, PRs where it doesn't run could be blocked; we'd need to remove the path filter or add a stub workflow that reports a neutral/success status.
 
 ### T5 `docker-compose.yml` doesn't forward `STRIPE_*` to the backend
 Stub mode needs nothing (it's the config default), so local dev works out of the box. Live mode requires adding the vars to the `backend` service's `environment:` block. Out of fence for the Epic 2 PR.
