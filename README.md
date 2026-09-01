@@ -45,11 +45,10 @@ Visit http://localhost:3000/sign-up — any email/password (min 8 chars) works l
 
 To promote an existing user to admin:
 ```bash
-docker-compose exec db psql -U spacerental -d spacerental -c \
-  "INSERT INTO organization_members (org_id, user_id, role)
-   SELECT (SELECT id FROM organizations LIMIT 1), id, 'owner'
-   FROM users WHERE email='YOUR_EMAIL';"
+docker-compose exec backend python -m app.promote_admin YOUR_EMAIL
 ```
+This adds `YOUR_EMAIL` as `owner` of the seeded demo org (slug `demo-space`). Pass `--role admin` for a non-owner admin, or `--org-slug` to target a different org. Unlike hand-written SQL, an unknown email or org slug fails loudly with a non-zero exit instead of silently doing nothing.
+
 Then re-login — the Admin link will appear in the navbar.
 
 ---
