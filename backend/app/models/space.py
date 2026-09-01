@@ -1,6 +1,17 @@
 import uuid
 from datetime import datetime, time
-from sqlalchemy import String, Text, Boolean, Integer, Numeric, DateTime, Time, ForeignKey, func
+from sqlalchemy import (
+    String,
+    Text,
+    Boolean,
+    Integer,
+    Numeric,
+    DateTime,
+    Time,
+    ForeignKey,
+    Index,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -103,6 +114,9 @@ class Room(Base):
 
 class AvailabilityRule(Base):
     __tablename__ = "availability_rules"
+    __table_args__ = (
+        Index("ix_availability_rules_room_id_day", "room_id", "day_of_week"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

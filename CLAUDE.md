@@ -145,6 +145,21 @@ Fix: the NextAuth handler uses `INTERNAL_API_URL=http://backend:8000/api/v1` for
 ### 6.4 bcrypt has a 72-byte password limit
 We don't use bcrypt anymore — we use Argon2id. If anyone tries to "simplify" by switching to bcrypt, they'll truncate or reject long passwords. Don't.
 
+### 6.5 Alembic owns the schema; `create_all` is for tests only
+Symptom (the one that actually happened): `alembic upgrade head` could not succeed against *any* database. Empty → `UndefinedTableError`, because no migration ever ran `create_table`. Existing → `DuplicateTableError`, because `create_all` had already made the same objects.
+
+Cause: two code paths both claimed to own schema creation. `init_db()` built tables from `Base.metadata` at FastAPI startup, while the migration chain described edits to a schema that only `create_all` had ever produced. Neither knew about the other, and the test suite could not see the problem because `conftest.py` also uses `Base.metadata` and never invokes alembic.
+
+Fix, and the rule going forward:
+
+- **Alembic is the only thing that builds a dev, CI, or production schema.** `backend/docker-entrypoint.sh` runs `alembic upgrade head` before uvicorn, so `docker-compose up` still works in one step on a fresh clone.
+- **The application never creates tables.** `init_db()` is gone. Don't reintroduce it.
+- **`Base.metadata.create_all` survives in `tests/conftest.py` only**, where a per-test throwaway schema needs to be fast.
+- **Anything that belongs in the schema belongs in `Base.metadata`** — including indexes, via `__table_args__`. An index that exists only in a migration will be emitted as a `drop_index` by the next `--autogenerate`.
+- The one deliberate exception is the `bookings_no_overlap` EXCLUDE constraint, which lives only in the migration because applying it needs conflict-free data. It is documented in the baseline migration and is invisible to `alembic check`, which does not compare EXCLUDE constraints.
+
+`.github/workflows/migrations.yml` runs upgrade → check → downgrade → upgrade against an empty PostgreSQL 16 so this cannot regress silently again.
+
 ---
 
 ## 7. Project layout
@@ -168,7 +183,7 @@ spacerental/
 │   │   ├── test_bookings.py          # Create, overlap, isolation, cancel
 │   │   ├── test_packages.py          # List, purchase, redemption
 │   │   └── test_admin.py             # Role gating, CRUD, dashboard
-│   ├── alembic/                      # Migrations (only generate manually for now)
+│   ├── alembic/                      # Migrations — the source of schema truth (§6.5)
 │   ├── Dockerfile                    # Dev image (uvicorn --reload)
 │   ├── Dockerfile.test               # Test runner image
 │   ├── requirements.txt
@@ -232,7 +247,7 @@ spacerental/
 1. Create the file under `backend/app/models/<name>.py`.
 2. **Include `org_id` as a foreign key** unless this entity is genuinely tenant-agnostic (rare).
 3. Import the model in `backend/app/models/__init__.py` so `Base.metadata` knows about it.
-4. Generate a migration (when alembic is fully wired): `alembic revision --autogenerate -m "..."` then review.
+4. Generate a migration — this is **mandatory**, not optional: `docker-compose exec backend alembic revision --autogenerate -m "..."`, then review the generated file. CI's `migrations` workflow runs `alembic check` and fails if a model changed without one. See §6.5.
 5. Update `seed.py` if it makes sense to seed defaults.
 6. Add a fixture in `tests/conftest.py` if the model is referenced from multiple test files.
 
@@ -385,4 +400,5 @@ These are deferred for a reason — don't quietly add them without a discussion:
 - **Never use `localhost` for backend ↔ backend calls inside Docker** — use the service name (`backend`, `db`).
 - **Never return SQLAlchemy model instances directly** from a route — always go through a Pydantic schema (`SomeOut.model_validate(model)`).
 - **Never break the wrapped-response contract** without updating `lib/api.ts` in the same PR.
+- **Never create schema from application code** — no `Base.metadata.create_all` outside `tests/conftest.py`, and no migration-free model change. See §6.5.
 - **Never disable a test** to make CI green. Fix it or delete it with an explanation.

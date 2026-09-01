@@ -30,7 +30,9 @@ docker-compose up --build
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-No external accounts needed.
+No external accounts needed. The backend container runs `alembic upgrade head`
+before starting uvicorn, so the schema is built and up to date on first boot —
+there is no separate migration step to remember.
 
 ### 3. Seed demo data
 ```bash
@@ -63,6 +65,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp ../.env.example .env  # the repo root holds the single env template
 # Start Postgres separately (e.g. via OrbStack or brew)
+alembic upgrade head     # the app does not create tables; migrations do
 uvicorn app.main:app --reload
 ```
 
@@ -102,6 +105,35 @@ spacerental/
 
 ## Multi-tenancy
 Every table has `org_id`. Adding a second space operator = new row in `organizations` + membership. No code changes needed.
+
+## Database migrations
+
+Alembic owns the schema everywhere except the test suite. The application never
+creates tables: `backend/docker-entrypoint.sh` runs `alembic upgrade head`
+before uvicorn starts, so `docker-compose up` on a fresh clone comes up
+migrated. Only `backend/tests/conftest.py` builds tables straight from
+`Base.metadata`, because each test wants a throwaway schema in milliseconds.
+
+After changing a model:
+
+```bash
+docker-compose exec backend alembic revision --autogenerate -m "what changed"
+# review the generated file, then:
+docker-compose restart backend        # the entrypoint applies it
+```
+
+To check a schema matches the models, and to walk the full round-trip the CI
+`Migrations` workflow runs:
+
+```bash
+docker-compose exec backend alembic check          # models vs. live schema
+docker-compose exec backend alembic downgrade base
+docker-compose exec backend alembic upgrade head
+```
+
+`alembic check` failing means someone changed a model without writing a
+migration. Both halves are enforced by `.github/workflows/migrations.yml`,
+which runs the whole chain against an empty PostgreSQL 16 on every backend PR.
 
 ## What's not wired yet
 - **Payments** (Stripe): booking model has `payment_method` and `total_amount` ready; add Stripe checkout before going live
