@@ -108,7 +108,16 @@ export default function AdminSpacesPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>Editar Espaço</DialogTitle></DialogHeader>
           <form
-            onSubmit={handleSubmit((d) => editingSpace && updateMutation.mutate({ id: editingSpace.id, data: d }))}
+            onSubmit={handleSubmit((d) => {
+              if (!editingSpace) return
+              const data = {
+                ...d,
+                description: d.description?.trim() ? d.description : undefined,
+                address: d.address?.trim() ? d.address : undefined,
+                city: d.city?.trim() ? d.city : undefined,
+              }
+              updateMutation.mutate({ id: editingSpace.id, data })
+            })}
             className="space-y-4"
           >
             <div>
