@@ -1,6 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import text
 from app.config import settings
 
 
@@ -19,7 +18,15 @@ async_session_factory = async_sessionmaker(
 
 
 class Base(DeclarativeBase):
-    pass
+    """Declarative base and the schema's source of truth.
+
+    `Base.metadata.create_all` is used by the test fixtures only (see
+    tests/conftest.py). Every other database — dev, CI, production — is built
+    and migrated by alembic; the container entrypoint runs `alembic upgrade
+    head` before uvicorn starts. Do not reintroduce a create_all call in the
+    application: two code paths claiming to own schema creation is exactly the
+    divergence that made `alembic upgrade head` impossible to run (TODO T8).
+    """
 
 
 async def get_db() -> AsyncSession:
@@ -32,30 +39,3 @@ async def get_db() -> AsyncSession:
             raise
         finally:
             await session.close()
-
-
-async def init_db() -> None:
-    async with engine.begin() as conn:
-        await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
-        from app.models import organization, user, space, booking, package  # noqa: F401
-        await conn.run_sync(Base.metadata.create_all)
-        # Indexes for dev parity with alembic. The EXCLUDE constraint is
-        # intentionally NOT created here — it requires clean data and lives
-        # in the alembic migration.
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_bookings_room_id_start_time "
-            "ON bookings (room_id, start_time)"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_bookings_user_id "
-            "ON bookings (user_id)"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_bookings_org_id_status "
-            "ON bookings (org_id, status)"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_availability_rules_room_id_day "
-            "ON availability_rules (room_id, day_of_week)"
-        ))

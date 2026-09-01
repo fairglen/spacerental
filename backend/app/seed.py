@@ -21,13 +21,31 @@ from app.models.space import Space, Room, AvailabilityRule
 from app.models.package import Package
 
 
-async def seed() -> None:
-    # Ensure uuid-ossp extension and tables exist
+async def require_migrated_schema() -> None:
+    """Fail loudly if alembic has not built the schema yet.
+
+    The seeder used to call `Base.metadata.create_all` here. That quietly
+    produced a schema alembic knew nothing about — no `alembic_version` row and
+    no `bookings_no_overlap` constraint — which is the drift recorded as T8.
+    Seeding is data, not schema; migrations own the schema.
+    """
     async with engine.begin() as conn:
-        await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
-        from app.models import organization, user, space, booking, package  # noqa: F401
-        from app.database import Base
-        await conn.run_sync(Base.metadata.create_all)
+        stamped = await conn.scalar(
+            text(
+                "SELECT to_regclass('public.alembic_version') IS NOT NULL"
+                " AND EXISTS (SELECT 1 FROM pg_tables"
+                " WHERE schemaname = 'public' AND tablename = 'organizations')"
+            )
+        )
+    if not stamped:
+        raise SystemExit(
+            "Database is not migrated. Run `alembic upgrade head` first "
+            "(the docker-compose backend does this automatically on boot)."
+        )
+
+
+async def seed() -> None:
+    await require_migrated_schema()
 
     async with async_session_factory() as session:
         # ── Organization ──────────────────────────────────────────────────────

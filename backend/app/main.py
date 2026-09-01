@@ -1,25 +1,19 @@
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import init_db
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.routers import auth, spaces, bookings, packages, admin
 from app.routers import webhooks
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await init_db()
-    yield
-
-
+# The app does not create or migrate the schema. `alembic upgrade head` runs in
+# backend/docker-entrypoint.sh before uvicorn starts, so the schema exists by
+# the time the first request arrives. Bootstrapping it from startup as well
+# would put two owners on the same schema — see backend/app/database.py.
 app = FastAPI(
     title="SpaceRental API",
     version="1.0.0",
     description="Production-ready backend for the SpaceRental platform",
-    lifespan=lifespan,
 )
 
 # Registered before CORS so CORS ends up the OUTER layer: 429 responses still

@@ -1,7 +1,16 @@
 import uuid
 import decimal
 from datetime import datetime
-from sqlalchemy import String, Text, Numeric, DateTime, ForeignKey, func, Enum as SAEnum
+from sqlalchemy import (
+    String,
+    Text,
+    Numeric,
+    DateTime,
+    ForeignKey,
+    Index,
+    func,
+    Enum as SAEnum,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -22,6 +31,14 @@ class PaymentMethod(str, enum.Enum):
 
 class Booking(Base):
     __tablename__ = "bookings"
+    # Declared here rather than in the migration alone so `Base.metadata` is a
+    # complete description of the schema: `alembic revision --autogenerate`
+    # would otherwise emit a `drop_index` for each of these on the next run.
+    __table_args__ = (
+        Index("ix_bookings_room_id_start_time", "room_id", "start_time"),
+        Index("ix_bookings_user_id", "user_id"),
+        Index("ix_bookings_org_id_status", "org_id", "status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

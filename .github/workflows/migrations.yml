@@ -1,0 +1,99 @@
+name: Migrations
+
+# Guards the class of bug recorded as TODO T8: alembic and
+# `Base.metadata.create_all` drifting into two incompatible sources of schema
+# truth. The backend test suite cannot catch it — tests build their tables from
+# `Base.metadata` and never invoke alembic — so migrations need a job that runs
+# them for real, against a genuinely empty PostgreSQL.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/migrations.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/migrations.yml'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: spacerental
+          POSTGRES_PASSWORD: spacerental
+          POSTGRES_DB: spacerental_migrations
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U spacerental"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Deliberately the service's own database and nothing else has touched it:
+      # the point of this job is that migrations build the schema from nothing.
+      DATABASE_URL: postgresql+asyncpg://spacerental:spacerental@localhost:5432/spacerental_migrations
+      PGPASSWORD: spacerental
+      SECRET_KEY: test-secret-key-32-chars-min-test-test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
+
+      # Runtime deps only — migrations must run in a production image, which
+      # does not carry pytest and friends.
+      - name: Install deps
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Upgrade to head from an empty database
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Migrated schema matches Base.metadata
+        working-directory: backend
+        # `alembic check` autogenerates against the live database and fails if
+        # anything differs, so a model change without a migration cannot merge.
+        run: alembic check
+
+      - name: Downgrade to base
+        working-directory: backend
+        run: alembic downgrade base
+
+      - name: Downgrade leaves no application objects behind
+        run: |
+          set -e
+          LEFTOVER=$(psql -h localhost -U spacerental -d spacerental_migrations -tAc \
+            "SELECT string_agg(tablename, ',') FROM pg_tables
+             WHERE schemaname='public' AND tablename <> 'alembic_version';")
+          if [ -n "$LEFTOVER" ]; then
+            echo "Tables survived 'alembic downgrade base': $LEFTOVER"
+            exit 1
+          fi
+          LEFTOVER_TYPES=$(psql -h localhost -U spacerental -d spacerental_migrations -tAc \
+            "SELECT string_agg(t.typname, ',') FROM pg_type t
+             JOIN pg_namespace n ON n.oid = t.typnamespace
+             WHERE n.nspname='public' AND t.typtype='e';")
+          if [ -n "$LEFTOVER_TYPES" ]; then
+            echo "Enum types survived 'alembic downgrade base': $LEFTOVER_TYPES"
+            exit 1
+          fi
+
+      # A downgrade that is not replayable is a downgrade you can never use.
+      - name: Upgrade to head again (round-trip)
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Schema still matches Base.metadata after round-trip
+        working-directory: backend
+        run: alembic check

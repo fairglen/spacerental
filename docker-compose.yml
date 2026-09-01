@@ -49,6 +49,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+    # The image's ENTRYPOINT runs `alembic upgrade head` before handing off to
+    # this command, so a fresh clone still comes up with a working schema in one
+    # step. The app itself never creates tables — see backend/app/database.py.
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
