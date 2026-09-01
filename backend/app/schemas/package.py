@@ -26,6 +26,14 @@ class PackageCreate(BaseModel):
     validity_days: int = 365
 
 
+class PackageUpdate(BaseModel):
+    name: str | None = None
+    hours: int | None = None
+    price: Decimal | None = None
+    validity_days: int | None = None
+    is_active: bool | None = None
+
+
 class UserPackagePurchaseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
