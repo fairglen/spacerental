@@ -109,9 +109,9 @@ export function Pricing() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
           <PlanCard plan={hourlyPlan}>
-            <Link href="/spaces" className="block">
-              <Button variant="outline" className="w-full">Reservar Agora</Button>
-            </Link>
+            <Button asChild variant="outline" className="w-full">
+              <Link href="/spaces">Reservar Agora</Link>
+            </Button>
           </PlanCard>
 
           {Object.entries(packageCopyByHours).map(([hoursKey, copy]) => {
