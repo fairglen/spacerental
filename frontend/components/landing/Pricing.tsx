@@ -118,7 +118,7 @@ export function Pricing() {
             const pkg = packageByHours.get(Number(hoursKey))
             return (
               <PlanCard key={hoursKey} plan={copy}>
-                {loadingPackages ? (
+                {(loadingPackages || orgId === undefined) ? (
                   <Skeleton className="h-10 w-full rounded-md" />
                 ) : pkg ? (
                   <PackageBuyButton pkg={pkg} variant={copy.highlighted ? 'default' : 'outline'} />
