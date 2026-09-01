@@ -10,8 +10,8 @@ gives no feedback either way. This script fails loudly on an unknown email or
 org slug, and always prints what it did.
 
 Given the single-main-space scoping decision (TODO.md, "Scoping decision"),
-the default org is the seeded demo org (slug "demo-space", name
-"Espaço Calmo"'s org) rather than asking the caller to look up an org_id.
+the default org is the seeded demo org (slug "demo-space") rather than asking
+the caller to look up an org_id.
 """
 
 import argparse
