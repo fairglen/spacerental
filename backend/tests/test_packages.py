@@ -53,6 +53,9 @@ class TestPurchasePackage:
         assert Decimal(purchase["hours_total"]) == Decimal("10")
         assert Decimal(purchase["hours_remaining"]) == Decimal("10")
         assert Decimal(purchase["hours_used"]) == Decimal("0")
+        # B12: the dashboard shows the package name next to the balance — it
+        # has nothing to render without this nested object.
+        assert purchase["package"]["name"] == "Starter Pack"
 
     async def test_purchase_requires_auth(self, client, test_org, test_package):
         resp = await client.post(
@@ -122,3 +125,7 @@ class TestMyPackages:
         purchases = resp.json()["purchases"]
         assert len(purchases) == 1
         assert purchases[0]["package_id"] == str(test_package.id)
+        # B12: /packages/me eager-loads `package` (lazy="noload" by default)
+        # so the dashboard can show its name instead of a generic "Pacote".
+        assert purchases[0]["package"]["name"] == "Starter Pack"
+        assert purchases[0]["package"]["hours"] == 10

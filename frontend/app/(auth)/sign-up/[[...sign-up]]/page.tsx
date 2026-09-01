@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -27,6 +27,11 @@ type FormData = z.infer<typeof schema>
 
 export default function SignUpPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Set when arriving from a "Comprar Pack" click while signed out (B12) — the
+  // choice must survive sign-up, so it resumes straight into the purchase
+  // instead of a generic dashboard.
+  const packageId = searchParams.get('packageId')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
@@ -37,7 +42,7 @@ export default function SignUpPage() {
     try {
       await authApi.register({ email: data.email, password: data.password, name: data.name })
       await signIn('credentials', { email: data.email, password: data.password, redirect: false })
-      router.push('/dashboard')
+      router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : '/dashboard')
       router.refresh()
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -92,7 +97,12 @@ export default function SignUpPage() {
             </form>
             <p className="text-center text-sm text-muted-foreground mt-4">
               Já tens conta?{' '}
-              <Link href="/sign-in" className="text-primary font-medium hover:underline">Entrar</Link>
+              <Link
+                href={packageId ? `/sign-in?packageId=${packageId}` : '/sign-in'}
+                className="text-primary font-medium hover:underline"
+              >
+                Entrar
+              </Link>
             </p>
           </CardContent>
         </Card>
