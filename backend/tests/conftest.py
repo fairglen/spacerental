@@ -1,13 +1,15 @@
-import os
 import asyncio
 import json
+import os
+from datetime import time
+from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.pool import NullPool
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # IMPORTANT: set test DB URL BEFORE importing app
 TEST_DATABASE_URL = os.getenv(
@@ -17,24 +19,24 @@ TEST_DATABASE_URL = os.getenv(
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["SECRET_KEY"] = "test-secret-key-32-chars-min-test-test"
 
+from app.auth import create_access_token, hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
+from app.email import StubEmailGateway, get_email_gateway  # noqa: E402
 from app.main import app  # noqa: E402
-from app.ratelimit import limiter  # noqa: E402
-from app.auth import hash_password, create_access_token  # noqa: E402
-from app.models.user import User  # noqa: E402
 from app.models.organization import (  # noqa: E402
+    MemberRole,
     Organization,
     OrganizationMember,
-    MemberRole,
     OrgPlan,
 )
-from app.models.space import Space, Room, AvailabilityRule  # noqa: E402
+from app.models.space import AvailabilityRule, Room, Space  # noqa: E402
+from app.models.user import User  # noqa: E402
 from app.payments import (  # noqa: E402
     CheckoutKind,
     StubPaymentGateway,
     get_payment_gateway,
 )
-from app.email import StubEmailGateway, get_email_gateway  # noqa: E402
+from app.ratelimit import limiter  # noqa: E402
 
 TEST_STRIPE_WEBHOOK_SECRET = "whsec_test_not_a_real_secret"
 
@@ -130,9 +132,9 @@ async def db_session(engine, session_factory):
 
     async with session_factory() as session:
         yield session
-        try:
+        try:  # noqa: SIM105
             await session.rollback()
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
 
@@ -296,9 +298,6 @@ async def test_space(db_session, test_org) -> Space:
 
 @pytest_asyncio.fixture
 async def test_room(db_session, test_org, test_space) -> Room:
-    from decimal import Decimal
-    from datetime import time
-
     r = Room(
         space_id=test_space.id,
         org_id=test_org.id,

@@ -1,21 +1,23 @@
+import decimal
 import uuid
 from datetime import datetime, time
+
 from sqlalchemy import (
-    String,
-    Text,
     Boolean,
-    Integer,
-    Numeric,
     DateTime,
-    Time,
     ForeignKey,
     Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    Time,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
-import decimal
 
 
 class Space(Base):

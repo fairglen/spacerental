@@ -7,11 +7,10 @@ activity rather than a mock.
 """
 
 import pytest
-from sqlalchemy import event
-
 from app.config import settings
 from app.ratelimit import AUTH_TIER, PUBLIC_TIER, RateLimiter, limiter
 from app.routers import auth as auth_router
+from sqlalchemy import event
 
 REGISTER_URL = "/api/v1/auth/register"
 LOGIN_URL = "/api/v1/auth/login"

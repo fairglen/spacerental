@@ -1,31 +1,31 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select, func, and_, distinct
-from sqlalchemy.orm import selectinload
+from sqlalchemy import and_, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app import email
 from app.auth import require_admin
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
-from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus
 from app.models.package import Package
+from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
-from app.schemas.space import (
-    SpaceOut,
-    SpaceCreate,
-    SpaceUpdate,
-    RoomOut,
-    RoomCreate,
-    RoomUpdate,
-    AvailabilityRulesSetBody,
-    AvailabilityRuleOut,
-)
 from app.schemas.booking import BookingOut, BookingStatusUpdate
-from app.schemas.package import PackageOut, PackageCreate, PackageUpdate
+from app.schemas.package import PackageCreate, PackageOut, PackageUpdate
+from app.schemas.space import (
+    AvailabilityRuleOut,
+    AvailabilityRulesSetBody,
+    RoomCreate,
+    RoomOut,
+    RoomUpdate,
+    SpaceCreate,
+    SpaceOut,
+    SpaceUpdate,
+)
 from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -294,10 +294,10 @@ async def admin_set_availability(
 @router.get("/bookings")
 async def admin_list_bookings(
     org_id: uuid.UUID = Query(...),
-    room_id: Optional[uuid.UUID] = Query(None),
-    booking_status: Optional[BookingStatus] = Query(None, alias="status"),
-    from_date: Optional[datetime] = Query(None, alias="from"),
-    to_date: Optional[datetime] = Query(None, alias="to"),
+    room_id: uuid.UUID | None = Query(None),
+    booking_status: BookingStatus | None = Query(None, alias="status"),
+    from_date: datetime | None = Query(None, alias="from"),
+    to_date: datetime | None = Query(None, alias="to"),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):

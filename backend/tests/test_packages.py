@@ -2,7 +2,6 @@ import uuid
 from decimal import Decimal
 
 import pytest_asyncio
-
 from app.models.package import Package
 
 
@@ -50,9 +49,9 @@ class TestPurchasePackage:
         assert resp.status_code == 201, resp.text
         purchase = resp.json()["purchase"]
         assert purchase["package_id"] == str(test_package.id)
-        assert Decimal(purchase["hours_total"]) == Decimal("10")
-        assert Decimal(purchase["hours_remaining"]) == Decimal("10")
-        assert Decimal(purchase["hours_used"]) == Decimal("0")
+        assert Decimal(purchase["hours_total"]) == Decimal(10)
+        assert Decimal(purchase["hours_remaining"]) == Decimal(10)
+        assert Decimal(purchase["hours_used"]) == Decimal(0)
         # B12: the dashboard shows the package name next to the balance — it
         # has nothing to render without this nested object.
         assert purchase["package"]["name"] == "Starter Pack"

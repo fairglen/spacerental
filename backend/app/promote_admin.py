@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
-from app.models.organization import Organization, OrganizationMember, MemberRole
+from app.models.organization import MemberRole, Organization, OrganizationMember
 from app.models.user import User
 
 DEFAULT_ORG_SLUG = "demo-space"

@@ -1,15 +1,16 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, and_
-from sqlalchemy.orm import selectinload
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.ratelimit import PUBLIC_TIER, rate_limit
-from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus
-from app.schemas.space import SpaceOut, RoomOut, AvailabilitySlot
+from app.models.space import AvailabilityRule, Room, Space
+from app.ratelimit import PUBLIC_TIER, rate_limit
+from app.schemas.space import AvailabilitySlot, RoomOut, SpaceOut
 
 router = APIRouter(tags=["spaces"])
 
@@ -85,8 +86,8 @@ async def get_room_availability(
     slot_starts: list[datetime] = []
     windows: list[tuple[datetime, datetime]] = []
     for rule in rules:
-        open_dt = datetime.combine(date, rule.open_time, tzinfo=timezone.utc)
-        close_dt = datetime.combine(date, rule.close_time, tzinfo=timezone.utc)
+        open_dt = datetime.combine(date, rule.open_time, tzinfo=UTC)
+        close_dt = datetime.combine(date, rule.close_time, tzinfo=UTC)
         windows.append((open_dt, close_dt))
         current = open_dt
         while current + timedelta(hours=1) <= close_dt:

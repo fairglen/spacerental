@@ -1,10 +1,10 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
-from app.models.organization import OrganizationMember, MemberRole
+from app.models.organization import MemberRole, OrganizationMember
 from app.models.package import Package
 from app.models.user import User
 
@@ -95,7 +95,7 @@ class TestAdminBookings:
         admin_user,
     ):
         # Insert a booking directly
-        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        start = datetime.now(tz=UTC) + timedelta(days=2)
         end = start + timedelta(hours=2)
         booking = Booking(
             org_id=test_org.id,
@@ -130,7 +130,7 @@ class TestAdminBookings:
         test_room,
         admin_user,
     ):
-        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        start = datetime.now(tz=UTC) + timedelta(days=2)
         end = start + timedelta(hours=2)
         booking = Booking(
             org_id=test_org.id,

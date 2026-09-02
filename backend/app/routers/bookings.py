@@ -1,19 +1,20 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app import email
 from app.auth import get_current_user
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.models.booking import Booking, BookingStatus, PaymentMethod
-from app.models.space import Room
 from app.models.organization import OrganizationMember
+from app.models.space import Room
 from app.models.user import User
 from app.payments import (
     CheckoutKind,
@@ -21,7 +22,7 @@ from app.payments import (
     PaymentProviderError,
     get_payment_gateway,
 )
-from app.schemas.booking import BookingOut, BookingCreate, BookingCheckoutOut
+from app.schemas.booking import BookingCheckoutOut, BookingCreate, BookingOut
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
@@ -136,7 +137,7 @@ async def create_booking(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This time slot is already booked",
-        )
+        ) from None
 
     try:
         session = await gateway.create_checkout_session(
@@ -201,7 +202,7 @@ async def cancel_booking(
             detail=f"Booking is already {booking.status.value}",
         )
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     # booking.start_time is TIMESTAMPTZ — SQLAlchemy returns an aware UTC datetime.
     if booking.start_time - now < timedelta(hours=24):
         raise HTTPException(

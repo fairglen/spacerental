@@ -2,8 +2,8 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app import email
 from app.database import get_db
@@ -14,8 +14,8 @@ from app.models.space import Room
 from app.payments import (
     CheckoutKind,
     CheckoutSessionInfo,
-    InvalidWebhookPayload,
-    InvalidWebhookSignature,
+    InvalidWebhookPayloadError,
+    InvalidWebhookSignatureError,
     PaymentGateway,
     get_payment_gateway,
 )
@@ -32,7 +32,7 @@ def _required_uuid(raw: str | None, field: str) -> uuid.UUID:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Checkout Session metadata has no valid {field}",
-        )
+        ) from None
 
 
 async def _confirm_booking(
@@ -145,16 +145,16 @@ async def stripe_webhook(
     payload = await request.body()
     try:
         event = gateway.parse_webhook_event(payload, request.headers.get("stripe-signature"))
-    except InvalidWebhookSignature:
+    except InvalidWebhookSignatureError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid Stripe signature",
-        )
-    except InvalidWebhookPayload:
+        ) from None
+    except InvalidWebhookPayloadError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Malformed webhook payload",
-        )
+        ) from None
 
     if event.type != CHECKOUT_COMPLETED or event.checkout_session is None:
         return {"received": True, "handled": False}

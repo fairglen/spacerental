@@ -14,11 +14,12 @@ from decimal import Decimal
 
 from sqlalchemy import select, text
 
+from app.auth import hash_password
 from app.database import async_session_factory, engine
-from app.models.organization import Organization, OrganizationMember, MemberRole, OrgPlan
-from app.models.user import User
-from app.models.space import Space, Room, AvailabilityRule
+from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.package import Package
+from app.models.space import AvailabilityRule, Room, Space
+from app.models.user import User
 
 
 async def require_migrated_schema() -> None:
@@ -44,7 +45,7 @@ async def require_migrated_schema() -> None:
         )
 
 
-async def seed() -> None:
+async def seed() -> None:  # noqa: C901
     await require_migrated_schema()
 
     async with async_session_factory() as session:
@@ -67,7 +68,6 @@ async def seed() -> None:
             print(f"Org already exists: {org.name} ({org.id})")
 
         # ── Admin User ────────────────────────────────────────────────────────
-        from app.auth import hash_password
         result = await session.execute(
             select(User).where(User.email == "admin@demo.com")
         )
@@ -155,7 +155,7 @@ async def seed() -> None:
                 print(f"Room already exists: {room.name} ({room.id})")
             created_rooms.append(room)
 
-        # ── Availability Rules (Mon-Sat 08:00–20:00) ──────────────────────────
+        # ── Availability Rules (Mon-Sat 08:00-20:00) ──────────────────────────
         for room in created_rooms:
             result = await session.execute(
                 select(AvailabilityRule).where(AvailabilityRule.room_id == room.id)

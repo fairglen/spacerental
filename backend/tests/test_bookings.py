@@ -1,20 +1,20 @@
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
-from app.models.organization import OrganizationMember, MemberRole
+from app.models.organization import MemberRole, OrganizationMember
 from app.models.user import User
 from app.payments import PaymentProviderError
 
 
 def _future_slot(hours_offset_from_now: int = 24 * 7, duration_hours: int = 2):
     """Return (start, end) ISO strings on an upcoming Monday at 10:00 UTC."""
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
     target_date = today + timedelta(days=days_ahead + 7)
-    start = datetime.combine(target_date, time(10, 0), tzinfo=timezone.utc)
+    start = datetime.combine(target_date, time(10, 0), tzinfo=UTC)
     end = start + timedelta(hours=duration_hours)
     return start.isoformat(), end.isoformat()
 
@@ -290,7 +290,7 @@ class TestCancelBookingTooSoon:
         auth_headers,
     ):
         # Insert directly: create_booking enforces other rules we want to sidestep.
-        start = datetime.now(tz=timezone.utc) + timedelta(hours=1)
+        start = datetime.now(tz=UTC) + timedelta(hours=1)
         end = start + timedelta(hours=2)
         booking = Booking(
             org_id=test_org.id,

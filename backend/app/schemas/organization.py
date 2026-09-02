@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
-from app.models.organization import OrgPlan, MemberRole
+
+from app.models.organization import MemberRole, OrgPlan
 
 
 class OrganizationOut(BaseModel):

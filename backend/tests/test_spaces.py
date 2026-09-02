@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 from app.models.booking import Booking, BookingStatus, PaymentMethod
@@ -57,7 +57,7 @@ class TestGetSpace:
 class TestRoomAvailability:
     def _pick_weekday(self) -> str:
         """Return an upcoming Monday (day_of_week=0) date string."""
-        today = datetime.now(tz=timezone.utc).date()
+        today = datetime.now(tz=UTC).date()
         # Aim 7-13 days out for a Monday so cancellation-window edge cases
         # in booking creation don't trip availability lookups.
         days_ahead = (0 - today.weekday()) % 7 or 7
@@ -83,8 +83,8 @@ class TestRoomAvailability:
         date_str = self._pick_weekday()
         target_date = datetime.fromisoformat(date_str).date()
         # Insert a confirmed booking 10:00-12:00 UTC on that date.
-        start = datetime.combine(target_date, time(10, 0), tzinfo=timezone.utc)
-        end = datetime.combine(target_date, time(12, 0), tzinfo=timezone.utc)
+        start = datetime.combine(target_date, time(10, 0), tzinfo=UTC)
+        end = datetime.combine(target_date, time(12, 0), tzinfo=UTC)
         booking = Booking(
             org_id=test_org.id,
             room_id=test_room.id,

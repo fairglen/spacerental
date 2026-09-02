@@ -1,10 +1,9 @@
 import argparse
 
 import pytest
-from sqlalchemy import select
-
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.promote_admin import PromoteAdminError, _run, promote_admin
+from sqlalchemy import select
 
 
 @pytest.fixture

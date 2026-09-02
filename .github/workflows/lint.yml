@@ -13,5 +13,5 @@ jobs:
       # Pinned deliberately: an unpinned `pip install ruff` picked up 0.16.1,
       # whose widened default rules failed CI on untouched code. Bump this
       # intentionally, together with ruff.toml and .pre-commit-config.yaml.
-      - run: pip install ruff==0.15.17
+      - run: pip install ruff==0.16.5
       - run: ruff check backend/app backend/tests
