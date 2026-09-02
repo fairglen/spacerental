@@ -57,7 +57,30 @@ Body: `{ room_id, start_time, end_time, notes? }`
 Response: `{ booking: Booking }`
 
 ### DELETE /bookings/:id
-Cancel a booking (own only, if > 24h before).
+Cancel a booking (own only, if > 24h before). This is also how you cancel **one
+occurrence** of a recurring series: the occurrence is marked `cancelled` and the
+`RecurrenceRule` stays active.
+
+### POST /recurrences
+Create a weekly recurring series, all-or-nothing. One `RecurrenceRule` plus one
+`pending` booking per occurrence; each booking carries `recurrence_rule_id`.
+Body: `{ room_id, start_time, end_time, until_date, frequency?, notes? }`
+Response: `{ recurrence: Recurrence, bookings: Booking[] }`
+`409` when any occurrence is taken: `{ detail, conflicts: string[] }` — the
+start of every clashing occurrence. Nothing is written.
+
+### PUT /recurrences/:id
+Move a series to a new time, all-or-nothing. Not-yet-started occurrences are
+cancelled and regenerated at the new times; past and in-progress occurrences are
+never touched.
+Body: `{ start_time, end_time, until_date? }`
+Response: `{ recurrence: Recurrence, bookings: Booking[] }`, or the same `409`
+`conflicts` shape with nothing changed.
+
+### DELETE /recurrences/:id
+Cancel this occurrence and all later ones, and deactivate the rule.
+Query: `?from_date=YYYY-MM-DD` (UTC; defaults to now, i.e. everything remaining)
+Response: `204`
 
 ### GET /packages
 List available packages for an org.
