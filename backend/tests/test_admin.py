@@ -119,6 +119,100 @@ class TestAdminBookings:
         assert len(body["bookings"]) == 1
         assert body["bookings"][0]["room_id"] == str(test_room.id)
 
+    async def test_admin_list_bookings_default_pagination_matches_unpaginated_behavior(
+        self,
+        client,
+        admin_headers,
+        db_session,
+        test_org,
+        test_room,
+        admin_user,
+    ):
+        """No page/page_size params → page=1, page_size=20, all bookings still returned
+        when there are fewer than a page's worth (today's behavior, unchanged)."""
+        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        for i in range(3):
+            booking_start = start + timedelta(hours=i * 3)
+            booking = Booking(
+                org_id=test_org.id,
+                room_id=test_room.id,
+                user_id=admin_user.id,
+                start_time=booking_start,
+                end_time=booking_start + timedelta(hours=2),
+                duration_hours=Decimal("2.00"),
+                total_amount=Decimal("22.00"),
+                status=BookingStatus.confirmed,
+                payment_method=PaymentMethod.hourly,
+            )
+            db_session.add(booking)
+        await db_session.commit()
+
+        resp = await client.get(
+            "/api/v1/admin/bookings",
+            params={"org_id": str(test_org.id)},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["bookings"]) == 3
+        assert body["total"] == 3
+        assert body["page"] == 1
+        assert body["page_size"] == 20
+
+    async def test_admin_list_bookings_paginates(
+        self,
+        client,
+        admin_headers,
+        db_session,
+        test_org,
+        test_room,
+        admin_user,
+    ):
+        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        for i in range(25):
+            booking_start = start + timedelta(hours=i * 3)
+            booking = Booking(
+                org_id=test_org.id,
+                room_id=test_room.id,
+                user_id=admin_user.id,
+                start_time=booking_start,
+                end_time=booking_start + timedelta(hours=2),
+                duration_hours=Decimal("2.00"),
+                total_amount=Decimal("22.00"),
+                status=BookingStatus.confirmed,
+                payment_method=PaymentMethod.hourly,
+            )
+            db_session.add(booking)
+        await db_session.commit()
+
+        page1 = await client.get(
+            "/api/v1/admin/bookings",
+            params={"org_id": str(test_org.id), "page": 1, "page_size": 20},
+            headers=admin_headers,
+        )
+        assert page1.status_code == 200, page1.text
+        page1_body = page1.json()
+        assert len(page1_body["bookings"]) == 20
+        assert page1_body["total"] == 25
+        assert page1_body["page"] == 1
+        assert page1_body["page_size"] == 20
+
+        page2 = await client.get(
+            "/api/v1/admin/bookings",
+            params={"org_id": str(test_org.id), "page": 2, "page_size": 20},
+            headers=admin_headers,
+        )
+        assert page2.status_code == 200, page2.text
+        page2_body = page2.json()
+        assert len(page2_body["bookings"]) == 5
+        assert page2_body["total"] == 25
+        assert page2_body["page"] == 2
+
+        # No overlap between the two pages.
+        page1_ids = {b["id"] for b in page1_body["bookings"]}
+        page2_ids = {b["id"] for b in page2_body["bookings"]}
+        assert page1_ids.isdisjoint(page2_ids)
+
     async def test_admin_update_booking_status(
         self,
         client,

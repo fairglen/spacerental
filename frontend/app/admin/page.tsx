@@ -23,11 +23,12 @@ export default function AdminDashboard() {
     queryFn: () => adminApi.getDashboard(api),
     enabled: !!session?.accessToken,
   })
-  const { data: bookings, isLoading: bookingsLoading } = useQuery({
-    queryKey: ['admin', 'bookings'],
-    queryFn: () => adminApi.getBookings({}, api),
+  const { data: bookingsPage, isLoading: bookingsLoading } = useQuery({
+    queryKey: ['admin', 'bookings', 'recent'],
+    queryFn: () => adminApi.getBookings({ page_size: 10 }, api),
     enabled: !!session?.accessToken,
   })
+  const bookings = bookingsPage?.bookings
 
   return (
     <div className="p-8">
