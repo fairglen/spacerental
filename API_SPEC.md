@@ -64,12 +64,16 @@ List available packages for an org.
 Query: `?org_id=`
 
 ### POST /packages/:id/purchase
-Purchase a package.
+Purchase a package. Same Checkout pattern as `POST /bookings`: the purchase is
+recorded `pending` and only the `checkout.session.completed` webhook (Stripe
+or the local stub) flips it to `active` — that's what makes its hours
+spendable.
 Body: `{ org_id }`
-Response: `{ purchase: UserPackagePurchase }`
+Response: `{ purchase: UserPackagePurchase, checkout_url: string }`
 
 ### GET /packages/me
 My package purchases and remaining hours.
+Response: `{ purchases: UserPackagePurchase[] }`
 
 ---
 
@@ -196,8 +200,10 @@ type UserPackagePurchase = {
   hours_total: number
   hours_used: number
   hours_remaining: number
+  status: "pending" | "active" | "cancelled"
   purchased_at: string
   expires_at: string
+  package: Package
 }
 
 type OrgMembership = {

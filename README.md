@@ -30,7 +30,9 @@ docker-compose up --build
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-No external accounts needed.
+No external accounts needed. The backend container runs `alembic upgrade head`
+before starting uvicorn, so the schema is built and up to date on first boot —
+there is no separate migration step to remember.
 
 ### 3. Seed demo data
 ```bash
@@ -43,13 +45,12 @@ Creates: 1 space (Espaço Calmo, Lisboa), 3 rooms at €11/h, 2 packages, and a 
 ### 4. Register your own user
 Visit http://localhost:3000/sign-up — any email/password (min 8 chars) works locally.
 
-To promote an existing user to admin:
+To promote an existing user to admin (owner by default):
 ```bash
-docker-compose exec db psql -U spacerental -d spacerental -c \
-  "INSERT INTO organization_members (org_id, user_id, role)
-   SELECT (SELECT id FROM organizations LIMIT 1), id, 'owner'
-   FROM users WHERE email='YOUR_EMAIL';"
+docker-compose exec backend python -m app.promote_admin YOUR_EMAIL
 ```
+This adds `YOUR_EMAIL` as `owner` of the seeded demo org (slug `demo-space`). Pass `--role admin` for a non-owner admin, or `--org-slug` to target a different org. Unlike hand-written SQL, an unknown email or org slug fails loudly with a non-zero exit instead of silently doing nothing.
+
 Then re-login — the Admin link will appear in the navbar.
 
 ---
@@ -63,6 +64,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp ../.env.example .env  # the repo root holds the single env template
 # Start Postgres separately (e.g. via OrbStack or brew)
+alembic upgrade head     # the app does not create tables; migrations do
 uvicorn app.main:app --reload
 ```
 
@@ -102,6 +104,39 @@ spacerental/
 
 ## Multi-tenancy
 Every table has `org_id`. Adding a second space operator = new row in `organizations` + membership. No code changes needed.
+
+## Database migrations
+
+Alembic owns the schema everywhere except the test suite. The application never
+creates tables: `backend/docker-entrypoint.sh` runs `alembic upgrade head`
+before uvicorn starts, so `docker-compose up` on a fresh clone comes up
+migrated. Only `backend/tests/conftest.py` builds tables straight from
+`Base.metadata`, because each test wants a throwaway schema in milliseconds.
+
+If you already have a local `pgdata` volume from before this change, it likely
+contains tables but no `alembic_version`, so `alembic upgrade head` will fail at
+boot. The simplest fix is to recreate the DB with `docker-compose down -v`; if
+you need to keep the data and the schema matches, run `docker-compose exec backend alembic stamp head` once.
+After changing a model:
+
+```bash
+docker-compose exec backend alembic revision --autogenerate -m "what changed"
+# review the generated file, then:
+docker-compose restart backend        # the entrypoint applies it
+```
+
+To check a schema matches the models, and to walk the full round-trip the CI
+`Migrations` workflow runs:
+
+```bash
+docker-compose exec backend alembic check          # models vs. live schema
+docker-compose exec backend alembic downgrade base
+docker-compose exec backend alembic upgrade head
+```
+
+`alembic check` failing means someone changed a model without writing a
+migration. Both halves are enforced by `.github/workflows/migrations.yml`,
+which runs the whole chain against an empty PostgreSQL 16 on every backend PR.
 
 ## What's not wired yet
 - **Payments** (Stripe): booking model has `payment_method` and `total_amount` ready; add Stripe checkout before going live

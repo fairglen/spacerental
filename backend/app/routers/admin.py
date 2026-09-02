@@ -1,13 +1,15 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, and_, distinct
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import email
 from app.auth import require_admin
 from app.database import get_db
+from app.email import EmailGateway, get_email_gateway
 from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus
 from app.models.package import Package
@@ -23,7 +25,7 @@ from app.schemas.space import (
     AvailabilityRuleOut,
 )
 from app.schemas.booking import BookingOut, BookingStatusUpdate
-from app.schemas.package import PackageOut, PackageCreate
+from app.schemas.package import PackageOut, PackageCreate, PackageUpdate
 from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -221,6 +223,30 @@ async def admin_update_room(
     return {"room": RoomOut.model_validate(room)}
 
 
+@router.get("/rooms/{room_id}/availability")
+async def admin_get_availability(
+    room_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Current availability rules for a room, for pre-filling the admin edit form."""
+    result = await db.execute(
+        select(Room).where(Room.id == room_id, Room.org_id == org_id)
+    )
+    room = result.scalar_one_or_none()
+    if room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+
+    rules_result = await db.execute(
+        select(AvailabilityRule)
+        .where(AvailabilityRule.room_id == room_id)
+        .order_by(AvailabilityRule.day_of_week)
+    )
+    rules = rules_result.scalars().all()
+    return {"rules": [AvailabilityRuleOut.model_validate(r) for r in rules]}
+
+
 @router.post("/rooms/{room_id}/availability")
 async def admin_set_availability(
     room_id: uuid.UUID,
@@ -313,20 +339,55 @@ async def admin_list_bookings(
 async def admin_update_booking(
     booking_id: uuid.UUID,
     body: BookingStatusUpdate,
+    background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
 ):
     result = await db.execute(
-        select(Booking).where(Booking.id == booking_id, Booking.org_id == org_id)
+        select(Booking)
+        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .where(Booking.id == booking_id, Booking.org_id == org_id)
     )
     booking = result.scalar_one_or_none()
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
+    # Captured before the status mutation and the refresh below expire the
+    # relationships — app.email has no DB session and cannot lazy-load them.
+    previous_status = booking.status
+    recipient_email = booking.user.email
+    space_name = booking.room.space.name
+    room_name = booking.room.name
+    start_time = booking.start_time
+    end_time = booking.end_time
+
     booking.status = body.status
     await db.flush()
     await db.refresh(booking)
+
+    if body.status != previous_status and body.status in (
+        BookingStatus.confirmed,
+        BookingStatus.cancelled,
+    ):
+        build_message = (
+            email.booking_confirmation_email
+            if body.status == BookingStatus.confirmed
+            else email.booking_cancellation_email
+        )
+        email.enqueue_email(
+            background_tasks,
+            email_gateway,
+            build_message(
+                to=recipient_email,
+                space_name=space_name,
+                room_name=room_name,
+                start_time=start_time,
+                end_time=end_time,
+            ),
+        )
+
     return {"booking": BookingOut.model_validate(booking)}
 
 
@@ -381,6 +442,30 @@ async def admin_create_package(
         validity_days=body.validity_days,
     )
     db.add(package)
+    await db.flush()
+    await db.refresh(package)
+    return {"package": PackageOut.model_validate(package)}
+
+
+@router.put("/packages/{package_id}")
+async def admin_update_package(
+    package_id: uuid.UUID,
+    body: PackageUpdate,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Edit a package's price/hours/validity, or soft-deactivate it via is_active=false."""
+    result = await db.execute(
+        select(Package).where(Package.id == package_id, Package.org_id == org_id)
+    )
+    package = result.scalar_one_or_none()
+    if package is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Package not found")
+
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(package, field, value)
+
     await db.flush()
     await db.refresh(package)
     return {"package": PackageOut.model_validate(package)}

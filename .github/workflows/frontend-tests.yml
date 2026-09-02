@@ -1,5 +1,11 @@
 name: Frontend Tests
 
+# NOTE: `pull_request.paths` prevents this workflow from running on backend-only PRs, so the check will be absent.
+# This is intentional to save CI time.
+# Important: if this workflow is ever configured as a *required* status check, PRs where it doesn't run may be blocked ("Expected — waiting for status to be reported").
+# In that case, either remove the path filter or add a lightweight stub workflow that reports a neutral/success status when frontend isn't touched.
+# See TODO.md T4 for context.
+
 on:
   push:
     branches: [main]

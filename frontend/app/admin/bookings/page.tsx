@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
+import { useOrg } from '@/contexts/OrgContext'
 import { BookingsTable } from '@/components/admin/BookingsTable'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -12,13 +13,14 @@ const PAGE_SIZE = 20
 export default function AdminBookingsPage() {
   const { data: session } = useSession()
   const api = useApi()
+  const { currentOrgId } = useOrg()
   const qc = useQueryClient()
   const [page, setPage] = useState(1)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'bookings', 'all', page],
+    queryKey: ['admin', 'bookings', 'all', currentOrgId, page],
     queryFn: () => adminApi.getBookings({ page, page_size: PAGE_SIZE }, api),
-    enabled: !!session?.accessToken,
+    enabled: !!session?.accessToken && !!currentOrgId,
   })
   const updateMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => adminApi.updateBooking(id, status, api),

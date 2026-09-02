@@ -4,6 +4,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_user
 from app.database import get_db
@@ -115,6 +116,10 @@ async def purchase_package(
     purchase.stripe_checkout_session_id = session.id
     await db.flush()
     await db.refresh(purchase)
+    # `package` relationship is lazy="noload" (§4 avoids surprise N+1s), and we
+    # already have the fully-loaded row from the lookup above — assign it
+    # directly instead of a second query just to satisfy the schema below.
+    purchase.package = package
 
     return PackagePurchaseCheckoutOut(
         purchase=UserPackagePurchaseOut.model_validate(purchase),
@@ -130,6 +135,7 @@ async def my_packages(
     """My package purchases and remaining hours."""
     result = await db.execute(
         select(UserPackagePurchase)
+        .options(selectinload(UserPackagePurchase.package))
         .where(UserPackagePurchase.user_id == user.id)
         .order_by(UserPackagePurchase.expires_at.asc())
     )

@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -20,6 +20,10 @@ type FormData = z.infer<typeof schema>
 
 export default function SignInPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Carried over from Pricing/sign-up when a signed-out visitor picked a
+  // package before proving they already have an account (B12).
+  const packageId = searchParams.get('packageId')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
@@ -36,7 +40,7 @@ export default function SignInPage() {
     if (result?.error) {
       setError('Email ou password incorretos.')
     } else {
-      router.push('/dashboard')
+      router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : '/dashboard')
       router.refresh()
     }
   }
@@ -74,7 +78,12 @@ export default function SignInPage() {
             </form>
             <p className="text-center text-sm text-muted-foreground mt-4">
               Não tens conta?{' '}
-              <Link href="/sign-up" className="text-primary font-medium hover:underline">Registar</Link>
+              <Link
+                href={packageId ? `/sign-up?packageId=${packageId}` : '/sign-up'}
+                className="text-primary font-medium hover:underline"
+              >
+                Registar
+              </Link>
             </p>
           </CardContent>
         </Card>

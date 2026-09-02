@@ -100,6 +100,15 @@ export type AvailabilitySlot = {
   available: boolean
 }
 
+export type AvailabilityRule = {
+  id: string
+  room_id: string
+  day_of_week: number
+  open_time: string
+  close_time: string
+  is_active: boolean
+}
+
 export type AdminStats = {
   total_bookings: number
   total_revenue: number

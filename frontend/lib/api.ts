@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase,
-  AvailabilitySlot, AdminStats, Membership, User,
+  AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, PaginatedBookings,
 } from '@/types'
 
@@ -175,4 +175,18 @@ export const adminApi = {
 
   createPackage: (data: Partial<Package>, api: Api) =>
     api.post<{ package: Package }>('/admin/packages', data).then(r => normPackage(r.data.package)),
+
+  updatePackage: (id: string, data: Partial<Package>, api: Api) =>
+    api.put<{ package: Package }>(`/admin/packages/${id}`, data).then(r => normPackage(r.data.package)),
+
+  getAvailability: (roomId: string, api: Api) =>
+    api.get<{ rules: AvailabilityRule[] }>(`/admin/rooms/${roomId}/availability`).then(r => r.data.rules),
+
+  setAvailability: (
+    roomId: string,
+    rules: Array<{ day_of_week: number; open_time: string; close_time: string }>,
+    api: Api,
+  ) =>
+    api.post<{ rules: AvailabilityRule[] }>(`/admin/rooms/${roomId}/availability`, { rules })
+      .then(r => r.data.rules),
 }

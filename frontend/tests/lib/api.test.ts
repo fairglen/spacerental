@@ -53,6 +53,36 @@ describe('all wrapped responses', () => {
     const mockApi = { get: vi.fn().mockResolvedValue({ data: { spaces: [] } }) } as any
     expect(Array.isArray(await adminApi.getSpaces(mockApi))).toBe(true)
   })
+  it('adminApi.updatePackage extracts and normalizes package', async () => {
+    const mockApi = {
+      put: vi.fn().mockResolvedValue({ data: { package: { id: 'pkg1', price: '45.00' } } }),
+    } as any
+    const result = await adminApi.updatePackage('pkg1', { is_active: false }, mockApi)
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/packages/pkg1', { is_active: false })
+    expect(result.price).toBe(45)
+    expect(typeof result.price).toBe('number')
+  })
+
+  it('adminApi.getAvailability extracts rules array', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({ data: { rules: [{ id: 'r1', day_of_week: 0 }] } }),
+    } as any
+    const result = await adminApi.getAvailability('room1', mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/rooms/room1/availability')
+    expect(result).toHaveLength(1)
+    expect(result[0].day_of_week).toBe(0)
+  })
+
+  it('adminApi.setAvailability posts the full rule set and extracts the response', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({ data: { rules: [{ id: 'r1', day_of_week: 0 }] } }),
+    } as any
+    const rules = [{ day_of_week: 0, open_time: '09:00', close_time: '18:00' }]
+    const result = await adminApi.setAvailability('room1', rules, mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/admin/rooms/room1/availability', { rules })
+    expect(result).toHaveLength(1)
+  })
+
   it('adminApi.getBookings extracts bookings alongside pagination metadata', async () => {
     const mockApi = {
       defaults: { params: {} },
