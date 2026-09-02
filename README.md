@@ -53,6 +53,8 @@ This adds `YOUR_EMAIL` as `owner` of the seeded demo org (slug `demo-space`). Pa
 
 Then re-login — the Admin link will appear in the navbar.
 
+(This manual SQL step is tracked as `TODO.md` **T11** — a proper `promote_admin` script is planned. Until then, the seeded `admin@demo.com` / `admin123` login above is the fast path for testing admin functionality.)
+
 ---
 
 ## Running locally (without Docker)
