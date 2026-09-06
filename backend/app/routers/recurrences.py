@@ -267,7 +267,7 @@ async def _get_own_rule(
     return rule
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, responses={409: {"model": RecurrenceConflictOut}})
 async def create_recurrence(
     body: RecurrenceCreate,
     user: User = Depends(get_current_user),
