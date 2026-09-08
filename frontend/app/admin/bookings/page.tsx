@@ -11,9 +11,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 const PAGE_SIZE = 20
 
 export default function AdminBookingsPage() {
+  const { currentOrgId } = useOrg()
+  return <OrgBookings key={currentOrgId} currentOrgId={currentOrgId} />
+}
+
+function OrgBookings({ currentOrgId }: { currentOrgId: string | null }) {
   const { data: session } = useSession()
   const api = useApi()
-  const { currentOrgId } = useOrg()
   const qc = useQueryClient()
   const [page, setPage] = useState(1)
 
