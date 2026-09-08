@@ -230,6 +230,8 @@ async def cancel_booking(
         select(Booking)
         .options(selectinload(Booking.room).selectinload(Room.space))
         .where(Booking.id == booking_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     booking = result.scalar_one_or_none()
 

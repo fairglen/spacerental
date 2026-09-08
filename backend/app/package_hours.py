@@ -10,6 +10,9 @@ Two rules make that hold:
   read-then-written, and without the lock two requests interleave, both read the
   same balance, and the second overwrites the first — selling the same hour
   twice.
+* **Status transitions lock the booking before its purchase.** Callers must
+  re-read the booking under that lock before deciding to refund or re-debit,
+  so concurrent transitions cannot apply the same movement twice.
 * **No function here commits.** Callers keep the lock until the request's
   transaction ends, so a deduction and the booking it paid for land, or roll
   back, together. A booking can never exist without its debit, and a debit can

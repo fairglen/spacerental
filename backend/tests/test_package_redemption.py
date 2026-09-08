@@ -10,8 +10,9 @@ import uuid
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 
+import pytest
 import pytest_asyncio
-from sqlalchemy import func, select
+from sqlalchemy import text, func, select
 
 from app import package_hours
 from app.models.booking import Booking, PaymentMethod
@@ -858,3 +859,77 @@ class TestRevenueAccounting:
         )
         # 2h at the seeded 11.00/h.
         assert stats.json()["total_revenue"] == 22.0
+
+
+@pytest.mark.parametrize("actors,target", [
+    (("member", "member"), "cancelled"),
+    (("member", "admin"), "cancelled"),
+    (("admin", "admin"), "cancelled"),
+    (("admin", "admin"), "confirmed"),
+])
+async def test_concurrent_status_transition_moves_hours_once(
+    client, auth_headers, admin_headers, test_room, test_member, test_org,
+    payments, emails, db_session, session_factory, active_purchase, actors, target,
+):
+    created = await _book_with_package(client, auth_headers, test_room)
+    assert created.status_code == 201, created.text
+    booking_id = created.json()["booking"]["id"]
+    if target == "confirmed":
+        cancelled = await client.delete(
+            f"/api/v1/bookings/{booking_id}", headers=auth_headers
+        )
+        assert cancelled.status_code == 204, cancelled.text
+    emails.sent.clear()
+
+    async def transition(actor):
+        if actor == "member":
+            return await client.delete(
+                f"/api/v1/bookings/{booking_id}", headers=auth_headers
+            )
+        return await client.put(
+            f"/api/v1/admin/bookings/{booking_id}",
+            params={"org_id": str(test_org.id)},
+            json={"status": target}, headers=admin_headers,
+        )
+
+    async with session_factory() as blocker, session_factory() as observer:
+        await blocker.execute(
+            select(Booking).where(Booking.id == uuid.UUID(booking_id)).with_for_update()
+        )
+        requests = [asyncio.create_task(transition(actor)) for actor in actors]
+        try:
+            # Hold the row until both HTTP transactions are waiting in PostgreSQL.
+            # Without the route lock both can decide from the old booking status.
+            async def both_waiting():
+                while True:
+                    count = await observer.scalar(text(
+                        "SELECT count(*) FROM pg_stat_activity "
+                        "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                    ))
+                    await observer.rollback()
+                    if count >= 2:
+                        return
+                    await asyncio.sleep(0.01)
+            await asyncio.wait_for(both_waiting(), timeout=10)
+            await blocker.commit()
+            responses = await asyncio.wait_for(asyncio.gather(*requests), timeout=10)
+        finally:
+            await blocker.rollback()
+            for request in requests:
+                if not request.done():
+                    request.cancel()
+            await asyncio.gather(*requests, return_exceptions=True)
+
+    codes = sorted(response.status_code for response in responses)
+    if actors == ("member", "member"):
+        assert codes == [204, 400]
+    elif actors == ("member", "admin"):
+        assert codes in ([200, 204], [200, 400])
+    else:
+        assert codes == [200, 200]
+    await db_session.refresh(active_purchase)
+    assert active_purchase.hours_remaining == Decimal("10" if target == "cancelled" else "8")
+    assert active_purchase.hours_used == Decimal("0" if target == "cancelled" else "2")
+    booking = await db_session.get(Booking, uuid.UUID(booking_id))
+    assert booking.status.value == target
+    assert len(emails.sent) == 1
