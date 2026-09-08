@@ -89,7 +89,7 @@ async def _activate_purchase(
     return True
 
 
-async def _apply_checkout_completion(
+async def apply_checkout_completion(
     db: AsyncSession,
     session: CheckoutSessionInfo,
     *,
@@ -159,7 +159,7 @@ async def stripe_webhook(
     if event.type != CHECKOUT_COMPLETED or event.checkout_session is None:
         return {"received": True, "handled": False}
 
-    handled = await _apply_checkout_completion(
+    handled = await apply_checkout_completion(
         db,
         event.checkout_session,
         background_tasks=background_tasks,

@@ -42,6 +42,9 @@ app.include_router(bookings.router, prefix=API_PREFIX)
 app.include_router(packages.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
+# No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
+# see app/routers/checkout_stub.py.
+app.include_router(checkout_stub.router)
 
 
 @app.get("/health", tags=["health"])

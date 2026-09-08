@@ -177,6 +177,7 @@ async def payments(client) -> StubPaymentGateway:
         currency="eur",
         success_url="http://test/success",
         cancel_url="http://test/cancel",
+        checkout_base_url="http://test",
     )
     app.dependency_overrides[get_payment_gateway] = lambda: gateway
     yield gateway
