@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { t } from '@/lib/i18n'
 
 export function SpaceCards() {
   const { data: spaces, isLoading } = useQuery({
@@ -20,8 +21,8 @@ export function SpaceCards() {
     <section className="py-16 bg-background">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-10">
-          <h2 className="text-3xl font-bold text-foreground mb-3">Espaços Disponíveis</h2>
-          <p className="text-muted-foreground">Salas preparadas para a tua prática profissional.</p>
+          <h2 className="text-3xl font-bold text-foreground mb-3">{t('spaceCards.section_title')}</h2>
+          <p className="text-muted-foreground">{t('spaceCards.section_description')}</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {isLoading
@@ -52,7 +53,7 @@ export function SpaceCards() {
                       ))}
                     </div>
                     <Link href={`/spaces/${space.id}`}>
-                      <Button className="w-full" size="sm">Ver Disponibilidade</Button>
+                      <Button className="w-full" size="sm">{t('spaceCards.cta_detail')}</Button>
                     </Link>
                   </CardContent>
                 </Card>
@@ -61,12 +62,12 @@ export function SpaceCards() {
         {!isLoading && preview.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <Building2 className="h-10 w-10 mx-auto mb-3 text-primary-light" />
-            <p>Ainda não há espaços disponíveis.</p>
+            <p>{t('spaceCards.empty_state')}</p>
           </div>
         )}
         <div className="text-center mt-8">
           <Link href="/spaces">
-            <Button variant="outline">Ver Todos os Espaços</Button>
+            <Button variant="outline">{t('spaceCards.cta_all')}</Button>
           </Link>
         </div>
       </div>

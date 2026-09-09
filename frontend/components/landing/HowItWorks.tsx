@@ -1,8 +1,10 @@
+import { t } from '@/lib/i18n'
+
 const steps = [
-  { n: '01', title: 'Regista-te', desc: 'Cria a tua conta em segundos com o Google ou e-mail.' },
-  { n: '02', title: 'Escolhe o espaço', desc: 'Consulta as salas disponíveis e as suas comodidades.' },
-  { n: '03', title: 'Reserva o horário', desc: 'Seleciona a data e hora no calendário e confirma a reserva.' },
-  { n: '04', title: 'Acede ao espaço', desc: 'Recebe as instruções de acesso e começa a trabalhar.' },
+  { n: '01', title: t('howItWorks.step_1_title'), desc: t('howItWorks.step_1_desc') },
+  { n: '02', title: t('howItWorks.step_2_title'), desc: t('howItWorks.step_2_desc') },
+  { n: '03', title: t('howItWorks.step_3_title'), desc: t('howItWorks.step_3_desc') },
+  { n: '04', title: t('howItWorks.step_4_title'), desc: t('howItWorks.step_4_desc') },
 ]
 
 export function HowItWorks() {
@@ -10,9 +12,9 @@ export function HowItWorks() {
     <section id="como-funciona" className="py-20 bg-background">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-foreground mb-4">Como Funciona</h2>
+          <h2 className="text-3xl font-bold text-foreground mb-4">{t('howItWorks.section_title')}</h2>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            De zero a sala reservada em menos de 2 minutos.
+            {t('howItWorks.section_description')}
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
