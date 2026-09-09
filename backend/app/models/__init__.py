@@ -1,6 +1,7 @@
 from app.models.organization import Organization, OrganizationMember
 from app.models.user import User
 from app.models.space import Space, Room, AvailabilityRule
+from app.models.recurrence import RecurrenceRule, RecurrenceFrequency
 from app.models.booking import Booking
 from app.models.package import Package, UserPackagePurchase
 
@@ -11,6 +12,8 @@ __all__ = [
     "Space",
     "Room",
     "AvailabilityRule",
+    "RecurrenceRule",
+    "RecurrenceFrequency",
     "Booking",
     "Package",
     "UserPackagePurchase",
