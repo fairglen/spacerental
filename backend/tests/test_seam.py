@@ -394,3 +394,62 @@ class TestSeamBestEffort:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["booking"]["access_code"] is None
+
+
+async def test_failed_revoke_retains_identifier_until_successful_retry(monkeypatch):
+    gateway = StubLockGateway()
+    booking_id = uuid.uuid4()
+    start, end = _future_slot()
+    code = await gateway.issue_access_code(booking_id=booking_id, room_id=uuid.uuid4(), name="test", starts_at=start, ends_at=end)
+    original = gateway._revoke
+
+    async def fail(**kwargs):
+        raise LockProviderError("temporarily unavailable")
+
+    monkeypatch.setattr(gateway, "_revoke", fail)
+    with pytest.raises(LockProviderError):
+        await gateway.revoke_access_code(booking_id=booking_id)
+    assert gateway.issued_code_for(booking_id) == code
+    monkeypatch.setattr(gateway, "_revoke", original)
+    await gateway.revoke_access_code(booking_id=booking_id)
+    assert gateway.issued_code_for(booking_id) is None
+    assert gateway.revoked_booking_ids == [booking_id]
+
+
+async def test_repeat_issue_does_not_create_another_code(monkeypatch):
+    gateway = StubLockGateway()
+    start, end = _future_slot()
+    args = dict(booking_id=uuid.uuid4(), room_id=uuid.uuid4(), name="test", starts_at=start, ends_at=end)
+    first = await gateway.issue_access_code(**args)
+
+    async def unexpected(**kwargs):
+        pytest.fail("issuing twice must reuse the existing identifier")
+
+    monkeypatch.setattr(gateway, "_issue", unexpected)
+    assert await gateway.issue_access_code(**args) == first
+
+
+def test_live_mode_with_credentials_is_gated_until_codes_are_durable(monkeypatch):
+    monkeypatch.setattr(settings, "SEAM_MODE", "live")
+    monkeypatch.setattr(settings, "SEAM_API_KEY", "test-only")
+    with pytest.raises(LockNotConfigured, match="persisted"):
+        validate_lock_settings()
+
+
+async def test_cancelled_booking_hides_code_after_failed_revocation(
+    client, auth_headers, db_session, test_org, test_room, test_user, test_member, locks, monkeypatch,
+):
+    booking = await _make_confirmed_booking(db_session, org=test_org, room=test_room, user=test_user)
+    await locks.issue_access_code(booking_id=booking.id, room_id=test_room.id, name="test", starts_at=booking.start_time, ends_at=booking.end_time)
+
+    async def fail(**kwargs):
+        raise LockProviderError("temporarily unavailable")
+
+    monkeypatch.setattr(locks, "_revoke", fail)
+    response = await client.delete(f"/api/v1/bookings/{booking.id}", headers=auth_headers)
+    assert response.status_code == 204, response.text
+    assert locks.issued_code_for(booking.id) is not None
+    response = await client.get("/api/v1/bookings/me", headers=auth_headers)
+    row = next(b for b in response.json()["bookings"] if b["id"] == str(booking.id))
+    assert row["status"] == "cancelled"
+    assert row["access_code"] is None

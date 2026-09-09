@@ -113,7 +113,7 @@ class LockGateway(ABC):
 
 
 class SeamGateway(LockGateway):
-    """Real Seam. Selected by SEAM_MODE=live."""
+    """Seam HTTP adapter; application live startup remains gated by O04."""
 
     def __init__(
         self, api_key: str, device_id_map: dict[str, str], timeout_seconds: float = 10.0

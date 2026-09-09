@@ -6,7 +6,7 @@
 - **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind CSS + NextAuth.js
 - **Backend**: FastAPI (Python) + SQLAlchemy async + PostgreSQL
 - **Auth**: Self-hosted — FastAPI issues JWTs after email/password verification (Argon2id hashing, NIST SP 800-63B + OWASP compliant). NextAuth manages the session cookie. No external auth service.
-- **Smart locks**: Architecture ready for Seam API integration (not wired yet)
+- **Smart locks**: Local stub access-code lifecycle; live Seam operation gated until durable storage
 
 ## Setup
 
@@ -147,21 +147,30 @@ which runs the whole chain against an empty PostgreSQL 16 on every backend PR.
 
 ## Third-party integrations (stub/live)
 
-Stripe, Resend (email), and Seam (smart locks) each sit behind a thin
-interface with a credential-free `stub` implementation and a real `live`
-one, selected by `STRIPE_MODE` / `EMAIL_MODE` / `SEAM_MODE` (default `stub`
-for all three — see `.env.example`). The full test suite runs against the
-stubs with zero third-party accounts or network access.
+Stripe, Resend (email), and Seam (smart locks) sit behind credential-free stub
+interfaces. `STRIPE_MODE`, `EMAIL_MODE` and `SEAM_MODE` default to `stub`; all tests
+run without third-party accounts or network access.
 
-**Seam smart locks** (`backend/app/locks.py`): confirming a booking (via the
-Stripe webhook or an admin's direct status change) issues a time-scoped
-access code; cancelling a confirmed booking revokes it. Both calls are
-best-effort — a Seam outage is logged, never a 500. In stub mode, issued
-codes live in an in-memory table only and show up on `GET /bookings/me` and
-`GET /admin/bookings` as `access_code`; there is no database column yet for
-either the code or the room→device mapping (see the module docstring), so
-codes do not survive a backend restart in either mode until a follow-up
-migration adds real storage.
+**Smart locks** (`backend/app/locks.py`): webhook/stub checkout confirmation,
+admin confirmation and prepaid pack redemption issue an access code. Individual,
+admin and recurring-series cancellations revoke it. Failed revocations retain
+the identifier for a retry, and cancelled bookings no longer expose the code.
+A failed series edit keeps the original codes valid. Stub codes are held in
+process memory and disappear on restart. **Live Seam startup is rejected even
+with an API key** until persistent identifiers and retry handling ship (O04).
+This is a locally testable foundation, not production door access.
+
+To exercise the complete lifecycle locally:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+docker compose exec -T backend python -m app.seed
+# Sign in at http://localhost:3000, book a future slot and pay on stub checkout.
+# GET /api/v1/bookings/me with that user's Bearer token exposes access_code.
+# Cancel the booking; the subsequent response has no access_code.
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
+```
 
 ---
 
@@ -214,3 +223,18 @@ pre-commit install -t pre-push  # installs the pre-push hook
 
 ### CI
 GitHub Actions (`.github/workflows/frontend-tests.yml` and `e2e.yml`) run unit tests on every frontend change and full E2E tests against a Dockerized stack on every PR. Failing E2E runs upload the Playwright HTML report as a build artifact.
+
+### Experimental weekly series
+
+Weekly recurrence is a foundation for local testing, disabled by default. Set
+`RECURRING_BOOKINGS_ENABLED=true` in `.env` and recreate the backend with
+`docker compose up -d backend` to opt in. The API creates pending occurrences
+without checkout; an administrator must handle them manually. Keep this disabled
+for customer use until series payment and local-time scheduling are complete.
+Times recur in UTC and therefore shift in Lisbon at daylight-saving changes.
+
+Edit/cancel operations lock the rule and affected bookings, preserve history and
+apply the same 24-hour cancellation window and notification/credit behavior as
+individual bookings. A rejected edit changes no bookings and sends no emails.
+The test suite explicitly enables the foundation and also verifies the disabled
+API, concurrent edits, cancellation policy and all-or-nothing conflicts.

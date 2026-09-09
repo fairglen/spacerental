@@ -12,15 +12,11 @@ import {
 } from '@/components/ui/select'
 import { Building2, LogOut, User, Menu, X } from 'lucide-react'
 import { useOrg } from '@/contexts/OrgContext'
-import { t } from '@/lib/i18n'
-
-const navLinks = [
-  { href: '/spaces', label: t('navbar.spaces_link') },
-  { href: '/#como-funciona', label: t('navbar.how_it_works_link') },
-  { href: '/#precos', label: t('navbar.pricing_link') },
-]
+import { useT } from '@/lib/i18n'
+import { LocaleSwitcher } from '@/components/layout/LocaleSwitcher'
 
 function OrgSwitcher({ className }: { className?: string }) {
+  const t = useT()
   const { memberships, currentOrgId, setCurrentOrgId } = useOrg()
   if (memberships.length === 0) return null
 
@@ -43,10 +39,16 @@ function OrgSwitcher({ className }: { className?: string }) {
 }
 
 export function Navbar() {
+  const t = useT()
   const { data: session, status } = useSession()
   const { currentMembership } = useOrg()
   const [mobileOpen, setMobileOpen] = useState(false)
   const isSignedIn = status === 'authenticated'
+  const navLinks = [
+    { href: '/spaces', label: t('navbar.spaces_link') },
+    { href: '/#como-funciona', label: t('navbar.how_it_works_link') },
+    { href: '/#precos', label: t('navbar.pricing_link') },
+  ]
   const isAdminInCurrentOrg =
     currentMembership?.role === 'admin' || currentMembership?.role === 'owner'
   // Fall back to the legacy session-level role for the nav link visibility when
@@ -76,6 +78,7 @@ export function Navbar() {
 
           {/* Desktop auth */}
           <div className="hidden md:flex items-center gap-3">
+            <LocaleSwitcher />
             {isSignedIn ? (
               <>
                 <OrgSwitcher />
@@ -134,6 +137,7 @@ export function Navbar() {
             </Link>
           ))}
           <div className="pt-3 border-t border-border flex flex-col gap-2">
+            <LocaleSwitcher className="self-start" />
             {isSignedIn ? (
               <>
                 <OrgSwitcher className="w-full" />

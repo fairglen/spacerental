@@ -21,6 +21,8 @@ class BookingOut(BaseModel):
     status: BookingStatus
     payment_method: PaymentMethod
     notes: str | None
+    # Non-null when this booking is one occurrence of a recurring series.
+    recurrence_rule_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
     room: RoomOut | None = None

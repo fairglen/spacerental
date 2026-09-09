@@ -38,6 +38,8 @@ export type Booking = {
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed'
   payment_method: 'hourly' | 'package'
   notes?: string
+  // Set when this booking is one occurrence of a recurring series.
+  recurrence_rule_id?: string | null
   room?: Room
   user?: User
   created_at: string

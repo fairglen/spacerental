@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-key-change-this-in-production-min-32-chars"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     CORS_ORIGINS: str = "http://localhost:3000"
+    # Experimental UTC series have no customer payment path yet.
+    RECURRING_BOOKINGS_ENABLED: bool = False
 
     # ── Rate limiting ────────────────────────────────────────────────────
     RATE_LIMIT_ENABLED: bool = True
@@ -55,22 +57,10 @@ class Settings(BaseSettings):
     # correct here — unlike backend-to-backend calls (CLAUDE.md §6.3).
     FRONTEND_URL: str = "http://localhost:3000"
 
-    # ── Seam smart locks ────────────────────────────────────────────────────
-    # "stub" (default) issues/revokes access codes in an in-memory table only
-    # — no account, no credentials, no network. Note this means issued codes
-    # do not survive a process restart in EITHER mode yet: there is no
-    # `rooms.seam_device_id` or `bookings.access_code` column (adding one
-    # needs a migration, and Epic 1's PR #26 already has an unmerged `0002`
-    # in flight — see app/locks.py's module docstring).
-    # "live" calls the real Seam API and SEAM_API_KEY then becomes
-    # mandatory — app.locks.validate_lock_settings() raises at import rather
-    # than letting the stub run in production.
+    # Stub codes are process-local. Live startup is gated until durable access
+    # identifiers and retry state exist (roadmap O04).
     SEAM_MODE: str = "stub"
     SEAM_API_KEY: str | None = None
-    # JSON object mapping room id (str) -> Seam device id (str). Only read in
-    # live mode, in lieu of a `rooms.seam_device_id` column. A room missing
-    # from this map fails only that one Seam call (logged, best-effort —
-    # CLAUDE.md Epic 3.3), never a 500.
     SEAM_DEVICE_ID_MAP: str | None = None
     SEAM_TIMEOUT_SECONDS: float = 10.0
 

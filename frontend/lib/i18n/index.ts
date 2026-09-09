@@ -1,7 +1,24 @@
-import catalog from './pt.json'
+import { useSyncExternalStore } from 'react'
+import ptCatalog from './pt.json'
+import enCatalog from './en.json'
+import {
+  DEFAULT_LOCALE,
+  LOCALE_LABELS,
+  SUPPORTED_LOCALES,
+  getLocale,
+  getServerLocale,
+  setLocale,
+  subscribe,
+  type Locale,
+} from './locale'
+
+export { DEFAULT_LOCALE, LOCALE_LABELS, SUPPORTED_LOCALES, getLocale, setLocale, type Locale }
+
+const catalogs: Record<Locale, unknown> = { pt: ptCatalog, en: enCatalog }
 
 /**
- * Translate a key to its Portuguese value.
+ * Translate a key to its value in the currently selected locale (see
+ * `useLocale`/`setLocale`). Defaults to Portuguese until a visitor switches.
  *
  * Supports dot notation for nested keys, e.g. 't("hero.headline_start")'
  * Also supports string interpolation for placeholders like {year}, {name}, etc.
@@ -14,7 +31,15 @@ export function t(
   key: string,
   replacements?: Record<string, string | number>
 ): string {
-  let value: unknown = catalog
+  return translate(getLocale(), key, replacements)
+}
+
+function translate(
+  locale: Locale,
+  key: string,
+  replacements?: Record<string, string | number>,
+): string {
+  let value: unknown = catalogs[locale]
   for (const part of key.split('.')) {
     value = value !== null && typeof value === 'object' && Object.hasOwn(value, part)
       ? (value as Record<string, unknown>)[part]
@@ -34,4 +59,26 @@ export function t(
   }
 
   return value
+}
+
+/**
+ * Subscribes the calling component to locale changes and returns the
+ * current locale plus a setter. Components that only need to force a
+ * re-render when the locale changes (to pick up fresh `t()` output) can
+ * use `useT()` instead.
+ */
+export function useLocale(): [Locale, (locale: Locale) => void] {
+  const locale = useSyncExternalStore(subscribe, getLocale, getServerLocale)
+  return [locale, setLocale]
+}
+
+/**
+ * Returns the `t()` function, subscribed to locale changes so the calling
+ * component re-renders (and its `t()` calls resolve against the new
+ * catalog) whenever the visitor toggles the locale switcher.
+ */
+export function useT(): typeof t {
+  // Use React's snapshot so hydration first matches the Portuguese server HTML.
+  const [locale] = useLocale()
+  return (key, replacements) => translate(locale, key, replacements)
 }
