@@ -27,6 +27,7 @@ type ApiBooking = {
   end_time: string
   status: string
   total_amount: string | number
+  access_code: string | null
 }
 
 // ── Backend helpers ───────────────────────────────────────────────────────
@@ -233,6 +234,9 @@ async function confirmAndPay(page: Page, api: APIRequestContext, token: string):
 
   await page.getByRole('button', { name: /^Pagar$/ }).click()
   await page.waitForURL(/\/dashboard/, { timeout: 20000 })
+  const confirmed = (await myBookings(api, token)).find(b => b.id === booking!.id)
+  expect(confirmed?.status).toBe('confirmed')
+  expect(confirmed?.access_code).toMatch(/^\d{6}$/)
   return booking!
 }
 
@@ -453,6 +457,8 @@ test.describe('Reservas — fluxos reais', () => {
     await card.getByRole('button', { name: /^Cancelar$/ }).click()
     await page.getByRole('button', { name: /Sim, cancelar/i }).click()
     await expect(card).toHaveCount(0, { timeout: 10000 })
+    const cancelled = (await myBookings(api, token)).find(b => b.start_time === utcHour(offset, 15).toISOString().replace('.000Z', 'Z') && b.status === 'cancelled')
+    expect(cancelled?.access_code).toBeNull()
 
     await openRoomCalendar(page, 'Sala Névoa')
     await goToDay(page, offset)

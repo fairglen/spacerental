@@ -6,7 +6,8 @@
 - **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind CSS + NextAuth.js
 - **Backend**: FastAPI (Python) + SQLAlchemy async + PostgreSQL
 - **Auth**: Self-hosted — FastAPI issues JWTs after email/password verification (Argon2id password hashing). NextAuth manages the session cookie. No external auth service.
-- **Smart locks**: Architecture ready for Seam API integration (not wired yet)
+- **Smart locks**: Local stub access-code lifecycle; live Seam operation gated until durable storage
+
 
 ## Setup
 
@@ -157,6 +158,34 @@ inspect the diff before deciding whether a migration or metadata repair is neede
   identifiers and retry state exist (O04).
 - Admin booking pagination and PT/EN marketing/layout translation are present.
   Booking and admin copy remain Portuguese. Further pagination/i18n are deferred.
+
+
+## Third-party integrations (stub/live)
+
+Stripe, Resend (email), and Seam (smart locks) sit behind credential-free stub
+interfaces. `STRIPE_MODE`, `EMAIL_MODE` and `SEAM_MODE` default to `stub`; all tests
+run without third-party accounts or network access.
+
+**Smart locks** (`backend/app/locks.py`): webhook/stub checkout confirmation,
+admin confirmation and prepaid pack redemption issue an access code. Individual,
+admin and recurring-series cancellations revoke it. Failed revocations retain
+the identifier for a retry, and cancelled bookings no longer expose the code.
+A failed series edit keeps the original codes valid. Stub codes are held in
+process memory and disappear on restart. **Live Seam startup is rejected even
+with an API key** until persistent identifiers and retry handling ship (O04).
+This is a locally testable foundation, not production door access.
+
+To exercise the complete lifecycle locally:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+docker compose exec -T backend python -m app.seed
+# Sign in at http://localhost:3000, book a future slot and pay on stub checkout.
+# GET /api/v1/bookings/me with that user's Bearer token exposes access_code.
+# Cancel the booking; the subsequent response has no access_code.
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
+```
 
 ---
 

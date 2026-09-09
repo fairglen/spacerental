@@ -213,6 +213,11 @@ type Booking = {
   room?: Room
   user?: User
   created_at: string
+  // Seam smart-lock code (Epic 3), present once the booking is confirmed.
+  // Not a DB column — read from the lock gateway's in-memory table, so it
+  // resets on a backend restart and is `null` if Seam issuance failed
+  // (best-effort, never blocks the booking) or the booking isn't confirmed.
+  access_code: string | null
 }
 
 type User = {
