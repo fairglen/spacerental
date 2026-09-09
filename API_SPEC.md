@@ -52,14 +52,28 @@ My bookings list.
 Response: `{ bookings: Booking[] }`
 
 ### POST /bookings
-Create a booking.
-Body: `{ room_id, start_time, end_time, notes? }`
-Response: `{ booking: Booking }`
+Create a booking. `payment_method` selects how it is paid for and therefore
+what comes back:
+
+- `hourly` (default) — the booking is `pending` and `checkout_url` points at the
+  Checkout Session that will confirm it via webhook.
+- `package` — prepaid hours are debited from the caller's active purchase in the
+  same transaction, the booking comes back already `confirmed`, and
+  `checkout_url` is `null` because there is nothing left to pay. Hours are taken
+  from the soonest-expiring eligible purchase, and `409` is returned if no
+  active, unexpired purchase in the room's org has enough hours for the whole
+  block. Nothing is written when it fails.
+
+Body: `{ room_id, start_time, end_time, notes?, payment_method? }`
+Response: `{ booking: Booking, checkout_url: string | null }`
+Errors: `403` not a member of the room's org, `404` unknown room, `409` slot
+already booked *or* insufficient package hours.
 
 ### DELETE /bookings/:id
 Cancel a booking (own only, if > 24h before). This is also how you cancel **one
 occurrence** of a recurring series: the occurrence is marked `cancelled` and the
-`RecurrenceRule` stays active.
+`RecurrenceRule` stays active. Package-paid bookings credit hours back to the
+exact purchase they were taken from.
 
 ### POST /recurrences
 Create a weekly recurring series, all-or-nothing. One `RecurrenceRule` plus one
