@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import pytest
 import pytest_asyncio
 from jose import jwt
 from sqlalchemy import select, func
@@ -137,14 +138,41 @@ class TestMyPackages:
         assert purchases[0]["package"]["hours"] == 10
 
 
-async def test_expired_credentials_cannot_create_a_pending_purchase(
-    client, db_session, test_org, test_package, test_user, test_member,
+@pytest.mark.parametrize("credentials", ["expired", "invalid", "missing", "deleted_user"])
+async def test_invalid_credentials_cannot_create_a_pending_purchase(
+    client, db_session, test_org, test_package, test_user, test_member, payments, credentials,
 ):
-    token = jwt.encode({"sub": str(test_user.id), "exp": datetime.now(timezone.utc) - timedelta(minutes=1)}, settings.SECRET_KEY, algorithm=ALGORITHM)
+    if credentials == "deleted_user":
+        await db_session.delete(test_user)
+        await db_session.commit()
+    token = jwt.encode({"sub": str(test_user.id), "exp": datetime.now(timezone.utc) + timedelta(minutes=-1 if credentials == "expired" else 5)}, "wrong-key" if credentials == "invalid" else settings.SECRET_KEY, algorithm=ALGORITHM)
     response = await client.post(
         f"/api/v1/packages/{test_package.id}/purchase",
-        json={"org_id": str(test_org.id)}, headers={"Authorization": f"Bearer {token}"},
+        json={"org_id": str(test_org.id)}, headers={} if credentials == "missing" else {"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 401
-    assert response.json()["detail"] == "Could not validate credentials"
+    assert response.json()["detail"] == ("Not authenticated" if credentials == "missing" else "Could not validate credentials")
     assert await db_session.scalar(select(func.count(UserPackagePurchase.id))) == 0
+    assert payments.sessions == {}
+
+
+@pytest.mark.parametrize("case,expected", [("membership", 403), ("wrong_org", 404), ("missing_package", 404), ("provider", 502)])
+async def test_purchase_failures_remain_distinct_and_create_no_purchase(
+    client, auth_headers, db_session, test_org, test_package, test_member, payments, monkeypatch, case, expected,
+):
+    from app.payments import PaymentProviderError
+
+    if case == "membership":
+        await db_session.delete(test_member)
+        await db_session.commit()
+    if case == "provider":
+        async def fail(**kwargs):
+            raise PaymentProviderError("temporarily unavailable")
+        monkeypatch.setattr(payments, "create_checkout_session", fail)
+    response = await client.post(
+        f"/api/v1/packages/{uuid.uuid4() if case == 'missing_package' else test_package.id}/purchase",
+        json={"org_id": str(uuid.uuid4() if case == "wrong_org" else test_org.id)}, headers=auth_headers,
+    )
+    assert response.status_code == expected, response.text
+    assert await db_session.scalar(select(func.count(UserPackagePurchase.id))) == 0
+    assert payments.sessions == {}

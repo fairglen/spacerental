@@ -208,7 +208,7 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
     await expect(page.getByRole('alert').filter({ hasText: /sessão deixou de ser válida/ })).toBeVisible()
     expect(await myPurchases(api, token)).toHaveLength(before.length)
     await page.getByRole('link', { name: 'Entrar e continuar a compra' }).click()
-    expect(new URL(page.url()).searchParams.get('packageId')).toBe(pkg.id)
+    await expect(page).toHaveURL(new RegExp(`/sign-in\\?packageId=${pkg.id}`))
     await page.getByLabel('Email').fill(CREDENTIALS.email)
     await page.getByLabel('Password').fill(CREDENTIALS.password)
     await page.getByRole('button', { name: /^Entrar$/ }).click()
