@@ -11,6 +11,7 @@ from app import email
 from app.auth import get_current_user
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_revoke_access_code
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.space import Room
 from app.models.organization import OrganizationMember
@@ -30,6 +31,7 @@ router = APIRouter(prefix="/bookings", tags=["bookings"])
 async def my_bookings(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """List current user's bookings."""
     result = await db.execute(
@@ -39,6 +41,7 @@ async def my_bookings(
         .order_by(Booking.start_time.desc())
     )
     bookings = result.scalars().all()
+    attach_access_codes(lock_gateway, bookings)
     return {"bookings": [BookingOut.model_validate(b) for b in bookings]}
 
 
@@ -177,6 +180,7 @@ async def cancel_booking(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """Cancel own booking if start_time is more than 24h in the future."""
     result = await db.execute(
@@ -222,3 +226,7 @@ async def cancel_booking(
             end_time=booking.end_time,
         ),
     )
+
+    # Epic 3.2/3.3: revoke before returning 204, but best-effort — a Seam
+    # outage must not block a user from cancelling their own booking.
+    await try_revoke_access_code(lock_gateway, booking_id=booking.id)

@@ -140,8 +140,25 @@ which runs the whole chain against an empty PostgreSQL 16 on every backend PR.
 
 ## What's not wired yet
 - **Payments** (Stripe): booking model has `payment_method` and `total_amount` ready; add Stripe checkout before going live
-- **Smart locks** (Seam API): booking model has all timestamps needed; wire `POST /bookings` to issue a time-scoped access code via Seam
 - **Email notifications**: add on booking confirmation
+
+## Third-party integrations (stub/live)
+
+Stripe, Resend (email), and Seam (smart locks) each sit behind a thin
+interface with a credential-free `stub` implementation and a real `live`
+one, selected by `STRIPE_MODE` / `EMAIL_MODE` / `SEAM_MODE` (default `stub`
+for all three — see `.env.example`). The full test suite runs against the
+stubs with zero third-party accounts or network access.
+
+**Seam smart locks** (`backend/app/locks.py`): confirming a booking (via the
+Stripe webhook or an admin's direct status change) issues a time-scoped
+access code; cancelling a confirmed booking revokes it. Both calls are
+best-effort — a Seam outage is logged, never a 500. In stub mode, issued
+codes live in an in-memory table only and show up on `GET /bookings/me` and
+`GET /admin/bookings` as `access_code`; there is no database column yet for
+either the code or the room→device mapping (see the module docstring), so
+codes do not survive a backend restart in either mode until a follow-up
+migration adds real storage.
 
 ---
 

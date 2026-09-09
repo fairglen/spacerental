@@ -10,6 +10,13 @@ from app import email
 from app.auth import require_admin
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.locks import (
+    LockGateway,
+    attach_access_codes,
+    get_lock_gateway,
+    try_issue_access_code,
+    try_revoke_access_code,
+)
 from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus
 from app.models.package import Package
@@ -300,6 +307,7 @@ async def admin_list_bookings(
     to_date: Optional[datetime] = Query(None, alias="to"),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     filters = [Booking.org_id == org_id]
     if room_id:
@@ -318,6 +326,7 @@ async def admin_list_bookings(
         .order_by(Booking.start_time.desc())
     )
     bookings = result.scalars().all()
+    attach_access_codes(lock_gateway, bookings)
     return {"bookings": [BookingOut.model_validate(b) for b in bookings]}
 
 
@@ -330,6 +339,7 @@ async def admin_update_booking(
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     result = await db.execute(
         select(Booking)
@@ -374,6 +384,23 @@ async def admin_update_booking(
             ),
         )
 
+        # Epic 3.1/3.2/3.3: this is the "direct-confirm" path (as opposed to
+        # the Stripe webhook in app/routers/webhooks.py). Best-effort either
+        # way — a Seam outage must not block an admin from confirming or
+        # cancelling a booking.
+        if body.status == BookingStatus.confirmed:
+            await try_issue_access_code(
+                lock_gateway,
+                booking_id=booking.id,
+                room_id=booking.room_id,
+                name=f"Reserva {booking.id} — {room_name}",
+                starts_at=start_time,
+                ends_at=end_time,
+            )
+        else:
+            await try_revoke_access_code(lock_gateway, booking_id=booking.id)
+
+    attach_access_codes(lock_gateway, booking)
     return {"booking": BookingOut.model_validate(booking)}
 
 

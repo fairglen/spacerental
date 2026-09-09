@@ -25,6 +25,12 @@ class BookingOut(BaseModel):
     updated_at: datetime
     room: RoomOut | None = None
     user: UserOut | None = None
+    # Not a DB column (see app/locks.py's module docstring on persistence).
+    # Populated from the lock gateway's in-memory table by
+    # `app.locks.attach_access_codes` before validation; `None` if this
+    # booking has no code issued (not confirmed yet, or Seam best-effort
+    # issuance failed — Epic 3.3).
+    access_code: str | None = None
 
 
 class BookingCreate(BaseModel):

@@ -14,8 +14,9 @@ Stripe Checkout Session lives on its own domain rather than under our API.
 `checkout.session.completed` payload Stripe would send, signs it the same way
 the stub always has, and runs it through the same
 `app.routers.webhooks.apply_checkout_completion` a real webhook delivery
-uses. That includes the booking-confirmation email (Epic 4 / PR #16) — a
-"Pay" click here has to trigger it too, not bypass it.
+uses. That includes the booking-confirmation email (Epic 4 / PR #16) and the
+Seam access-code issuance (Epic 3) — a "Pay" click here has to trigger both
+too, not bypass them.
 
 In `STRIPE_MODE=live` every route here 404s: `get_payment_gateway()` returns
 a `StripeGateway`, `_require_stub_gateway` rejects anything that isn't a
@@ -33,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.locks import LockGateway, get_lock_gateway
 from app.payments import PaymentGateway, StubPaymentGateway, get_payment_gateway
 from app.routers.webhooks import apply_checkout_completion
 
@@ -186,6 +188,7 @@ async def pay_checkout(
     db: AsyncSession = Depends(get_db),
     gateway: StubPaymentGateway = Depends(_require_stub_gateway),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ) -> RedirectResponse:
     session = _session_or_404(gateway, session_id)
     payload = _checkout_completed_payload(session_id, session)
@@ -199,6 +202,7 @@ async def pay_checkout(
         event.checkout_session,
         background_tasks=background_tasks,
         email_gateway=email_gateway,
+        lock_gateway=lock_gateway,
     )
     return RedirectResponse(gateway.success_url, status_code=status.HTTP_303_SEE_OTHER)
 
