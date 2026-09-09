@@ -58,6 +58,17 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-EspaçoHora <no-reply@espacohora.pt>}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      # Same stub/live shape again: stub (default) issues/revokes access
+      # codes in memory only and requires nothing; live calls the real Seam
+      # API and SEAM_API_KEY becomes mandatory —
+      # app.locks.validate_lock_settings() dies at boot without it rather
+      # than silently running the stub. See app/locks.py's module docstring
+      # for the in-memory-only persistence caveat that applies to both modes
+      # until a follow-up migration adds real storage.
+      SEAM_MODE: ${SEAM_MODE:-stub}
+      SEAM_API_KEY: ${SEAM_API_KEY:-}
+      SEAM_DEVICE_ID_MAP: ${SEAM_DEVICE_ID_MAP:-}
+      SEAM_TIMEOUT_SECONDS: ${SEAM_TIMEOUT_SECONDS:-10}
     depends_on:
       db:
         condition: service_healthy

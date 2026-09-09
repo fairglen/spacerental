@@ -113,24 +113,18 @@ class TestExpandOccurrences:
 
     def test_weekly_expansion_is_inclusive_of_until_date(self):
         start = datetime(2026, 10, 5, 10, 0, tzinfo=UTC)
-        occurrences = expand_occurrences(
-            start, start + timedelta(hours=2), date(2026, 10, 26)
-        )
+        occurrences = expand_occurrences(start, start + timedelta(hours=2), date(2026, 10, 26))
         assert [o[0].day for o in occurrences] == [5, 12, 19, 26]
         assert all(end - begin == timedelta(hours=2) for begin, end in occurrences)
 
     def test_until_date_before_the_next_step_stops_the_series(self):
         start = datetime(2026, 10, 5, 10, 0, tzinfo=UTC)
-        occurrences = expand_occurrences(
-            start, start + timedelta(hours=1), date(2026, 10, 11)
-        )
+        occurrences = expand_occurrences(start, start + timedelta(hours=1), date(2026, 10, 11))
         assert len(occurrences) == 1
 
     def test_occurrences_are_ascending(self):
         start = datetime(2026, 10, 5, 10, 0, tzinfo=UTC)
-        occurrences = expand_occurrences(
-            start, start + timedelta(hours=1), date(2026, 12, 31)
-        )
+        occurrences = expand_occurrences(start, start + timedelta(hours=1), date(2026, 12, 31))
         assert occurrences == sorted(occurrences)
 
 
@@ -1091,6 +1085,7 @@ class TestRecurrenceReviewRegressions:
         emails,
         overlap_constraint,
         monkeypatch,
+        locks,
     ):
         start = _next_monday()
         created = await client.post(
@@ -1108,6 +1103,14 @@ class TestRecurrenceReviewRegressions:
             start=moved,
             end=moved + timedelta(hours=2),
         )
+        for row in created.json()["bookings"]:
+            await locks.issue_access_code(
+                booking_id=uuid.UUID(row["id"]),
+                room_id=test_room.id,
+                name="test",
+                starts_at=start,
+                ends_at=start + timedelta(hours=2),
+            )
         original = recurrences._find_conflicts
         calls = 0
 
@@ -1122,6 +1125,11 @@ class TestRecurrenceReviewRegressions:
             headers=auth_headers,
             json=_series_body(test_room.id, start=moved, weeks=2),
         )
+        assert locks.revoked_booking_ids == []
+        assert all(
+            locks.issued_code_for(uuid.UUID(row["id"])) is not None
+            for row in created.json()["bookings"]
+        )
         assert response.status_code == 409, response.text
         assert response.json()["conflicts"]
         assert emails.sent == []
@@ -1133,3 +1141,48 @@ class TestRecurrenceReviewRegressions:
         )
         assert len(bookings) == 2
         assert {b.status for b in bookings} == {BookingStatus.pending}
+
+
+@pytest.mark.parametrize("action", ["cancel", "edit"])
+async def test_series_changes_revoke_only_replaced_codes(
+    client,
+    auth_headers,
+    db_session,
+    test_org,
+    test_room,
+    test_user,
+    test_member,
+    locks,
+    action,
+):
+    rule, past, future = await _seed_series_with_history(db_session, test_org, test_room, test_user)
+    for booking in (past, future):
+        booking.status = BookingStatus.confirmed
+        await locks.issue_access_code(
+            booking_id=booking.id,
+            room_id=test_room.id,
+            name="test",
+            starts_at=booking.start_time,
+            ends_at=booking.end_time,
+        )
+    await db_session.commit()
+    if action == "cancel":
+        response = await client.delete(f"/api/v1/recurrences/{rule.id}", headers=auth_headers)
+        assert response.status_code == 204, response.text
+    else:
+        response = await client.put(
+            f"/api/v1/recurrences/{rule.id}",
+            headers=auth_headers,
+            json={
+                "start_time": (rule.start_time + timedelta(hours=3)).isoformat(),
+                "end_time": (rule.end_time + timedelta(hours=3)).isoformat(),
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert all(
+            locks.issued_code_for(uuid.UUID(row["id"])) is None
+            for row in response.json()["bookings"]
+        )
+    assert locks.revoked_booking_ids == [future.id]
+    assert locks.issued_code_for(future.id) is None
+    assert locks.issued_code_for(past.id) is not None

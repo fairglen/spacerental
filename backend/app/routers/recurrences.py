@@ -14,6 +14,7 @@ from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.locks import LockGateway, get_lock_gateway
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember
 from app.models.recurrence import RecurrenceFrequency, RecurrenceRule
@@ -362,6 +363,7 @@ async def update_recurrence(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """Move a series to new times, all-or-nothing.
 
@@ -418,7 +420,7 @@ async def update_recurrence(
 
     staged_tasks = BackgroundTasks()
     for booking in replaceable:
-        await apply_cancellation(db, booking, user, staged_tasks, email_gateway)
+        await apply_cancellation(db, booking, user, staged_tasks, email_gateway, lock_gateway)
     # Flush before inserting: a cancelled row falls outside the partial EXCLUDE
     # index, so the slots are released before their replacements claim them.
     await db.flush()
@@ -460,6 +462,7 @@ async def cancel_recurrence(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """Cancel the rest of the series ("this and all future").
 
@@ -490,5 +493,5 @@ async def cancel_recurrence(
     for booking in bookings:
         validate_cancellation(booking, now)
     for booking in bookings:
-        await apply_cancellation(db, booking, user, background_tasks, email_gateway)
+        await apply_cancellation(db, booking, user, background_tasks, email_gateway, lock_gateway)
     rule.is_active = False

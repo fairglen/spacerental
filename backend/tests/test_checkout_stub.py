@@ -7,6 +7,7 @@ and its "Pay"/"Cancel" actions through the same `client` fixture used for
 every other route — no network, no Stripe credentials (CLAUDE.md §10.3).
 """
 
+import uuid
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
@@ -96,7 +97,7 @@ class TestShowCheckoutPage:
 
 class TestPayCheckout:
     async def test_pay_confirms_booking_sends_email_and_redirects(
-        self, client, auth_headers, test_room, test_member, payments, emails
+        self, client, auth_headers, test_room, test_member, payments, emails, locks
     ):
         body = await _create_pending_booking(client, auth_headers, test_room)
         booking = body["booking"]
@@ -111,6 +112,7 @@ class TestPayCheckout:
         # not bypassed by this route.
         assert len(emails.sent) == 1
         assert emails.sent[0].to == "user@test.com"
+        assert locks.issued_code_for(uuid.UUID(booking["id"])) is not None
 
     async def test_paying_twice_is_idempotent(
         self, client, auth_headers, test_room, test_member, payments, emails

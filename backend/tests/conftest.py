@@ -1,8 +1,7 @@
 import asyncio
 import json
 import os
-from datetime import time
-from decimal import Decimal
+from contextlib import suppress
 
 import pytest
 import pytest_asyncio
@@ -22,6 +21,7 @@ os.environ["SECRET_KEY"] = "test-secret-key-32-chars-min-test-test"
 from app.auth import create_access_token, hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
 from app.email import StubEmailGateway, get_email_gateway  # noqa: E402
+from app.locks import StubLockGateway, get_lock_gateway  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.organization import (  # noqa: E402
     MemberRole,
@@ -130,10 +130,8 @@ async def db_session(engine, session_factory):
 
     async with session_factory() as session:
         yield session
-        try:  # noqa: SIM105
+        with suppress(Exception):
             await session.rollback()
-        except Exception:  # noqa: BLE001
-            pass
 
 
 @pytest_asyncio.fixture
@@ -194,6 +192,20 @@ async def emails(client) -> StubEmailGateway:
     app.dependency_overrides[get_email_gateway] = lambda: gateway
     yield gateway
     app.dependency_overrides.pop(get_email_gateway, None)
+
+
+@pytest_asyncio.fixture
+async def locks(client) -> StubLockGateway:
+    """The stub Seam gateway the app under test will use.
+
+    Same StubLockGateway that SEAM_MODE=stub serves in dev — `.issued_code_for`
+    and `.revoked_booking_ids` are the observable side effects tests assert
+    against instead of a Seam dashboard. No network, no credentials required.
+    """
+    gateway = StubLockGateway()
+    app.dependency_overrides[get_lock_gateway] = lambda: gateway
+    yield gateway
+    app.dependency_overrides.pop(get_lock_gateway, None)
 
 
 @pytest_asyncio.fixture
@@ -293,6 +305,9 @@ async def test_space(db_session, test_org) -> Space:
 
 @pytest_asyncio.fixture
 async def test_room(db_session, test_org, test_space) -> Room:
+    from datetime import time
+    from decimal import Decimal
+
     r = Room(
         space_id=test_space.id,
         org_id=test_org.id,
