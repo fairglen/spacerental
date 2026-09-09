@@ -3,9 +3,10 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { ArrowRight, Clock } from 'lucide-react'
-import { t } from '@/lib/i18n'
+import { useT } from '@/lib/i18n'
 
 export function Hero() {
+  const t = useT()
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-white via-accent to-primary-light/30 py-20 md:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
