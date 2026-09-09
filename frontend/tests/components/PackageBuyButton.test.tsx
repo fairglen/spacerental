@@ -44,8 +44,7 @@ const pendingPurchase: UserPackagePurchase = {
 const CHECKOUT_URL = 'https://checkout.stripe.stub/cs_stub_deadbeef'
 const assign = vi.fn()
 
-function renderButton() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+function renderButton(queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   return render(
     <QueryClientProvider client={queryClient}>
       <PackageBuyButton pkg={pkg} />
@@ -65,9 +64,10 @@ afterEach(() => {
 describe('PackageBuyButton — signed in', () => {
   beforeEach(() => {
     vi.mocked(useSession).mockReturnValue({
-      data: { accessToken: 'jwt-token', user: { name: 'Demo Admin' } } as any,
+      data: { accessToken: 'jwt-token', user: { id: 'user-1', email: 'admin@demo.com', name: 'Demo Admin' }, role: 'member', memberships: [], expires: '2099-01-01' },
+      update: vi.fn(),
       status: 'authenticated',
-    } as any)
+    })
   })
 
   it('purchases the package and follows the Checkout URL (B12)', async () => {
@@ -79,6 +79,54 @@ describe('PackageBuyButton — signed in', () => {
 
     expect(packagesApi.purchase).toHaveBeenCalledWith(pkg.id, pkg.org_id, {})
     await waitFor(() => expect(assign).toHaveBeenCalledWith(CHECKOUT_URL))
+  })
+
+  it('handles an invalid backend token while the browser session is active, preserving the selected pack', async () => {
+    vi.mocked(packagesApi.purchase).mockRejectedValue({ response: { status: 401, data: { detail: 'Could not validate credentials' } } })
+    const user = userEvent.setup()
+    renderButton()
+    await user.click(screen.getByRole('button', { name: /Comprar Pack/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/sessão deixou de ser válida/)
+    expect(screen.getByRole('link', { name: 'Entrar e continuar a compra' })).toHaveAttribute('href', `/sign-in?packageId=${pkg.id}`)
+    expect(screen.queryByRole('button', { name: /Comprar Pack/i })).not.toBeInTheDocument()
+    expect(packagesApi.purchase).toHaveBeenCalledTimes(1)
+    expect(assign).not.toHaveBeenCalled()
+  })
+
+  it('clears cached user data when entering the recovery flow', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    queryClient.setQueryData(['packages', 'me'], [pendingPurchase])
+    vi.mocked(packagesApi.purchase).mockRejectedValue({ response: { status: 401 } })
+    renderButton(queryClient)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /Comprar Pack/i }))
+    await user.click(await screen.findByRole('link', { name: 'Entrar e continuar a compra' }))
+    expect(queryClient.getQueryData(['packages', 'me'])).toBeUndefined()
+  })
+
+  it('does not send a purchase while session data is loading', () => {
+    vi.mocked(useSession).mockReturnValue({ data: null, status: 'loading', update: vi.fn() })
+    renderButton()
+    expect(screen.getByRole('button', { name: /Comprar Pack/i })).toBeDisabled()
+    expect(packagesApi.purchase).not.toHaveBeenCalled()
+  })
+
+  it('recovers an authenticated session missing its backend token before sending a purchase', () => {
+    vi.mocked(useSession).mockReturnValue({
+      data: { accessToken: '', user: { id: 'user-1', email: 'admin@demo.com' }, role: 'member', memberships: [], expires: '2099-01-01' },
+      status: 'authenticated', update: vi.fn(),
+    })
+    renderButton()
+    expect(screen.getByRole('link', { name: 'Entrar e continuar a compra' })).toHaveAttribute('href', `/sign-in?packageId=${pkg.id}`)
+    expect(packagesApi.purchase).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes an unavailable pack from authentication and provider errors', async () => {
+    vi.mocked(packagesApi.purchase).mockRejectedValue({ response: { status: 404 } })
+    renderButton()
+    await userEvent.setup().click(screen.getByRole('button', { name: /Comprar Pack/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/já não está disponível/)
+    expect(screen.queryByRole('link', { name: 'Entrar e continuar a compra' })).not.toBeInTheDocument()
   })
 
   it('surfaces a 403 as a membership error', async () => {
@@ -114,7 +162,7 @@ describe('PackageBuyButton — signed in', () => {
 
 describe('PackageBuyButton — signed out', () => {
   beforeEach(() => {
-    vi.mocked(useSession).mockReturnValue({ data: null, status: 'unauthenticated' } as any)
+    vi.mocked(useSession).mockReturnValue({ data: null, status: 'unauthenticated', update: vi.fn() })
   })
 
   it('links to sign-up with the package id preserved instead of purchasing (B12)', () => {
