@@ -115,8 +115,11 @@ migrated. Only `backend/tests/conftest.py` builds tables straight from
 
 If you already have a local `pgdata` volume from before this change, it likely
 contains tables but no `alembic_version`, so `alembic upgrade head` will fail at
-boot. The simplest fix is to recreate the DB with `docker-compose down -v`; if
-you need to keep the data and the schema matches, run `docker-compose exec backend alembic stamp head` once.
+boot. The entrypoint detects this specific shape (schema objects already exist,
+`alembic_version` doesn't) and prints the fix directly instead of leaving a raw
+traceback as the only clue. The simplest fix is to recreate the DB with
+`docker-compose down -v`; if you need to keep the data and the schema matches,
+run `docker-compose exec backend alembic stamp head` once.
 After changing a model:
 
 ```bash
