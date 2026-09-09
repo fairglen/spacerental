@@ -11,7 +11,7 @@ from app import email, package_hours
 from app.auth import get_current_user
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
-from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_revoke_access_code
+from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_issue_access_code, try_revoke_access_code
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.space import Room
 from app.models.organization import OrganizationMember
@@ -53,6 +53,7 @@ async def create_booking(
     db: AsyncSession = Depends(get_db),
     gateway: PaymentGateway = Depends(get_payment_gateway),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """Create a new booking. Checks for time overlap before inserting.
 
@@ -214,6 +215,16 @@ async def create_booking(
                 end_time=booking.end_time,
             ),
         )
+
+        await try_issue_access_code(
+            lock_gateway,
+            booking_id=booking.id,
+            room_id=booking.room_id,
+            name=f"Reserva {booking.id} — {room.name}",
+            starts_at=booking.start_time,
+            ends_at=booking.end_time,
+        )
+    attach_access_codes(lock_gateway, booking)
 
     return BookingCheckoutOut(
         booking=BookingOut.model_validate(booking), checkout_url=checkout_url

@@ -1,36 +1,9 @@
-"""Smart-lock boundary.
+"""Smart-lock boundary with a credential-free local implementation.
 
-Mirrors `app/payments.py` and `app/email.py`'s shape: a `LockGateway`
-interface with two implementations chosen by `SEAM_MODE`, so routers never
-know which one is live. **Nothing outside this module may know about Seam.**
-
-* `stub` (default) — `StubLockGateway`: no account, no network, no
-  credentials. Every issued/revoked code is kept in an in-memory table, so
-  `docker-compose up` with zero credentials still lets a developer (or a
-  test) see exactly what a real Seam call would have done.
-* `live` — `SeamGateway`: plain HTTPS calls to Seam's Access Codes API via
-  `httpx` (already a dependency — no vendor SDK needed for two endpoints).
-  Missing `SEAM_API_KEY` raises at import time rather than degrading to the
-  stub; a stub silently running in production would be far worse than a
-  crash.
-
-**Known limitation — no persistence yet.** `Booking` has no column to store
-an issued code or its Seam id. Adding one needs an Alembic migration, and
-Epic 1's backend PR (`feat/recurring-bookings-backend`, #26) already has an
-unmerged migration `0002` in flight — stacking a second `0002` on top of it
-would fork the migration history exactly the way T8/#17 had to fix. So this
-module keeps issued codes **in the running gateway's memory only**, keyed by
-booking id (`LockGateway._issued`), the same shape as `StubEmailGateway.sent`.
-This is honest about not surviving a process restart in *either* mode — Seam
-codes issued before a redeploy become unrevokable until #26 merges and a
-follow-up migration adds real storage. Fine for local/stub development and
-for demoing the flow; not fine for production `live` mode as-is.
-
-Same reasoning applies to the room → Seam device mapping: there is no
-`rooms.seam_device_id` column yet, so `live` mode resolves it from the
-`SEAM_DEVICE_ID_MAP` env var (a JSON object of room id → Seam device id)
-instead of the database. A room missing from that map fails only that one
-Seam call — logged and swallowed per Epic 3.3, never a 500.
+The stub issues and revokes observable in-memory access codes. The Seam HTTP
+adapter is retained for isolated contract testing, but live startup is blocked
+until access-code identifiers and retry state survive process restarts (O04).
+Neither the stub nor the current gateway bookkeeping is durable.
 """
 
 import json
@@ -89,6 +62,9 @@ class LockGateway(ABC):
         ends_at: datetime,
     ) -> AccessCode:
         """Request a code for `room_id`'s lock, valid for `[starts_at, ends_at]`."""
+        existing = self._issued.get(booking_id)
+        if existing is not None:
+            return existing
         code = await self._issue(
             booking_id=booking_id,
             room_id=room_id,
@@ -105,10 +81,13 @@ class LockGateway(ABC):
         A no-op (not an error) if no code is on file — e.g. issuance itself
         already failed best-effort, or this booking was never confirmed.
         """
-        code = self._issued.pop(booking_id, None)
+        code = self._issued.get(booking_id)
         if code is None:
             return
         await self._revoke(booking_id=booking_id, code=code)
+        # A failed provider call must retain the identifier so it can be retried.
+        if self._issued.get(booking_id) is code:
+            self._issued.pop(booking_id)
 
     def issued_code_for(self, booking_id: uuid.UUID) -> AccessCode | None:
         """Observability/read hook: what code (if any) is on file for this
@@ -281,7 +260,7 @@ def attach_access_codes(gateway: LockGateway, bookings) -> None:
     items = [bookings] if not isinstance(bookings, (list, tuple)) else bookings
     for booking in items:
         code = gateway.issued_code_for(booking.id)
-        booking.access_code = code.code if code else None
+        booking.access_code = code.code if code and booking.status == "confirmed" else None
 
 
 # ─── Mode selection ─────────────────────────────────────────────────────────
@@ -302,6 +281,10 @@ def validate_lock_settings() -> None:
         return
     if not settings.SEAM_API_KEY:
         raise LockNotConfigured(f"SEAM_MODE={LIVE_MODE} but SEAM_API_KEY is not set")
+    raise LockNotConfigured(
+        "Live smart-lock operation is disabled until access-code identifiers "
+        "and retry state are persisted (roadmap O04). Use SEAM_MODE=stub locally."
+    )
 
 
 def _parse_device_id_map(raw: str | None) -> dict[str, str]:
