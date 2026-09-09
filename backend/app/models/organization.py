@@ -1,19 +1,22 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, func, Enum as SAEnum, JSON, UniqueConstraint, ForeignKey
+from enum import StrEnum
+
+from sqlalchemy import JSON, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
-import enum
 
 
-class OrgPlan(str, enum.Enum):
+class OrgPlan(StrEnum):
     starter = "starter"
     pro = "pro"
     enterprise = "enterprise"
 
 
-class MemberRole(str, enum.Enum):
+class MemberRole(StrEnum):
     owner = "owner"
     admin = "admin"
     member = "member"

@@ -15,7 +15,6 @@ Two implementations sit behind `PaymentGateway`, chosen by `STRIPE_MODE`:
   would be far worse than a crash.
 """
 
-import enum
 import hashlib
 import hmac
 import json
@@ -24,7 +23,8 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from functools import lru_cache
+from enum import StrEnum
+from functools import cache
 
 import stripe
 
@@ -41,15 +41,15 @@ DEFAULT_STUB_WEBHOOK_SECRET = "whsec_stub_local_secret"
 SIGNATURE_TOLERANCE_SECONDS = 300
 
 
-class PaymentsNotConfigured(RuntimeError):
+class PaymentsNotConfiguredError(RuntimeError):
     """Live mode is selected but the Stripe configuration is incomplete."""
 
 
-class InvalidWebhookSignature(ValueError):
+class InvalidWebhookSignatureError(ValueError):
     """A webhook payload failed signature verification."""
 
 
-class InvalidWebhookPayload(ValueError):
+class InvalidWebhookPayloadError(ValueError):
     """A webhook payload was correctly signed but is not parseable."""
 
 
@@ -57,7 +57,7 @@ class PaymentProviderError(RuntimeError):
     """The payment provider rejected or could not serve the request."""
 
 
-class CheckoutKind(str, enum.Enum):
+class CheckoutKind(StrEnum):
     """What a Checkout Session is paying for; travels in the session metadata."""
 
     booking = "booking"
@@ -102,7 +102,7 @@ def to_cents(amount: Decimal) -> int:
         raise ValueError("amount must be a finite Decimal")
     if amount < 0:
         raise ValueError("amount must not be negative")
-    return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    return int((amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 def _session_info(raw_session: dict) -> CheckoutSessionInfo:
@@ -120,9 +120,9 @@ def _event_from_payload(payload: bytes) -> WebhookEvent:
     try:
         raw = json.loads(payload)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise InvalidWebhookPayload("webhook body is not valid JSON") from exc
+        raise InvalidWebhookPayloadError("webhook body is not valid JSON") from exc
     if not isinstance(raw, dict) or not isinstance(raw.get("type"), str):
-        raise InvalidWebhookPayload("webhook body is not a Stripe event")
+        raise InvalidWebhookPayloadError("webhook body is not a Stripe event")
 
     raw_session = (raw.get("data") or {}).get("object")
     session = (
@@ -134,9 +134,7 @@ def _event_from_payload(payload: bytes) -> WebhookEvent:
 
 
 def _signed_payload_digest(payload: bytes, secret: str, timestamp: int) -> str:
-    return hmac.new(
-        secret.encode(), f"{timestamp}.".encode() + payload, hashlib.sha256
-    ).hexdigest()
+    return hmac.new(secret.encode(), f"{timestamp}.".encode() + payload, hashlib.sha256).hexdigest()
 
 
 class PaymentGateway(ABC):
@@ -179,11 +177,11 @@ class PaymentGateway(ABC):
 
     @abstractmethod
     def _verify_signature(self, payload: bytes, signature_header: str) -> None:
-        """Raise InvalidWebhookSignature unless the payload is authentic."""
+        """Raise InvalidWebhookSignatureError unless the payload is authentic."""
 
     def parse_webhook_event(self, payload: bytes, signature_header: str | None) -> WebhookEvent:
         if not signature_header:
-            raise InvalidWebhookSignature("missing Stripe-Signature header")
+            raise InvalidWebhookSignatureError("missing Stripe-Signature header")
         self._verify_signature(payload, signature_header)
         return _event_from_payload(payload)
 
@@ -247,7 +245,7 @@ class StripeGateway(PaymentGateway):
         try:
             stripe.Webhook.construct_event(payload, signature_header, self._webhook_secret)
         except (stripe.SignatureVerificationError, ValueError) as exc:
-            raise InvalidWebhookSignature(str(exc)) from exc
+            raise InvalidWebhookSignatureError(str(exc)) from exc
 
 
 class StubPaymentGateway(PaymentGateway):
@@ -311,22 +309,18 @@ class StubPaymentGateway(PaymentGateway):
         return f"t={ts},v1={_signed_payload_digest(payload, self._webhook_secret, ts)}"
 
     def _verify_signature(self, payload: bytes, signature_header: str) -> None:
-        parts = dict(
-            piece.split("=", 1)
-            for piece in signature_header.split(",")
-            if "=" in piece
-        )
+        parts = dict(piece.split("=", 1) for piece in signature_header.split(",") if "=" in piece)
         try:
             timestamp = int(parts["t"])
         except (KeyError, ValueError) as exc:
-            raise InvalidWebhookSignature("malformed Stripe-Signature header") from exc
+            raise InvalidWebhookSignatureError("malformed Stripe-Signature header") from exc
 
         if abs(int(time.time()) - timestamp) > SIGNATURE_TOLERANCE_SECONDS:
-            raise InvalidWebhookSignature("signature timestamp outside tolerance")
+            raise InvalidWebhookSignatureError("signature timestamp outside tolerance")
 
         expected = _signed_payload_digest(payload, self._webhook_secret, timestamp)
         if not hmac.compare_digest(expected, parts.get("v1", "")):
-            raise InvalidWebhookSignature("signature does not match payload")
+            raise InvalidWebhookSignatureError("signature does not match payload")
 
 
 def validate_payment_settings() -> None:
@@ -337,7 +331,7 @@ def validate_payment_settings() -> None:
     """
     mode = settings.STRIPE_MODE
     if mode not in (STUB_MODE, LIVE_MODE):
-        raise PaymentsNotConfigured(
+        raise PaymentsNotConfiguredError(
             f"STRIPE_MODE must be '{STUB_MODE}' or '{LIVE_MODE}', got {mode!r}"
         )
     if mode == STUB_MODE:
@@ -351,12 +345,12 @@ def validate_payment_settings() -> None:
         if not value
     ]
     if missing:
-        raise PaymentsNotConfigured(
+        raise PaymentsNotConfiguredError(
             f"STRIPE_MODE={LIVE_MODE} but " + " and ".join(missing) + " is not set"
         )
 
 
-@lru_cache(maxsize=None)
+@cache
 def _build_gateway(
     mode: str,
     secret_key: str | None,

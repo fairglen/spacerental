@@ -1,10 +1,10 @@
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select, func, and_, distinct
-from sqlalchemy.orm import selectinload
+from sqlalchemy import and_, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app import email, package_hours
 from app.auth import require_admin
@@ -17,28 +17,29 @@ from app.locks import (
     try_issue_access_code,
     try_revoke_access_code,
 )
-from app.models.space import Space, Room, AvailabilityRule
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.package import Package
+from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
-from app.schemas.space import (
-    SpaceOut,
-    SpaceCreate,
-    SpaceUpdate,
-    RoomOut,
-    RoomCreate,
-    RoomUpdate,
-    AvailabilityRulesSetBody,
-    AvailabilityRuleOut,
-)
 from app.schemas.booking import BookingOut, BookingStatusUpdate
-from app.schemas.package import PackageOut, PackageCreate, PackageUpdate
+from app.schemas.package import PackageCreate, PackageOut, PackageUpdate
+from app.schemas.space import (
+    AvailabilityRuleOut,
+    AvailabilityRulesSetBody,
+    RoomCreate,
+    RoomOut,
+    RoomUpdate,
+    SpaceCreate,
+    SpaceOut,
+    SpaceUpdate,
+)
 from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────
+
 
 @router.get("/dashboard")
 async def dashboard(
@@ -101,6 +102,7 @@ async def dashboard(
 
 # ─── Spaces ───────────────────────────────────────────────────────────────────
 
+
 @router.get("/spaces")
 async def admin_list_spaces(
     org_id: uuid.UUID = Query(...),
@@ -147,9 +149,7 @@ async def admin_update_space(
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Space).where(Space.id == space_id, Space.org_id == org_id)
-    )
+    result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
@@ -169,9 +169,7 @@ async def admin_delete_space(
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Space).where(Space.id == space_id, Space.org_id == org_id)
-    )
+    result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
@@ -181,6 +179,7 @@ async def admin_delete_space(
 
 # ─── Rooms ────────────────────────────────────────────────────────────────────
 
+
 @router.post("/spaces/{space_id}/rooms", status_code=status.HTTP_201_CREATED)
 async def admin_create_room(
     space_id: uuid.UUID,
@@ -189,9 +188,7 @@ async def admin_create_room(
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Space).where(Space.id == space_id, Space.org_id == org_id)
-    )
+    result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
@@ -221,9 +218,7 @@ async def admin_update_room(
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Room).where(Room.id == room_id, Room.org_id == org_id)
-    )
+    result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
@@ -244,9 +239,7 @@ async def admin_get_availability(
     db: AsyncSession = Depends(get_db),
 ):
     """Current availability rules for a room, for pre-filling the admin edit form."""
-    result = await db.execute(
-        select(Room).where(Room.id == room_id, Room.org_id == org_id)
-    )
+    result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
@@ -269,9 +262,7 @@ async def admin_set_availability(
     db: AsyncSession = Depends(get_db),
 ):
     """Replace all availability rules for a room."""
-    result = await db.execute(
-        select(Room).where(Room.id == room_id, Room.org_id == org_id)
-    )
+    result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
@@ -304,13 +295,14 @@ async def admin_set_availability(
 
 # ─── Bookings ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/bookings")
 async def admin_list_bookings(
     org_id: uuid.UUID = Query(...),
-    room_id: Optional[uuid.UUID] = Query(None),
-    booking_status: Optional[BookingStatus] = Query(None, alias="status"),
-    from_date: Optional[datetime] = Query(None, alias="from"),
-    to_date: Optional[datetime] = Query(None, alias="to"),
+    room_id: uuid.UUID | None = Query(None),
+    booking_status: BookingStatus | None = Query(None, alias="status"),
+    from_date: datetime | None = Query(None, alias="from"),
+    to_date: datetime | None = Query(None, alias="to"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _: User = Depends(require_admin),
@@ -327,9 +319,7 @@ async def admin_list_bookings(
     if to_date:
         filters.append(Booking.end_time <= to_date)
 
-    total_result = await db.execute(
-        select(func.count(Booking.id)).where(and_(*filters))
-    )
+    total_result = await db.execute(select(func.count(Booking.id)).where(and_(*filters)))
     total = total_result.scalar_one()
 
     result = await db.execute(
@@ -401,15 +391,12 @@ async def admin_update_booking(
                 db,
                 purchase_id=booking.package_purchase_id,
                 hours=booking.duration_hours,
-                now=datetime.now(tz=timezone.utc),
+                now=datetime.now(tz=UTC),
             )
             if not reinstated:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "The package no longer has enough hours to reinstate "
-                        "this booking"
-                    ),
+                    detail=("The package no longer has enough hours to reinstate this booking"),
                 )
 
     booking.status = body.status
@@ -459,6 +446,7 @@ async def admin_update_booking(
 
 # ─── Users ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/users")
 async def admin_list_users(
     org_id: uuid.UUID = Query(...),
@@ -478,6 +466,7 @@ async def admin_list_users(
 
 # ─── Packages ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/packages")
 async def admin_list_packages(
     org_id: uuid.UUID = Query(...),
@@ -485,9 +474,7 @@ async def admin_list_packages(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Package)
-        .where(Package.org_id == org_id)
-        .order_by(Package.hours.asc())
+        select(Package).where(Package.org_id == org_id).order_by(Package.hours.asc())
     )
     packages = result.scalars().all()
     return {"packages": [PackageOut.model_validate(p) for p in packages]}

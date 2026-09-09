@@ -33,3 +33,5 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
+        env:
+          NEXTAUTH_SECRET: ci-build-only-secret-not-for-deployment

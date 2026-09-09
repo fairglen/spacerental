@@ -1,30 +1,34 @@
-import uuid
 import decimal
+import uuid
 from datetime import datetime
+from enum import StrEnum
+
 from sqlalchemy import (
-    String,
-    Text,
-    Numeric,
     DateTime,
     ForeignKey,
     Index,
+    Numeric,
+    String,
+    Text,
     func,
+)
+from sqlalchemy import (
     Enum as SAEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
-import enum
 
 
-class BookingStatus(str, enum.Enum):
+class BookingStatus(StrEnum):
     pending = "pending"
     confirmed = "confirmed"
     cancelled = "cancelled"
     completed = "completed"
 
 
-class PaymentMethod(str, enum.Enum):
+class PaymentMethod(StrEnum):
     hourly = "hourly"
     package = "package"
 

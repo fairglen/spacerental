@@ -20,8 +20,8 @@ applied, so it is deliberately owned by migrations alone and is not created by
 constraints, so this stays a documented exception rather than a silent drift.
 
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # Keep revision ids <= 32 chars: alembic's alembic_version.version_num is

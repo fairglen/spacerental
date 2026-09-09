@@ -76,6 +76,11 @@ cp .env.local.example .env.local  # fill in values
 npm run dev
 ```
 
+`NEXTAUTH_SECRET` must be explicitly configured in `frontend/.env.local` (or the
+process environment), including for `npm run build`. Missing or blank values
+stop the frontend with a configuration error. The example value is for local
+development only; generate a private value for deployments.
+
 ---
 
 ## Project Structure

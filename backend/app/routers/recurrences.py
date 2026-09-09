@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -13,8 +13,8 @@ from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.config import settings
 from app.database import get_db
-from app.locks import LockGateway, get_lock_gateway
 from app.email import EmailGateway, get_email_gateway
+from app.locks import LockGateway, get_lock_gateway
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember
 from app.models.recurrence import RecurrenceFrequency, RecurrenceRule
@@ -36,7 +36,8 @@ def require_recurrence_enabled() -> None:
 
 
 router = APIRouter(
-    prefix="/recurrences", tags=["recurrences"],
+    prefix="/recurrences",
+    tags=["recurrences"],
     dependencies=[Depends(require_recurrence_enabled)],
 )
 
@@ -95,8 +96,7 @@ def _conflict_response(conflicts: list[datetime]) -> JSONResponse:
         content={
             "detail": body.detail,
             "conflicts": [
-                c.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-                for c in body.conflicts
+                c.astimezone(UTC).isoformat().replace("+00:00", "Z") for c in body.conflicts
             ],
         },
     )
@@ -176,7 +176,7 @@ def _validate_window(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="end_time must be after start_time",
         )
-    if not allow_past_anchor and start_time <= datetime.now(tz=timezone.utc):
+    if not allow_past_anchor and start_time <= datetime.now(tz=UTC):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="start_time must be in the future",
@@ -201,7 +201,7 @@ def _validate_window(
         )
     occurrences = expand_occurrences(start_time, end_time, until_date, frequency)
     if allow_past_anchor:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         occurrences = [occ for occ in occurrences if occ[0] > now]
         if not occurrences:
             raise HTTPException(status_code=400, detail="The series has no future occurrences")
@@ -269,18 +269,16 @@ async def _require_membership(db: AsyncSession, user: User, org_id: uuid.UUID) -
         )
 
 
-async def _get_own_rule(
-    db: AsyncSession, recurrence_id: uuid.UUID, user: User
-) -> RecurrenceRule:
+async def _get_own_rule(db: AsyncSession, recurrence_id: uuid.UUID, user: User) -> RecurrenceRule:
     result = await db.execute(
-        select(RecurrenceRule).where(RecurrenceRule.id == recurrence_id)
-        .with_for_update().execution_options(populate_existing=True)
+        select(RecurrenceRule)
+        .where(RecurrenceRule.id == recurrence_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     rule = result.scalar_one_or_none()
     if rule is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Recurrence not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurrence not found")
     if rule.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -289,7 +287,9 @@ async def _get_own_rule(
     return rule
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, responses={409: {"model": RecurrenceConflictOut}})
+@router.post(
+    "", status_code=status.HTTP_201_CREATED, responses={409: {"model": RecurrenceConflictOut}}
+)
 async def create_recurrence(
     body: RecurrenceCreate,
     user: User = Depends(get_current_user),
@@ -311,9 +311,7 @@ async def create_recurrence(
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
-    occurrences = _validate_window(
-        body.start_time, body.end_time, body.until_date, body.frequency
-    )
+    occurrences = _validate_window(body.start_time, body.end_time, body.until_date, body.frequency)
     await _require_membership(db, user, room.org_id)
 
     await _lock_room(db, room.id)
@@ -396,7 +394,7 @@ async def update_recurrence(
 
     await _lock_room(db, rule.room_id)
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     result = await db.execute(
         select(Booking)
         .options(selectinload(Booking.room).selectinload(Room.space))
@@ -404,7 +402,10 @@ async def update_recurrence(
             Booking.recurrence_rule_id == rule.id,
             Booking.status.in_(ACTIVE_STATUSES),
             Booking.start_time > now,
-        ).order_by(Booking.id).with_for_update().execution_options(populate_existing=True)
+        )
+        .order_by(Booking.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     replaceable = list(result.scalars().all())
     for booking in replaceable:
@@ -471,9 +472,9 @@ async def cancel_recurrence(
     rule = await _get_own_rule(db, recurrence_id, user)
     await _lock_room(db, rule.room_id)
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = max(
-        datetime.combine(from_date, time.min, tzinfo=timezone.utc) if from_date else now,
+        datetime.combine(from_date, time.min, tzinfo=UTC) if from_date else now,
         now,
     )
     result = await db.execute(
@@ -484,7 +485,9 @@ async def cancel_recurrence(
             Booking.start_time >= cutoff,
             Booking.status.in_(ACTIVE_STATUSES),
         )
-        .order_by(Booking.id).with_for_update().execution_options(populate_existing=True)
+        .order_by(Booking.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     bookings = list(result.scalars().all())
     for booking in bookings:

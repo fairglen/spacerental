@@ -3,9 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.ratelimit import RateLimitMiddleware, limiter
-from app.routers import auth, spaces, bookings, recurrences, packages, admin
-from app.routers import webhooks
-from app.routers import checkout_stub
+from app.routers import (
+    admin,
+    auth,
+    bookings,
+    checkout_stub,
+    packages,
+    recurrences,
+    spaces,
+    webhooks,
+)
 
 # The app does not create or migrate the schema. `alembic upgrade head` runs in
 # backend/docker-entrypoint.sh before uvicorn starts, so the schema exists by

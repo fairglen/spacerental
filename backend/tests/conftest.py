@@ -1,13 +1,14 @@
-import os
 import asyncio
 import json
+import os
+from contextlib import suppress
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.pool import NullPool
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # IMPORTANT: set test DB URL BEFORE importing app
 TEST_DATABASE_URL = os.getenv(
@@ -17,25 +18,25 @@ TEST_DATABASE_URL = os.getenv(
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["SECRET_KEY"] = "test-secret-key-32-chars-min-test-test"
 
+from app.auth import create_access_token, hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
+from app.email import StubEmailGateway, get_email_gateway  # noqa: E402
+from app.locks import StubLockGateway, get_lock_gateway  # noqa: E402
 from app.main import app  # noqa: E402
-from app.ratelimit import limiter  # noqa: E402
-from app.auth import hash_password, create_access_token  # noqa: E402
-from app.models.user import User  # noqa: E402
 from app.models.organization import (  # noqa: E402
+    MemberRole,
     Organization,
     OrganizationMember,
-    MemberRole,
     OrgPlan,
 )
-from app.models.space import Space, Room, AvailabilityRule  # noqa: E402
+from app.models.space import AvailabilityRule, Room, Space  # noqa: E402
+from app.models.user import User  # noqa: E402
 from app.payments import (  # noqa: E402
     CheckoutKind,
     StubPaymentGateway,
     get_payment_gateway,
 )
-from app.email import StubEmailGateway, get_email_gateway  # noqa: E402
-from app.locks import StubLockGateway, get_lock_gateway  # noqa: E402
+from app.ratelimit import limiter  # noqa: E402
 
 TEST_STRIPE_WEBHOOK_SECRET = "whsec_test_not_a_real_secret"
 
@@ -102,9 +103,7 @@ async def engine():
     from another loop raises "another operation is in progress". NullPool +
     a function-scoped engine sidesteps the issue entirely at a small perf cost.
     """
-    eng = create_async_engine(
-        TEST_DATABASE_URL, echo=False, future=True, poolclass=NullPool
-    )
+    eng = create_async_engine(TEST_DATABASE_URL, echo=False, future=True, poolclass=NullPool)
     async with eng.begin() as conn:
         await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
     yield eng
@@ -131,10 +130,8 @@ async def db_session(engine, session_factory):
 
     async with session_factory() as session:
         yield session
-        try:
+        with suppress(Exception):
             await session.rollback()
-        except Exception:
-            pass
 
 
 @pytest_asyncio.fixture
@@ -241,9 +238,7 @@ async def test_user(db_session) -> User:
 @pytest_asyncio.fixture
 async def test_member(db_session, test_org, test_user) -> OrganizationMember:
     """Make test_user a regular member of test_org."""
-    m = OrganizationMember(
-        org_id=test_org.id, user_id=test_user.id, role=MemberRole.member
-    )
+    m = OrganizationMember(org_id=test_org.id, user_id=test_user.id, role=MemberRole.member)
     db_session.add(m)
     await db_session.commit()
     await db_session.refresh(m)
@@ -259,9 +254,7 @@ async def admin_user(db_session, test_org) -> User:
     )
     db_session.add(u)
     await db_session.flush()
-    db_session.add(
-        OrganizationMember(org_id=test_org.id, user_id=u.id, role=MemberRole.owner)
-    )
+    db_session.add(OrganizationMember(org_id=test_org.id, user_id=u.id, role=MemberRole.owner))
     await db_session.commit()
     await db_session.refresh(u)
     return u
@@ -312,8 +305,8 @@ async def test_space(db_session, test_org) -> Space:
 
 @pytest_asyncio.fixture
 async def test_room(db_session, test_org, test_space) -> Room:
-    from decimal import Decimal
     from datetime import time
+    from decimal import Decimal
 
     r = Room(
         space_id=test_space.id,

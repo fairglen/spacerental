@@ -27,7 +27,8 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from functools import lru_cache
+from functools import cache
+from html import escape
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -45,7 +46,7 @@ LISBON_TZ = ZoneInfo("Europe/Lisbon")
 RESEND_API_URL = "https://api.resend.com/emails"
 
 
-class EmailNotConfigured(RuntimeError):
+class EmailNotConfiguredError(RuntimeError):
     """Live mode is selected but the email configuration is incomplete."""
 
 
@@ -187,8 +188,6 @@ def booking_confirmation_email(
         "Pode cancelar esta reserva (até 24 horas antes do início) em:\n"
         f"{cancel_url}\n"
     )
-    from html import escape
-
     safe_space_name = escape(space_name)
     safe_room_name = escape(room_name)
     safe_date_str = escape(date_str)
@@ -250,9 +249,7 @@ async def _deliver(gateway: EmailGateway, message: EmailMessage) -> None:
         # No real queue means no retry either — a real broker would redrive
         # this. Logging is the honest floor for a "queue" that is a single
         # in-process background task.
-        logger.exception(
-            "Failed to deliver email to %s (%s)", message.to, message.subject
-        )
+        logger.exception("Failed to deliver email to %s (%s)", message.to, message.subject)
 
 
 def enqueue_email(
@@ -273,18 +270,16 @@ def validate_email_settings() -> None:
     """
     mode = settings.EMAIL_MODE
     if mode not in (STUB_MODE, LIVE_MODE):
-        raise EmailNotConfigured(
+        raise EmailNotConfiguredError(
             f"EMAIL_MODE must be '{STUB_MODE}' or '{LIVE_MODE}', got {mode!r}"
         )
     if mode == STUB_MODE:
         return
     if not settings.RESEND_API_KEY:
-        raise EmailNotConfigured(
-            f"EMAIL_MODE={LIVE_MODE} but RESEND_API_KEY is not set"
-        )
+        raise EmailNotConfiguredError(f"EMAIL_MODE={LIVE_MODE} but RESEND_API_KEY is not set")
 
 
-@lru_cache(maxsize=None)
+@cache
 def _build_gateway(mode: str, api_key: str | None, from_address: str) -> EmailGateway:
     if mode == LIVE_MODE:
         return ResendEmailGateway(api_key=api_key, from_address=from_address)
@@ -294,9 +289,7 @@ def _build_gateway(mode: str, api_key: str | None, from_address: str) -> EmailGa
 def get_email_gateway() -> EmailGateway:
     """FastAPI dependency returning the configured gateway."""
     validate_email_settings()
-    return _build_gateway(
-        settings.EMAIL_MODE, settings.RESEND_API_KEY, settings.EMAIL_FROM_ADDRESS
-    )
+    return _build_gateway(settings.EMAIL_MODE, settings.RESEND_API_KEY, settings.EMAIL_FROM_ADDRESS)
 
 
 validate_email_settings()

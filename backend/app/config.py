@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -65,7 +64,7 @@ class Settings(BaseSettings):
     SEAM_TIMEOUT_SECONDS: float = 10.0
 
     @property
-    def cors_origins_list(self) -> List[str]:
+    def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
 
     model_config = {"env_file": ".env", "extra": "ignore"}
