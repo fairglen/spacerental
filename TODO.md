@@ -87,6 +87,8 @@ cd frontend
 npx tsc --noEmit
 npm test
 npm run test:e2e
+# On a fresh worktree; preserve an existing .env.local:
+cp .env.local.example .env.local
 npm run build
 cd ..
 ```
@@ -113,28 +115,30 @@ Broader roadmap implementation remains on hold.
 
 | Task | Current disposition | Evidence / remaining work |
 |---|---|---|
-| Q19 | DONE — merged #19 as `1ec3ec0828c03c30d03c5a5ec93294b0d84378b4` | All reported PR checks passed; entrypoint unittest rerun locally passed (success, duplicate-object/table and unrelated failure cases). Non-blocking README wording still overstates what the duplicate-error detection proves; reconcile under C08. |
+| Q19 | DONE — merged #19 as `1ec3ec0828c03c30d03c5a5ec93294b0d84378b4` | All reported PR checks passed; entrypoint unittest rerun locally passed (success, duplicate-object/table and unrelated failure cases). The diagnostic detects duplicate-object errors; its README wording is corrected in Q23 without claiming it proves the database is unversioned. |
 | Q22 | DONE — merged #22 as `3241e56e792fbcb66e1e39377d6462ee1406c038` | Backend, frontend, E2E, lint and migration checks passed on PR and resulting main. Reviewed debit/refund locks and deterministic concurrent status-transition coverage. C02 retains fresh-customer E2E and distinguishing slot-conflict from insufficient-hours errors. |
 | Q31 | DONE — merged #31 as `3bf7fa378e65fb505dca7884a39d64747ccbd82c` | Reran failed infrastructure job in Actions run `34383929172`; E2E passed, as did other reported PR checks. Reviewed compatibility with #22's hourly-payment helper. |
 | Q20 | DONE — merged #20 as `c4a8838` | Stable (start_time, id) pagination with tied-start integration coverage and accessible status actions; 152 backend, 82 frontend and 17 browser tests plus green CI. |
-| Q23 | QUEUED — held | Existing diff adds stale claims about shipped admin/purchase/promotion work and does not contain this agreed roadmap/backlog. Reconcile this documentation into the PR before merge. |
-| Q24 | QUEUED — held | Undefined `checkout_stub` prevents startup and CI is red. Reconcile the cleanup with newly merged package-redemption code. |
+| Q23 | IN PROGRESS — this documentation PR | Agreed roadmap, task refactor, shipped status and architecture guidance are reconciled here; final code merge evidence will be recorded before publishing. |
+| Q24 | IN PROGRESS — head `cf7a602` under review | Checkout import restored; explicit Ruff 0.16.5 rules reconciled with all functional changes. Also removes the inherited auth-secret fallback and includes migrations in lint. Local 223 backend, 120 frontend, 20 browser tests, production build and empty-database migration roundtrip pass. Final CI pending. |
 | Q25 | DONE — merged #25 as `2b6e864` | Real NextAuth credentials setup, fail-fast readiness and uploaded diagnostics; 74 frontend tests, 17 browser flows and 20 repeated admin checks plus green CI. |
 | Q26 | DONE — merged #26 as `5018e87` | 193 backend tests, migration roundtrip, 93 frontend tests and 17 browser flows plus green CI. One Alembic head; shared cancellation policy, row locks and rollback-safe notifications. Explicit opt-in pending UTC foundation; R01–R03 remain HOLD. |
 | Q27 | DONE — merged #27 as `3c687d6` | 111 frontend tests, TypeScript and 19 browser flows plus green CI. Single switch gates API/UI, explicit pending acknowledgement, preview/conflict and isolated cancellation coverage. Paid series and local-time scheduling remain HOLD. |
-| Q28 | QUEUED — held | Failed revoke removes the only code identifier before provider success, and live code identifiers are lost on restart. Package-confirmation path added by #22 also needs coverage. The automated review claim that Python 3.12 CancelledError is caught by Exception is not a valid blocker; it inherits BaseException. |
+| Q28 | DONE — merged #28 as `e20998a` | 215 backend, 111 frontend, 19 browser tests and migration CI passed. Includes pack/stub checkout issuance, individual/series/admin cancellation, failed-revoke retention and rollback-safe edits. Live startup is gated until O04. |
 | Q29 | DONE — merged #29 as `42466e8` | Typed catalog traversal and literal repeated interpolation, behavior-focused tests; 93 frontend tests, TypeScript, 17 browser flows and green CI. |
 | Q30 | DONE — merged #30 as `ed571e5` | Locale snapshot hydration regression and persistence flow verified; 98 frontend tests, TypeScript, 18 browser flows and green CI. |
 
-Gate 0 remains open for Q23, Q24, Q28, B14 and final integrated verification.
+Gate 0 remains open for Q23, Q24 and final integrated verification. B14 is merged in #32.
 A merged foundation is not completion of
 its roadmap outcome. The original per-PR scopes below remain the acceptance
 reference; the disposition table above takes precedence over their dated snapshot.
 
-Current merged main is `3c687d6` after #27. Final integrated evidence will be
+Current merged main is `c8b4913` after #32. Final integrated evidence will be
 recorded under Q90 after the remaining code and documentation PRs land.
 
 ### Q00 — Refresh evidence and choose the merge sequence
+
+**State: DONE.** Merge sequence, fixes and evidence are recorded above.
 
 **Depends on:** assignment to work on the existing PRs.
 **Scope:** GitHub PR heads/bases, reviews, CI logs, changed files, migration graph.
@@ -158,8 +162,9 @@ recorded without claiming any pending PR is already shipped.
 
 ### Per-PR tasks
 
-Rows not marked DONE in the disposition table are **QUEUED**, depend on Q00,
-and inherit the delivery contract.
+The table below preserves the historical intake snapshot and accepted scope.
+Current states are in the disposition table above; all tasks inherit the delivery
+contract and depend on Q00.
 Each completion requires resolved relevant review findings, appropriate local
 checks and CI on the final revision, and a recorded main merge commit (or an
 explicitly agreed disposition). No automatic merging is requested by this file.
@@ -181,9 +186,9 @@ explicitly agreed disposition). No automatic merging is requested by this file.
 
 ### B14 — Pack purchase fails credential validation (reported as monthly booking)
 
-**State: IN PROGRESS — branch `fix/package-purchase-reauth`.** Reported by the user on
-2026-09-09. Add to Gate 0 repair work before new roadmap features; implementation is authorized as part of the resumed repair assignment. **Depends on:** reproduce on
-the user's running revision and compare with current main; no dependency on
+**State: DONE — [PR #32](https://github.com/fairglen/spacerental/pull/32), merged as `c8b4913`.** Reported by the user on
+2026-09-09 and repaired under Gate 0. The reproduction, scope and acceptance
+below preserve the investigation contract; this repair has no dependency on
 future customer enrollment or recurring-booking implementation.
 
 **Reported request:**
@@ -203,7 +208,7 @@ customer's exact journey. The package UUID is local reproduction evidence,
 not a value to hardcode into the fix or tests. An expired, correctly signed backend JWT inside an active NextAuth session reproduces the same 401. The original pre-restart session is unavailable, so its exact invalidation cause cannot be established.
 
 **Scope:** `PackageBuyButton.tsx`, `frontend/lib/api.ts`, NextAuth callbacks in
-`app/api/auth/[...nextauth]/route.ts`, sign-in/return navigation and package
+`frontend/lib/auth.ts` (shared by the route and dashboard layout), sign-in/return navigation and package
 dashboard, `backend/app/auth.py`, and package/auth tests. Keep API calls in the
 existing wrapper and preserve the backend's authentication and membership checks.
 
@@ -255,6 +260,19 @@ expired API token inside an otherwise active browser session → sign-in recover
 → selected pack → local checkout → active hours, plus a fresh-session happy
 path. Use controlled token timestamps rather than waiting 24 hours. Run the
 required suites and record reproduction/fix evidence before marking DONE.
+
+B14 validation on `6ec0725`: 223 backend tests, 116 frontend tests, TypeScript,
+production build and 20 browser flows passed. The regression verifies a genuine
+expired backend token inside an active NextAuth session, rejected purchase with
+no side effects, preserved selection, sign-in and exactly one activated purchase.
+Backend, frontend/build, E2E, lint and migration CI all passed before merge.
+A second local browser run also verified expired-session recovery starting from
+`/dashboard/packages`. Shared auth configuration
+moved to `frontend/lib/auth.ts` to fix Next.js route-export validation; the
+frontend workflow now also builds production output. The final review identified
+an inherited hardcoded secret fallback; Q24 removes it and tests missing/blank
+configuration. Recovery clears authenticated caches because re-login may select
+a different account; no purchase POST is automatically replayed.
 
 ### Q90 — Verify the combined result and close Gate 0
 
@@ -445,7 +463,7 @@ outcome remains incomplete unless the user explicitly changes priorities.
 ## Outcome 2 — Regular customers can manage their schedule
 
 **All tasks: HOLD.** Entry gate: C99 complete and assigned roadmap work.
-Pending #26/#27 are foundations; do not reimplement their accepted behavior.
+Merged #26/#27 are gated foundations; do not reimplement their accepted behavior.
 
 ### R01 — Preserve Lisbon wall time for availability and recurrence
 
@@ -631,15 +649,15 @@ procedures. Required suites and migration checks pass without external credentia
 
 ## Legacy IDs and verified baseline
 
-This is historical mapping, not another executable queue. Merged status refers
-to main `bc3112b` as assessed on 2026-09-09. Q90 must refresh it after integration.
+This is historical mapping, not another executable queue. The original assessment used main `bc3112b`; the table now distinguishes merged
+foundations from outcome-level follow-ups. Gate 0 evidence is recorded above.
 Keep old IDs in bug reports/PRs useful by linking them to the tasks below.
 
 | Legacy item | Disposition / replacement |
 |---|---|
 | Seven-item architecture review follow-up | Landed by `40c05bd`; preserve isolation, API shapes, Decimal handling and overlap protections. |
 | B1/B2/B4 and hourly portion of B5; T7 | Landed through `84b8e86`: multi-hour selection, separated same-day blocks, checkout redirect, busy-slot and cancellation coverage. Additional single-click/stale-modal proof is Q31; recurring B5 coverage is R02/R03/R99. |
-| B3; Epic 1.1–1.4 | Existing recurring foundations Q26/Q27; complete paid/local-time/manageable journey in R01–R99. Not marked shipped. |
+| B3; Epic 1.1–1.4 | Q26/Q27 are merged as an opt-in pending UTC foundation; paid/local-time/manageable journey remains R01–R99. |
 | B6 | Drag/click instructions landed (`90b4a1c`). |
 | B7–B11 (from #23) | Admin org-cache, room/package/space editing and availability UI landed through `37123f8` and follow-ups. Preserve under Q20 and integrated checks; no duplicate CRUD project. |
 | B12 (from #23) | Auth-aware package purchase UI landed (`88b1ecc`). Fresh-customer membership is C01; spending hours and full customer flow are Q22/C02. |
@@ -654,9 +672,9 @@ Keep old IDs in bug reports/PRs useful by linking them to the tasks below.
 | T11 (from #23) | Admin promotion command landed (`05f752c`). It is not customer enrollment; C01 handles that. |
 | Epic 2.1–2.3 | Hourly/package checkout and signed completion handling landed (`147f698`); incomplete payment lifecycle C03 and refunds O02. |
 | Epic 2.4 (from #23) | Existing redemption Q22; complete and verify customer flow C02. |
-| Epic 3.1–3.3 | Existing stub/live lock foundation Q28; durable and complete operational access O04. |
+| Epic 3.1–3.3 | Merged lock foundation Q28 (live startup gated); durable and complete operational access O04. |
 | Epic 4.1–4.3 | Stub/live email and confirmation/cancellation content landed (`0d19b2e`); in-process tasks do not complete durable queue acceptance. Recovery O01. |
-| Epic 5.1–5.2 | Existing pagination Q20, pending merge; additional pagination D05. |
+| Epic 5.1–5.2 | Pagination Q20 merged and verified; additional pagination D05. |
 | Epic 6.1–6.2 | Deferred D01, preserving isolation requirements. |
 | Epic 7.1–7.2 | Auth/public rate limiter landed (`d8d4c3a`). Test/client-identity issues Q25/C08; do not rebuild the limiter speculatively. |
 | Epic 8.1–8.2 | Audit persistence and admin view O05. |

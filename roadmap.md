@@ -22,11 +22,10 @@ and its E2E test, then complete the package-holder journey on the merged work.
 
 **Reported purchase blocker:** [TODO.md B14](TODO.md#b14--pack-purchase-fails-credential-validation-reported-as-monthly-booking)
 tracks the user's monthly/pack purchase failure (`Could not validate credentials`
-from `POST /packages/{id}/purchase`). Queue authentication diagnosis and recovery
-with Gate 0 repairs, before new features. Preserve the selected package through
-sign-in recovery and verify a completed local purchase. The reported endpoint
+from `POST /packages/{id}/purchase`). Authentication recovery was delivered in Gate 0: the selected package survives
+sign-in and the completed local purchase is verified. The reported endpoint
 does not establish a separate monthly-recurrence defect; reproduce any remaining
-scheduling problem independently. The expired-session failure mode is reproduced; recovery and full local checkout are being verified under B14.
+scheduling problem independently. The expired-session failure mode and successful recovery through local checkout are verified and merged in PR #32 (`c8b4913`).
 
 ## 1. First customer can reliably pay and book
 
