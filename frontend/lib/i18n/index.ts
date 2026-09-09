@@ -31,7 +31,15 @@ export function t(
   key: string,
   replacements?: Record<string, string | number>
 ): string {
-  let value: unknown = catalogs[getLocale()]
+  return translate(getLocale(), key, replacements)
+}
+
+function translate(
+  locale: Locale,
+  key: string,
+  replacements?: Record<string, string | number>,
+): string {
+  let value: unknown = catalogs[locale]
   for (const part of key.split('.')) {
     value = value !== null && typeof value === 'object' && Object.hasOwn(value, part)
       ? (value as Record<string, unknown>)[part]
@@ -70,6 +78,7 @@ export function useLocale(): [Locale, (locale: Locale) => void] {
  * catalog) whenever the visitor toggles the locale switcher.
  */
 export function useT(): typeof t {
-  useLocale()
-  return t
+  // Use React's snapshot so hydration first matches the Portuguese server HTML.
+  const [locale] = useLocale()
+  return (key, replacements) => translate(locale, key, replacements)
 }
