@@ -1,14 +1,17 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { bookingsApi, packagesApi, createAuthenticatedApi } from '@/lib/api'
+import { bookingsApi, recurrencesApi, packagesApi, createAuthenticatedApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
-import { statusOf } from '@/lib/httpError'
+import { statusOf, conflictsOf } from '@/lib/httpError'
+import { expandWeeklyOccurrences } from '@/lib/recurrence'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -60,9 +63,17 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   // null until the user picks — the default depends on data that arrives later.
   const [method, setMethod] = useState<PaymentMethod | null>(null)
 
+  const recurrenceEnabled = process.env.NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED === 'true'
+  const [repeatWeekly, setRepeatWeekly] = useState(false)
+  const [untilDate, setUntilDate] = useState('')
+
   const duration = start && end ? (end.getTime() - start.getTime()) / (1000 * 60 * 60) : 0
   const total = room ? duration * room.hourly_rate : 0
 
+  const occurrences = useMemo(
+    () => (repeatWeekly && start ? expandWeeklyOccurrences(start, untilDate) : []),
+    [repeatWeekly, start, untilDate],
+  )
   const { data: purchases = [] } = useQuery({
     queryKey: ['packages', 'me'],
     queryFn: () => packagesApi.listMine(createAuthenticatedApi(session?.accessToken)),
@@ -76,13 +87,24 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   // hourly when there is no usable pack, which also covers the case where the
   // user picks "package" and then drags out a longer block their hours no
   // longer cover.
-  const effectiveMethod: PaymentMethod = canPayWithPackage ? (method ?? 'package') : 'hourly'
+  const effectiveMethod: PaymentMethod = !repeatWeekly && canPayWithPackage ? (method ?? 'package') : 'hourly'
   const hoursLeft = usable.reduce((max, p) => Math.max(max, p.hours_remaining), 0)
 
   const mutation = useMutation({
     mutationFn: async () => {
       if (!room || !start || !end) throw new Error('Missing data')
       const api = createAuthenticatedApi(session?.accessToken)
+
+      if (recurrenceEnabled && repeatWeekly) {
+        if (!untilDate) throw new Error('Missing until_date')
+        return recurrencesApi.create({
+          room_id: room.id,
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          until_date: untilDate,
+        }, api)
+      }
+
       const { booking, checkout_url } = await bookingsApi.create({
         room_id: room.id,
         start_time: start.toISOString(),
@@ -98,25 +120,44 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
       }
       return { booking, checkout_url }
     },
-    onSuccess: ({ checkout_url }) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['availability'] })
       queryClient.invalidateQueries({ queryKey: ['packages', 'me'] })
-      if (!checkout_url) {
-        // Already confirmed and paid from the pack — there is nothing to send
-        // the user to, so the flow ends here.
-        onClose()
-        return
+      if ('checkout_url' in result) {
+        if (result.checkout_url) window.location.assign(result.checkout_url)
+        else onClose()
       }
-      // Payment confirms the booking (the Stripe webhook flips it to
-      // `confirmed`), so the flow continues at Checkout, not back on the page.
-      window.location.assign(checkout_url)
     },
   })
+
+  // A fresh slot selection should not inherit the previous one's series
+  // settings or a stale error from a dismissed attempt.
+  useEffect(() => {
+    setRepeatWeekly(false)
+    setUntilDate('')
+    mutation.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start])
 
   if (!room || !start || !end) return null
 
   const isUnauthenticated = status === 'unauthenticated'
+  const conflicts = conflictsOf(mutation.error)
+  const untilBeforeStart = repeatWeekly && !!untilDate && occurrences.length === 0
+  const canSubmit = !repeatWeekly || (!!untilDate && occurrences.length > 0)
+
+  if (mutation.isSuccess && 'recurrence' in mutation.data) {
+    return (
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Série criada — aguarda confirmação</DialogTitle></DialogHeader>
+          <p role="status">{mutation.data.bookings.length} reservas pendentes. O espaço precisa de confirmar a série e combinar o pagamento contigo. Ainda não tens acesso confirmado.</p>
+          <DialogFooter><Button onClick={onClose}>Fechar</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+  }
 
   return (
     <Dialog open={!!room && !!start} onOpenChange={onClose}>
@@ -143,13 +184,73 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
               <span className="font-medium text-foreground">{duration}h</span>
             </div>
             <div className="border-t border-primary-light pt-2 flex justify-between">
-              <span className="font-semibold text-foreground">Total</span>
+              <span className="font-semibold text-foreground">{repeatWeekly ? 'Total por semana' : 'Total'}</span>
               <span className="font-bold text-primary text-lg">
                 {effectiveMethod === 'package' ? `${duration}h do teu pack` : formatCurrency(total)}
               </span>
             </div>
+            {repeatWeekly && occurrences.length > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Total da série ({occurrences.length} reservas)</span>
+                <span className="font-medium text-foreground">{formatCurrency(total * occurrences.length)}</span>
+              </div>
+            )}
           </div>
-          {canPayWithPackage && (
+          {recurrenceEnabled && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                id="repeat-weekly"
+                type="checkbox"
+                className="h-4 w-4 rounded border-[#E5E7EB] text-primary focus:ring-2 focus:ring-[#3D7A5E]"
+                disabled={mutation.isPending}
+                checked={repeatWeekly}
+                onChange={(e) => setRepeatWeekly(e.target.checked)}
+              />
+              <Label htmlFor="repeat-weekly">Repetir semanalmente</Label>
+            </div>
+
+            {repeatWeekly && (
+              <div className="space-y-3 pl-6">
+                <p className="text-sm text-amber-700">Funcionalidade experimental: a série fica pendente para confirmação e pagamento combinados com o espaço. Os packs não são usados. A hora local pode mudar com o horário de verão.</p>
+                <div className="space-y-1">
+                  <Label htmlFor="until-date">Repetir até</Label>
+                  <Input
+                    id="until-date"
+                    type="date"
+                    disabled={mutation.isPending}
+                    min={start.toISOString().slice(0, 10)}
+                    max={new Date(start.getTime() + 103 * 7 * 86400000).toISOString().slice(0, 10)}
+                    value={untilDate}
+                    onChange={(e) => setUntilDate(e.target.value)}
+                  />
+                </div>
+
+                {untilBeforeStart && (
+                  <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                    Escolhe uma data final entre a primeira reserva e o limite de 104 semanas.
+                  </p>
+                )}
+
+                {occurrences.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Datas a criar ({occurrences.length})
+                    </p>
+                    <ul className="max-h-40 overflow-y-auto rounded-lg border border-border divide-y divide-border text-sm">
+                      {occurrences.map((occ) => (
+                        <li key={occ.toISOString()} className="px-3 py-1.5 text-foreground">
+                          {format(occ, "EEEE, d 'de' MMMM 'de' yyyy", { locale: pt })}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          )}
+          {canPayWithPackage && !repeatWeekly && (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium text-foreground mb-1">Pagamento</legend>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -185,18 +286,30 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
             </p>
           )}
           {mutation.isError && (
-            <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
-              {errorMessage(mutation.error, effectiveMethod)}
-            </p>
+            conflicts ? (
+              <div role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 space-y-1">
+                <p>Estas datas da série já estão reservadas:</p>
+                <ul className="list-disc list-inside">
+                  {conflicts.map((c) => (
+                    <li key={c}>{format(new Date(c), "d 'de' MMMM 'de' yyyy, HH:mm", { locale: pt })}</li>
+                  ))}
+                </ul>
+                <p>Escolhe outras datas ou horário para a série.</p>
+              </div>
+            ) : (
+              <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                {errorMessage(mutation.error, effectiveMethod)}
+              </p>
+            )
           )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || isUnauthenticated}
+            disabled={mutation.isPending || isUnauthenticated || !canSubmit}
           >
-            {mutation.isPending ? 'A confirmar...' : 'Confirmar Reserva'}
+            {mutation.isPending ? 'A confirmar...' : repeatWeekly ? 'Confirmar Série' : 'Confirmar Reserva'}
           </Button>
         </DialogFooter>
       </DialogContent>
