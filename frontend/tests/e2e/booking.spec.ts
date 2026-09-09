@@ -288,6 +288,7 @@ test.describe('Reservas — fluxos reais', () => {
 
     await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Duração', { exact: true }).locator('..')).toContainText('3h')
+    await chooseHourly(page)
     await expect(page.getByText('Total', { exact: true }).locator('..')).toContainText('33,00')
 
     const booking = await confirmAndPay(page, api, token)
@@ -345,6 +346,7 @@ test.describe('Reservas — fluxos reais', () => {
     // confirms — the modal's availability snapshot is now stale.
     await createBookingViaApi(api, token, roomId, utcHour(offset, 13), utcHour(offset, 14))
 
+    await chooseHourly(page)
     await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
 
     // B1's fourth criterion: the 409 is surfaced as the specific slot
