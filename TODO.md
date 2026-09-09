@@ -124,7 +124,7 @@ Broader roadmap implementation remains on hold.
 | Q27 | DONE — merged #27 as `3c687d6` | 111 frontend tests, TypeScript and 19 browser flows plus green CI. Single switch gates API/UI, explicit pending acknowledgement, preview/conflict and isolated cancellation coverage. Paid series and local-time scheduling remain HOLD. |
 | Q28 | QUEUED — held | Failed revoke removes the only code identifier before provider success, and live code identifiers are lost on restart. Package-confirmation path added by #22 also needs coverage. The automated review claim that Python 3.12 CancelledError is caught by Exception is not a valid blocker; it inherits BaseException. |
 | Q29 | DONE — merged #29 as `42466e8` | Typed catalog traversal and literal repeated interpolation, behavior-focused tests; 93 frontend tests, TypeScript, 17 browser flows and green CI. |
-| Q30 | DONE — merged #30 as `5018e87` | Locale snapshot hydration regression and persistence flow verified; 98 frontend tests, TypeScript, 18 browser flows and green CI. Merge hash to refresh below. |
+| Q30 | DONE — merged #30 as `ed571e5` | Locale snapshot hydration regression and persistence flow verified; 98 frontend tests, TypeScript, 18 browser flows and green CI. |
 
 Gate 0 remains open for Q23, Q24, Q28, B14 and final integrated verification.
 A merged foundation is not completion of

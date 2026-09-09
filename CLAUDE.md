@@ -8,7 +8,7 @@ This document captures the *why* behind the architecture, the non-obvious gotcha
 
 **EspaçoHora** is a multi-tenant SaaS for renting professional spaces (therapy rooms, consultation offices, coworking) by the hour. It started as a POC to evaluate a single physical location in Lisbon and is designed to grow into a platform other space operators can use.
 
-**Status:** WIP / early POC. Architecture is in place; payments, smart-lock integration, and email notifications are deliberately stubbed for now.
+**Status:** WIP / early POC. Hourly/package checkout and email gateways run locally in explicit stub mode; a smart-lock stub foundation and gated weekly series are integrated. Production recovery/durability and the fresh-customer journey remain open. Read `roadmap.md` and `TODO.md` for current scope, evidence and execution holds.
 
 **Reference UI:** [flowspace.pt](https://flowspace.pt/) — a Portuguese therapy space rental site. Our UI intentionally mirrors its structure and tone (Portuguese copy, soft sage-green palette, hour-based pricing).
 
@@ -375,18 +375,28 @@ This applies hardest to the integrations in §11 (Stripe, Seam, Resend/Postmark)
 
 ---
 
-## 11. What's intentionally not done yet
+## 11. Implemented foundations and deferred delivery
 
-These are deferred for a reason — don't quietly add them without a discussion:
+The authoritative priorities and task acceptance criteria are in `roadmap.md`
+and `TODO.md`. Completing the PR cleanup does not resume broader roadmap work.
 
-- **Stripe payments**: `Booking.total_amount` exists, the model is ready. Wire on demand.
-- **Seam API smart-lock integration**: booking timestamps are perfectly shaped for issuing time-scoped access codes. One Seam call inside `POST /bookings`.
-- **Email notifications**: should go via a queue (probably Resend or Postmark + a worker), not synchronous in the request.
-- **Pagination**: the wrapped response shape supports adding it without breaking clients.
-- **Row-level security (RLS)** in PostgreSQL: would replace the manual `org_id` filters in every query.
-- **Rate limiting**: needed before exposing to the public internet.
-- **Audit log**: who-did-what for booking cancellations, role changes, etc.
-- **i18n**: copy is hardcoded Portuguese. If we go multi-region, extract to a translation file.
+- **Payments:** Stripe/stub checkout and signed completion handling exist for
+  hourly bookings and pack purchases. Pack redemption and eligible cancellation
+  credits are implemented. Abandoned holds/recovery and cash refunds remain C03/O02.
+- **Recurring series:** API and UI require `RECURRING_BOOKINGS_ENABLED=true` in
+  Compose. They create pending weekly UTC occurrences for manual handling;
+  paid series and stable Lisbon local times remain R01–R03.
+- **Smart locks:** the local stub covers confirmation/cancellation transitions.
+  Live startup is gated until persistent identifiers and retries ship (O04).
+- **Email:** stub/live gateway and Portuguese confirmation/cancellation messages
+  run through in-process BackgroundTasks. A durable outbox and retries remain O01.
+- **Pagination:** admin booking pagination is implemented; wider coverage is D05.
+- **Rate limiting:** auth/public in-process limits and explicit Compose settings
+  are implemented. Preserve their coverage when changing authentication.
+- **i18n:** marketing/layout copy uses PT/EN catalogs with a persisted locale
+  switcher. Booking/admin copy remains Portuguese; further expansion is D02.
+- **RLS and audit:** manual tenant filters remain mandatory. PostgreSQL RLS is D01;
+  transactional tenant-scoped audit history is O05.
 
 ---
 
