@@ -1,12 +1,12 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, and_, distinct
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import email
+from app import email, package_hours
 from app.auth import require_admin
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
@@ -18,7 +18,7 @@ from app.locks import (
     try_revoke_access_code,
 )
 from app.models.space import Space, Room, AvailabilityRule
-from app.models.booking import Booking, BookingStatus
+from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.package import Package
 from app.models.user import User
 from app.schemas.space import (
@@ -51,10 +51,16 @@ async def dashboard(
     )
     total_bookings = total_bookings_result.scalar_one()
 
+    # Booking revenue is money charged *for the booking*. A package booking is
+    # settled with hours bought earlier, so counting its `total_amount` here
+    # would bill the same customer twice over — and at the rack rate, which is
+    # not even what a discounted pack cost them. Revenue from package sales
+    # belongs to the purchase, which this dashboard does not total yet.
     revenue_result = await db.execute(
         select(func.coalesce(func.sum(Booking.total_amount), 0)).where(
             Booking.org_id == org_id,
             Booking.status.in_([BookingStatus.confirmed, BookingStatus.completed]),
+            Booking.payment_method == PaymentMethod.hourly,
         )
     )
     total_revenue = float(revenue_result.scalar_one())
@@ -305,6 +311,8 @@ async def admin_list_bookings(
     booking_status: Optional[BookingStatus] = Query(None, alias="status"),
     from_date: Optional[datetime] = Query(None, alias="from"),
     to_date: Optional[datetime] = Query(None, alias="to"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     lock_gateway: LockGateway = Depends(get_lock_gateway),
@@ -319,15 +327,27 @@ async def admin_list_bookings(
     if to_date:
         filters.append(Booking.end_time <= to_date)
 
+    total_result = await db.execute(
+        select(func.count(Booking.id)).where(and_(*filters))
+    )
+    total = total_result.scalar_one()
+
     result = await db.execute(
         select(Booking)
         .options(selectinload(Booking.room), selectinload(Booking.user))
         .where(and_(*filters))
-        .order_by(Booking.start_time.desc())
+        .order_by(Booking.start_time.desc(), Booking.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
     bookings = result.scalars().all()
     attach_access_codes(lock_gateway, bookings)
-    return {"bookings": [BookingOut.model_validate(b) for b in bookings]}
+    return {
+        "bookings": [BookingOut.model_validate(b) for b in bookings],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.put("/bookings/{booking_id}")
@@ -345,6 +365,8 @@ async def admin_update_booking(
         select(Booking)
         .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
         .where(Booking.id == booking_id, Booking.org_id == org_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     booking = result.scalar_one_or_none()
     if booking is None:
@@ -358,6 +380,37 @@ async def admin_update_booking(
     room_name = booking.room.name
     start_time = booking.start_time
     end_time = booking.end_time
+
+    if booking.package_purchase_id is not None and body.status != previous_status:
+        # An admin status change moves prepaid hours exactly like a member
+        # cancellation does. Without this an admin-cancelled package booking
+        # would silently burn the customer's hours.
+        was_cancelled = previous_status is BookingStatus.cancelled
+        now_cancelled = body.status is BookingStatus.cancelled
+        if now_cancelled and not was_cancelled:
+            await package_hours.credit_hours(
+                db,
+                purchase_id=booking.package_purchase_id,
+                hours=booking.duration_hours,
+            )
+        elif was_cancelled and not now_cancelled:
+            # Reinstating a refunded booking has to take the hours back, or the
+            # cancel/re-confirm round trip hands out a free booking. It can fail
+            # honestly: the refunded hours may already be spent elsewhere.
+            reinstated = await package_hours.debit_purchase(
+                db,
+                purchase_id=booking.package_purchase_id,
+                hours=booking.duration_hours,
+                now=datetime.now(tz=timezone.utc),
+            )
+            if not reinstated:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "The package no longer has enough hours to reinstate "
+                        "this booking"
+                    ),
+                )
 
     booking.status = body.status
     await db.flush()

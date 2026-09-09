@@ -83,23 +83,40 @@ describe('all wrapped responses', () => {
     expect(result).toHaveLength(1)
   })
 
-  it('adminApi.getBookings extracts bookings', async () => {
+  it('adminApi.getBookings extracts bookings alongside pagination metadata', async () => {
     const mockApi = {
       defaults: { params: {} },
-      get: vi.fn().mockResolvedValue({ data: { bookings: [] } }),
+      get: vi.fn().mockResolvedValue({ data: { bookings: [], total: 0, page: 1, page_size: 20 } }),
     } as any
-    expect(Array.isArray(await adminApi.getBookings({}, mockApi))).toBe(true)
+    const result = await adminApi.getBookings({}, mockApi)
+    expect(Array.isArray(result.bookings)).toBe(true)
+    expect(result.total).toBe(0)
+    expect(result.page).toBe(1)
+    expect(result.page_size).toBe(20)
   })
 
   it('adminApi.getBookings merges instance default params with call params', async () => {
     const mockApi = {
       defaults: { params: { org_id: 'org-123' } },
-      get: vi.fn().mockResolvedValue({ data: { bookings: [] } }),
+      get: vi.fn().mockResolvedValue({ data: { bookings: [], total: 0, page: 1, page_size: 20 } }),
     } as any
     await adminApi.getBookings({ status: 'confirmed' }, mockApi)
     expect(mockApi.get).toHaveBeenCalledWith('/admin/bookings', {
       params: { org_id: 'org-123', status: 'confirmed' },
     })
+  })
+
+  it('adminApi.getBookings forwards page/page_size params for pagination', async () => {
+    const mockApi = {
+      defaults: { params: { org_id: 'org-123' } },
+      get: vi.fn().mockResolvedValue({ data: { bookings: [], total: 45, page: 2, page_size: 20 } }),
+    } as any
+    const result = await adminApi.getBookings({ page: 2, page_size: 20 }, mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/bookings', {
+      params: { org_id: 'org-123', page: 2, page_size: 20 },
+    })
+    expect(result.total).toBe(45)
+    expect(result.page).toBe(2)
   })
 })
 
@@ -119,6 +136,24 @@ describe('checkout responses', () => {
     expect(result.booking.id).toBe('b1')
     // Stays pending until the Stripe webhook confirms it.
     expect(result.booking.status).toBe('pending')
+  })
+
+  // Story 2.4: a package-paid booking is confirmed on the spot and has no URL.
+  it('bookingsApi.create yields a null checkout_url for a package booking', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({
+        data: {
+          booking: { id: 'b2', status: 'confirmed', total_amount: '22.00', duration_hours: '2.0' },
+          checkout_url: null,
+        },
+      }),
+    } as any
+    const result = await bookingsApi.create(
+      { room_id: 'r1', start_time: 'x', end_time: 'y', payment_method: 'package' },
+      mockApi,
+    )
+    expect(result.checkout_url).toBeNull()
+    expect(result.booking.status).toBe('confirmed')
   })
 
   it('bookingsApi.create forwards payment_method to the API', async () => {

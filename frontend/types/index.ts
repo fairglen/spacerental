@@ -43,6 +43,13 @@ export type Booking = {
   created_at: string
 }
 
+export type PaginatedBookings = {
+  bookings: Booking[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export type User = {
   id: string
   email: string
@@ -77,9 +84,11 @@ export type UserPackagePurchase = {
 
 // POST /bookings and POST /packages/{id}/purchase both return the created
 // resource alongside the Stripe Checkout URL the user must be sent to.
+// A booking paid with package hours is already `confirmed` and has nothing
+// left to pay, so it comes back without a URL.
 export type BookingCheckout = {
   booking: Booking
-  checkout_url: string
+  checkout_url: string | null
 }
 
 export type PackagePurchaseCheckout = {

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
 import { spacesApi, packagesApi } from '@/lib/api'
+import { t } from '@/lib/i18n'
 
 type PlanCopy = {
   name: string
@@ -20,11 +21,15 @@ type PlanCopy = {
 }
 
 const hourlyPlan: PlanCopy = {
-  name: 'Hora a Hora',
-  price: '€11',
-  unit: '/ hora',
-  desc: 'Sem compromisso. Paga apenas o que usas.',
-  features: ['Reserva instantânea', 'Cancelamento gratuito 24h', 'Sem mensalidade'],
+  name: t('pricing.hourly_plan_name'),
+  price: t('pricing.hourly_plan_price'),
+  unit: t('pricing.hourly_plan_unit'),
+  desc: t('pricing.hourly_plan_desc'),
+  features: [
+    t('pricing.hourly_plan_feature_1'),
+    t('pricing.hourly_plan_feature_2'),
+    t('pricing.hourly_plan_feature_3'),
+  ],
   highlighted: false,
 }
 
@@ -32,20 +37,30 @@ const hourlyPlan: PlanCopy = {
 // it can be paired with the real Package the CTA needs to purchase.
 const packageCopyByHours: Record<number, PlanCopy> = {
   10: {
-    name: 'Pack 10 Horas',
-    price: '€100',
-    unit: '10 horas',
-    desc: 'Poupa €10. Usa quando quiseres durante 1 ano.',
-    features: ['10h pré-pagas', 'Válido 12 meses', 'Poupança de €10', 'Reserva prioritária'],
+    name: t('pricing.pack_10_name'),
+    price: t('pricing.pack_10_price'),
+    unit: t('pricing.pack_10_unit'),
+    desc: t('pricing.pack_10_desc'),
+    features: [
+      t('pricing.pack_10_feature_1'),
+      t('pricing.pack_10_feature_2'),
+      t('pricing.pack_10_feature_3'),
+      t('pricing.pack_10_feature_4'),
+    ],
     highlighted: true,
-    badge: 'Mais Popular',
+    badge: t('pricing.pack_10_badge'),
   },
   20: {
-    name: 'Pack 20 Horas',
-    price: '€190',
-    unit: '20 horas',
-    desc: 'Poupa €30. Para quem usa regularmente.',
-    features: ['20h pré-pagas', 'Válido 12 meses', 'Poupança de €30', 'Reserva prioritária'],
+    name: t('pricing.pack_20_name'),
+    price: t('pricing.pack_20_price'),
+    unit: t('pricing.pack_20_unit'),
+    desc: t('pricing.pack_20_desc'),
+    features: [
+      t('pricing.pack_20_feature_1'),
+      t('pricing.pack_20_feature_2'),
+      t('pricing.pack_20_feature_3'),
+      t('pricing.pack_20_feature_4'),
+    ],
     highlighted: false,
   },
 }
@@ -104,13 +119,13 @@ export function Pricing() {
     <section id="precos" className="py-20 bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-foreground mb-4">Preços Transparentes</h2>
-          <p className="text-muted-foreground">Sem surpresas. Sem contratos. Sem taxas escondidas.</p>
+          <h2 className="text-3xl font-bold text-foreground mb-4">{t('pricing.section_title')}</h2>
+          <p className="text-muted-foreground">{t('pricing.section_description')}</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
           <PlanCard plan={hourlyPlan}>
             <Button asChild variant="outline" className="w-full">
-              <Link href="/spaces">Reservar Agora</Link>
+              <Link href="/spaces">{t('pricing.hourly_plan_cta')}</Link>
             </Button>
           </PlanCard>
 
@@ -123,7 +138,7 @@ export function Pricing() {
                 ) : pkg ? (
                   <PackageBuyButton pkg={pkg} variant={copy.highlighted ? 'default' : 'outline'} />
                 ) : (
-                  <Button variant="outline" className="w-full" disabled>Indisponível</Button>
+                  <Button variant="outline" className="w-full" disabled>{t('pricing.unavailable_cta')}</Button>
                 )}
               </PlanCard>
             )
