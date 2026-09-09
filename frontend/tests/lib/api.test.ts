@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { spacesApi, bookingsApi, packagesApi, adminApi, createAuthenticatedApi } from '@/lib/api'
+import { spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, createAuthenticatedApi } from '@/lib/api'
 
 describe('spacesApi.list', () => {
   it('extracts spaces array from wrapped response', async () => {
@@ -134,6 +134,33 @@ describe('checkout responses', () => {
     expect(mockApi.post).toHaveBeenCalledWith('/bookings', {
       room_id: 'r1', start_time: 'x', end_time: 'y', payment_method: 'hourly',
     })
+  })
+
+  it('recurrencesApi.create extracts recurrence and bookings, with no checkout_url', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({
+        data: {
+          recurrence: { id: 'rule-1', frequency: 'weekly', until_date: '2026-08-24' },
+          bookings: [
+            { id: 'b1', status: 'pending', total_amount: '11.00', duration_hours: '1.0' },
+            { id: 'b2', status: 'pending', total_amount: '11.00', duration_hours: '1.0' },
+          ],
+        },
+      }),
+    } as any
+    const result = await recurrencesApi.create(
+      { room_id: 'r1', start_time: 'x', end_time: 'y', until_date: '2026-08-24' },
+      mockApi,
+    )
+    expect(mockApi.post).toHaveBeenCalledWith('/recurrences', {
+      room_id: 'r1', start_time: 'x', end_time: 'y', until_date: '2026-08-24',
+    })
+    expect(result.recurrence.id).toBe('rule-1')
+    expect(result.bookings).toHaveLength(2)
+    // Decimal-as-string normalization applies to series bookings too.
+    expect(result.bookings[0].total_amount).toBe(11)
+    expect(typeof result.bookings[0].total_amount).toBe('number')
+    expect('checkout_url' in result).toBe(false)
   })
 
   it('packagesApi.purchase extracts both purchase and checkout_url', async () => {

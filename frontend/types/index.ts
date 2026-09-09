@@ -84,6 +84,29 @@ export type BookingCheckout = {
   checkout_url: string
 }
 
+export type RecurrenceRule = {
+  id: string
+  org_id: string
+  room_id: string
+  user_id: string
+  frequency: 'weekly'
+  start_time: string
+  end_time: string
+  until_date: string
+  notes?: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+// POST /recurrences and PUT /recurrences/{id} return the rule plus every
+// occurrence it expanded to. No checkout_url yet — charging a whole series
+// through one Checkout Session is deferred to the Stripe follow-up (Epic 2).
+export type RecurrenceWithBookings = {
+  recurrence: RecurrenceRule
+  bookings: Booking[]
+}
+
 export type PackagePurchaseCheckout = {
   purchase: UserPackagePurchase
   checkout_url: string
