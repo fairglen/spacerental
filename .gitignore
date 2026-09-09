@@ -36,6 +36,8 @@ playwright-report/
 test-results/
 playwright/.cache/
 coverage/
+# Saved Playwright storageState (contains a live JWT) from global-setup.ts
+frontend/tests/e2e/.auth/
 
 # ── Logs ───────────────────────────────────────────────────────
 *.log
