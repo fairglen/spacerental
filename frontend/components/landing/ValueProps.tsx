@@ -1,20 +1,21 @@
 import { Shield, Calendar, Clock } from 'lucide-react'
+import { t } from '@/lib/i18n'
 
 const props = [
   {
     icon: Shield,
-    title: 'Privacidade Total',
-    desc: 'Cada sala é completamente isolada e insonorizada para sessões confidenciais.',
+    title: t('valueProps.privacy_title'),
+    desc: t('valueProps.privacy_desc'),
   },
   {
     icon: Calendar,
-    title: 'Reserva Online',
-    desc: 'Reserva a tua sala em segundos, a qualquer hora, sem telefonemas.',
+    title: t('valueProps.booking_title'),
+    desc: t('valueProps.booking_desc'),
   },
   {
     icon: Clock,
-    title: 'Máxima Flexibilidade',
-    desc: 'Por hora, por pacote de 10h ou mensalmente. Tu escolhes.',
+    title: t('valueProps.flexibility_title'),
+    desc: t('valueProps.flexibility_desc'),
   },
 ]
 

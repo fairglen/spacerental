@@ -115,8 +115,11 @@ migrated. Only `backend/tests/conftest.py` builds tables straight from
 
 If you already have a local `pgdata` volume from before this change, it likely
 contains tables but no `alembic_version`, so `alembic upgrade head` will fail at
-boot. The simplest fix is to recreate the DB with `docker-compose down -v`; if
-you need to keep the data and the schema matches, run `docker-compose exec backend alembic stamp head` once.
+boot. The entrypoint detects this specific shape (schema objects already exist,
+`alembic_version` doesn't) and prints the fix directly instead of leaving a raw
+traceback as the only clue. The simplest fix is to recreate the DB with
+`docker-compose down -v`; if you need to keep the data and the schema matches,
+run `docker-compose exec backend alembic stamp head` once.
 After changing a model:
 
 ```bash
@@ -194,3 +197,18 @@ pre-commit install -t pre-push  # installs the pre-push hook
 
 ### CI
 GitHub Actions (`.github/workflows/frontend-tests.yml` and `e2e.yml`) run unit tests on every frontend change and full E2E tests against a Dockerized stack on every PR. Failing E2E runs upload the Playwright HTML report as a build artifact.
+
+### Experimental weekly series
+
+Weekly recurrence is a foundation for local testing, disabled by default. Set
+`RECURRING_BOOKINGS_ENABLED=true` in `.env` and recreate the backend with
+`docker compose up -d backend` to opt in. The API creates pending occurrences
+without checkout; an administrator must handle them manually. Keep this disabled
+for customer use until series payment and local-time scheduling are complete.
+Times recur in UTC and therefore shift in Lisbon at daylight-saving changes.
+
+Edit/cancel operations lock the rule and affected bookings, preserve history and
+apply the same 24-hour cancellation window and notification/credit behavior as
+individual bookings. A rejected edit changes no bookings and sends no emails.
+The test suite explicitly enables the foundation and also verifies the disabled
+API, concurrent edits, cancellation policy and all-or-nothing conflicts.

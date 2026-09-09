@@ -1,7 +1,7 @@
 """recurring booking series
 
 Revision ID: 0002_recurring_bookings
-Revises: 0001_baseline_schema
+Revises: 0002_booking_pkg_purchase
 Create Date: 2026-09-02
 
 Adds `recurrence_rules` (the source of truth for a series) and the nullable
@@ -28,7 +28,7 @@ import sqlalchemy as sa
 # Keep revision ids <= 32 chars: alembic's alembic_version.version_num is
 # varchar(32) and a longer id fails to stamp with StringDataRightTruncationError.
 revision = '0002_recurring_bookings'
-down_revision = '0001_baseline_schema'
+down_revision = '0002_booking_pkg_purchase'
 branch_labels = None
 depends_on = None
 

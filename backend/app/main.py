@@ -5,6 +5,7 @@ from app.config import settings
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.routers import auth, spaces, bookings, recurrences, packages, admin
 from app.routers import webhooks
+from app.routers import checkout_stub
 
 # The app does not create or migrate the schema. `alembic upgrade head` runs in
 # backend/docker-entrypoint.sh before uvicorn starts, so the schema exists by
@@ -44,6 +45,9 @@ app.include_router(recurrences.router, prefix=API_PREFIX)
 app.include_router(packages.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
+# No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
+# see app/routers/checkout_stub.py.
+app.include_router(checkout_stub.router)
 
 
 @app.get("/health", tags=["health"])

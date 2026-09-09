@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
-  BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings,
+  BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -103,15 +103,23 @@ export const bookingsApi = {
   listMine: (api: Api) =>
     api.get<{ bookings: Booking[] }>('/bookings/me').then(r => r.data.bookings.map(normBooking)),
 
-  // The booking comes back `pending` with a Stripe Checkout URL — it is the
-  // webhook, not this response, that confirms it.
+  // An `hourly` booking comes back `pending` with a Stripe Checkout URL — it is
+  // the webhook, not this response, that confirms it. A `package` booking is
+  // paid from prepaid hours, so it is already `confirmed` and `checkout_url` is
+  // null.
   create: (
-    data: { room_id: string; start_time: string; end_time: string; notes?: string; payment_method?: 'hourly' },
+    data: {
+      room_id: string
+      start_time: string
+      end_time: string
+      notes?: string
+      payment_method?: 'hourly' | 'package'
+    },
     api: Api,
   ) =>
     api.post<BookingCheckout>('/bookings', data).then(r => ({
       booking: normBooking(r.data.booking),
-      checkout_url: r.data.checkout_url,
+      checkout_url: r.data.checkout_url ?? null,
     })),
 
   cancel: (id: string, api: Api) =>
@@ -177,11 +185,15 @@ export const adminApi = {
   updateRoom: (id: string, data: Partial<Room>, api: Api) =>
     api.put<{ room: Room }>(`/admin/rooms/${id}`, data).then(r => normRoom(r.data.room)),
 
-  getBookings: (params: Record<string, string>, api: Api) =>
-    api.get<{ bookings: Booking[] }>('/admin/bookings', {
+  // Response carries pagination metadata (total/page/page_size) alongside the
+  // page of bookings — see backend/app/routers/admin.py::admin_list_bookings.
+  // page/page_size default to 1/20 server-side when omitted, so passing {} keeps
+  // today's behavior for callers that don't care about paging.
+  getBookings: (params: Record<string, string | number>, api: Api): Promise<PaginatedBookings> =>
+    api.get<PaginatedBookings>('/admin/bookings', {
       // Merge with instance defaults (e.g. org_id injected by useApi).
       params: { ...(api.defaults.params || {}), ...params },
-    }).then(r => r.data.bookings.map(normBooking)),
+    }).then(r => ({ ...r.data, bookings: r.data.bookings.map(normBooking) })),
 
   updateBooking: (id: string, status: string, api: Api) =>
     api.put<{ booking: Booking }>(`/admin/bookings/${id}`, { status }).then(r => normBooking(r.data.booking)),

@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-key-change-this-in-production-min-32-chars"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     CORS_ORIGINS: str = "http://localhost:3000"
+    # Experimental UTC series have no customer payment path yet.
+    RECURRING_BOOKINGS_ENABLED: bool = False
 
     # ── Rate limiting ────────────────────────────────────────────────────
     RATE_LIMIT_ENABLED: bool = True
@@ -33,6 +35,13 @@ class Settings(BaseSettings):
     STRIPE_CURRENCY: str = "eur"
     STRIPE_SUCCESS_URL: str = "http://localhost:3000/dashboard?pagamento=sucesso"
     STRIPE_CANCEL_URL: str = "http://localhost:3000/dashboard?pagamento=cancelado"
+    # Browser-facing base URL of THIS backend, used only to build the stub
+    # Checkout page's URL (app.routers.checkout_stub). Like NEXT_PUBLIC_API_URL,
+    # this is handed to the user's browser, not called container-to-container,
+    # so `localhost` is correct here even under docker-compose (CLAUDE.md §6.3
+    # governs backend-to-backend calls, not browser redirect targets). Unused
+    # in live mode — real Stripe Checkout URLs live on Stripe's own domain.
+    STRIPE_STUB_CHECKOUT_BASE_URL: str = "http://localhost:8000"
 
     # ── Email ────────────────────────────────────────────────────────────
     # "stub" (default) records what would be sent (log + in-memory list) with
