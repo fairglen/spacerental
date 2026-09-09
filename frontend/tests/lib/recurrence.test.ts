@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { expandWeeklyOccurrences, MAX_WEEKLY_OCCURRENCES } from '@/lib/recurrence'
+import { expandWeeklyOccurrences } from '@/lib/recurrence'
 
 describe('expandWeeklyOccurrences', () => {
   it('generates one occurrence per week, inclusive of the until date', () => {
@@ -38,10 +38,16 @@ describe('expandWeeklyOccurrences', () => {
     expect(expandWeeklyOccurrences(start, '')).toEqual([])
   })
 
-  it('never generates more than MAX_WEEKLY_OCCURRENCES, mirroring the backend cap', () => {
+  it('rejects an overlong series instead of previewing a silently truncated one', () => {
     const start = new Date('2026-01-01T09:00:00Z')
     // Ten years out — far beyond the 104-week (~2 year) cap.
     const result = expandWeeklyOccurrences(start, '2036-01-01')
-    expect(result.length).toBe(MAX_WEEKLY_OCCURRENCES)
+    expect(result).toEqual([])
   })
+})
+
+it('keeps the UTC cadence across the Lisbon daylight-saving transition', () => {
+  expect(expandWeeklyOccurrences(new Date('2026-10-19T09:00:00+01:00'), '2026-10-26').map(d => d.toISOString())).toEqual([
+    '2026-10-19T08:00:00.000Z', '2026-10-26T08:00:00.000Z',
+  ])
 })

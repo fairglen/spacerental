@@ -465,8 +465,58 @@ test.describe('Reservas — fluxos reais', () => {
     await page.getByRole('button', { name: /^Cancelar$/ }).click()
   })
 
-  // TODO.md B5 also asks for a weekly recurring series (book a series, cancel
-  // one occurrence, the rest survive). Recurrence does not exist yet — it is
-  // Epic 1 (stories 1.1–1.4), explicitly out of scope here — so there is
-  // nothing to drive from the UI until it ships.
+  test('weekly series: preview, pending acknowledgement, isolated cancellation and conflict', async () => {
+    const offset = bookableDayOffset(5)
+    const first = utcHour(offset, 17)
+    const second = new Date(first.getTime() + 7 * 86400000)
+    for (const booking of await myBookings(api, token)) {
+      if ([first.toISOString().slice(0, 10), second.toISOString().slice(0, 10)].includes(booking.start_time.slice(0, 10)) && booking.status !== 'cancelled') {
+        await cancelViaApi(api, token, booking.id)
+      }
+    }
+    await openRoomCalendar(page, 'Sala Névoa')
+    await goToDay(page, offset)
+    await dragHours(page, 17, 18)
+    const repeat = page.getByLabel('Repetir semanalmente')
+    if (process.env.RECURRING_BOOKINGS_ENABLED !== 'true') {
+      await expect(repeat).toHaveCount(0)
+      await page.getByRole('button', { name: /^Cancelar$/ }).click()
+      return
+    }
+    await repeat.check()
+    await page.getByLabel('Repetir até').fill(second.toISOString().slice(0, 10))
+    await expect(page.getByText('Datas a criar (2)')).toBeVisible()
+    await expect(page.getByRole('radio', { name: /pack/i })).toHaveCount(0)
+    const responsePromise = page.waitForResponse(r => r.url().endsWith('/recurrences') && r.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Confirmar Série' }).click()
+    const response = await responsePromise
+    expect(response.status()).toBe(201)
+    const series = await response.json()
+    expect(series.bookings).toHaveLength(2)
+    for (const booking of series.bookings) {
+      created.push(booking.id)
+      expect(booking.status).toBe('pending')
+      expect(booking.payment_method).toBe('hourly')
+    }
+    await expect(page.getByRole('status')).toContainText('2 reservas pendentes')
+    await page.getByRole('button', { name: 'Fechar' }).click()
+    await page.goto('/dashboard')
+    const firstCard = bookingCard(page, 'Sala Névoa', first, new Date(first.getTime() + 3600000))
+    await expect(firstCard).toContainText('Pendente')
+    await firstCard.getByRole('button', { name: /^Cancelar$/ }).click()
+    await page.getByRole('button', { name: /Sim, cancelar/i }).click()
+    await expect(firstCard).toHaveCount(0)
+    await expect(bookingCard(page, 'Sala Névoa', second, new Date(second.getTime() + 3600000))).toContainText('Pendente')
+    await openRoomCalendar(page, 'Sala Névoa')
+    await goToDay(page, offset)
+    expect(await backgroundOf(page, 17)).toBe(AVAILABLE_BG)
+    await dragHours(page, 17, 18)
+    await repeat.check()
+    await page.getByLabel('Repetir até').fill(second.toISOString().slice(0, 10))
+    await page.getByRole('button', { name: 'Confirmar Série' }).click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Estas datas da série já estão reservadas' })).toBeVisible()
+    const remaining = (await myBookings(api, token)).filter(b => b.start_time === first.toISOString().replace('.000Z', 'Z') && b.status !== 'cancelled' && b.org_id === series.recurrence.org_id)
+    expect(remaining).toHaveLength(0)
+    await page.getByRole('button', { name: /^Cancelar$/ }).click()
+  })
 })

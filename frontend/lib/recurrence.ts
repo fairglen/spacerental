@@ -29,6 +29,8 @@ export function expandWeeklyOccurrences(start: Date, untilDate: string): Date[] 
   if (Number.isNaN(until.getTime())) return []
   const untilMs = utcDateOnly(until.getTime())
 
+  if (untilMs >= utcDateOnly(start.getTime()) + MAX_WEEKLY_OCCURRENCES * WEEK_MS) return []
+
   const occurrences: Date[] = []
   let cursor = start.getTime()
   while (utcDateOnly(cursor) <= untilMs && occurrences.length < MAX_WEEKLY_OCCURRENCES) {

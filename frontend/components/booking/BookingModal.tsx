@@ -197,7 +197,6 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
             )}
           </div>
           {recurrenceEnabled && (
-
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <input
@@ -220,7 +219,8 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
                     id="until-date"
                     type="date"
                     disabled={mutation.isPending}
-                    min={format(start, 'yyyy-MM-dd')}
+                    min={start.toISOString().slice(0, 10)}
+                    max={new Date(start.getTime() + 103 * 7 * 86400000).toISOString().slice(0, 10)}
                     value={untilDate}
                     onChange={(e) => setUntilDate(e.target.value)}
                   />
@@ -228,7 +228,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
 
                 {untilBeforeStart && (
                   <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                    Escolhe uma data final igual ou posterior à data de início.
+                    Escolhe uma data final entre a primeira reserva e o limite de 104 semanas.
                   </p>
                 )}
 
@@ -248,7 +248,8 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
                 )}
               </div>
             )}
-          </div>          )}
+          </div>
+          )}
           {canPayWithPackage && !repeatWeekly && (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium text-foreground mb-1">Pagamento</legend>
