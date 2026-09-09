@@ -1,307 +1,690 @@
-# TODO — Backlog
+# TODO — Delivery backlog
 
-User stories for the items CLAUDE.md §11 marks as "intentionally not done yet," plus recurring bookings (design already agreed, no code yet). Each story is scoped to be picked up independently by an AI agent — acceptance criteria are Given/When/Then and name concrete endpoints, models, and files.
+Updated 2026-09-09. Product priorities come from [roadmap.md](roadmap.md).
+This replaces the previous epic-first queue; the legacy mapping at the end
+preserves its history and outstanding requirements.
 
-**Applies to every story below:** it ships with a way to exercise it locally — no real external account, no paid service, no deployed environment (CLAUDE.md §10.3). Third-party integrations get a stub implementation behind an explicit env-var switch, and the full test suite must pass with zero credentials configured.
+## Execution boundary and task states
 
-The 7-item code-review followup (org_id/multi-org, AdminStats fields, require_admin dependency, booking-overlap constraint, Decimal normalization, dead code, test coverage) is **done** — all landed on `main` through commit `40c05bd`. Not repeated here.
+**Current assignment (2026-09-09): review existing PRs and merge those without
+critical remaining issues. New roadmap feature implementation remains on hold.**
 
-**Shipped since the epics/bugs/tech-debt below were written** (this list wasn't groomed as things landed — recording it here once, 2026-09-01):
-- **B1, B2, B4, B5, T7** — booking calendar books the full dragged range and follows through to checkout (`84b8e86`).
-- **T1** — alembic `0002` revision id shortened to fit `varchar(32)` (`a9ae853`).
-- **T5, T6** — `STRIPE_*` forwarded through docker-compose, duplicate env template dropped (`5b24379`).
-- **Epic 2.1, 2.2, 2.3** — Stripe checkout for hourly bookings + webhook + package purchase (`147f698`). Payment-method `package` (redeem prepaid hours instead of charging) is still unbuilt — see **Epic 2.4** below.
-- **Epic 7** — two-tier IP rate limiting on auth/public endpoints (`d8d4c3a`).
+The active delivery phase is **Gate 0: fix and merge the existing PR queue**.
+New roadmap implementation stays on hold until that gate is verified and the
+user resumes roadmap delivery. Finishing a PR does not authorize pulling in its
+later roadmap follow-ups. In particular, do not expand the recurring or Seam
+PRs into their entire production roadmap just to empty the queue.
 
-## Scoping decision (2026-09-01)
+States used below:
 
-**Single main space, multiple rooms — for now.** The seed data already matches this (`backend/app/seed.py`: one org, one `Space` "Espaço Calmo", three `Room`s). Don't build or prioritize multi-space/multi-org UX beyond what already exists. Concretely:
-- **Epic 6 (RLS)** drops a tier — it's explicitly framed as "worth doing before onboarding a *second* org operator," which isn't the near-term plan.
-- The admin **org switcher** (`frontend/contexts/OrgContext.tsx`, `Navbar.tsx`) and its React-Query cache bug (**B7** below) are real, but low-priority — don't invest in the multi-org UI, just don't let it silently serve wrong data. A future pass may simplify the switcher away entirely rather than fixing it.
-- New work should default to "the one org/space" rather than plumbing an `org_id` selector through yet another screen.
+- **QUEUED:** existing-PR work or an explicitly reported bug for the next
+  assigned Gate 0 task. Recording a bug does not start its implementation.
+- **HOLD:** specified future work; do not start under a PR-cleanup assignment.
+- **IN PROGRESS:** an assigned task with a recorded branch and PR.
+- **DONE:** merged into main with acceptance evidence, not merely a green branch.
+- **DEFERRED:** outside the current product scope.
 
-## Agent dispatch — model tiers
+Update a task's state, PR/commit, checks, and remaining limitations as it moves.
+Do not mark a whole outcome done because its foundation PR merged.
 
-Every item below is tagged **Model: Haiku / Sonnet / Opus** for whoever dispatches it to a subagent. Rule of thumb:
-- **Haiku** — mechanical, low-judgment, narrow blast radius: copy/doc changes, env/compose forwarding, one-file fixes with an obvious diff, lint autofix sweeps.
-- **Sonnet** — the default: a typical endpoint + test, a frontend form wired to an existing API, a contained new feature following an established pattern (e.g. the `payments.py` stub/live split).
-- **Opus** — schema or cross-cutting design decisions, anything touching money/consistency/concurrency correctness, or work where the spec is deliberately underspecified and requires judgment calls that are expensive to get wrong (RLS, migration reconciliation, package-hours redemption accounting).
+## Agent delivery contract
 
-## Priority
+For every assigned task:
 
-| Tier | Epic | Why this tier |
+1. Read repository guidance, this file, and the roadmap. Verify current main,
+   open PRs, and task dependencies before editing; the dated snapshot below is
+   a starting point. Reuse existing work and preserve unrelated changes.
+2. Use a feature branch in a worktree. Keep one coherent delivery together;
+   task IDs are acceptance units, not a requirement for one PR per ID.
+3. Stay within the assigned task and its necessary fixes. A newly discovered
+   unrelated gap becomes a linked TODO, not an unannounced feature expansion.
+4. Preserve tenant scoping, per-org admin checks, wrapped resource responses,
+   Decimal money, Portuguese UI, and API extraction in `frontend/lib/api.ts`.
+   Every schema change needs model metadata and a reviewed Alembic migration.
+5. Each task below specifies its validation. Changed endpoints need real-PG
+   happy/failure integration tests; changed constraints need database evidence;
+   API wrappers need shape tests; changed customer journeys need Playwright.
+   UI tests assert behavior, not snapshots pinning marketing copy.
+6. Run the required suites before opening a code PR. External integrations use
+   explicit stub/live gateways; tests use no third-party credentials or network.
+   Keep `.env.example` and Compose usable on a fresh local checkout.
+7. Include exact local reproduction commands and results in the PR. Record any
+   unverified checks honestly. A passing CI summary is not a substitute for
+   inspecting review findings and testing the integrated behavior.
+8. For tasks with an explicit product decision, first record the proposed policy,
+   alternatives, and API/state transitions. Resolve material policy questions
+   before dependent implementation; do not invent billing or refund promises.
+9. Finish by updating this backlog with evidence and any residual work. Follow
+   the user's assignment for publishing/merging; task text is not blanket
+   authorization to merge unrelated PRs or deploy the application.
+
+### Local validation baseline
+
+Run from the assigned worktree; use a separate Compose project for backend tests.
+Do not overwrite an existing `.env` or remove another workstream's volumes.
+For the dev stack, first ensure the configured ports are free or configure
+isolated ports and matching frontend/backend URLs.
+
+```bash
+# Once, on a fresh worktree only:
+cp .env.example .env
+
+# Full backend suite, isolated PostgreSQL 16:
+docker compose -p spacerental-delivery-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests
+
+# Install before Compose bind-mounts frontend, avoiding root-owned dependencies:
+cd frontend
+npm ci
+npx playwright install chromium
+cd ..
+
+# Full app and seed for browser checks:
+docker compose up -d --build
+docker compose exec -T backend python -m app.seed
+
+# Frontend checks:
+cd frontend
+npx tsc --noEmit
+npm test
+npm run test:e2e
+npm run build
+cd ..
+```
+
+Use a unique backend test project name if another run is active. Use the repo's
+pinned Ruff version for Python changes. For schema changes, also run the CI
+migration round trip (upgrade → check → downgrade → upgrade → check) against a
+separate disposable database, never the developer's retained data. A feature PR
+must add its specific exercise/recovery commands to this baseline. Docs-only
+changes need diff/link/status verification, not application test reruns.
+
+## Gate 0 — Fix and merge the existing PR queue
+
+**State: IN PROGRESS.** Initial snapshot: main `bc3112b`, 12 open PRs checked on 2026-09-09.
+Green below means reported checks passed, not approval or proof of completeness.
+The recorded failure diagnoses came from the September 9 assessment; re-read
+current logs and review threads before applying a fix.
+
+### Review and merge pass — 2026-09-09
+
+Reviewed current PR heads, diffs, review threads and CI. The user authorized
+merging PRs without critical remaining issues; necessary fixes were implemented in feature worktrees and verified before merge.
+Broader roadmap implementation remains on hold.
+
+| Task | Current disposition | Evidence / remaining work |
 |---|---|---|
-| **P0 — blocks going live** | 7. Rate Limiting | ~~Done~~ — see shipped list above. |
-| **P1 — high-value, expected UX** | 4. Email Notifications | Booking with no confirmation email reads as broken to a real customer. |
-| | 1. Recurring Bookings | Direct fit for the target user (therapists renting the same weekly slot) — design is already fully decided, lowest ambiguity to build. |
-| | 2.4 Package redemption at booking | `payment_method: "package"` is accepted by the schema but hard-rejected at `backend/app/routers/bookings.py:56-62` — a package holder cannot actually spend their hours. |
-| **P2 — operational hardening, once there's traction** | 3. Seam Smart-Lock | Physical access matters, but a manually-shared code is a workable stopgap while validating the Lisbon location; wire this once it's clear the space is staying open. |
-| | 8. Audit Log | Valuable for trust/dispute resolution, not blocking. |
-| **P3 — defer until scale/expansion demands it** | 5. Pagination | Only matters once list sizes actually grow past a page. |
-| | 6. Row-Level Security | Deferred further by the single-space scoping decision above. |
-| | 9. i18n | Single-region (Portugal) product today; no multi-region ask yet. |
-
-Suggested build order within tiers: **4 → 1 → 2.4 → 3 → 8 → 5 → 6 → 9.** Email + recurring bookings round out the core customer experience; package redemption closes a real gap in the payments epic; the rest is hardening.
-
-**Bugs (below) outrank all of it.** The admin panel and package-purchase flow have real gaps today — shipping more epics on top of a broken admin/purchase experience is the wrong order.
-
----
-
-## Bugs
-
-### B1, B2, B4, B5 — ✅ Done (`84b8e86`)
-Multi-hour drag booking, same-day gap bookings, checkout follow-through, and E2E coverage for those shapes all landed together. See the shipped list at the top of this file.
-
-### B3 Recurring bookings do not exist in the UI (not a regression)
-Recorded because it was reported as broken: there is **no recurrence code anywhere** — `grep -ri "recurr\|repeat\|semanal"` returns nothing across `frontend/` and `backend/app/`. Nothing is broken; the feature was never built. It is **Epic 1**, and story 1.4 is the UI half. No separate bug fix needed — this entry exists so it isn't tracked twice.
-
-### B6 The booking page still tells users to click, now that dragging works — **Model: Haiku**
-`frontend/app/spaces/[id]/page.tsx:78` reads *"Clica num slot disponível (verde) para reservar."* Dragging across several hours is now the primary way to book more than one hour (B1 landed), and nothing on the page says so. Users will keep making one-hour bookings because that is what the instructions describe.
-
-- **Given** the booking page, **when** it renders, **then** the copy explains both interactions: click one hour, or drag across several to book a longer block.
-- Portuguese copy, consistent in tone with the surrounding text (§9).
-
-### B7 Admin pages silently serve the wrong org's cached data after switching org — **Model: Sonnet**
-`frontend/lib/hooks/useApi.ts:9-16` attaches `org_id` to the axios instance's `defaults.params` once `currentOrgId` resolves — it's the sole source of `org_id` for admin dashboard/spaces/bookings/packages calls. But every admin page's React Query key is static and org-agnostic: `['admin','dashboard']` (`app/admin/page.tsx:22`), `['admin','bookings']`, `['admin','spaces']`, `['admin','bookings','all']`, `['admin','packages']`. None append `currentOrgId`, and `enabled` never gates on it either. Switching org via the Navbar selector (`setCurrentOrgId`, `Navbar.tsx:22-42`) changes state but React Query keeps serving the previous org's cached response.
-
-- **Given** an admin who belongs to two orgs, **when** they switch org via the navbar selector on `/admin`, `/admin/spaces`, `/admin/bookings`, or `/admin/packages`, **then** the page refetches and shows the newly-selected org's data.
-- Per the scoping decision above, this is real but low-priority — don't build out more multi-org UI while fixing it.
-
-### B8 Rooms can never be edited or deleted from the admin UI — **Model: Sonnet**
-`adminApi.updateRoom` (`frontend/lib/api.ts:157-158`) has zero call sites, even though the backend fully supports it (`PUT /admin/rooms/{room_id}`, `backend/app/routers/admin.py:201-221`). `frontend/app/admin/rooms/[id]/page.tsx` only renders a "create room" form (lines 76-114) — existing room cards (lines 58-73) have no edit or delete affordance.
-
-- **Given** a room already created under a space, **when** an admin opens `/admin/rooms/{spaceId}`, **then** each room card offers an edit control that calls `adminApi.updateRoom` for name/capacity/hourly_rate/color.
-
-### B9 Packages can never be edited or deactivated after creation — **Model: Sonnet**
-There is no `PUT`/`DELETE /admin/packages/{id}` route on the backend and no `updatePackage`/`deletePackage` in `adminApi`. Yet `frontend/app/admin/packages/page.tsx:58` renders an "Ativo/Inativo" `Badge` implying toggleable state that nothing can ever flip.
-
-- **Given** an existing package, **when** an admin views `/admin/packages`, **then** an action exists to edit its price/hours or deactivate it.
-
-### B10 Spaces have no edit form for their own fields — **Model: Sonnet**
-Only creation and soft-delete (`updateSpace(id, {is_active:false})`, `spaces/page.tsx:24`) are wired up. `SpaceUpdate` (`backend/app/schemas/space.py:99-106`) already supports `name/description/address/city/images/amenities`, but the only other action on a space card (`spaces/page.tsx:54`, "Salas") routes to room management, never to editing the space itself.
-
-- **Given** an existing space, **when** an admin wants to fix its name/address/city, **then** an edit form exists and calls `adminApi.updateSpace`.
-
-### B11 No admin UI for room availability rules — **Model: Sonnet**
-`admin_set_availability` (`POST /admin/rooms/{id}/availability`, `backend/app/routers/admin.py:224-263`) has no `adminApi` wrapper and no page. A newly created room has no way to get opening hours set except by re-running the seed script.
-
-- **Given** a newly created room, **when** an admin wants to set its opening hours per day of week, **then** a UI exists to submit availability rules via that endpoint.
-
-### B12 There is no way to actually buy a package, and the landing CTA doesn't account for being signed in — **Model: Sonnet**
-`packagesApi.purchase` (`frontend/lib/api.ts:129-133`) wraps a fully-implemented backend endpoint (`POST /packages/{id}/purchase`, Epic 2.3) — but nothing in the frontend calls it. `frontend/app/dashboard/packages/page.tsx` only *lists* purchases already made. The only "buy" entry points are the landing page's "Comprar Pack" buttons (`frontend/components/landing/Pricing.tsx:25,36`), which are hardcoded `<Link href="/sign-up">` regardless of whether the visitor is already signed in — a signed-in user clicking "Comprar Pack" is sent to sign-up again, not to a purchase flow, and there's no purchase flow to send them to anyway.
-
-- **Given** a signed-out visitor clicks "Comprar Pack," **when** they land on `/sign-up`, **then** completing sign-up returns them to a page where they can immediately buy the package they picked (the choice isn't lost).
-- **Given** a signed-in user, **when** they click "Comprar Pack" (from the landing page or a new packages page), **then** it calls `packagesApi.purchase` and follows the returned `checkout_url`, the same way `BookingModal` follows a booking's checkout URL (B4).
-- **Given** `STRIPE_MODE=stub`, **when** the purchase flow completes, **then** the package appears active with the correct `hours_remaining` on `/dashboard/packages` — no Stripe account required (§10.3).
-
-### B13 Booking-type coverage is unverified, and "daily"/"monthly" bookings don't exist yet — **Model: Sonnet** (E2E authoring) / **Model: Opus** (scope decision, if daily bookings are wanted)
-Reported as "calendar bookings are still not working." Two separate things are true here:
-1. **Hourly bookings** (the only type that exists) landed in B1/B2/B4/B5 with E2E coverage (`84b8e86`) — if this is regressing, it needs fresh manual verification against current `main`, since nothing since that commit should have touched the calendar path.
-2. **"Daily" bookings are not a concept in the system at all** — `Room` only has `hourly_rate` (`backend/app/models/space.py`), no daily rate or daily booking mode. **Recurring bookings only exist as a *weekly* design** (Epic 1, unbuilt) — there is no monthly frequency in the locked-in `RecurrenceRule` design.
-
-- **Given** the current codebase, **when** someone re-tests the calendar, **then** file the specific broken interaction (which room, which drag, what happened) rather than re-diagnosing B1 from scratch — if it reproduces, it's a regression of `84b8e86` and jumps the queue.
-- **Given** Epic 1 ships weekly recurrence, **when** E2E coverage is written for it, **then** it belongs in `frontend/tests/e2e/booking.spec.ts` alongside the hourly cases, per B5's "once Epic 1 ships" line.
-- **Daily bookings and monthly recurrence are out of scope** until explicitly requested — don't build them speculatively. If they're wanted, that's a scoping conversation (new epic), not a bug fix.
-
----
-
-## Tech Debt
-
-Known-and-accepted shortcuts. Each names why it was deferred, so the next person isn't re-deriving it.
-
-### T8 Alembic and `Base.metadata.create_all` are two competing sources of schema truth — ✅ Done (PR #17)
-`alembic upgrade head` could not succeed against any database: empty → `UndefinedTableError` (no migration ever ran `create_table`), existing → `DuplicateTableError` (`create_all` had already made the same objects), and `0002`/`0003` targeted a schema state the models no longer had.
-
-Resolved by giving the schema a single owner:
-
-- `0001`–`0003` were deleted and replaced by one autogenerated baseline, `0001_baseline_schema`, that reproduces `Base.metadata` exactly. The `bookings_no_overlap` EXCLUDE constraint and the four indexes from the old `0001` are folded into it; the indexes also moved into the models' `__table_args__` so `--autogenerate` stops trying to drop them.
-- `init_db()` is gone. The app no longer creates tables; `backend/docker-entrypoint.sh` runs `alembic upgrade head` before uvicorn, so `docker-compose up` on a fresh clone still comes up in one step. `create_all` survives in `tests/conftest.py` only.
-- `.github/workflows/migrations.yml` runs upgrade → `alembic check` → downgrade to base → upgrade again against an empty PostgreSQL 16. `alembic check` also fails any model change that ships without a migration, closing the other half of the drift.
-
-Convention written up in CLAUDE.md §6.5.
-
-### T10 The stub checkout URL is not reachable, so the local payment flow can't be walked in a browser — **Model: Sonnet**
-`backend/app/payments.py:282` returns `url=f"https://checkout.stripe.stub/{session_id}"`. That hostname does not resolve, so once the frontend follows `checkout_url` (B4), a human clicking through locally lands on a connection error. The E2E suite only gets past it by intercepting the route.
-
-This partially undercuts §10.3: the flow is *automatable* locally but not *walkable* locally, and §10.3 exists so a person can see the thing work on a laptop. Fix by having the stub gateway serve a real local page — a minimal backend-rendered checkout stub with pay/cancel buttons that redirect to `STRIPE_SUCCESS_URL`/`STRIPE_CANCEL_URL` and fire the `checkout.session.completed` webhook. Then E2E needs no interception either, which makes the test closer to the real thing.
-
-### T9 `RATE_LIMIT_*` settings are not forwarded to the compose stack — **Model: Haiku**
-Same class of drift as T5, found while fixing it. `backend/app/config.py` declares six `RATE_LIMIT_*` settings; `docker-compose.yml` forwards **zero** of them, so tuning any of them in `.env` has no effect on the dev stack — including `RATE_LIMIT_ENABLED` and `RATE_LIMIT_TRUST_FORWARDED_FOR`, the one you must flip when deploying behind a real proxy.
-
-Fix is the same shape as T5/T6: add them to the `backend` service's `environment:` block with defaults mirroring `config.py`, and document them in the root `.env.example`.
-
-Worth generalizing while you're there: every time a setting is added to `config.py`, compose has to be updated by hand or it silently doesn't apply. A test asserting that every `Settings` field appears in `docker-compose.yml` would close the class of bug rather than this instance of it.
-
-### T1, T5, T6 — ✅ Done
-T1 (`a9ae853`): alembic `0002` revision id shortened to fit `varchar(32)`. T5, T6 (`5b24379`): `STRIPE_*` forwarded through docker-compose, duplicate backend env template dropped.
-
-### T2 Ruff's newer rules are not adopted — **Model: Haiku**
-CI pins `ruff==0.15.17` with an explicit `select = ["E4","E7","E9","F"]` in `ruff.toml`. Ruff 0.16.1's widened defaults surface ~126 additional findings (`FURB157`, `I001`, …), largely stylistic and mostly in tests. Deliberately not adopted: it was a 126-error cleanup that would have ridden along on unrelated PRs. Worth its own pass — adopt the rules, fix the findings, bump the pin, all in one commit. Mechanical (mostly autofix), but touches every backend file — run alone, not alongside other backend work.
-
-### T3 `admin.spec.ts` "admin dashboard loads" is flaky — **Model: Sonnet**
-Failed a `waitForURL` on the sign-in redirect and passed on retry during the Epic 2 run. Touches no payments code, so it predates that work. A retry-masked flake in an auth redirect is worth diagnosing rather than tolerating — it may be a real race in the sign-in flow, not just test timing.
-
-### T4 `frontend-tests` is path-filtered and silently absent — ✅ Documented as intentional (PR #12)
-`.github/workflows/frontend-tests.yml` only triggers on `paths: ['frontend/**']` (consistent with `backend-tests.yml` triggering only on `backend/**`). Backend-only PRs show the check as **absent, not skipped** — this is GitHub Actions' expected behavior and saves CI time. Note: if this workflow were ever configured as a **required** status check, PRs where it doesn't run could be blocked; we'd need to remove the path filter or add a stub workflow that reports a neutral/success status.
-
-### T7 Booking timestamps rely on exact-millisecond slot matching — **Model: Sonnet**
-`BookingCalendar` matches selections to availability slots with `parseISO(s.start).getTime() === date.getTime()`. Exact equality against a backend-supplied UTC instant is brittle — it holds for Portugal (UTC+0/+1) but breaks for any non-integer-hour offset. Note: the B1 fix (`84b8e86`) touched this area already — verify whether it already replaced the equality check with a range check before picking this up; if so, close it out here instead.
-
-### T11 Promoting a user to admin requires hand-written SQL — **Model: Sonnet**
-`README.md`'s only documented path is `docker-compose exec db psql ... INSERT INTO organization_members ...`. It works, but it's error-prone (silently does nothing if the email doesn't match, no feedback, easy to typo the `org_id` subquery) and isn't something you'd hand to anyone but the person who wrote it.
-
-Also worth noting: `POST /auth/register` (`backend/app/routers/auth.py:62-71`) gives every new user their **own** brand-new org (as owner) — not membership in the seeded demo org that actually owns "Espaço Calmo." That's why the SQL exists at all: without it, a freshly registered user is "admin" of an empty org with no spaces. Given the single-main-space scoping decision, a proper tool should default to *the* org rather than asking which one.
-
-- **Given** a management script (e.g. `python -m app.promote_admin <email> [--role=owner|admin]`), **when** run against a user that exists and an org that isn't specified, **then** it adds them as a member of the one seeded org with the given role, and prints a clear success/failure message (unknown email → non-zero exit and a clear error, not a silent no-op).
-- **Given** the demo admin credentials (`admin@demo.com` / `admin123`, already seeded — see `README.md` "Demo login"), **when** someone wants to test admin functionality locally, **then** that login already works out of the box; this story is about promoting *additional* users, not replacing the seeded admin.
-
----
-
-## Epic 1 — Recurring Bookings
-
-Design locked in: `RecurrenceRule` is the source of truth; `Booking` rows get a nullable `recurrence_rule_id` FK (flat expansion, not computed on read).
-
-### 1.1 Create a recurring series — **Model: Opus**
-As a member, I want to book a weekly recurring slot in one request instead of booking each occurrence manually.
-
-All-or-nothing conflict handling across N generated occurrences in one transaction is the kind of correctness-under-concurrency work worth the more careful model.
-
-- **Given** `POST /api/v1/recurrences` with `{room_id, start_time, end_time, frequency: "weekly", until_date, notes?}`, **when** every generated occurrence is free, **then** one `RecurrenceRule` row and one `Booking` row per occurrence are created (each `Booking.recurrence_rule_id` set to the rule), and the response is `{"recurrence": {...}, "bookings": [...]}`.
-- **Given** the same request, **when** at least one generated occurrence overlaps an existing `pending`/`confirmed` booking, **then** no rows are inserted at all and the response is `409` with `{"conflicts": ["2026-08-10T14:00:00Z", ...]}`.
-
-### 1.2 Cancel one occurrence vs. the whole series — **Model: Sonnet**
-As a member, I want to cancel just one date or the rest of the series.
-
-- **Given** a `Booking` with `recurrence_rule_id` set, **when** `DELETE /api/v1/bookings/{id}` is called, **then** only that occurrence is marked `cancelled` and the `RecurrenceRule` stays active.
-- **Given** a series owner, **when** `DELETE /api/v1/recurrences/{id}?from_date=YYYY-MM-DD` is called, **then** that booking and all future bookings in the series (`start_time >= from_date`) are marked `cancelled` and `RecurrenceRule.is_active` is set to `False`.
-
-### 1.3 Edit a series — **Model: Opus**
-As a member, I want to change the time for all future occurrences at once.
-
-Same all-or-nothing conflict correctness as 1.1, plus the added risk of touching already-created bookings incorrectly (must never cancel past/completed ones).
-
-- **Given** `PUT /api/v1/recurrences/{id}` with `{start_time, end_time, until_date?}`, **when** the new occurrences are all free, **then** the `RecurrenceRule` is updated, not-yet-started bookings in the series are cancelled, and new `Booking` rows are generated at the new times.
-- **Given** the same request, **when** any new occurrence conflicts, **then** nothing changes and the response is `409` with the conflicting dates (same all-or-nothing rule as creation). Past/completed bookings are never touched.
-
-### 1.4 Frontend series booking UI — **Model: Sonnet**
-As a member, I want to see what I'm about to book before committing to a series.
-
-- **Given** `frontend/components/booking/BookingModal.tsx`, **when** I toggle "repeat weekly" and pick an end date, **then** a preview list of generated dates renders before I submit.
-- **Given** I submit and the API returns `409`, **when** the response includes `conflicts`, **then** the modal lists the conflicting dates inline instead of a generic error toast.
-
----
-
-## Epic 2 — Stripe Payments
-
-`Booking.total_amount` already exists and is `Decimal`-backed; wire Stripe on top of it.
-
-### 2.1, 2.2, 2.3 — ✅ Done (`147f698`)
-Checkout for hourly bookings, webhook confirmation, and package purchase checkout all shipped together.
-
-### 2.4 Package redemption at booking time — **Model: Opus**
-As a package holder, I want to pay for a booking out of my prepaid hours instead of a new charge.
-
-**Design note:** `PaymentMethod.package` already exists in the schema (`backend/app/models/booking.py:18`) and `create_booking` explicitly rejects it: *"Package redemption has no charge path yet — accepting it here would hand out free bookings"* (`backend/app/routers/bookings.py:56-62`). Wiring it up means, in the same DB transaction as booking creation:
-1. Look up the caller's active (`status=active`, `expires_at > now`, `hours_remaining >= booking duration`) `UserPackagePurchase` for the org.
-2. Deduct the booked duration from `hours_remaining` (and bump `hours_used`) — this is money-equivalent accounting, so it must be atomic with the booking insert (same transaction, and re-checked under a row lock — two concurrent bookings must not both succeed against hours that only cover one of them).
-3. Skip the Stripe Checkout Session entirely — `Booking.status` goes straight to `confirmed` (no payment to wait on), unlike the `hourly` path which stays `pending` until the webhook fires.
-4. On booking cancellation, refund the hours back to the purchase (mirrors how a Stripe refund would work, but instant since no gateway is involved).
-
-This is flagged Opus because the spec above is a proposal, not a locked design (unlike Epic 1's `RecurrenceRule`) — the concurrency/atomicity call and the cancellation-refund symmetry need real judgment, and getting the double-spend case wrong is a real-money-equivalent bug.
-
-- **Given** a user with an active package purchase covering ≥2h remaining, **when** they book a 2h slot with `payment_method: "package"`, **then** the booking is created `confirmed` with no `checkout_url`, and the purchase's `hours_remaining` drops by 2.
-- **Given** a user with only 1h remaining, **when** they attempt to book 2h with `payment_method: "package"`, **then** the request is rejected (`400`/`409`) and no hours are deducted.
-- **Given** a package-paid booking, **when** it's cancelled, **then** the redeemed hours are credited back to `hours_remaining` on the originating purchase.
-- **Given** two concurrent requests each trying to redeem the last 1h on the same purchase, **when** both race, **then** exactly one succeeds — never both.
-
----
-
-## Epic 3 — Seam Smart-Lock Integration
-
-Booking timestamps are already shaped for time-scoped access codes.
-
-### 3.1 Issue access code on confirmation — **Model: Sonnet**
-- **Given** a `Booking` transitions to `status: confirmed` (direct create or via Stripe webhook), **when** the Seam integration runs, **then** it requests a time-scoped code from Seam for the room's lock device valid for `[start_time, end_time]`, stores it, and returns it in the booking response.
-
-### 3.2 Revoke code on cancellation — **Model: Sonnet**
-- **Given** a confirmed `Booking` with an issued access code, **when** `DELETE /api/v1/bookings/{id}` cancels it, **then** the Seam API is called to revoke the code before the response returns `204`.
-
-### 3.3 Seam is best-effort, not a hard dependency — **Model: Sonnet**
-- **Given** the Seam API call fails or times out during booking create/cancel, **when** this happens, **then** the booking operation still succeeds with a 2xx and the failure is logged, not raised as a 500.
-
----
-
-## Epic 4 — Email Notifications
-
-Must go through a queue, never synchronously in the request (per CLAUDE.md §11).
-
-### 4.1 Queue infrastructure — **Model: Sonnet**
-- **Given** a booking is confirmed, **when** the confirmation email needs to be sent, **then** a job is enqueued to a worker (Resend or Postmark, API key from `RESEND_API_KEY`/`POSTMARK_API_KEY` env var — fail loudly if missing, no silent fallback) and the HTTP response returns without waiting on delivery.
-
-### 4.2 Booking confirmation email — **Model: Haiku**
-- **Given** a queued confirmation job, **when** the worker processes it, **then** the user receives a Portuguese-language email with space/room name, date/time, and a cancellation link.
-
-### 4.3 Cancellation email — **Model: Haiku**
-- **Given** a booking is cancelled (by the user or an admin), **when** the cancellation commits, **then** a cancellation email job is enqueued.
-
----
-
-## Epic 5 — Pagination
-
-The wrapped response contract already supports adding this without breaking clients.
-
-### 5.1 List endpoints accept paging — **Model: Haiku**
-- **Given** `GET /api/v1/admin/bookings?page=2&page_size=20`, **when** called, **then** the response is `{"bookings": [...], "total": N, "page": 2, "page_size": 20}` — extending, not replacing, the existing wrap shape.
-
-### 5.2 Frontend consumes pagination — **Model: Sonnet**
-- **Given** `frontend/components/admin/BookingsTable.tsx` and its `lib/api.ts` wrapper, **when** `total > page_size`, **then** pager controls appear and request subsequent pages.
-
----
-
-## Epic 6 — Row-Level Security (RLS)
-
-Would replace the manual `org_id` filters scattered across every query.
-
-### 6.1 RLS policies enforce tenant isolation — **Model: Opus**
-Deferred further by the single-main-space scoping decision above — pick this up once a second org is actually onboarded, not before. Cross-cutting DB security policy with a high cost-of-mistake (a wrong policy either breaks every query or silently stops isolating tenants), hence Opus even though it's low-priority right now.
-
-- **Given** a new Alembic migration, **when** applied, **then** RLS is enabled on `bookings`, `spaces`, `rooms`, `packages`, `user_package_purchases`, each with a policy restricting rows to `current_setting('app.current_org_id')`, and the app sets `SET LOCAL app.current_org_id` per request (e.g. in `get_db` in `backend/app/database.py`).
-
-### 6.2 Regression proof — **Model: Sonnet**
-- **Given** RLS is enabled, **when** a query runs against another org's row without `app.current_org_id` set for the current org, **then** it returns zero rows (not an error) — a backend test asserts this explicitly, proving isolation holds even if a route forgets an `org_id` filter.
-
----
-
-## Epic 7 — Rate Limiting
-
-✅ **Done** (`d8d4c3a`) — two-tier IP rate limiting on auth and public endpoints. Kept below for reference.
-
-### 7.1 Auth endpoint throttling
-- **Given** repeated `POST /api/v1/auth/login` or `/auth/register` requests from the same IP, **when** more than 10 requests happen within a 1-minute window, **then** request 11+ returns `429` before Argon2 hashing or a DB query runs.
-
-### 7.2 Public endpoint throttling
-- **Given** `GET /api/v1/spaces` and `GET /api/v1/rooms/{id}/availability` are unauthenticated, **when** hit at high frequency from one IP, **then** they are rate-limited under a separate, higher threshold than auth endpoints.
-
----
-
-## Epic 8 — Audit Log
-
-Who-did-what for booking cancellations, role changes, etc.
-
-### 8.1 Audit table — **Model: Sonnet**
-- **Given** a new `AuditLog` model (`org_id`, `actor_user_id`, `action`, `target_type`, `target_id`, `metadata` JSONB, `created_at`) in `backend/app/models/`, **when** a booking is cancelled or a role is changed via an admin endpoint, **then** a row is inserted in the same DB transaction as the mutating action.
-
-### 8.2 Admin view — **Model: Sonnet**
-- **Given** `GET /api/v1/admin/audit-log?org_id=`, **when** called by an admin/owner (via `require_admin`), **then** the response is `{"entries": [...]}` ordered by `created_at` descending, and a new `frontend/app/admin/audit/page.tsx` renders it as a table.
-
----
-
-## Epic 9 — i18n
-
-Copy is hardcoded Portuguese today; extract before going multi-region.
-
-### 9.1 Extract copy to a translation catalog — **Model: Sonnet**
-- **Given** hardcoded PT strings across `frontend/components/`, **when** they're moved into a single catalog (e.g. `pt.json`), **then** rendered output is unchanged — a snapshot test confirms no visible diff.
-
-### 9.2 Add a second locale + switcher — **Model: Sonnet**
-- **Given** the `pt.json` catalog exists, **when** an `en.json` catalog and a locale switcher are added, **then** toggling language updates rendered copy and the choice persists across sessions (cookie or localStorage).
+| Q19 | DONE — merged #19 as `1ec3ec0828c03c30d03c5a5ec93294b0d84378b4` | All reported PR checks passed; entrypoint unittest rerun locally passed (success, duplicate-object/table and unrelated failure cases). Non-blocking README wording still overstates what the duplicate-error detection proves; reconcile under C08. |
+| Q22 | DONE — merged #22 as `3241e56e792fbcb66e1e39377d6462ee1406c038` | Backend, frontend, E2E, lint and migration checks passed on PR and resulting main. Reviewed debit/refund locks and deterministic concurrent status-transition coverage. C02 retains fresh-customer E2E and distinguishing slot-conflict from insufficient-hours errors. |
+| Q31 | DONE — merged #31 as `3bf7fa378e65fb505dca7884a39d64747ccbd82c` | Reran failed infrastructure job in Actions run `34383929172`; E2E passed, as did other reported PR checks. Reviewed compatibility with #22's hourly-payment helper. |
+| Q20 | DONE — merged #20 as `c4a8838` | Stable (start_time, id) pagination with tied-start integration coverage and accessible status actions; 152 backend, 82 frontend and 17 browser tests plus green CI. |
+| Q23 | QUEUED — held | Existing diff adds stale claims about shipped admin/purchase/promotion work and does not contain this agreed roadmap/backlog. Reconcile this documentation into the PR before merge. |
+| Q24 | QUEUED — held | Undefined `checkout_stub` prevents startup and CI is red. Reconcile the cleanup with newly merged package-redemption code. |
+| Q25 | DONE — merged #25 as `2b6e864` | Real NextAuth credentials setup, fail-fast readiness and uploaded diagnostics; 74 frontend tests, 17 browser flows and 20 repeated admin checks plus green CI. |
+| Q26 | DONE — merged #26 as `5018e87` | 193 backend tests, migration roundtrip, 93 frontend tests and 17 browser flows plus green CI. One Alembic head; shared cancellation policy, row locks and rollback-safe notifications. Explicit opt-in pending UTC foundation; R01–R03 remain HOLD. |
+| Q27 | DONE — merged #27 as `3c687d6` | 111 frontend tests, TypeScript and 19 browser flows plus green CI. Single switch gates API/UI, explicit pending acknowledgement, preview/conflict and isolated cancellation coverage. Paid series and local-time scheduling remain HOLD. |
+| Q28 | QUEUED — held | Failed revoke removes the only code identifier before provider success, and live code identifiers are lost on restart. Package-confirmation path added by #22 also needs coverage. The automated review claim that Python 3.12 CancelledError is caught by Exception is not a valid blocker; it inherits BaseException. |
+| Q29 | DONE — merged #29 as `42466e8` | Typed catalog traversal and literal repeated interpolation, behavior-focused tests; 93 frontend tests, TypeScript, 17 browser flows and green CI. |
+| Q30 | DONE — merged #30 as `5018e87` | Locale snapshot hydration regression and persistence flow verified; 98 frontend tests, TypeScript, 18 browser flows and green CI. Merge hash to refresh below. |
+
+Gate 0 remains open for Q23, Q24, Q28, B14 and final integrated verification.
+A merged foundation is not completion of
+its roadmap outcome. The original per-PR scopes below remain the acceptance
+reference; the disposition table above takes precedence over their dated snapshot.
+
+Current merged main is `3c687d6` after #27. Final integrated evidence will be
+recorded under Q90 after the remaining code and documentation PRs land.
+
+### Q00 — Refresh evidence and choose the merge sequence
+
+**Depends on:** assignment to work on the existing PRs.
+**Scope:** GitHub PR heads/bases, reviews, CI logs, changed files, migration graph.
+
+- Reconfirm every PR below, main HEAD, unresolved review findings, and the checks
+  actually required for its files. Distinguish test failures from setup failures.
+- Suggested sequence: repair shared CI/setup blockers first; review #19/#20;
+  integrate #22; handle #26 before #27; handle #28 after booking changes; handle
+  #29 before #30; land #31 on the resulting booking behavior; reconcile #23 last.
+  Apply #24's mechanical cleanup with care around the functional backend PRs.
+- Retarget/rebase stacked children after their parent lands and revalidate them.
+  Reassess conflicts after every merge; GitHub's current mergeable flag does not
+  establish that independent booking/payment side effects compose correctly.
+- Record any unavoidable product decision or unsafe incomplete exposure. Resolve
+  it with a bounded PR fix or an explicit disposition; never merge red or unsafe
+  code just to clear the queue. A deliberate deferral must be recorded and agreed
+  before it can count toward closing Gate 0.
+
+**Done when:** the per-PR execution order, blockers, and current evidence are
+recorded without claiming any pending PR is already shipped.
+
+### Per-PR tasks
+
+Rows not marked DONE in the disposition table are **QUEUED**, depend on Q00,
+and inherit the delivery contract.
+Each completion requires resolved relevant review findings, appropriate local
+checks and CI on the final revision, and a recorded main merge commit (or an
+explicitly agreed disposition). No automatic merging is requested by this file.
+
+| ID / existing PR | Snapshot and bounded assignment | Specific acceptance / dependency |
+|---|---|---|
+| Q19 / [#19](https://github.com/fairglen/spacerental/pull/19) | Green. Review migration failure diagnostics and preservation of failure exit status. | Fresh schema starts; stale/unversioned and drifted schemas fail with accurate guidance; no automatic stamp/drop and no casual deletion advice for retained data. |
+| Q20 / [#20](https://github.com/fairglen/spacerental/pull/20) | Green. Review paginated admin bookings, metadata extraction, and org-switch behavior. | Paging returns scoped totals and deterministic results; switching org resets the page/cache; recent-bookings widget and actions still work. |
+| Q22 / [#22](https://github.com/fairglen/spacerental/pull/22) | Green. Review package debit/refund locking, admin transitions, and accounting. | Real-PG concurrent redemption/cancellation cannot double-spend or double-refund; hourly checkout still works. Preserve meaningful race tests. Fresh-customer E2E completion remains C02. |
+| Q24 / [#24](https://github.com/fairglen/spacerental/pull/24) | Red. Current logs identify undefined `checkout_stub`, preventing backend startup, plus lint failures. | Repair imports and all current findings; align configured Ruff rules and pins; startup, backend tests, and E2E pass without removing functionality during cleanup. |
+| Q25 / [#25](https://github.com/fairglen/spacerental/pull/25) | Red. Shared login setup still times out in CI. | Diagnose from trace, server responses, and logs; full-suite login setup succeeds on a fresh stack and targeted repeated runs. Keep real auth-rate-limit coverage; do not hide the failure with longer timeouts alone. |
+| Q26 / [#26](https://github.com/fairglen/spacerental/pull/26) | Green foundation. Review atomic series creation/edit/cancel and migration integrity. | Conflict leaves no partial series; concurrency and migration round trip pass. Record UTC/DST and unpaid-series limitations against R01/R02. Do not claim a paid recurring journey or expose it as completed functionality. |
+| Q27 / [#27](https://github.com/fairglen/spacerental/pull/27) | Green; stacked on #26. Review preview, conflict display, and interaction with #22. | Q26 first. Reconcile modal/API contracts after retargeting; preview and conflict behavior pass. Explicitly settle visibility of a series flow without payment; R02/R03 remain HOLD. |
+| Q28 / [#28](https://github.com/fairglen/spacerental/pull/28) | Green foundation; memory-only codes and pop-before-revoke failure behavior. | Repair failed-revoke bookkeeping; inspect all confirmation/cancellation paths after Q22/Q26/Q27, including stub checkout. Preserve cancellation semantics and document limitations. Do not enable live use with lost-on-restart identifiers; durability/customer access remain O04. |
+| Q29 / [#29](https://github.com/fairglen/spacerental/pull/29) | Red: missing `beforeEach` import. Review also flags interpolation and typing. | Fix the parent itself even though #30 has an import fix; handle repeated placeholders; remove unjustified `any`; preserve PT behavior and avoid tests pinning marketing copy. |
+| Q30 / [#30](https://github.com/fairglen/spacerental/pull/30) | Stacked on #29. E2E failed before tests during browser dependency install (APT hash mismatch). | Q29 first; rerun after setup recovery, investigate if persistent; verify locale persistence, rerendering and initial render. Keep scope to existing marketing/layout translations. |
+| Q31 / [#31](https://github.com/fairglen/spacerental/pull/31) | E2E failed during the same dependency-install problem, before tests ran. | Recover setup and run real single-click and stale-modal conflict tests on integrated booking behavior; do not mistake infrastructure failure for a booking regression. |
+| Q23 / [#23](https://github.com/fairglen/spacerental/pull/23) | Green docs PR, overlaps this backlog rewrite. | Reconcile last, preserving this outcome order, hold, task IDs, and legacy mapping. Salvage useful history without overwriting the new plan or calling open PRs shipped; record merge or agreed supersession. |
+
+### B14 — Pack purchase fails credential validation (reported as monthly booking)
+
+**State: IN PROGRESS — branch `fix/package-purchase-reauth`.** Reported by the user on
+2026-09-09. Add to Gate 0 repair work before new roadmap features; implementation is authorized as part of the resumed repair assignment. **Depends on:** reproduce on
+the user's running revision and compare with current main; no dependency on
+future customer enrollment or recurring-booking implementation.
+
+**Reported request:**
+
+```text
+POST http://localhost:8000/api/v1/packages/c7ebe549-9bd8-4a02-b5ba-8451ba46617b/purchase
+```
+
+```json
+{"detail":"Could not validate credentials"}
+```
+
+The user describes monthly booking as not working and reports this failure
+while buying a pack. The supplied endpoint purchases prepaid hours; it is not
+the recurrence endpoint. Preserve that distinction while reproducing the
+customer's exact journey. The package UUID is local reproduction evidence,
+not a value to hardcode into the fix or tests. An expired, correctly signed backend JWT inside an active NextAuth session reproduces the same 401. The original pre-restart session is unavailable, so its exact invalidation cause cannot be established.
+
+**Scope:** `PackageBuyButton.tsx`, `frontend/lib/api.ts`, NextAuth callbacks in
+`app/api/auth/[...nextauth]/route.ts`, sign-in/return navigation and package
+dashboard, `backend/app/auth.py`, and package/auth tests. Keep API calls in the
+existing wrapper and preserve the backend's authentication and membership checks.
+
+**Code evidence and diagnosis plan:**
+
+- `get_current_user` returns this message with 401 for a JWT validation failure,
+  missing subject, or a user no longer present in the database. A missing token
+  has a different message; a valid user without org membership receives 403.
+  Do not conflate this failure with C01's enrollment gap or Stripe checkout.
+- The purchase button sends `session.accessToken`. The backend token has an
+  explicit expiry (default 24 hours); current NextAuth callbacks retain that
+  token without expiry handling/renewal. A browser session that still appears
+  signed in can therefore carry an unusable API token. This failure mode is reproduced in the B14 regression; the exact cause of the original pre-restart session remains unknown.
+- Reproduce both from the landing pricing card and `/dashboard/packages`.
+  Record HTTP status, running commit/configuration identity, presence of the
+  Bearer header, and whether the same session fails `GET /auth/memberships`. Inspect
+  expiry/subject/signing-backend consistency without logging tokens or secrets.
+  Check whether a DB reset or signing-key change invalidated an existing session.
+- Compare with a fresh sign-in to isolate stale-session handling from a broken
+  fresh-login path. Re-authentication alone is a diagnostic workaround, not the
+  completed fix. Do not ask the user to share tokens, cookies, or passwords.
+
+**Acceptance:**
+
+- With a valid account, location membership and fresh API token, buying an
+  active pack returns 201 with the wrapped purchase and usable checkout URL;
+  completing local stub checkout activates the pack with the expected hours.
+- If the browser looks signed in but its API token is expired/invalid or refers
+  to a deleted user, show a Portuguese session-expired/sign-in message and a
+  recovery path. Missing/loading tokens cannot trigger an unauthenticated
+  purchase. Use explicit re-authentication or a deliberately implemented renewal
+  contract; do not silently extend expired tokens or weaken validation.
+- Recovery preserves the selected package and returns the user to its purchase
+  flow after successful sign-in. Avoid redirect loops, stale user data and
+  duplicate purchases; do not blindly replay a purchase POST after an uncertain
+  network result. Failed sign-in stays on the sign-in page with an explanation.
+- 401, membership 403, missing-package 404 and checkout-provider failure remain
+  distinct. An unauthorized attempt creates no purchase or checkout session.
+- Walk the reported monthly/pack journey after the repair. If a separate monthly
+  scheduling problem remains, record its exact screen, action, endpoint and
+  expectation as a separate issue; do not claim this purchase fix solves monthly
+  recurrence or silently add a monthly product under B14.
+
+**Validation:** real-PG package-route tests for valid, expired, invalid, missing
+and deleted-user credentials plus wrong-org membership; assert rejected attempts
+have no purchase/provider side effects. Component tests for loading/missing
+tokens, 401 messaging and preserving the selected package. E2E with an explicitly
+expired API token inside an otherwise active browser session → sign-in recovery
+→ selected pack → local checkout → active hours, plus a fresh-session happy
+path. Use controlled token timestamps rather than waiting 24 hours. Run the
+required suites and record reproduction/fix evidence before marking DONE.
+
+### Q90 — Verify the combined result and close Gate 0
+
+**Depends on:** disposition of Q19–Q31 above, including Q23, and B14 resolved;
+no unresolved unsafe
+interaction between merged PRs. **Scope:** integrated main, tests, docs.
+
+- Verify single hourly checkout, package redemption, cancellation, org switching,
+  and any enabled recurring/lock paths together. Specifically check that package
+  confirmation issues access when enabled and bulk series cancellation does not
+  skip accounting, email, or lock behavior already enabled on that branch.
+- Verify B14's fresh-session purchase and expired-session recovery flow with the
+  selected package preserved; a demo-admin purchase alone does not cover it.
+- Confirm one valid Alembic history containing every merged schema change. A
+  migration-number collision is work to reconcile, not a reason to omit schema.
+- Run full backend, Vitest, TypeScript, E2E, and applicable migration checks on
+  the integrated revision. Investigate missing checks rather than calling them
+  passing. Record final PR dispositions, commit IDs, and known gated limitations.
+- Reconcile README and architecture status claims with main, and update the
+  historical mapping below. Keep future tasks on HOLD.
+
+**Done when:** the existing queue is merged or explicitly disposed of, integrated
+main is verified, and remaining work is accurately assigned below. Ask for the
+next roadmap assignment only after presenting this concrete result; completing
+Gate 0 alone does not start new feature implementation.
+
+## Outcome 1 — First customer can reliably pay and book
+
+**All tasks: HOLD.** Entry gate: Q90 complete and roadmap implementation resumed.
+Start C01, then C02. Continue in the listed order unless the user's next
+assignment explicitly reprioritizes a task. Dependencies below are additional
+to that shared entry gate.
+
+### C01 — Customer enrollment and first paid booking
+
+**Depends on:** Q90. **Scope:** `backend/app/routers/auth.py`, organization
+membership, registration UI, auth tests, and `frontend/tests/e2e/`.
+
+Separate customer signup from operator creation. Define an explicit configured
+location/enrollment policy; do not select an arbitrary first organization or
+silently grant membership across tenants. Preserve an intentional operator
+creation path without turning every customer into an owner.
+
+**Acceptance:** a fresh user enrolls as a member of the intended location, can
+book and buy its packages, cannot use admin endpoints, and gains no unrelated
+org access. Existing accounts/memberships retain their privileges. The browser
+journey signup → browse → multi-hour selection → real local stub checkout →
+confirmed dashboard booking requires no manual SQL or demo-admin credentials.
+Unknown/closed enrollment targets fail clearly. Document any migration or
+explicit enrollment path for existing customers stranded in empty organizations.
+
+**Validation:** real-route register/login/membership tests including denial and
+existing-user cases; fresh-customer E2E with a unique user and booking dates.
+
+### C02 — Complete the package-holder journey
+
+**Depends on:** C01 and Q22 merged (otherwise revive its accepted scope first).
+**Scope:** package/booking routes, `package_hours.py` if merged, booking modal,
+package dashboard, API wrappers, isolated E2E fixtures.
+
+**Acceptance:** a new customer buys a package through local checkout, sees it
+activate only after payment, redeems the correct hours without hourly checkout,
+and sees the remaining balance. Cancellation restores hours exactly once.
+Pending, expired, wrong-org, and insufficient balances cannot fund a booking.
+Choosing hourly payment remains possible when a package exists. Concurrent
+requests cannot overdraw a balance. Preserve the existing policy for selecting
+eligible packages and document it; do not rebuild already-merged #22 logic.
+Distinguish a stale-calendar 409 from an insufficient-hours 409 on the package
+path; the merged modal currently labels both as insufficient hours.
+
+**Validation:** extend real-PG accounting/race tests only for uncovered cases;
+add buy → redeem → cancel E2E with its own customer/package balance, without
+sharing `admin@demo.com` state. Verify API shapes and modal behavior if changed.
+
+### C03 — Checkout holds, recovery, and late payment
+
+**Depends on:** C02. **Scope:** payment gateway, booking/purchase payment state,
+webhooks, local checkout, dashboard, explicit expiry processing and migrations.
+
+**Decision first:** record hold lifetime, checkout reuse/retry, supported payment
+completion events, and treatment of money arriving after a hold expires or a
+booking is cancelled. Choose how unavoidable late payments are reconciled or
+compensated; do not silently discard them. General customer refunds remain O02,
+but the recovery necessary for this lifecycle belongs here.
+
+**Acceptance:** abandonment releases inventory after the configured deadline,
+including after restart. A customer can resume a valid attempt or retry an
+expired one without duplicate reservations/charges. Repeated or out-of-order
+webhooks cannot confirm a cancelled/expired slot now owned by another customer.
+Invalid signatures cannot mutate state. Paid-but-unfulfilled attempts have a
+persisted, visible resolution path. Stub pay/cancel/expiry reproduce the same
+transitions. Dashboard distinguishes awaiting payment, expired, and confirmed.
+
+**Validation:** real-PG expiry/webhook races, duplicate events, unauthorized
+resumption and late payment; E2E abandon → recover and expire → slot available.
+Use controllable clocks/failure injection rather than long wall-clock sleeps.
+
+### C04 — Patch dependencies and validate a production build
+
+**Depends on:** C03. **Scope:** manifests/lockfiles, affected compatibility code,
+Docker/build configuration, CI and dependency documentation.
+
+**Acceptance:** inspect current official advisories and select patched compatible
+releases (including the currently pinned Next.js 14.2.5); record the findings
+addressed and any remaining exposure. Align framework/tooling dependencies and
+pins. Avoid an unrelated framework rewrite or blind forced audit fix. Production
+build/start and auth, public browsing, checkout, and admin protection work.
+
+**Validation:** full required suites, dependency audit with assessed findings,
+production build and smoke checks against a production-mode server.
+
+### C05 — Enforce booking validity at the API boundary
+
+**Depends on:** C04. **Scope:** booking schema/route, shared availability logic,
+admin status transitions that acquire a slot, booking/space integration tests.
+
+**Acceptance:** overlapping two existing bookings returns 409, never a
+multiple-results server error. Reject past starts, missing/invalid timezone
+information, non-positive intervals, closed hours, gaps between availability
+windows, and inactive rooms/spaces. Define supported slot alignment/duration
+from the current product and enforce it consistently in calendar and backend.
+The API cannot bypass rules enforced by the UI; concurrent claims still rely on
+the real exclusion constraint. Reinstate/confirm paths cannot create overlaps.
+Document current timezone semantics; R01 supplies the Lisbon-time migration.
+
+**Validation:** integration boundary and wrong-org cases, including a range
+covering multiple conflicts and lunch closure; concurrent constraint coverage;
+calendar/modal interaction tests where behavior changes.
+
+### C06 — Show authoritative pricing and validity
+
+**Depends on:** C05. **Scope:** `Pricing.tsx`, package/room API data, purchase CTA
+and pricing component tests. **Size:** small follow-up.
+
+**Acceptance:** advertised price, hours, validity and computed savings agree with
+the selected location's current packages and rates. Editing them in admin changes
+what customers see and pay. Removed/unavailable packages cannot be purchased
+through stale marketing cards. Loading and API errors are distinct from no stock;
+format money consistently and avoid unsupported benefit claims.
+
+**Validation:** component tests vary price/validity and simulate failure; exercise
+admin update → public price → checkout amount in the local flow.
+
+### C07 — Explain cancellation eligibility and failures
+
+**Depends on:** C06. **Scope:** dashboard, booking cancellation responses, shared
+error/date handling and component tests. **Size:** small follow-up.
+
+**Acceptance:** show the existing 24-hour cancellation rule and explain why an
+action is unavailable. A server rejection or network error leaves an accurate
+booking state and an actionable Portuguese message; a successful cancellation
+updates bookings and package balances. Explicitly resolve/test the exact
+24-hour boundary. Do not promise or imply a cash refund before O02 implements it.
+
+**Validation:** before/at/after-boundary tests, denied/failed/successful UI
+interactions, and cancellation E2E. Backend remains authoritative if time or
+status changes after rendering.
+
+### C08 — Reliable diagnostics and current setup documentation
+
+**Depends on:** C07; reuse Q25/Q31/Q90 work. **Scope:** Playwright fixtures and
+reporters, CI artifact paths, auth error mapping, README, architecture guidance.
+
+**Acceptance:** browser traces/reports and backend logs survive failed CI runs;
+setup fails clearly when services are unready. Auth-rate-limit responses are
+understandable instead of masquerading as a bad password. Inspect the shared
+Next.js egress identity when assessing throttling; preserve a trusted client
+boundary and meaningful rate-limit tests. Document actual implemented/stub/live
+behavior and required settings. Verify supported Compose configuration forwarding
+without requiring every internal setting to be exposed. Keep explicit required
+check behavior for workflows skipped by path filters.
+
+**Validation:** verify artifacts on a controlled failing local/CI exercise when
+assigned, auth failure tests, full E2E on a fresh stack, and a walkthrough of the
+README commands. Do not disable tests or globally weaken throttling for a pass.
+
+### C99 — Outcome 1 acceptance
+
+**Depends on:** C01–C08. **Scope:** integrated validation and evidence only.
+
+**Acceptance:** the outcome-1 criteria in `roadmap.md` all pass on one integrated
+revision: fresh enrollment, hourly payment, package purchase/redemption, conflict
+handling, abandoned checkout recovery, accurate pricing and cancellation feedback.
+Record exact commands, results and commit. Full required suites and production
+build pass without third-party credentials. No later outcome starts while this
+outcome remains incomplete unless the user explicitly changes priorities.
+
+## Outcome 2 — Regular customers can manage their schedule
+
+**All tasks: HOLD.** Entry gate: C99 complete and assigned roadmap work.
+Pending #26/#27 are foundations; do not reimplement their accepted behavior.
+
+### R01 — Preserve Lisbon wall time for availability and recurrence
+
+**Depends on:** C99; disposition of Q26/Q27. **Scope:** room/space timezone
+metadata, migration, availability and recurrence expansion, frontend preview.
+
+**Acceptance:** establish an explicit location timezone (Europe/Lisbon for the
+pilot), keep stored instants UTC, and preserve a weekly 09:00 appointment through
+both DST transitions. Preview and backend expansion agree, including end-date
+boundaries and duration. Define ambiguous/nonexistent local-time behavior and a
+safe migration strategy for existing opening hours/series; do not silently move
+paid appointments. Preserve the existing occurrence cap and reject invalid ranges.
+
+**Validation:** unit expansion tests around both transitions and ambiguous/gap
+cases; real-PG API/migration tests; browser preview matches stored dates.
+
+### R02 — Make recurring reservations payable
+
+**Depends on:** R01 and C02/C03. **Scope:** recurrence routes/schema, payment/order
+representation and migrations, gateways, webhooks, modal and API wrappers.
+
+**Decision first:** settle whole-series versus per-occurrence charging, package
+allocation, insufficient balance, hold expiry, and partial payment/failure. Record
+an explicit state model and compensation policy before changing the payment
+schema; the current unique session-per-booking column cannot simply be reused
+for a single session confirming many rows.
+
+**Acceptance:** customer previews dates and total, pays hourly or uses eligible
+package hours, and receives exactly the intended confirmed series. A date conflict
+returns the conflicting dates with no partial series/debit. Retries and webhooks
+are idempotent; abandonment releases the intended holds; late payments follow C03.
+No enabled customer series flow ends as indefinitely pending with no payment path.
+
+**Validation:** integration/real-PG race tests for series-vs-series,
+series-vs-single and shared balances; API extraction and modal tests; full local
+series preview → pay/redeem → dashboard E2E.
+
+### R03 — Manage individual dates and future series
+
+**Depends on:** R02. **Scope:** recurrence edit/cancel endpoints, dashboard series
+controls, accounting and notification integration, tests.
+
+**Decision first:** document price differences, paid-date cancellation handling,
+and rules for moving paid future occurrences. Reuse C03's payment recovery and
+existing package restoration; represent unresolved cash obligations explicitly
+until O02, without telling the customer a refund was issued when it was not.
+
+**Acceptance:** identify series on the dashboard; cancel one occurrence without
+cancelling siblings; cancel from a selected date; edit only not-yet-started
+occurrences. Preserve past/completed records. A conflicting edit changes no dates,
+charges or balances. Respect cancellation eligibility; bulk actions cannot bypass
+it. Wrong-user/org requests fail. Balances and notifications follow exactly the
+changed occurrences, with hooks covering already-enabled lock behavior.
+
+**Validation:** API happy/failure and concurrent edit/cancel cases, scoped access,
+component controls, and E2E proving unaffected siblings/history survive.
+
+### R99 — Outcome 2 acceptance
+
+**Depends on:** R01–R03. **Scope:** integrated customer flow and regression checks.
+
+**Acceptance:** `roadmap.md` outcome-2 criteria pass together: preview, paid series,
+conflict atomicity, stable local times, editing, individual/future cancellation,
+and accurate accounting/notifications. Run required suites and migration checks,
+record integrated commit and exact stub-mode reproduction steps.
+
+## Outcome 3 — The location can operate reliably
+
+**All tasks: HOLD.** Entry gate: R99 complete and assigned roadmap work.
+Implement in the order below. Reuse payment and transition primitives already
+introduced; avoid separate competing cancellation or accounting implementations.
+
+### O01 — Durable notifications with recovery
+
+**Depends on:** R99. **Scope:** `email.py`, transactional job/outbox persistence,
+worker, gateways, Compose configuration, operator failure visibility and docs.
+
+**Acceptance:** enqueue notification intent in the same DB transaction as a
+committed booking transition; rollback sends nothing. Persist jobs across restart,
+retry transient failures with bounded backoff, and expose exhausted failures and
+controlled replay to authorized operators. Preserve Portuguese date/room/cancel
+content and process every single/package/series transition. Use stable delivery
+IDs and provider idempotency where supported; document ambiguous-delivery limits
+rather than claiming impossible exactly-once delivery over an external network.
+
+**Validation:** restart, rollback, crash-after-send, duplicate-job and retry tests;
+real-PG worker claiming with concurrent workers; local failure/replay walkthrough
+using stub or credential-free mail capture. Feature PR includes migrations and
+worker/startup commands in README.
+
+### O02 — Consistent cancellations and refunds
+
+**Depends on:** O01. **Scope:** payment/refund persistence, gateway operations,
+webhooks, user/admin views and all booking/package/series cancellation paths.
+
+**Decision first:** specify refund eligibility, amounts, fees, partial package
+usage, expired credits, series changes, and admin overrides. Document policy for
+historical bookings and C03/R03 reconciliation obligations. Do not infer a refund
+policy solely from existing marketing copy.
+
+**Acceptance:** cancellation records its financial disposition durably; retry or
+duplicate requests cannot refund twice or both refund cash and restore equivalent
+credits. Provider failure remains visible/retryable. Customers and admins see
+requested/pending/succeeded/failed refund states accurately. Limit every action
+to its owner/authorized org and retain an inspectable history of attempts.
+
+**Validation:** Decimal unit tests for amounts, real-PG concurrent refund/cancel
+and duplicate webhook cases, wrong-role/org failures, browser status updates,
+and credential-free stub failure → restart → retry walkthrough.
+
+### O03 — Reconcile revenue and package balances
+
+**Depends on:** O02. **Scope:** admin statistics/reporting, payment/refund and
+package records, API wrappers, admin UI.
+
+**Acceptance:** distinguish money collected/refunded from booking face value and
+remaining package credits. Include package sales once; redemption is not another
+cash sale. Pending, failed, cancelled and refunded transactions are treated by
+documented rules, including partial refunds and admin confirmation without payment.
+Show scoped totals for an explicit date basis/period; reconcile them to underlying
+records with Decimal arithmetic and no cross-org leakage.
+
+**Validation:** a known fixture ledger including hourly and package sales,
+redemption, restoration, partial refund and unpaid admin-confirmed bookings;
+real-route totals/denial tests, wrapper shape tests, and operator walkthrough.
+
+### O04 — Durable and recoverable room access
+
+**Depends on:** O03 and disposition of Q28. **Scope:** `locks.py`, persisted device
+mapping/code identifiers and lifecycle, jobs/recovery, dashboard/admin access UI.
+
+**Acceptance:** persist issued-code identifiers and room/device mappings with
+migrations; restart does not lose read or revoke capability. Never discard an
+identifier before successful revocation. Retry failed issuance/revocation with
+visible status and idempotent reconciliation of uncertain provider outcomes.
+Codes are time-scoped and only visible to the customer and authorized operator;
+never expose them through public availability or logs. Cover hourly webhook,
+stub checkout, package/admin confirmation, single/series cancellation and edits.
+A lock outage does not turn a booking operation into a misleading rollback or
+lose recovery work; provide an operator-visible manual-access contingency.
+
+**Validation:** real-PG restart and transition tests, duplicate/concurrent events,
+failed revoke retained/retried, wrong-user/org code access denial, and local
+stub customer-code → cancel → revoke walkthrough including series changes.
+
+### O05 — Tenant-scoped audit history
+
+**Depends on:** O04. **Scope:** `AuditLog` model/migration, transition call sites,
+admin endpoint/API wrapper and `frontend/app/admin/audit/page.tsx`.
+
+**Acceptance:** record actor, organization, action, target, timestamp and useful
+non-sensitive change metadata for booking/series changes, cancellations, refund
+operations and role changes. Write business-action records in the same transaction;
+rollback creates none. Distinguish system/provider actions from human actors.
+Do not log passwords, tokens or access codes. Admin-only, tenant-scoped listing
+returns wrapped entries in deterministic newest-first order with bounded paging;
+no public mutation of audit history.
+
+**Validation:** committed/rolled-back and system-action integration tests,
+wrong-role/org denial, API shape tests and admin browsing E2E. Model indexes and
+migration round trip must match metadata.
+
+### O99 — Outcome 3 acceptance
+
+**Depends on:** O01–O05. **Scope:** integrated operational recovery exercise.
+
+**Acceptance:** `roadmap.md` outcome-3 criteria pass on one revision. Restart the
+local worker/backend around queued email, refund and access operations; inject
+provider failures; recover without duplicate financial effects or lost revoke
+capability. Demonstrate accurate operator statuses, revenue reconciliation and
+audit history. Record unavoidable external-delivery limits and manual recovery
+procedures. Required suites and migration checks pass without external credentials.
+
+## Deferred scope
+
+| ID | Previous work | Reactivation condition |
+|---|---|---|
+| D01 | Epic 6: RLS | Before onboarding another operator. Design policies for public reads, user-owned multi-org data and worker access; verify with a non-bypass DB role that omission of a route filter cannot leak data. Do not mechanically apply the old single-org setting design to every request. |
+| D02 | Epic 9: further i18n | A product need after the single-location journey is reliable. Q29/Q30 only complete/dispose of existing marketing/layout work; full booking/admin translation is not implicitly authorized. |
+| D03 | Additional multi-operator/multi-space UX | Explicit expansion decision; existing tenant isolation and org-cache correctness remain mandatory now. |
+| D04 | B13: daily booking products/monthly recurrence | Explicit customer/product requirement; these are new products, not regressions of hourly or weekly booking. |
+| D05 | Epic 5: pagination beyond existing admin bookings | Demonstrated list growth. Q20 owns existing work; add further list coverage only when needed (O05's bounded audit listing is part of that task). |
+
+## Legacy IDs and verified baseline
+
+This is historical mapping, not another executable queue. Merged status refers
+to main `bc3112b` as assessed on 2026-09-09. Q90 must refresh it after integration.
+Keep old IDs in bug reports/PRs useful by linking them to the tasks below.
+
+| Legacy item | Disposition / replacement |
+|---|---|
+| Seven-item architecture review follow-up | Landed by `40c05bd`; preserve isolation, API shapes, Decimal handling and overlap protections. |
+| B1/B2/B4 and hourly portion of B5; T7 | Landed through `84b8e86`: multi-hour selection, separated same-day blocks, checkout redirect, busy-slot and cancellation coverage. Additional single-click/stale-modal proof is Q31; recurring B5 coverage is R02/R03/R99. |
+| B3; Epic 1.1–1.4 | Existing recurring foundations Q26/Q27; complete paid/local-time/manageable journey in R01–R99. Not marked shipped. |
+| B6 | Drag/click instructions landed (`90b4a1c`). |
+| B7–B11 (from #23) | Admin org-cache, room/package/space editing and availability UI landed through `37123f8` and follow-ups. Preserve under Q20 and integrated checks; no duplicate CRUD project. |
+| B12 (from #23) | Auth-aware package purchase UI landed (`88b1ecc`). Fresh-customer membership is C01; spending hours and full customer flow are Q22/C02. |
+| B13 (from #23) | Hourly hardening Q31; recurring validation R99; daily/monthly product ideas D04. |
+| T1/T8 | Migration ownership/baseline fixed (`f2d7b38`); stale-volume diagnostics Q19. Future model changes still require migrations. |
+| T2 | Ruff cleanup exists in Q24; do not start a duplicate upgrade branch. |
+| T3 | E2E login reliability Q25; broader diagnostics/auth feedback C08. |
+| T4 | Path-filter behavior documented as intentional (`6cb76f4`); verify actual required-check configuration in Q00/C08. |
+| T5/T6 | Stripe Compose settings/template consolidation landed (`5b24379`); configuration maintenance C08. |
+| T9 | Rate-limit Compose forwarding landed (`3c6bb69`); configuration drift follow-up C08. |
+| T10 | Walkable stub checkout landed (`bc3112b`/`55067ad`); abandonment/recovery is C03, not a second stub checkout implementation. |
+| T11 (from #23) | Admin promotion command landed (`05f752c`). It is not customer enrollment; C01 handles that. |
+| Epic 2.1–2.3 | Hourly/package checkout and signed completion handling landed (`147f698`); incomplete payment lifecycle C03 and refunds O02. |
+| Epic 2.4 (from #23) | Existing redemption Q22; complete and verify customer flow C02. |
+| Epic 3.1–3.3 | Existing stub/live lock foundation Q28; durable and complete operational access O04. |
+| Epic 4.1–4.3 | Stub/live email and confirmation/cancellation content landed (`0d19b2e`); in-process tasks do not complete durable queue acceptance. Recovery O01. |
+| Epic 5.1–5.2 | Existing pagination Q20, pending merge; additional pagination D05. |
+| Epic 6.1–6.2 | Deferred D01, preserving isolation requirements. |
+| Epic 7.1–7.2 | Auth/public rate limiter landed (`d8d4c3a`). Test/client-identity issues Q25/C08; do not rebuild the limiter speculatively. |
+| Epic 8.1–8.2 | Audit persistence and admin view O05. |
+| Epic 9.1–9.2 | Existing catalog/switcher Q29/Q30; expansion D02. |
+
+## Reusable agent assignments
+
+Use these when the user is ready to start a delivery assignment. They are
+instructions to copy later, not a request to execute them during backlog editing.
+
+### Existing-PR assignment
+
+> Read repository guidance, roadmap.md and TODO.md. Deliver the assigned Gate 0
+> task IDs, starting with Q00. Refresh GitHub evidence, fix the existing PRs in
+> dependency order, validate the final revisions and prepare them for reviewed
+> merge. Merge only within the user's explicit merge assignment. Reconcile Q23
+> with this backlog; record commits/checks and complete Q90 when proven. Keep all
+> C/R/O tasks on HOLD. Do not implement new roadmap features, deploy, or weaken
+> tests to clear the queue. Surface any concrete product decision or unsafe PR
+> limitation with a proposed bounded disposition.
+
+### Roadmap assignment after Gate 0
+
+> Gate 0 is verified; roadmap implementation is now resumed. Deliver TODO task
+> <ID> and its stated acceptance criteria on an up-to-date feature worktree.
+> Verify dependencies and existing merged code, resolve the task's explicit
+> policy decisions before dependent implementation, and finish its API, UI,
+> migrations, tests and runnable local documentation as one coherent change.
+> Follow the delivery contract, record evidence in TODO.md, and prepare a PR.
+> Keep later outcomes and deferred tasks on hold; do not deploy or merge unless
+> separately included in this assignment.

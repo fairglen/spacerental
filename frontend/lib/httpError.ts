@@ -13,3 +13,20 @@ export function statusOf(error: unknown): number | undefined {
   const status = (response as { status?: unknown }).status
   return typeof status === 'number' ? status : undefined
 }
+
+/**
+ * The `conflicts` array from a recurrence 409 (`POST /recurrences`,
+ * `PUT /recurrences/{id}`) — ISO instants of the occurrences already taken.
+ * Undefined for any error that doesn't carry that shape, including a plain
+ * single-booking 409 (which has no `conflicts` field).
+ */
+export function conflictsOf(error: unknown): string[] | undefined {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return undefined
+  const response = (error as { response?: unknown }).response
+  if (typeof response !== 'object' || response === null || !('data' in response)) return undefined
+  const data = (response as { data?: unknown }).data
+  if (typeof data !== 'object' || data === null || !('conflicts' in data)) return undefined
+  const conflicts = (data as { conflicts?: unknown }).conflicts
+  if (!Array.isArray(conflicts)) return undefined
+  return conflicts.filter((c): c is string => typeof c === 'string')
+}

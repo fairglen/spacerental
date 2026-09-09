@@ -38,6 +38,7 @@ class Booking(Base):
         Index("ix_bookings_room_id_start_time", "room_id", "start_time"),
         Index("ix_bookings_user_id", "user_id"),
         Index("ix_bookings_org_id_status", "org_id", "status"),
+        Index("ix_bookings_recurrence_rule_id", "recurrence_rule_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -71,6 +72,27 @@ class Booking(Base):
         server_default="hourly",
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # NULL for a one-off booking; set for every occurrence expanded from a
+    # series. SET NULL rather than CASCADE: a rule is retired by flipping
+    # `is_active`, and should it ever be deleted outright the occurrences that
+    # already happened must survive as ordinary bookings.
+    recurrence_rule_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recurrence_rules.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # The prepaid purchase this booking's hours were debited from, so cancelling
+    # can credit them back to that exact purchase rather than guessing which of
+    # the user's packages to refund. NULL for every `hourly` booking.
+    package_purchase_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "user_package_purchases.id",
+            ondelete="SET NULL",
+            name="fk_bookings_package_purchase_id",
+        ),
+        nullable=True,
+    )
     # Stripe Checkout Session that pays for this booking. Unique so a webhook
     # replay can never confirm two rows; NULL when payments are disabled.
     stripe_checkout_session_id: Mapped[str | None] = mapped_column(
@@ -88,3 +110,9 @@ class Booking(Base):
 
     room: Mapped["Room"] = relationship("Room", back_populates="bookings", lazy="noload")  # noqa: F821
     user: Mapped["User"] = relationship("User", back_populates="bookings", lazy="noload")  # noqa: F821
+    recurrence_rule: Mapped["RecurrenceRule | None"] = relationship(  # noqa: F821
+        "RecurrenceRule", back_populates="bookings", lazy="noload"
+    )
+    package_purchase: Mapped["UserPackagePurchase | None"] = relationship(  # noqa: F821
+        "UserPackagePurchase", lazy="noload"
+    )

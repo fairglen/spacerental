@@ -12,22 +12,19 @@ import {
 } from '@/components/ui/select'
 import { Building2, LogOut, User, Menu, X } from 'lucide-react'
 import { useOrg } from '@/contexts/OrgContext'
-
-const navLinks = [
-  { href: '/spaces', label: 'Espaços' },
-  { href: '/#como-funciona', label: 'Como Funciona' },
-  { href: '/#precos', label: 'Preços' },
-]
+import { useT } from '@/lib/i18n'
+import { LocaleSwitcher } from '@/components/layout/LocaleSwitcher'
 
 function OrgSwitcher({ className }: { className?: string }) {
+  const t = useT()
   const { memberships, currentOrgId, setCurrentOrgId } = useOrg()
   if (memberships.length === 0) return null
 
   return (
     <div className={className}>
       <Select value={currentOrgId ?? undefined} onValueChange={setCurrentOrgId}>
-        <SelectTrigger aria-label="Organização ativa" className="h-9 min-w-[12rem]">
-          <SelectValue placeholder="Selecionar organização" />
+        <SelectTrigger aria-label={t('navbar.org_selector_label')} className="h-9 min-w-[12rem]">
+          <SelectValue placeholder={t('navbar.org_selector_placeholder')} />
         </SelectTrigger>
         <SelectContent>
           {memberships.map((m) => (
@@ -42,10 +39,16 @@ function OrgSwitcher({ className }: { className?: string }) {
 }
 
 export function Navbar() {
+  const t = useT()
   const { data: session, status } = useSession()
   const { currentMembership } = useOrg()
   const [mobileOpen, setMobileOpen] = useState(false)
   const isSignedIn = status === 'authenticated'
+  const navLinks = [
+    { href: '/spaces', label: t('navbar.spaces_link') },
+    { href: '/#como-funciona', label: t('navbar.how_it_works_link') },
+    { href: '/#precos', label: t('navbar.pricing_link') },
+  ]
   const isAdminInCurrentOrg =
     currentMembership?.role === 'admin' || currentMembership?.role === 'owner'
   // Fall back to the legacy session-level role for the nav link visibility when
@@ -53,7 +56,7 @@ export function Navbar() {
   const hasAnyAdminRole =
     session?.role === 'admin' || session?.role === 'owner' || isAdminInCurrentOrg
 
-  const links = hasAnyAdminRole ? [...navLinks, { href: '/admin', label: 'Admin' }] : navLinks
+  const links = hasAnyAdminRole ? [...navLinks, { href: '/admin', label: t('navbar.admin_link') }] : navLinks
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-border bg-white/90 backdrop-blur-sm">
@@ -75,11 +78,12 @@ export function Navbar() {
 
           {/* Desktop auth */}
           <div className="hidden md:flex items-center gap-3">
+            <LocaleSwitcher />
             {isSignedIn ? (
               <>
                 <OrgSwitcher />
                 <Link href="/dashboard">
-                  <Button variant="outline" size="sm">As minhas reservas</Button>
+                  <Button variant="outline" size="sm">{t('navbar.my_bookings')}</Button>
                 </Link>
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent">
@@ -92,17 +96,17 @@ export function Navbar() {
                     className="gap-1.5 text-muted-foreground"
                   >
                     <LogOut className="h-3.5 w-3.5" />
-                    Sair
+                    {t('navbar.sign_out')}
                   </Button>
                 </div>
               </>
             ) : (
               <>
                 <Link href="/sign-in">
-                  <Button variant="ghost" size="sm">Entrar</Button>
+                  <Button variant="ghost" size="sm">{t('navbar.sign_in')}</Button>
                 </Link>
                 <Link href="/sign-up">
-                  <Button size="sm">Reservar</Button>
+                  <Button size="sm">{t('navbar.book')}</Button>
                 </Link>
               </>
             )}
@@ -112,7 +116,7 @@ export function Navbar() {
           <button
             className="md:hidden p-2 rounded-md text-muted-foreground hover:text-primary"
             onClick={() => setMobileOpen((o) => !o)}
-            aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
+            aria-label={mobileOpen ? t('navbar.menu_close') : t('navbar.menu_open')}
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -133,11 +137,12 @@ export function Navbar() {
             </Link>
           ))}
           <div className="pt-3 border-t border-border flex flex-col gap-2">
+            <LocaleSwitcher className="self-start" />
             {isSignedIn ? (
               <>
                 <OrgSwitcher className="w-full" />
                 <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
-                  <Button variant="outline" size="sm" className="w-full">As minhas reservas</Button>
+                  <Button variant="outline" size="sm" className="w-full">{t('navbar.my_bookings')}</Button>
                 </Link>
                 <Button
                   variant="ghost"
@@ -146,16 +151,16 @@ export function Navbar() {
                   className="w-full gap-1.5 text-muted-foreground"
                 >
                   <LogOut className="h-3.5 w-3.5" />
-                  Sair
+                  {t('navbar.sign_out')}
                 </Button>
               </>
             ) : (
               <>
                 <Link href="/sign-in" onClick={() => setMobileOpen(false)}>
-                  <Button variant="ghost" size="sm" className="w-full">Entrar</Button>
+                  <Button variant="ghost" size="sm" className="w-full">{t('navbar.sign_in')}</Button>
                 </Link>
                 <Link href="/sign-up" onClick={() => setMobileOpen(false)}>
-                  <Button size="sm" className="w-full">Reservar</Button>
+                  <Button size="sm" className="w-full">{t('navbar.book')}</Button>
                 </Link>
               </>
             )}

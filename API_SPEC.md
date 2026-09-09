@@ -52,12 +52,53 @@ My bookings list.
 Response: `{ bookings: Booking[] }`
 
 ### POST /bookings
-Create a booking.
-Body: `{ room_id, start_time, end_time, notes? }`
-Response: `{ booking: Booking }`
+Create a booking. `payment_method` selects how it is paid for and therefore
+what comes back:
+
+- `hourly` (default) — the booking is `pending` and `checkout_url` points at the
+  Checkout Session that will confirm it via webhook.
+- `package` — prepaid hours are debited from the caller's active purchase in the
+  same transaction, the booking comes back already `confirmed`, and
+  `checkout_url` is `null` because there is nothing left to pay. Hours are taken
+  from the soonest-expiring eligible purchase, and `409` is returned if no
+  active, unexpired purchase in the room's org has enough hours for the whole
+  block. Nothing is written when it fails.
+
+Body: `{ room_id, start_time, end_time, notes?, payment_method? }`
+Response: `{ booking: Booking, checkout_url: string | null }`
+Errors: `403` not a member of the room's org, `404` unknown room, `409` slot
+already booked *or* insufficient package hours.
 
 ### DELETE /bookings/:id
-Cancel a booking (own only, if > 24h before).
+Cancel a booking (own only, if > 24h before). This is also how you cancel **one
+occurrence** of a recurring series: the occurrence is marked `cancelled` and the
+`RecurrenceRule` stays active. Package-paid bookings credit hours back to the
+exact purchase they were taken from.
+
+### POST /recurrences
+Experimental; returns 404 unless `RECURRING_BOOKINGS_ENABLED=true`.
+Create a weekly recurring series, all-or-nothing. One `RecurrenceRule` plus one
+`pending` booking per occurrence; each booking carries `recurrence_rule_id`.
+Body: `{ room_id, start_time, end_time, until_date, frequency?, notes? }`
+Response: `{ recurrence: Recurrence, bookings: Booking[] }`
+`409` when any occurrence is taken: `{ detail, conflicts: string[] }` — the
+start of every clashing occurrence. Nothing is written.
+
+### PUT /recurrences/:id
+Move a series to a new time, all-or-nothing. Not-yet-started occurrences are
+cancelled and regenerated at the new times; past and in-progress occurrences are
+never touched.
+Body: `{ start_time, end_time, until_date? }`
+Response: `{ recurrence: Recurrence, bookings: Booking[] }`, or the same `409`
+`conflicts` shape with nothing changed.
+
+### DELETE /recurrences/:id
+Cancel future occurrences on/after the cutoff and deactivate the rule. Past
+cutoffs cannot change history. If any affected occurrence starts within 24h,
+the whole request is rejected (400); successful cancellation uses the individual
+booking notification and package-credit behavior.
+Query: `?from_date=YYYY-MM-DD` (UTC; defaults to now, i.e. everything remaining)
+Response: `204`
 
 ### GET /packages
 List available packages for an org.
