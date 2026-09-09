@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import email
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.locks import LockGateway, get_lock_gateway, try_issue_access_code
 from app.models.booking import Booking, BookingStatus
 from app.models.package import PurchaseStatus, UserPackagePurchase
 from app.models.space import Room
@@ -43,6 +44,7 @@ async def _confirm_booking(
     session_id: str,
     background_tasks: BackgroundTasks,
     email_gateway: EmailGateway,
+    lock_gateway: LockGateway,
 ) -> bool:
     result = await db.execute(
         select(Booking)
@@ -68,6 +70,20 @@ async def _confirm_booking(
             start_time=booking.start_time,
             end_time=booking.end_time,
         ),
+    )
+
+    # Epic 3.1/3.3: best-effort — a Seam outage must not fail an otherwise
+    # successfully-paid booking. Nothing downstream reads the return value
+    # here because this webhook has no booking-shaped response; a later
+    # GET (dashboard, admin list) picks the code up via
+    # `app.locks.attach_access_codes` reading the same gateway's memory.
+    await try_issue_access_code(
+        lock_gateway,
+        booking_id=booking.id,
+        room_id=booking.room_id,
+        name=f"Reserva {booking.id} — {booking.room.name}",
+        starts_at=booking.start_time,
+        ends_at=booking.end_time,
     )
     return True
 
@@ -95,6 +111,7 @@ async def apply_checkout_completion(
     *,
     background_tasks: BackgroundTasks,
     email_gateway: EmailGateway,
+    lock_gateway: LockGateway,
 ) -> bool:
     # Async payment methods complete the session before the money lands.
     if session.payment_status != "paid":
@@ -119,6 +136,7 @@ async def apply_checkout_completion(
             session_id=session.id,
             background_tasks=background_tasks,
             email_gateway=email_gateway,
+            lock_gateway=lock_gateway,
         )
     return await _activate_purchase(
         db, purchase_id=reference_id, org_id=org_id, session_id=session.id
@@ -132,6 +150,7 @@ async def stripe_webhook(
     db: AsyncSession = Depends(get_db),
     gateway: PaymentGateway = Depends(get_payment_gateway),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """Payment provider event sink.
 
@@ -164,5 +183,6 @@ async def stripe_webhook(
         event.checkout_session,
         background_tasks=background_tasks,
         email_gateway=email_gateway,
+        lock_gateway=lock_gateway,
     )
     return {"received": True, "handled": handled}

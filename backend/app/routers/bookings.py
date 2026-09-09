@@ -12,6 +12,7 @@ from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_issue_access_code
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.space import Room
 from app.models.organization import OrganizationMember
@@ -31,6 +32,7 @@ router = APIRouter(prefix="/bookings", tags=["bookings"])
 async def my_bookings(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """List current user's bookings."""
     result = await db.execute(
@@ -40,6 +42,7 @@ async def my_bookings(
         .order_by(Booking.start_time.desc())
     )
     bookings = result.scalars().all()
+    attach_access_codes(lock_gateway, bookings)
     return {"bookings": [BookingOut.model_validate(b) for b in bookings]}
 
 
@@ -51,6 +54,7 @@ async def create_booking(
     db: AsyncSession = Depends(get_db),
     gateway: PaymentGateway = Depends(get_payment_gateway),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """Create a new booking. Checks for time overlap before inserting.
 
@@ -213,6 +217,16 @@ async def create_booking(
             ),
         )
 
+        await try_issue_access_code(
+            lock_gateway,
+            booking_id=booking.id,
+            room_id=booking.room_id,
+            name=f"Reserva {booking.id} — {room.name}",
+            starts_at=booking.start_time,
+            ends_at=booking.end_time,
+        )
+    attach_access_codes(lock_gateway, booking)
+
     return BookingCheckoutOut(
         booking=BookingOut.model_validate(booking), checkout_url=checkout_url
     )
@@ -225,6 +239,7 @@ async def cancel_booking(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """Cancel own booking if start_time is more than 24h in the future."""
     result = await db.execute(
@@ -246,4 +261,4 @@ async def cancel_booking(
         )
 
     validate_cancellation(booking, datetime.now(tz=timezone.utc))
-    await apply_cancellation(db, booking, user, background_tasks, email_gateway)
+    await apply_cancellation(db, booking, user, background_tasks, email_gateway, lock_gateway)

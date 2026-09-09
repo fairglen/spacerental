@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     # correct here — unlike backend-to-backend calls (CLAUDE.md §6.3).
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Stub codes are process-local. Live startup is gated until durable access
+    # identifiers and retry state exist (roadmap O04).
+    SEAM_MODE: str = "stub"
+    SEAM_API_KEY: str | None = None
+    SEAM_DEVICE_ID_MAP: str | None = None
+    SEAM_TIMEOUT_SECONDS: float = 10.0
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
