@@ -200,6 +200,12 @@ async function dragHours(page: Page, fromHour: number, toHour: number) {
   await page.mouse.up()
 }
 
+/** Select "pay now" in the modal, if a package alternative is even offered. */
+async function chooseHourly(page: Page) {
+  const hourly = page.getByRole('radio', { name: /Pagar/i })
+  if (await hourly.count()) await hourly.check()
+}
+
 /**
  * Confirm the modal, follow the redirect to the real stub Checkout page
  * (T10), and click "Pagar" there — the whole thing running as a walkable
@@ -207,6 +213,11 @@ async function dragHours(page: Page, fromHour: number, toHour: number) {
  * belongs to.
  */
 async function confirmAndPay(page: Page, api: APIRequestContext, token: string): Promise<ApiBooking> {
+  // packages.spec.ts buys packs for this same demo account, so depending on
+  // run order the modal may default to spending prepaid hours. These tests are
+  // about the Stripe leg, so pick hourly explicitly rather than depending on
+  // whichever spec ran first.
+  await chooseHourly(page)
   await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
   await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
 
