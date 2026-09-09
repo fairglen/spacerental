@@ -43,6 +43,13 @@ export type Booking = {
   created_at: string
 }
 
+export type PaginatedBookings = {
+  bookings: Booking[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export type User = {
   id: string
   email: string
