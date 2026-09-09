@@ -328,7 +328,7 @@ async def admin_list_bookings(
         select(Booking)
         .options(selectinload(Booking.room), selectinload(Booking.user))
         .where(and_(*filters))
-        .order_by(Booking.start_time.desc())
+        .order_by(Booking.start_time.desc(), Booking.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )

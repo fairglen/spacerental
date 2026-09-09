@@ -95,8 +95,9 @@ describe('BookingsTable', () => {
         onUpdateStatus={onUpdateStatus}
       />,
     )
-    const buttons = screen.getAllByRole('button')
-    await user.click(buttons[0])
+    await user.click(screen.getByRole('button', { name: 'Confirmar reserva' }))
     expect(onUpdateStatus).toHaveBeenCalledWith('b1', 'confirmed')
+    await user.click(screen.getByRole('button', { name: 'Cancelar reserva' }))
+    expect(onUpdateStatus).toHaveBeenCalledWith('b1', 'cancelled')
   })
 })

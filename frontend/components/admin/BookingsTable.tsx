@@ -13,7 +13,7 @@ interface BookingsTableProps {
   page: number
   pageSize: number
   onPageChange: (page: number) => void
-  onUpdateStatus?: (id: string, status: string) => void
+  onUpdateStatus?: (id: string, status: Booking['status']) => void
 }
 
 export function BookingsTable({
@@ -47,10 +47,12 @@ export function BookingsTable({
                     {b.status === 'pending' && onUpdateStatus && (
                       <div className="flex gap-1">
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600"
+                          aria-label="Confirmar reserva"
                           onClick={() => onUpdateStatus(b.id, 'confirmed')}>
                           <Check className="h-3.5 w-3.5" />
                         </Button>
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500"
+                          aria-label="Cancelar reserva"
                           onClick={() => onUpdateStatus(b.id, 'cancelled')}>
                           <X className="h-3.5 w-3.5" />
                         </Button>

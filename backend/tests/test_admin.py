@@ -85,6 +85,39 @@ class TestAdminRooms:
 
 
 class TestAdminBookings:
+    async def test_pagination_keeps_bookings_with_equal_start_times(
+        self, client, admin_headers, db_session, test_org, test_room, admin_user
+    ):
+        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        ids = [uuid.UUID(int=i) for i in (2, 5, 1, 4, 3)]
+        for booking_id in ids:
+            db_session.add(Booking(
+                id=booking_id,
+                org_id=test_org.id,
+                room_id=test_room.id,
+                user_id=admin_user.id,
+                start_time=start,
+                end_time=start + timedelta(hours=1),
+                duration_hours=Decimal("1.00"),
+                total_amount=Decimal("11.00"),
+                status=BookingStatus.cancelled,
+                payment_method=PaymentMethod.hourly,
+            ))
+        await db_session.commit()
+
+        # Cancelled bookings can legitimately share both room and start time.
+        observed = []
+        for page in (1, 2, 3):
+            response = await client.get(
+                "/api/v1/admin/bookings",
+                params={"org_id": str(test_org.id), "page": page, "page_size": 2},
+                headers=admin_headers,
+            )
+            assert response.status_code == 200, response.text
+            assert response.json()["total"] == len(ids)
+            observed.extend(booking["id"] for booking in response.json()["bookings"])
+        assert observed == [str(booking_id) for booking_id in sorted(ids, reverse=True)]
+
     async def test_admin_list_bookings(
         self,
         client,
