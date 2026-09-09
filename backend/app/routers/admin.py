@@ -304,6 +304,8 @@ async def admin_list_bookings(
     booking_status: Optional[BookingStatus] = Query(None, alias="status"),
     from_date: Optional[datetime] = Query(None, alias="from"),
     to_date: Optional[datetime] = Query(None, alias="to"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -317,14 +319,26 @@ async def admin_list_bookings(
     if to_date:
         filters.append(Booking.end_time <= to_date)
 
+    total_result = await db.execute(
+        select(func.count(Booking.id)).where(and_(*filters))
+    )
+    total = total_result.scalar_one()
+
     result = await db.execute(
         select(Booking)
         .options(selectinload(Booking.room), selectinload(Booking.user))
         .where(and_(*filters))
-        .order_by(Booking.start_time.desc())
+        .order_by(Booking.start_time.desc(), Booking.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
     bookings = result.scalars().all()
-    return {"bookings": [BookingOut.model_validate(b) for b in bookings]}
+    return {
+        "bookings": [BookingOut.model_validate(b) for b in bookings],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.put("/bookings/{booking_id}")
