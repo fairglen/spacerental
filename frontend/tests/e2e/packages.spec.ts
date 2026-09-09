@@ -1,16 +1,15 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
-import { createHmac } from 'node:crypto'
 
 /**
  * Package purchase flows (TODO.md B12): buying a package from the landing
  * page or the dashboard, and a signed-out visitor's choice surviving sign-up.
  *
  * Like booking.spec.ts (B1/B2/B4/B5), this runs entirely on STRIPE_MODE=stub:
- * `POST /packages/{id}/purchase` returns a deterministic
- * `https://checkout.stripe.stub/cs_stub_<id>` URL, and the
- * `checkout.session.completed` webhook signed below is what activates the
- * purchase (flips its hours from reserved-but-unpaid to spendable). No Stripe
- * account, no credentials (CLAUDE.md §10.3).
+ * `POST /packages/{id}/purchase` returns a `.../checkout/stub/cs_stub_<id>`
+ * URL served by this app itself (T10), and clicking "Pagar" there is what
+ * activates the purchase (flips its hours from reserved-but-unpaid to
+ * spendable) — walked as a real page, no route interception needed
+ * (CLAUDE.md §10.3).
  *
  * Serial + one shared sign-in, same as booking.spec.ts — the backend's
  * auth-tier rate limit (10 requests/60s, backend/app/config.py) is shared
@@ -19,8 +18,6 @@ import { createHmac } from 'node:crypto'
  */
 
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
-const CHECKOUT_ORIGIN = 'https://checkout.stripe.stub'
-const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_stub_local_secret'
 const CREDENTIALS = { email: 'admin@demo.com', password: 'admin123' }
 
 type ApiPackage = { id: string; org_id: string; name: string; hours: number }
@@ -68,32 +65,9 @@ async function myPurchases(api: APIRequestContext, token: string): Promise<ApiPu
   return (await res.json()).purchases
 }
 
-/** Complete a stub Checkout Session the way Stripe would: a signed webhook. */
-async function payStubCheckout(api: APIRequestContext, sessionId: string, purchase: ApiPurchase) {
-  const payload = JSON.stringify({
-    type: 'checkout.session.completed',
-    data: {
-      object: {
-        object: 'checkout.session',
-        id: sessionId,
-        payment_status: 'paid',
-        metadata: { kind: 'package_purchase', reference_id: purchase.id, org_id: purchase.org_id },
-      },
-    },
-  })
-  const timestamp = Math.floor(Date.now() / 1000)
-  const signature = createHmac('sha256', WEBHOOK_SECRET).update(`${timestamp}.${payload}`).digest('hex')
-  const res = await api.post(apiUrl('/webhooks/stripe'), {
-    headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${timestamp},v1=${signature}` },
-    data: payload,
-  })
-  expect(res.ok(), `webhook rejected: ${res.status()} ${await res.text()}`).toBeTruthy()
-  expect((await res.json()).handled, 'webhook did not activate the purchase').toBe(true)
-}
-
 /** Stub Checkout URL -> {sessionId, purchaseId} — the session id encodes the purchase UUID. */
 function decodeCheckoutUrl(url: string): { sessionId: string; purchaseId: string } {
-  const sessionId = new URL(url).pathname.replace('/', '')
+  const sessionId = new URL(url).pathname.split('/').pop()!
   const purchaseId = sessionId
     .replace('cs_stub_', '')
     .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
@@ -108,10 +82,10 @@ async function signIn(page: Page) {
   await page.waitForURL('**/dashboard', { timeout: 30000 })
 }
 
-async function interceptStubCheckout(page: Page) {
-  await page.route(`${CHECKOUT_ORIGIN}/**`, (route) =>
-    route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Stub Checkout</h1>' }),
-  )
+/** Click "Pagar" on the stub Checkout page the browser is currently on. */
+async function payOnStubCheckoutPage(page: Page) {
+  await page.getByRole('button', { name: /^Pagar$/ }).click()
+  await page.waitForURL(/\/dashboard/, { timeout: 20000 })
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -127,7 +101,6 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
 
     const context = await browser.newContext()
     page = await context.newPage()
-    await interceptStubCheckout(page)
     await signIn(page)
   })
 
@@ -145,16 +118,16 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
     await expect(packButtons.first()).toBeVisible({ timeout: 15000 })
     await packButtons.first().click()
 
-    await page.waitForURL(/checkout\.stripe\.stub\/cs_stub_/, { timeout: 20000 })
+    await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
     const { sessionId, purchaseId } = decodeCheckoutUrl(page.url())
 
     const purchases = await myPurchases(api, token)
     const purchase = purchases.find((p) => p.id === purchaseId)
     expect(purchase, `no purchase behind checkout session ${sessionId}`).toBeTruthy()
     expect(purchase!.package_id).toBe(pkg10h.id)
-    expect(purchase!.status, 'purchase should stay pending until the webhook lands').toBe('pending')
+    expect(purchase!.status, 'purchase should stay pending until payment').toBe('pending')
 
-    await payStubCheckout(api, sessionId, purchase!)
+    await payOnStubCheckoutPage(page)
 
     await page.goto('/dashboard/packages')
     const card = page.locator('div.rounded-xl').filter({ hasText: pkg10h.name })
@@ -175,14 +148,14 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
     const targetCard = page.locator('div.rounded-xl').filter({ hasText: `${pkg20h.hours}h ·` })
     await targetCard.getByRole('button', { name: /Comprar Pack/i }).click()
 
-    await page.waitForURL(/checkout\.stripe\.stub\/cs_stub_/, { timeout: 20000 })
-    const { sessionId, purchaseId } = decodeCheckoutUrl(page.url())
+    await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
+    const { purchaseId } = decodeCheckoutUrl(page.url())
     const purchases = await myPurchases(api, token)
     const purchase = purchases.find((p) => p.id === purchaseId)
     expect(purchase).toBeTruthy()
     expect(purchase!.package_id).toBe(pkg20h.id)
 
-    await payStubCheckout(api, sessionId, purchase!)
+    await payOnStubCheckoutPage(page)
 
     await page.goto('/dashboard/packages')
     const card = page.locator('div.rounded-xl').filter({ hasText: pkg20h.name })

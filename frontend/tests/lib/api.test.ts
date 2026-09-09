@@ -138,6 +138,24 @@ describe('checkout responses', () => {
     expect(result.booking.status).toBe('pending')
   })
 
+  // Story 2.4: a package-paid booking is confirmed on the spot and has no URL.
+  it('bookingsApi.create yields a null checkout_url for a package booking', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({
+        data: {
+          booking: { id: 'b2', status: 'confirmed', total_amount: '22.00', duration_hours: '2.0' },
+          checkout_url: null,
+        },
+      }),
+    } as any
+    const result = await bookingsApi.create(
+      { room_id: 'r1', start_time: 'x', end_time: 'y', payment_method: 'package' },
+      mockApi,
+    )
+    expect(result.checkout_url).toBeNull()
+    expect(result.booking.status).toBe('confirmed')
+  })
+
   it('bookingsApi.create forwards payment_method to the API', async () => {
     const mockApi = {
       post: vi.fn().mockResolvedValue({

@@ -103,15 +103,23 @@ export const bookingsApi = {
   listMine: (api: Api) =>
     api.get<{ bookings: Booking[] }>('/bookings/me').then(r => r.data.bookings.map(normBooking)),
 
-  // The booking comes back `pending` with a Stripe Checkout URL — it is the
-  // webhook, not this response, that confirms it.
+  // An `hourly` booking comes back `pending` with a Stripe Checkout URL — it is
+  // the webhook, not this response, that confirms it. A `package` booking is
+  // paid from prepaid hours, so it is already `confirmed` and `checkout_url` is
+  // null.
   create: (
-    data: { room_id: string; start_time: string; end_time: string; notes?: string; payment_method?: 'hourly' },
+    data: {
+      room_id: string
+      start_time: string
+      end_time: string
+      notes?: string
+      payment_method?: 'hourly' | 'package'
+    },
     api: Api,
   ) =>
     api.post<BookingCheckout>('/bookings', data).then(r => ({
       booking: normBooking(r.data.booking),
-      checkout_url: r.data.checkout_url,
+      checkout_url: r.data.checkout_url ?? null,
     })),
 
   cancel: (id: string, api: Api) =>

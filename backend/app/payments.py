@@ -148,6 +148,19 @@ class PaymentGateway(ABC):
         self._success_url = success_url
         self._cancel_url = cancel_url
 
+    @property
+    def success_url(self) -> str:
+        """Where the payer lands after paying — for the stub checkout page
+        to redirect to, matching whatever this gateway instance was actually
+        configured with rather than re-reading global settings."""
+        return self._success_url
+
+    @property
+    def cancel_url(self) -> str:
+        """Where the payer lands after backing out — same rationale as
+        `success_url`."""
+        return self._cancel_url
+
     @abstractmethod
     async def create_checkout_session(
         self,
@@ -240,11 +253,14 @@ class StripeGateway(PaymentGateway):
 class StubPaymentGateway(PaymentGateway):
     """Credential-free local stand-in. Selected by STRIPE_MODE=stub (default).
 
-    Checkout URLs are deterministic and signature verification implements
-    Stripe's documented `t=<ts>,v1=<hmac>` scheme, so a forged webhook is
-    rejected here exactly as it would be in live mode. `sign_payload` is the
-    counterpart used by tests and by the local `curl` flow in the README of
-    this feature's PR.
+    Checkout URLs point at this app's own `/checkout/stub/{id}` page (see
+    `app.routers.checkout_stub`) rather than a fake external host, so the
+    booking/purchase → checkout → confirmed flow can be *walked in a browser*
+    on a laptop with zero credentials (CLAUDE.md §10.3), not just automated
+    against the webhook. Signature verification implements Stripe's
+    documented `t=<ts>,v1=<hmac>` scheme, so a forged webhook is rejected here
+    exactly as it would be in live mode. `sign_payload` is the counterpart
+    used by tests and by the stub checkout page's own "Pay" action.
     """
 
     def __init__(
@@ -253,9 +269,15 @@ class StubPaymentGateway(PaymentGateway):
         currency: str = "eur",
         success_url: str = "",
         cancel_url: str = "",
+        checkout_base_url: str = "http://localhost:8000",
     ) -> None:
         super().__init__(currency, success_url, cancel_url)
         self._webhook_secret = webhook_secret
+        # Browser-facing base URL for this backend. Never `localhost` from a
+        # container's own point of view (CLAUDE.md §6.3) — this is handed to
+        # the user's browser, not called container-to-container, so it must
+        # be the host-reachable address (matches NEXT_PUBLIC_API_URL's role).
+        self._checkout_base_url = checkout_base_url.rstrip("/")
         # What the gateway was asked to charge, keyed by session id. Lets tests
         # and local debugging assert the amount without a Stripe dashboard.
         self.sessions: dict[str, dict] = {}
@@ -279,7 +301,8 @@ class StubPaymentGateway(PaymentGateway):
             "org_id": str(org_id),
         }
         return CheckoutSession(
-            id=session_id, url=f"https://checkout.stripe.stub/{session_id}"
+            id=session_id,
+            url=f"{self._checkout_base_url}/checkout/stub/{session_id}",
         )
 
     def sign_payload(self, payload: bytes, timestamp: int | None = None) -> str:
@@ -341,6 +364,7 @@ def _build_gateway(
     currency: str,
     success_url: str,
     cancel_url: str,
+    checkout_base_url: str,
 ) -> PaymentGateway:
     if mode == LIVE_MODE:
         return StripeGateway(
@@ -355,6 +379,7 @@ def _build_gateway(
         currency=currency,
         success_url=success_url,
         cancel_url=cancel_url,
+        checkout_base_url=checkout_base_url,
     )
 
 
@@ -368,6 +393,7 @@ def get_payment_gateway() -> PaymentGateway:
         settings.STRIPE_CURRENCY,
         settings.STRIPE_SUCCESS_URL,
         settings.STRIPE_CANCEL_URL,
+        settings.STRIPE_STUB_CHECKOUT_BASE_URL,
     )
 
 
