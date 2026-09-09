@@ -301,6 +301,63 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(card).toContainText('Confirmado')
   })
 
+  test('a single click still books exactly one hour, same as before B1 (B1)', async () => {
+    const offset = bookableDayOffset(3)
+    await openRoomCalendar(page, 'Sala Calma')
+    await goToDay(page, offset)
+
+    // A real DOM click (not the dragHours helper's mouse-down/move/up), on an
+    // hour none of the other tests touch — B1's third acceptance criterion is
+    // that single-click behaviour is unchanged, and until now nothing drove an
+    // actual click through the full stack; only a synthetic onSelectSlot call
+    // in the component test and API-created bookings in the E2E suite.
+    await slotAt(page, 15).scrollIntoViewIfNeeded()
+    const target = await slotAt(page, 15).boundingBox()
+    expect(target, 'slot 15:00 is not laid out').toBeTruthy()
+    await page.mouse.click(target!.x + target!.width / 2, target!.y + target!.height / 2)
+
+    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText('Duração', { exact: true }).locator('..')).toContainText('1h')
+
+    const booking = await confirmAndPay(page, api, token)
+    expect(booking.start_time).toBe(utcHour(offset, 15).toISOString().replace('.000Z', 'Z'))
+    expect(booking.end_time).toBe(utcHour(offset, 16).toISOString().replace('.000Z', 'Z'))
+
+    await page.goto('/dashboard')
+    const card = bookingCard(page, 'Sala Calma', utcHour(offset, 15), utcHour(offset, 16))
+    await expect(card).toHaveCount(1, { timeout: 10000 })
+    await expect(card).toContainText('Confirmado')
+  })
+
+  test('a slot taken between opening the modal and confirming surfaces the specific conflict message (B1)', async () => {
+    const offset = bookableDayOffset(3)
+    const roomId = await roomIdByName(api, 'Sala Névoa')
+
+    await openRoomCalendar(page, 'Sala Névoa')
+    await goToDay(page, offset)
+
+    // Opens on an hour that reads free client-side (an hour none of the other
+    // tests touch on this room/day).
+    await dragHours(page, 13, 14)
+    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
+
+    // A concurrent booking wins the race on the backend before this one
+    // confirms — the modal's availability snapshot is now stale.
+    await createBookingViaApi(api, token, roomId, utcHour(offset, 13), utcHour(offset, 14))
+
+    await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
+
+    // B1's fourth criterion: the 409 is surfaced as the specific slot
+    // conflict, not BookingModal's generic "Erro ao criar reserva". Note the
+    // gender agreement differs from the calendar's own selectionError text
+    // ("a hora ... reservada") — this is BookingModal's "horário ... reservado".
+    const alert = page.getByRole('alert').filter({ hasText: /já está reservado/ })
+    await expect(alert).toBeVisible({ timeout: 10000 })
+    await expect(alert).not.toContainText(/Erro ao criar reserva/i)
+
+    await page.getByRole('button', { name: /^Cancelar$/ }).click()
+  })
+
   test('two blocks on one day keep the lunch gap free (B2)', async () => {
     const offset = bookableDayOffset(3)
     await openRoomCalendar(page, 'Sala Brisa')
