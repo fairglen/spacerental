@@ -39,7 +39,7 @@ This document captures the *why* behind the architecture, the non-obvious gotcha
 
 2. **FastAPI JWT** (Next.js ↔ FastAPI): an HS256 JWT signed with `SECRET_KEY`, issued by `POST /auth/login` and `POST /auth/register`. Stored inside the NextAuth session as `session.accessToken`. Used as a Bearer header for every API call.
 
-The two are linked: `authorize()` in `lib/auth.ts`, shared by `app/api/auth/[...nextauth]/route.ts` and the dashboard layout, calls FastAPI's `/auth/login`, stashes the returned JWT in the NextAuth JWT callback, then surfaces it via the session callback.
+The two are linked: `authorize()` in `lib/auth.ts`, shared by `app/api/auth/[...nextauth]/route.ts` and the dashboard layout, calls FastAPI's `/auth/login`, stashes the returned JWT in the NextAuth JWT callback, then surfaces it via the session callback. Keep `lib/auth.ts` imports in server code; it reads private configuration and uses Node APIs.
 
 ---
 

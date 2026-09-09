@@ -11,11 +11,10 @@ are starting points, not proof that an outcome is complete. Check their current
 state before implementation, integrate related work, and verify the resulting
 journey. Keep `TODO.md` aligned with this roadmap as work lands.
 
-**Execution hold:** first review, fix and merge the existing PR queue using Gate 0
-in [TODO.md](TODO.md). The user has resumed review and authorized merging PRs
-without critical remaining issues; current dispositions are recorded there.
-New roadmap implementation remains on hold until the queue is resolved, the
-integrated result is verified, and the user resumes roadmap delivery. Existing
+**Execution hold:** Gate 0 code repairs are merged and verified on main
+`02c80d4`; the documentation merge in PR #23 closes the delivery record in
+[TODO.md](TODO.md). New roadmap implementation remains on hold until the user
+resumes roadmap delivery. Existing
 foundation PRs may land before their outcome is complete; their remaining work
 stays tracked below. Within new outcome-1 work, start with customer enrollment
 and its E2E test, then complete the package-holder journey on the merged work.
@@ -54,11 +53,13 @@ the correct reservation and payment state without manual database changes.
 - [ ] Display actual package prices and validity from the API, matching checkout.
 - [ ] Explain cancellation eligibility and show failed-action feedback in
   Portuguese instead of leaving the customer without an explanation.
-- [ ] Make verification dependable: resolve E2E setup failures, retain useful
-  traces and backend logs, and preserve the booking coverage from
-  [PR #31](https://github.com/fairglen/spacerental/pull/31), merged on 2026-09-09.
-- [ ] Reconcile README, TODO, and architecture guidance with merged code,
-  distinguishing implemented features from pending PRs and remaining gaps.
+- [x] Repair E2E setup failures and retain traces, backend logs and booking
+  coverage through merged [PR #25](https://github.com/fairglen/spacerental/pull/25)
+  and [PR #31](https://github.com/fairglen/spacerental/pull/31). Further diagnostics
+  and authentication error feedback remain C08.
+- [x] Reconcile README, TODO, and architecture guidance with merged code in
+  this documentation delivery (#23), distinguishing implemented foundations
+  from remaining gaps. Keep these current during later delivery.
 
 ### Done when
 

@@ -9,7 +9,9 @@ preserves its history and outstanding requirements.
 **Current assignment (2026-09-09): review existing PRs and merge those without
 critical remaining issues. New roadmap feature implementation remains on hold.**
 
-The active delivery phase is **Gate 0: fix and merge the existing PR queue**.
+Gate 0 code repairs are merged and verified. This documentation PR (#23)
+records the result and closes Gate 0 when merged; until that merge, Q23/Q90
+remain IN PROGRESS.
 New roadmap implementation stays on hold until that gate is verified and the
 user resumes roadmap delivery. Finishing a PR does not authorize pulling in its
 later roadmap follow-ups. In particular, do not expand the recurring or Seam
@@ -102,7 +104,8 @@ changes need diff/link/status verification, not application test reruns.
 
 ## Gate 0 — Fix and merge the existing PR queue
 
-**State: IN PROGRESS.** Initial snapshot: main `bc3112b`, 12 open PRs checked on 2026-09-09.
+**State: code verification complete; closes on merge of #23.**
+Initial snapshot: main `bc3112b`, 12 open PRs checked on 2026-09-09.
 Green below means reported checks passed, not approval or proof of completeness.
 The recorded failure diagnoses came from the September 9 assessment; re-read
 current logs and review threads before applying a fix.
@@ -119,8 +122,8 @@ Broader roadmap implementation remains on hold.
 | Q22 | DONE — merged #22 as `3241e56e792fbcb66e1e39377d6462ee1406c038` | Backend, frontend, E2E, lint and migration checks passed on PR and resulting main. Reviewed debit/refund locks and deterministic concurrent status-transition coverage. C02 retains fresh-customer E2E and distinguishing slot-conflict from insufficient-hours errors. |
 | Q31 | DONE — merged #31 as `3bf7fa378e65fb505dca7884a39d64747ccbd82c` | Reran failed infrastructure job in Actions run `34383929172`; E2E passed, as did other reported PR checks. Reviewed compatibility with #22's hourly-payment helper. |
 | Q20 | DONE — merged #20 as `c4a8838` | Stable (start_time, id) pagination with tied-start integration coverage and accessible status actions; 152 backend, 82 frontend and 17 browser tests plus green CI. |
-| Q23 | IN PROGRESS — this documentation PR | Agreed roadmap, task refactor, shipped status and architecture guidance are reconciled here; final code merge evidence will be recorded before publishing. |
-| Q24 | IN PROGRESS — head `cf7a602` under review | Checkout import restored; explicit Ruff 0.16.5 rules reconciled with all functional changes. Also removes the inherited auth-secret fallback and includes migrations in lint. Local 223 backend, 120 frontend, 20 browser tests, production build and empty-database migration roundtrip pass. Final CI pending. |
+| Q23 | DONE on merge of [#23](https://github.com/fairglen/spacerental/pull/23) | Delivers the agreed roadmap, executable task refactor, historical mapping and corrected README/architecture status. Verified exact outcome order, links, holds and unchanged parsed Compose configuration. |
+| Q24 | DONE — merged #24 as `02c80d4` | Explicit Ruff 0.16.5 cleanup preserves integrated routes/transitions, includes migrations in lint and removes the inherited auth-secret fallback. Final CI passed: 223 backend, 120 frontend, 20 opt-in browser tests, production build, lint and migration roundtrip. |
 | Q25 | DONE — merged #25 as `2b6e864` | Real NextAuth credentials setup, fail-fast readiness and uploaded diagnostics; 74 frontend tests, 17 browser flows and 20 repeated admin checks plus green CI. |
 | Q26 | DONE — merged #26 as `5018e87` | 193 backend tests, migration roundtrip, 93 frontend tests and 17 browser flows plus green CI. One Alembic head; shared cancellation policy, row locks and rollback-safe notifications. Explicit opt-in pending UTC foundation; R01–R03 remain HOLD. |
 | Q27 | DONE — merged #27 as `3c687d6` | 111 frontend tests, TypeScript and 19 browser flows plus green CI. Single switch gates API/UI, explicit pending acknowledgement, preview/conflict and isolated cancellation coverage. Paid series and local-time scheduling remain HOLD. |
@@ -128,13 +131,16 @@ Broader roadmap implementation remains on hold.
 | Q29 | DONE — merged #29 as `42466e8` | Typed catalog traversal and literal repeated interpolation, behavior-focused tests; 93 frontend tests, TypeScript, 17 browser flows and green CI. |
 | Q30 | DONE — merged #30 as `ed571e5` | Locale snapshot hydration regression and persistence flow verified; 98 frontend tests, TypeScript, 18 browser flows and green CI. |
 
-Gate 0 remains open for Q23, Q24 and final integrated verification. B14 is merged in #32.
+All 12 code PRs in this delivery pass are merged (11 from the original queue
+plus B14/#32). The remaining documentation PR is Q23; its merge completes the
+13-PR delivery and closes Q90. B14 is merged in #32.
 A merged foundation is not completion of
 its roadmap outcome. The original per-PR scopes below remain the acceptance
 reference; the disposition table above takes precedence over their dated snapshot.
 
-Current merged main is `c8b4913` after #32. Final integrated evidence will be
-recorded under Q90 after the remaining code and documentation PRs land.
+Verified code main is `02c80d4` after #24, with the same application source as
+tested PR head `cf7a602`. This PR changes only documentation and a Compose
+comment; final integrated evidence is recorded under Q90 below.
 
 ### Q00 — Refresh evidence and choose the merge sequence
 
@@ -278,6 +284,37 @@ configuration. Recovery clears authenticated caches because re-login may select
 a different account; no purchase POST is automatically replayed.
 
 ### Q90 — Verify the combined result and close Gate 0
+
+**State: code verified on `02c80d4`; DONE on merge of #23.** This completion
+record takes effect on the documentation merge, not merely on a green branch.
+
+Final evidence from the integrated code revision `cf7a602` (merged unchanged as
+`02c80d4`):
+
+- 223 real-PostgreSQL backend tests passed locally and in final
+  [backend CI](https://github.com/fairglen/spacerental/actions/runs/34413078990).
+- 120 frontend tests, TypeScript and production build passed locally and in
+  [frontend CI](https://github.com/fairglen/spacerental/actions/runs/34413078940).
+- All 20 browser tests passed locally with recurrence disabled and in final
+  [E2E CI](https://github.com/fairglen/spacerental/actions/runs/34413078919) with
+  recurrence enabled. The opt-in suite covers pending-series preview, isolated
+  cancellation and conflict; the default run verifies the control is hidden.
+  Hourly/pack checkout, expired-session recovery, access codes, cancellation,
+  admin browsing and locale persistence pass together.
+- A separate empty PostgreSQL database passed upgrade → check → downgrade →
+  upgrade → check, with no application tables or enums left after downgrade.
+  [Final migration CI](https://github.com/fairglen/spacerental/actions/runs/34413078772)
+  also passed. Ruff 0.16.5 passes across the full backend, including migrations.
+- Documentation links, complete/unique task IDs, dependencies, acceptance,
+  exact outcome order and all three HOLD boundaries were checked. Parsed Compose
+  configuration is unchanged by the documentation comment. Q23's applicable
+  lint/E2E checks must pass before its merge; frontend/backend/migration workflow
+  path filters intentionally exclude this documentation-only change.
+
+Remaining limitations are assigned to C/R/O/D tasks below: fresh-customer
+membership, payment/hold recovery, dependency updates, paid Lisbon-time series,
+and durable email/refund/access operation. Recurrence stays disabled by default;
+live smart-lock startup remains gated. None of these outcomes is marked complete.
 
 **Depends on:** disposition of Q19–Q31 above, including Q23, and B14 resolved;
 no unresolved unsafe
