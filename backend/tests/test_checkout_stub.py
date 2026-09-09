@@ -7,7 +7,7 @@ and its "Pay"/"Cancel" actions through the same `client` fixture used for
 every other route — no network, no Stripe credentials (CLAUDE.md §10.3).
 """
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 from app.main import app
@@ -15,11 +15,9 @@ from app.payments import PaymentGateway, get_payment_gateway
 
 
 def _future_slot(duration_hours: int = 2):
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
-    start = datetime.combine(
-        today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=timezone.utc
-    )
+    start = datetime.combine(today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=UTC)
     return start.isoformat(), (start + timedelta(hours=duration_hours)).isoformat()
 
 
@@ -104,9 +102,7 @@ class TestPayCheckout:
         booking = body["booking"]
         session_id = _session_id_from_checkout_url(body["checkout_url"])
 
-        resp = await client.post(
-            f"/checkout/stub/{session_id}/pay", follow_redirects=False
-        )
+        resp = await client.post(f"/checkout/stub/{session_id}/pay", follow_redirects=False)
         assert resp.status_code == 303, resp.text
         assert resp.headers["location"] == "http://test/success"
 
@@ -123,21 +119,15 @@ class TestPayCheckout:
         booking = body["booking"]
         session_id = _session_id_from_checkout_url(body["checkout_url"])
 
-        first = await client.post(
-            f"/checkout/stub/{session_id}/pay", follow_redirects=False
-        )
-        second = await client.post(
-            f"/checkout/stub/{session_id}/pay", follow_redirects=False
-        )
+        first = await client.post(f"/checkout/stub/{session_id}/pay", follow_redirects=False)
+        second = await client.post(f"/checkout/stub/{session_id}/pay", follow_redirects=False)
         assert first.status_code == 303
         assert second.status_code == 303
         assert await _booking_status(client, auth_headers, booking["id"]) == "confirmed"
         assert len(emails.sent) == 1
 
     async def test_unknown_session_id_is_404(self, client, payments):
-        resp = await client.post(
-            "/checkout/stub/cs_stub_never_seen/pay", follow_redirects=False
-        )
+        resp = await client.post("/checkout/stub/cs_stub_never_seen/pay", follow_redirects=False)
         assert resp.status_code == 404
 
 
@@ -149,18 +139,14 @@ class TestCancelCheckout:
         booking = body["booking"]
         session_id = _session_id_from_checkout_url(body["checkout_url"])
 
-        resp = await client.post(
-            f"/checkout/stub/{session_id}/cancel", follow_redirects=False
-        )
+        resp = await client.post(f"/checkout/stub/{session_id}/cancel", follow_redirects=False)
         assert resp.status_code == 303, resp.text
         assert resp.headers["location"] == "http://test/cancel"
         assert await _booking_status(client, auth_headers, booking["id"]) == "pending"
         assert emails.sent == []
 
     async def test_unknown_session_id_is_404(self, client, payments):
-        resp = await client.post(
-            "/checkout/stub/cs_stub_never_seen/cancel", follow_redirects=False
-        )
+        resp = await client.post("/checkout/stub/cs_stub_never_seen/cancel", follow_redirects=False)
         assert resp.status_code == 404
 
 
@@ -197,13 +183,12 @@ class TestPackagePurchaseCheckout:
         assert page.status_code == 200
         assert "99,00" in page.text
 
-        resp = await client.post(
-            f"/checkout/stub/{session_id}/pay", follow_redirects=False
-        )
+        resp = await client.post(f"/checkout/stub/{session_id}/pay", follow_redirects=False)
         assert resp.status_code == 303
         assert resp.headers["location"] == "http://test/success"
 
         mine = await client.get("/api/v1/packages/me", headers=auth_headers)
-        assert next(
-            p for p in mine.json()["purchases"] if p["id"] == purchase["id"]
-        )["status"] == "active"
+        assert (
+            next(p for p in mine.json()["purchases"] if p["id"] == purchase["id"])["status"]
+            == "active"
+        )

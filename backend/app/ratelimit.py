@@ -113,9 +113,7 @@ class RateLimiter:
                 return RateLimitResult(allowed=False, remaining=0, retry_after=retry_after)
 
             hits.append(current)
-            return RateLimitResult(
-                allowed=True, remaining=limit - len(hits), retry_after=0
-            )
+            return RateLimitResult(allowed=True, remaining=limit - len(hits), retry_after=0)
 
     def reset(self) -> None:
         """Drop all recorded hits. Used by tests between cases."""

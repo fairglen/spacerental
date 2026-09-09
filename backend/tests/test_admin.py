@@ -21,9 +21,7 @@ class TestAdminDashboard:
         )
         assert resp.status_code == 403
 
-    async def test_admin_dashboard_returns_stats_shape(
-        self, client, admin_headers, test_org
-    ):
+    async def test_admin_dashboard_returns_stats_shape(self, client, admin_headers, test_org):
         resp = await client.get(
             "/api/v1/admin/dashboard",
             params={"org_id": str(test_org.id)},
@@ -60,9 +58,7 @@ class TestAdminSpaces:
 
 
 class TestAdminRooms:
-    async def test_admin_create_room_in_space(
-        self, client, admin_headers, test_org, test_space
-    ):
+    async def test_admin_create_room_in_space(self, client, admin_headers, test_org, test_space):
         resp = await client.post(
             f"/api/v1/admin/spaces/{test_space.id}/rooms",
             params={"org_id": str(test_org.id)},
@@ -85,6 +81,41 @@ class TestAdminRooms:
 
 
 class TestAdminBookings:
+    async def test_pagination_keeps_bookings_with_equal_start_times(
+        self, client, admin_headers, db_session, test_org, test_room, admin_user
+    ):
+        start = datetime.now(tz=UTC) + timedelta(days=2)
+        ids = [uuid.UUID(int=i) for i in (2, 5, 1, 4, 3)]
+        for booking_id in ids:
+            db_session.add(
+                Booking(
+                    id=booking_id,
+                    org_id=test_org.id,
+                    room_id=test_room.id,
+                    user_id=admin_user.id,
+                    start_time=start,
+                    end_time=start + timedelta(hours=1),
+                    duration_hours=Decimal("1.00"),
+                    total_amount=Decimal("11.00"),
+                    status=BookingStatus.cancelled,
+                    payment_method=PaymentMethod.hourly,
+                )
+            )
+        await db_session.commit()
+
+        # Cancelled bookings can legitimately share both room and start time.
+        observed = []
+        for page in (1, 2, 3):
+            response = await client.get(
+                "/api/v1/admin/bookings",
+                params={"org_id": str(test_org.id), "page": page, "page_size": 2},
+                headers=admin_headers,
+            )
+            assert response.status_code == 200, response.text
+            assert response.json()["total"] == len(ids)
+            observed.extend(booking["id"] for booking in response.json()["bookings"])
+        assert observed == [str(booking_id) for booking_id in sorted(ids, reverse=True)]
+
     async def test_admin_list_bookings(
         self,
         client,
@@ -120,6 +151,100 @@ class TestAdminBookings:
         body = resp.json()
         assert len(body["bookings"]) == 1
         assert body["bookings"][0]["room_id"] == str(test_room.id)
+
+    async def test_admin_list_bookings_default_pagination_matches_unpaginated_behavior(
+        self,
+        client,
+        admin_headers,
+        db_session,
+        test_org,
+        test_room,
+        admin_user,
+    ):
+        """No page/page_size params → page=1, page_size=20, all bookings still returned
+        when there are fewer than a page's worth (today's behavior, unchanged)."""
+        start = datetime.now(tz=UTC) + timedelta(days=2)
+        for i in range(3):
+            booking_start = start + timedelta(hours=i * 3)
+            booking = Booking(
+                org_id=test_org.id,
+                room_id=test_room.id,
+                user_id=admin_user.id,
+                start_time=booking_start,
+                end_time=booking_start + timedelta(hours=2),
+                duration_hours=Decimal("2.00"),
+                total_amount=Decimal("22.00"),
+                status=BookingStatus.confirmed,
+                payment_method=PaymentMethod.hourly,
+            )
+            db_session.add(booking)
+        await db_session.commit()
+
+        resp = await client.get(
+            "/api/v1/admin/bookings",
+            params={"org_id": str(test_org.id)},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["bookings"]) == 3
+        assert body["total"] == 3
+        assert body["page"] == 1
+        assert body["page_size"] == 20
+
+    async def test_admin_list_bookings_paginates(
+        self,
+        client,
+        admin_headers,
+        db_session,
+        test_org,
+        test_room,
+        admin_user,
+    ):
+        start = datetime.now(tz=UTC) + timedelta(days=2)
+        for i in range(25):
+            booking_start = start + timedelta(hours=i * 3)
+            booking = Booking(
+                org_id=test_org.id,
+                room_id=test_room.id,
+                user_id=admin_user.id,
+                start_time=booking_start,
+                end_time=booking_start + timedelta(hours=2),
+                duration_hours=Decimal("2.00"),
+                total_amount=Decimal("22.00"),
+                status=BookingStatus.confirmed,
+                payment_method=PaymentMethod.hourly,
+            )
+            db_session.add(booking)
+        await db_session.commit()
+
+        page1 = await client.get(
+            "/api/v1/admin/bookings",
+            params={"org_id": str(test_org.id), "page": 1, "page_size": 20},
+            headers=admin_headers,
+        )
+        assert page1.status_code == 200, page1.text
+        page1_body = page1.json()
+        assert len(page1_body["bookings"]) == 20
+        assert page1_body["total"] == 25
+        assert page1_body["page"] == 1
+        assert page1_body["page_size"] == 20
+
+        page2 = await client.get(
+            "/api/v1/admin/bookings",
+            params={"org_id": str(test_org.id), "page": 2, "page_size": 20},
+            headers=admin_headers,
+        )
+        assert page2.status_code == 200, page2.text
+        page2_body = page2.json()
+        assert len(page2_body["bookings"]) == 5
+        assert page2_body["total"] == 25
+        assert page2_body["page"] == 2
+
+        # No overlap between the two pages.
+        page1_ids = {b["id"] for b in page1_body["bookings"]}
+        page2_ids = {b["id"] for b in page2_body["bookings"]}
+        assert page1_ids.isdisjoint(page2_ids)
 
     async def test_admin_update_booking_status(
         self,
@@ -235,9 +360,7 @@ class TestAdminPackages:
 
 
 class TestAdminAvailability:
-    async def test_admin_get_availability_rules(
-        self, client, admin_headers, test_org, test_room
-    ):
+    async def test_admin_get_availability_rules(self, client, admin_headers, test_org, test_room):
         # test_room fixture seeds Mon-Sat 08:00-20:00 (6 rules, Sunday closed).
         resp = await client.get(
             f"/api/v1/admin/rooms/{test_room.id}/availability",
@@ -296,9 +419,7 @@ class TestAdminAvailability:
 
 
 class TestAdminAccessControl:
-    async def test_member_role_forbidden_on_admin_dashboard(
-        self, client, db_session, test_org
-    ):
+    async def test_member_role_forbidden_on_admin_dashboard(self, client, db_session, test_org):
         # test_member fixture grants member-role; build inline to avoid coupling.
         member = User(
             email="plain-member@test.com",
@@ -308,9 +429,7 @@ class TestAdminAccessControl:
         db_session.add(member)
         await db_session.flush()
         db_session.add(
-            OrganizationMember(
-                org_id=test_org.id, user_id=member.id, role=MemberRole.member
-            )
+            OrganizationMember(org_id=test_org.id, user_id=member.id, role=MemberRole.member)
         )
         await db_session.commit()
         await db_session.refresh(member)

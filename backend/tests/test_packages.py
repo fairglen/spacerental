@@ -22,9 +22,7 @@ async def test_package(db_session, test_org) -> Package:
 
 class TestListPackages:
     async def test_list_packages_for_org(self, client, test_org, test_package):
-        resp = await client.get(
-            "/api/v1/packages", params={"org_id": str(test_org.id)}
-        )
+        resp = await client.get("/api/v1/packages", params={"org_id": str(test_org.id)})
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert len(body["packages"]) == 1

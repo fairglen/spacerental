@@ -134,9 +134,7 @@ def _event_from_payload(payload: bytes) -> WebhookEvent:
 
 
 def _signed_payload_digest(payload: bytes, secret: str, timestamp: int) -> str:
-    return hmac.new(
-        secret.encode(), f"{timestamp}.".encode() + payload, hashlib.sha256
-    ).hexdigest()
+    return hmac.new(secret.encode(), f"{timestamp}.".encode() + payload, hashlib.sha256).hexdigest()
 
 
 class PaymentGateway(ABC):
@@ -311,11 +309,7 @@ class StubPaymentGateway(PaymentGateway):
         return f"t={ts},v1={_signed_payload_digest(payload, self._webhook_secret, ts)}"
 
     def _verify_signature(self, payload: bytes, signature_header: str) -> None:
-        parts = dict(
-            piece.split("=", 1)
-            for piece in signature_header.split(",")
-            if "=" in piece
-        )
+        parts = dict(piece.split("=", 1) for piece in signature_header.split(",") if "=" in piece)
         try:
             timestamp = int(parts["t"])
         except (KeyError, ValueError) as exc:

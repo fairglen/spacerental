@@ -103,9 +103,7 @@ async def engine():
     from another loop raises "another operation is in progress". NullPool +
     a function-scoped engine sidesteps the issue entirely at a small perf cost.
     """
-    eng = create_async_engine(
-        TEST_DATABASE_URL, echo=False, future=True, poolclass=NullPool
-    )
+    eng = create_async_engine(TEST_DATABASE_URL, echo=False, future=True, poolclass=NullPool)
     async with eng.begin() as conn:
         await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
     yield eng
@@ -228,9 +226,7 @@ async def test_user(db_session) -> User:
 @pytest_asyncio.fixture
 async def test_member(db_session, test_org, test_user) -> OrganizationMember:
     """Make test_user a regular member of test_org."""
-    m = OrganizationMember(
-        org_id=test_org.id, user_id=test_user.id, role=MemberRole.member
-    )
+    m = OrganizationMember(org_id=test_org.id, user_id=test_user.id, role=MemberRole.member)
     db_session.add(m)
     await db_session.commit()
     await db_session.refresh(m)
@@ -246,9 +242,7 @@ async def admin_user(db_session, test_org) -> User:
     )
     db_session.add(u)
     await db_session.flush()
-    db_session.add(
-        OrganizationMember(org_id=test_org.id, user_id=u.id, role=MemberRole.owner)
-    )
+    db_session.add(OrganizationMember(org_id=test_org.id, user_id=u.id, role=MemberRole.owner))
     await db_session.commit()
     await db_session.refresh(u)
     return u

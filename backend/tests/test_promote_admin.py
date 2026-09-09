@@ -26,9 +26,7 @@ async def demo_org(db_session) -> Organization:
 
 
 class TestPromoteAdminFunction:
-    async def test_promotes_user_to_owner_in_default_org(
-        self, db_session, demo_org, test_user
-    ):
+    async def test_promotes_user_to_owner_in_default_org(self, db_session, demo_org, test_user):
         member = await promote_admin(test_user.email, session=db_session)
         await db_session.commit()
 
@@ -45,9 +43,7 @@ class TestPromoteAdminFunction:
         row = result.scalar_one()
         assert row.role == MemberRole.owner
 
-    async def test_promotes_with_explicit_role_and_org_slug(
-        self, db_session, test_org, test_user
-    ):
+    async def test_promotes_with_explicit_role_and_org_slug(self, db_session, test_org, test_user):
         member = await promote_admin(
             test_user.email,
             role=MemberRole.admin,
@@ -104,17 +100,13 @@ class TestPromoteAdminCli:
     runs afterward under pytest-asyncio -- see `app/promote_admin.py::_run`.
     """
 
-    async def test_run_exits_nonzero_and_prints_error_on_unknown_email(
-        self, monkeypatch, capsys
-    ):
+    async def test_run_exits_nonzero_and_prints_error_on_unknown_email(self, monkeypatch, capsys):
         async def fake_promote_admin(email, *, role, org_slug):
             raise PromoteAdminError(f"No user found with email {email!r}.")
 
         monkeypatch.setattr("app.promote_admin.promote_admin", fake_promote_admin)
 
-        args = argparse.Namespace(
-            email="ghost@nowhere.com", role="owner", org_slug="demo-space"
-        )
+        args = argparse.Namespace(email="ghost@nowhere.com", role="owner", org_slug="demo-space")
         exit_code = await _run(args)
 
         assert exit_code == 1
@@ -129,9 +121,7 @@ class TestPromoteAdminCli:
 
         monkeypatch.setattr("app.promote_admin.promote_admin", fake_promote_admin)
 
-        args = argparse.Namespace(
-            email="someone@example.com", role="admin", org_slug="demo-space"
-        )
+        args = argparse.Namespace(email="someone@example.com", role="admin", org_slug="demo-space")
         exit_code = await _run(args)
 
         assert exit_code == 0

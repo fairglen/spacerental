@@ -200,6 +200,12 @@ async function dragHours(page: Page, fromHour: number, toHour: number) {
   await page.mouse.up()
 }
 
+/** Select "pay now" in the modal, if a package alternative is even offered. */
+async function chooseHourly(page: Page) {
+  const hourly = page.getByRole('radio', { name: /Pagar/i })
+  if (await hourly.count()) await hourly.check()
+}
+
 /**
  * Confirm the modal, follow the redirect to the real stub Checkout page
  * (T10), and click "Pagar" there — the whole thing running as a walkable
@@ -207,6 +213,11 @@ async function dragHours(page: Page, fromHour: number, toHour: number) {
  * belongs to.
  */
 async function confirmAndPay(page: Page, api: APIRequestContext, token: string): Promise<ApiBooking> {
+  // packages.spec.ts buys packs for this same demo account, so depending on
+  // run order the modal may default to spending prepaid hours. These tests are
+  // about the Stripe leg, so pick hourly explicitly rather than depending on
+  // whichever spec ran first.
+  await chooseHourly(page)
   await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
   await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
 
@@ -277,6 +288,7 @@ test.describe('Reservas — fluxos reais', () => {
 
     await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Duração', { exact: true }).locator('..')).toContainText('3h')
+    await chooseHourly(page)
     await expect(page.getByText('Total', { exact: true }).locator('..')).toContainText('33,00')
 
     const booking = await confirmAndPay(page, api, token)
@@ -288,6 +300,64 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(card).toHaveCount(1, { timeout: 10000 })
     await expect(card).toContainText('33,00')
     await expect(card).toContainText('Confirmado')
+  })
+
+  test('a single click still books exactly one hour, same as before B1 (B1)', async () => {
+    const offset = bookableDayOffset(3)
+    await openRoomCalendar(page, 'Sala Calma')
+    await goToDay(page, offset)
+
+    // A real DOM click (not the dragHours helper's mouse-down/move/up), on an
+    // hour none of the other tests touch — B1's third acceptance criterion is
+    // that single-click behaviour is unchanged, and until now nothing drove an
+    // actual click through the full stack; only a synthetic onSelectSlot call
+    // in the component test and API-created bookings in the E2E suite.
+    await slotAt(page, 15).scrollIntoViewIfNeeded()
+    const target = await slotAt(page, 15).boundingBox()
+    expect(target, 'slot 15:00 is not laid out').toBeTruthy()
+    await page.mouse.click(target!.x + target!.width / 2, target!.y + target!.height / 2)
+
+    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText('Duração', { exact: true }).locator('..')).toContainText('1h')
+
+    const booking = await confirmAndPay(page, api, token)
+    expect(booking.start_time).toBe(utcHour(offset, 15).toISOString().replace('.000Z', 'Z'))
+    expect(booking.end_time).toBe(utcHour(offset, 16).toISOString().replace('.000Z', 'Z'))
+
+    await page.goto('/dashboard')
+    const card = bookingCard(page, 'Sala Calma', utcHour(offset, 15), utcHour(offset, 16))
+    await expect(card).toHaveCount(1, { timeout: 10000 })
+    await expect(card).toContainText('Confirmado')
+  })
+
+  test('a slot taken between opening the modal and confirming surfaces the specific conflict message (B1)', async () => {
+    const offset = bookableDayOffset(3)
+    const roomId = await roomIdByName(api, 'Sala Névoa')
+
+    await openRoomCalendar(page, 'Sala Névoa')
+    await goToDay(page, offset)
+
+    // Opens on an hour that reads free client-side (an hour none of the other
+    // tests touch on this room/day).
+    await dragHours(page, 13, 14)
+    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
+
+    // A concurrent booking wins the race on the backend before this one
+    // confirms — the modal's availability snapshot is now stale.
+    await createBookingViaApi(api, token, roomId, utcHour(offset, 13), utcHour(offset, 14))
+
+    await chooseHourly(page)
+    await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
+
+    // B1's fourth criterion: the 409 is surfaced as the specific slot
+    // conflict, not BookingModal's generic "Erro ao criar reserva". Note the
+    // gender agreement differs from the calendar's own selectionError text
+    // ("a hora ... reservada") — this is BookingModal's "horário ... reservado".
+    const alert = page.getByRole('alert').filter({ hasText: /já está reservado/ })
+    await expect(alert).toBeVisible({ timeout: 10000 })
+    await expect(alert).not.toContainText(/Erro ao criar reserva/i)
+
+    await page.getByRole('button', { name: /^Cancelar$/ }).click()
   })
 
   test('two blocks on one day keep the lunch gap free (B2)', async () => {
@@ -395,8 +465,58 @@ test.describe('Reservas — fluxos reais', () => {
     await page.getByRole('button', { name: /^Cancelar$/ }).click()
   })
 
-  // TODO.md B5 also asks for a weekly recurring series (book a series, cancel
-  // one occurrence, the rest survive). Recurrence does not exist yet — it is
-  // Epic 1 (stories 1.1–1.4), explicitly out of scope here — so there is
-  // nothing to drive from the UI until it ships.
+  test('weekly series: preview, pending acknowledgement, isolated cancellation and conflict', async () => {
+    const offset = bookableDayOffset(5)
+    const first = utcHour(offset, 17)
+    const second = new Date(first.getTime() + 7 * 86400000)
+    for (const booking of await myBookings(api, token)) {
+      if ([first.toISOString().slice(0, 10), second.toISOString().slice(0, 10)].includes(booking.start_time.slice(0, 10)) && booking.status !== 'cancelled') {
+        await cancelViaApi(api, token, booking.id)
+      }
+    }
+    await openRoomCalendar(page, 'Sala Névoa')
+    await goToDay(page, offset)
+    await dragHours(page, 17, 18)
+    const repeat = page.getByLabel('Repetir semanalmente')
+    if (process.env.RECURRING_BOOKINGS_ENABLED !== 'true') {
+      await expect(repeat).toHaveCount(0)
+      await page.getByRole('button', { name: /^Cancelar$/ }).click()
+      return
+    }
+    await repeat.check()
+    await page.getByLabel('Repetir até').fill(second.toISOString().slice(0, 10))
+    await expect(page.getByText('Datas a criar (2)')).toBeVisible()
+    await expect(page.getByRole('radio', { name: /pack/i })).toHaveCount(0)
+    const responsePromise = page.waitForResponse(r => r.url().endsWith('/recurrences') && r.request().method() === 'POST')
+    await page.getByRole('button', { name: 'Confirmar Série' }).click()
+    const response = await responsePromise
+    expect(response.status()).toBe(201)
+    const series = await response.json()
+    expect(series.bookings).toHaveLength(2)
+    for (const booking of series.bookings) {
+      created.push(booking.id)
+      expect(booking.status).toBe('pending')
+      expect(booking.payment_method).toBe('hourly')
+    }
+    await expect(page.getByRole('status')).toContainText('2 reservas pendentes')
+    await page.getByRole('button', { name: 'Fechar' }).click()
+    await page.goto('/dashboard')
+    const firstCard = bookingCard(page, 'Sala Névoa', first, new Date(first.getTime() + 3600000))
+    await expect(firstCard).toContainText('Pendente')
+    await firstCard.getByRole('button', { name: /^Cancelar$/ }).click()
+    await page.getByRole('button', { name: /Sim, cancelar/i }).click()
+    await expect(firstCard).toHaveCount(0)
+    await expect(bookingCard(page, 'Sala Névoa', second, new Date(second.getTime() + 3600000))).toContainText('Pendente')
+    await openRoomCalendar(page, 'Sala Névoa')
+    await goToDay(page, offset)
+    expect(await backgroundOf(page, 17)).toBe(AVAILABLE_BG)
+    await dragHours(page, 17, 18)
+    await repeat.check()
+    await page.getByLabel('Repetir até').fill(second.toISOString().slice(0, 10))
+    await page.getByRole('button', { name: 'Confirmar Série' }).click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Estas datas da série já estão reservadas' })).toBeVisible()
+    const remaining = (await myBookings(api, token)).filter(b => b.start_time === first.toISOString().replace('.000Z', 'Z') && b.status !== 'cancelled' && b.org_id === series.recurrence.org_id)
+    expect(remaining).toHaveLength(0)
+    await page.getByRole('button', { name: /^Cancelar$/ }).click()
+  })
 })

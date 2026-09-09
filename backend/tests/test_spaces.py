@@ -12,9 +12,7 @@ class TestListSpaces:
         assert resp.status_code == 200
         assert resp.json() == {"spaces": []}
 
-    async def test_list_spaces_returns_active_only(
-        self, client, db_session, test_org, test_space
-    ):
+    async def test_list_spaces_returns_active_only(self, client, db_session, test_org, test_space):
         # Add a second, inactive space
         inactive = Space(
             org_id=test_org.id,

@@ -37,9 +37,7 @@ async def _get_memberships(user: User, db: AsyncSession) -> list[OrgMembershipDe
         .order_by(Organization.created_at.asc())
     )
     return [
-        OrgMembershipDetail(
-            org_id=m.org_id, org_name=o.name, org_slug=o.slug, role=m.role
-        )
+        OrgMembershipDetail(org_id=m.org_id, org_name=o.name, org_slug=o.slug, role=m.role)
         for m, o in result.all()
     ]
 

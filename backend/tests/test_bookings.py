@@ -28,9 +28,7 @@ class TestCreateBooking:
         )
         assert resp.status_code == 401
 
-    async def test_create_booking_success(
-        self, client, auth_headers, test_room, test_member
-    ):
+    async def test_create_booking_success(self, client, auth_headers, test_room, test_member):
         start, end = _future_slot()
         resp = await client.post(
             "/api/v1/bookings",
@@ -102,9 +100,11 @@ class TestBookingCheckout:
         listed = await client.get("/api/v1/bookings/me", headers=auth_headers)
         assert listed.json()["bookings"][0]["status"] == "pending"
 
-    async def test_package_payment_method_rejected(
+    async def test_package_payment_without_hours_is_rejected(
         self, client, auth_headers, test_room, test_member, payments
     ):
+        """Story 2.4 covers redemption; with no purchase there is nothing to
+        redeem, and no Checkout Session is opened as a fallback."""
         start, end = _future_slot()
         resp = await client.post(
             "/api/v1/bookings",
@@ -116,7 +116,7 @@ class TestBookingCheckout:
             },
             headers=auth_headers,
         )
-        assert resp.status_code == 400, resp.text
+        assert resp.status_code == 409, resp.text
         assert payments.sessions == {}
 
     async def test_checkout_failure_leaves_no_booking(
@@ -160,9 +160,7 @@ class TestListMyBookings:
         db_session.add(other)
         await db_session.flush()
         db_session.add(
-            OrganizationMember(
-                org_id=test_org.id, user_id=other.id, role=MemberRole.member
-            )
+            OrganizationMember(org_id=test_org.id, user_id=other.id, role=MemberRole.member)
         )
         await db_session.commit()
         await db_session.refresh(other)
@@ -213,9 +211,7 @@ class TestListMyBookings:
 
 
 class TestCancelBooking:
-    async def test_cancel_booking_own_success(
-        self, client, auth_headers, test_room, test_member
-    ):
+    async def test_cancel_booking_own_success(self, client, auth_headers, test_room, test_member):
         start, end = _future_slot()
         r = await client.post(
             "/api/v1/bookings",
@@ -225,9 +221,7 @@ class TestCancelBooking:
         assert r.status_code == 201, r.text
         booking_id = r.json()["booking"]["id"]
 
-        resp = await client.delete(
-            f"/api/v1/bookings/{booking_id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
         assert resp.status_code == 204
 
     async def test_cancel_booking_other_user_forbidden(
@@ -258,9 +252,7 @@ class TestCancelBooking:
         db_session.add(intruder)
         await db_session.flush()
         db_session.add(
-            OrganizationMember(
-                org_id=test_org.id, user_id=intruder.id, role=MemberRole.member
-            )
+            OrganizationMember(org_id=test_org.id, user_id=intruder.id, role=MemberRole.member)
         )
         await db_session.commit()
         await db_session.refresh(intruder)
@@ -307,8 +299,6 @@ class TestCancelBookingTooSoon:
         await db_session.commit()
         await db_session.refresh(booking)
 
-        resp = await client.delete(
-            f"/api/v1/bookings/{booking.id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/api/v1/bookings/{booking.id}", headers=auth_headers)
         assert resp.status_code == 400, resp.text
         assert "24" in resp.json()["detail"]

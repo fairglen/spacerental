@@ -38,9 +38,18 @@ export type Booking = {
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed'
   payment_method: 'hourly' | 'package'
   notes?: string
+  // Set when this booking is one occurrence of a recurring series.
+  recurrence_rule_id?: string | null
   room?: Room
   user?: User
   created_at: string
+}
+
+export type PaginatedBookings = {
+  bookings: Booking[]
+  total: number
+  page: number
+  page_size: number
 }
 
 export type User = {
@@ -77,9 +86,34 @@ export type UserPackagePurchase = {
 
 // POST /bookings and POST /packages/{id}/purchase both return the created
 // resource alongside the Stripe Checkout URL the user must be sent to.
+// A booking paid with package hours is already `confirmed` and has nothing
+// left to pay, so it comes back without a URL.
 export type BookingCheckout = {
   booking: Booking
-  checkout_url: string
+  checkout_url: string | null
+}
+
+export type RecurrenceRule = {
+  id: string
+  org_id: string
+  room_id: string
+  user_id: string
+  frequency: 'weekly'
+  start_time: string
+  end_time: string
+  until_date: string
+  notes?: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+// POST /recurrences and PUT /recurrences/{id} return the rule plus every
+// occurrence it expanded to. No checkout_url yet — charging a whole series
+// through one Checkout Session is deferred to the Stripe follow-up (Epic 2).
+export type RecurrenceWithBookings = {
+  recurrence: RecurrenceRule
+  bookings: Booking[]
 }
 
 export type PackagePurchaseCheckout = {

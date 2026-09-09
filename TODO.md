@@ -103,8 +103,10 @@ Worth generalizing while you're there: every time a setting is added to `config.
 ### T2 Ruff's newer rules are not adopted
 CI pins `ruff==0.15.17` with an explicit `select = ["E4","E7","E9","F"]` in `ruff.toml`. Ruff 0.16.1's widened defaults surface ~126 additional findings (`FURB157`, `I001`, …), largely stylistic and mostly in tests. Deliberately not adopted: it was a 126-error cleanup that would have ridden along on unrelated PRs. Worth its own pass — adopt the rules, fix the findings, bump the pin, all in one commit.
 
-### T3 `admin.spec.ts` "admin dashboard loads" is flaky
-Failed a `waitForURL` on the sign-in redirect and passed on retry during the Epic 2 run. Touches no payments code, so it predates that work. A retry-masked flake in an auth redirect is worth diagnosing rather than tolerating — it may be a real race in the sign-in flow, not just test timing.
+### T3 `admin.spec.ts` "admin dashboard loads" is flaky — ✅ Done
+Reproduced with `npx playwright test admin.spec.ts --repeat-each=15`: not a client-side session/redirect race. The `error-context.md` for a captured failure shows the page snapshot still on `/sign-in` with "Email ou password incorretos." on screen — the backend genuinely refused the login. Cause: `POST /auth/login` sits behind the auth-tier rate limiter added by the rate-limiting work (10 req/60s), and every spec file's browser-driven sign-in shares one client identity with the limiter (all of them go through the same Next.js server-side `authorize()` → `INTERNAL_API_URL` call). `admin.spec.ts` re-logged in via the real form once per test in a `beforeEach`; across a full run or `--repeat-each`, accumulated logins from every spec eventually crossed the threshold, and the 429 that resulted looked identical to a wrong password to next-auth's `authorize()`, hanging `waitForURL('**/dashboard')` until timeout.
+
+Fixed by not needing the real login at all for this file: `frontend/tests/e2e/global-setup.ts` signs in once (guaranteed to be the first auth request of the run) and saves `storageState`; `admin.spec.ts` consumes it via `test.use({ storageState })` since its tests only need to *be* an admin, not exercise the sign-in UI. Verified stable at 100/100 on `--repeat-each=50` plus a clean full-suite run.
 
 ### T4 `frontend-tests` is path-filtered and silently absent — ✅ Documented as intentional
 `.github/workflows/frontend-tests.yml` only triggers on `paths: ['frontend/**']` (consistent with `backend-tests.yml` triggering only on `backend/**`). Backend-only PRs show the check as **absent, not skipped** — this is GitHub Actions' expected behavior and saves CI time. Note: if this workflow were ever configured as a **required** status check, PRs where it doesn't run could be blocked; we'd need to remove the path filter or add a stub workflow that reports a neutral/success status.
@@ -163,6 +165,21 @@ As a member, I want to see what I'm about to book before committing to a series.
 
 ### 2.3 Package purchase checkout
 - **Given** `POST /api/v1/packages/{id}/purchase`, **when** payment integration is enabled, **then** it follows the same Checkout Session + webhook pattern as bookings, and `UserPackagePurchase` is only marked active after the webhook confirms.
+
+### 2.4 Redeem package hours at booking time — ✅ Done
+`payment_method: "package"` was accepted by the schema but hard-rejected in
+`create_booking`, so a package holder could buy hours and never spend them.
+
+- **Given** `POST /api/v1/bookings` with `payment_method: "package"`, **when** the caller has an active, unexpired purchase in the room's org with enough hours, **then** the hours are debited and the booking is `confirmed` with `checkout_url: null`.
+- **Given** no such purchase, **then** the response is `409` and nothing is written.
+- **Given** two requests racing for the last hour, **then** exactly one succeeds — `app/package_hours.py` takes `SELECT … FOR UPDATE` on the purchase row and re-validates under the lock.
+- **Given** a package booking is cancelled (by the member or by an admin), **then** the hours are credited back to the purchase they came from.
+
+Still open, deliberately: the dashboard's `total_revenue` counts booking charges
+only, so package *sales* revenue is now counted nowhere. Totalling
+`UserPackagePurchase` is its own story. There is also no E2E spec for the
+redemption flow — the demo account is shared across spec files, so it needs a
+dedicated fixture user rather than a bolt-on to `booking.spec.ts`.
 
 ---
 

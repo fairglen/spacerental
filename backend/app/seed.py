@@ -45,7 +45,7 @@ async def require_migrated_schema() -> None:
         )
 
 
-async def seed() -> None:  # noqa: C901
+async def seed() -> None:
     await require_migrated_schema()
 
     async with async_session_factory() as session:
@@ -68,9 +68,7 @@ async def seed() -> None:  # noqa: C901
             print(f"Org already exists: {org.name} ({org.id})")
 
         # ── Admin User ────────────────────────────────────────────────────────
-        result = await session.execute(
-            select(User).where(User.email == "admin@demo.com")
-        )
+        result = await session.execute(select(User).where(User.email == "admin@demo.com"))
         admin_user = result.scalar_one_or_none()
         if admin_user is None:
             admin_user = User(
@@ -183,9 +181,7 @@ async def seed() -> None:  # noqa: C901
 
         for pkg_data in packages_data:
             result = await session.execute(
-                select(Package).where(
-                    Package.org_id == org.id, Package.name == pkg_data["name"]
-                )
+                select(Package).where(Package.org_id == org.id, Package.name == pkg_data["name"])
             )
             pkg = result.scalar_one_or_none()
             if pkg is None:

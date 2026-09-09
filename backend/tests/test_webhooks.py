@@ -28,9 +28,7 @@ WEBHOOK_URL = "/api/v1/webhooks/stripe"
 def _future_slot(duration_hours: int = 2):
     today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
-    start = datetime.combine(
-        today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=UTC
-    )
+    start = datetime.combine(today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=UTC)
     return start.isoformat(), (start + timedelta(hours=duration_hours)).isoformat()
 
 
@@ -231,9 +229,7 @@ class TestBookingWebhook:
         assert resp.json()["handled"] is False
         assert await _booking_status(client, auth_headers, booking["id"]) == "pending"
 
-    async def test_malformed_body_with_valid_signature_is_rejected(
-        self, client, payments
-    ):
+    async def test_malformed_body_with_valid_signature_is_rejected(self, client, payments):
         payload = b"not json"
         resp = await client.post(
             WEBHOOK_URL,
@@ -342,9 +338,7 @@ class TestPaymentSettingsValidation:
         "secret_key,webhook_secret",
         [(None, "whsec_x"), ("sk_live_x", None), (None, None)],
     )
-    def test_live_mode_without_keys_raises(
-        self, monkeypatch, secret_key, webhook_secret
-    ):
+    def test_live_mode_without_keys_raises(self, monkeypatch, secret_key, webhook_secret):
         monkeypatch.setattr(settings, "STRIPE_MODE", "live")
         monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", secret_key)
         monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", webhook_secret)

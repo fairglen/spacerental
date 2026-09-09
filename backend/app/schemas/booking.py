@@ -23,6 +23,8 @@ class BookingOut(BaseModel):
     status: BookingStatus
     payment_method: PaymentMethod
     notes: str | None
+    # Non-null when this booking is one occurrence of a recurring series.
+    recurrence_rule_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
     room: RoomOut | None = None
@@ -38,11 +40,15 @@ class BookingCreate(BaseModel):
 
 
 class BookingCheckoutOut(BaseModel):
-    """POST /bookings response: the pending booking plus the Checkout URL the
-    client must send the user to in order to confirm it."""
+    """POST /bookings response: the created booking plus the Checkout URL the
+    client must send the user to in order to confirm it.
+
+    `checkout_url` is null when nothing is left to pay — a booking redeemed
+    against prepaid package hours comes back already `confirmed`.
+    """
 
     booking: BookingOut
-    checkout_url: str
+    checkout_url: str | None = None
 
 
 class BookingStatusUpdate(BaseModel):

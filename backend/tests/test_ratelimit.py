@@ -163,9 +163,7 @@ class TestAuthTierThrottling:
         assert verify_calls["n"] == verifies_before, "Argon2 verify ran for a throttled request"
         assert hash_calls["n"] == 0, "Argon2 hashing ran for a throttled request"
 
-    async def test_separate_client_ips_have_separate_budgets(
-        self, client, test_user, monkeypatch
-    ):
+    async def test_separate_client_ips_have_separate_budgets(self, client, test_user, monkeypatch):
         """Throttling is per-IP; with a proxy in front, that means the forwarded IP."""
         monkeypatch.setattr(settings, "RATE_LIMIT_TRUST_FORWARDED_FOR", True)
         limit = settings.RATE_LIMIT_AUTH_MAX_REQUESTS
@@ -191,9 +189,7 @@ class TestPublicTierThrottling:
     """Story 7.2 — GET /spaces and GET /rooms/{id}/availability."""
 
     def test_public_threshold_is_higher_than_the_auth_threshold(self):
-        assert (
-            settings.RATE_LIMIT_PUBLIC_MAX_REQUESTS > settings.RATE_LIMIT_AUTH_MAX_REQUESTS
-        )
+        assert settings.RATE_LIMIT_PUBLIC_MAX_REQUESTS > settings.RATE_LIMIT_AUTH_MAX_REQUESTS
 
     async def test_public_reads_survive_past_the_auth_tier_limit(self, client, test_space):
         """Traffic that would already be 429ing on the auth tier still passes here."""
@@ -214,9 +210,7 @@ class TestPublicTierThrottling:
         assert blocked.status_code == 429, blocked.text
         assert blocked.headers["x-ratelimit-limit"] == "5"
 
-    async def test_availability_shares_the_public_budget(
-        self, client, test_room, monkeypatch
-    ):
+    async def test_availability_shares_the_public_budget(self, client, test_room, monkeypatch):
         monkeypatch.setattr(settings, "RATE_LIMIT_PUBLIC_MAX_REQUESTS", 4)
         availability_url = f"/api/v1/rooms/{test_room.id}/availability"
 

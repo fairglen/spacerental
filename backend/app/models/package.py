@@ -95,6 +95,4 @@ class UserPackagePurchase(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="package_purchases", lazy="noload")  # noqa: F821
-    package: Mapped["Package"] = relationship(
-        "Package", back_populates="purchases", lazy="noload"
-    )
+    package: Mapped["Package"] = relationship("Package", back_populates="purchases", lazy="noload")

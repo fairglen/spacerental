@@ -35,10 +35,12 @@ async def list_packages(
 ):
     """List available packages for an org (public)."""
     result = await db.execute(
-        select(Package).where(
+        select(Package)
+        .where(
             Package.org_id == org_id,
             Package.is_active == True,  # noqa: E712
-        ).order_by(Package.hours.asc())
+        )
+        .order_by(Package.hours.asc())
     )
     packages = result.scalars().all()
     return {"packages": [PackageOut.model_validate(p) for p in packages]}

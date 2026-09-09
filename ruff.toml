@@ -18,7 +18,7 @@ select = [
     "E",     # pycodestyle errors
     "W",     # pycodestyle warnings
     "F",     # pyflakes
-    "C",     # flake8-comprehensions
+    "C4",    # flake8-comprehensions (C also opts into McCabe complexity)
     "B",     # flake8-bugbear
     "I",     # isort (import sorting)
     "UP",    # pyupgrade (modernization)

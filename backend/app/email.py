@@ -249,9 +249,7 @@ async def _deliver(gateway: EmailGateway, message: EmailMessage) -> None:
         # No real queue means no retry either — a real broker would redrive
         # this. Logging is the honest floor for a "queue" that is a single
         # in-process background task.
-        logger.exception(
-            "Failed to deliver email to %s (%s)", message.to, message.subject
-        )
+        logger.exception("Failed to deliver email to %s (%s)", message.to, message.subject)
 
 
 def enqueue_email(
@@ -278,9 +276,7 @@ def validate_email_settings() -> None:
     if mode == STUB_MODE:
         return
     if not settings.RESEND_API_KEY:
-        raise EmailNotConfiguredError(
-            f"EMAIL_MODE={LIVE_MODE} but RESEND_API_KEY is not set"
-        )
+        raise EmailNotConfiguredError(f"EMAIL_MODE={LIVE_MODE} but RESEND_API_KEY is not set")
 
 
 @cache
@@ -293,9 +289,7 @@ def _build_gateway(mode: str, api_key: str | None, from_address: str) -> EmailGa
 def get_email_gateway() -> EmailGateway:
     """FastAPI dependency returning the configured gateway."""
     validate_email_settings()
-    return _build_gateway(
-        settings.EMAIL_MODE, settings.RESEND_API_KEY, settings.EMAIL_FROM_ADDRESS
-    )
+    return _build_gateway(settings.EMAIL_MODE, settings.RESEND_API_KEY, settings.EMAIL_FROM_ADDRESS)
 
 
 validate_email_settings()

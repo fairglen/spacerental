@@ -41,6 +41,7 @@ class OrgMembershipOut(BaseModel):
 
 class OrgMembershipDetail(BaseModel):
     """Membership with denormalized org fields for the switcher UI."""
+
     model_config = ConfigDict(from_attributes=True)
 
     org_id: uuid.UUID

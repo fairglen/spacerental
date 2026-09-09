@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -8,8 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import email
+from app import email, package_hours
 from app.auth import get_current_user
+from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.models.booking import Booking, BookingStatus, PaymentMethod
@@ -46,27 +47,29 @@ async def my_bookings(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_booking(
     body: BookingCreate,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     gateway: PaymentGateway = Depends(get_payment_gateway),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
 ):
     """Create a new booking. Checks for time overlap before inserting.
 
-    The booking is created `pending` alongside a Checkout Session; only the
-    `checkout.session.completed` webhook promotes it to `confirmed`. It holds
-    the slot meanwhile — the overlap check counts pending bookings.
-    """
-    if body.payment_method is PaymentMethod.package:
-        # Package redemption has no charge path yet — accepting it here would
-        # hand out free bookings.
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Paying with a package is not supported yet",
-        )
+    Two payment paths:
 
+    * `hourly` — the booking is created `pending` alongside a Checkout Session;
+      only the `checkout.session.completed` webhook promotes it to `confirmed`.
+      It holds the slot meanwhile — the overlap check counts pending bookings.
+    * `package` — prepaid hours are debited from an active purchase in the same
+      transaction and the booking is `confirmed` immediately. There is nothing
+      left to pay, so the response carries no `checkout_url`, and the
+      confirmation email is sent from here rather than from the webhook.
+    """
     # Fetch room
     result = await db.execute(
-        select(Room).where(Room.id == body.room_id, Room.is_active == True)  # noqa: E712
+        select(Room)
+        .options(selectinload(Room.space))
+        .where(Room.id == body.room_id, Room.is_active == True)  # noqa: E712
     )
     room = result.scalar_one_or_none()
     if room is None:
@@ -116,6 +119,25 @@ async def create_booking(
             detail="You are not a member of this organization",
         )
 
+    pays_with_package = body.payment_method is PaymentMethod.package
+    purchase_id: uuid.UUID | None = None
+    if pays_with_package:
+        purchase = await package_hours.redeem_hours(
+            db,
+            user_id=user.id,
+            org_id=room.org_id,
+            hours=duration_hours,
+            now=datetime.now(tz=UTC),
+        )
+        if purchase is None:
+            # Nothing was deducted and no booking exists yet — the request is
+            # refused before anything is written.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(f"No active package with {duration_hours} hours remaining"),
+            )
+        purchase_id = purchase.id
+
     booking = Booking(
         org_id=room.org_id,
         room_id=body.room_id,
@@ -123,9 +145,12 @@ async def create_booking(
         start_time=body.start_time,
         end_time=body.end_time,
         duration_hours=duration_hours,
+        # The hourly value of the slot either way. Package bookings take no
+        # fresh charge — the money arrived when the package was bought.
         total_amount=total_amount,
-        status=BookingStatus.pending,
-        payment_method=PaymentMethod.hourly,
+        status=BookingStatus.confirmed if pays_with_package else BookingStatus.pending,
+        payment_method=body.payment_method,
+        package_purchase_id=purchase_id,
         notes=body.notes,
     )
     db.add(booking)
@@ -139,36 +164,53 @@ async def create_booking(
             detail="This time slot is already booked",
         ) from None
 
-    try:
-        session = await gateway.create_checkout_session(
-            amount=total_amount,
-            description=f"{room.name} — {duration_hours}h",
-            kind=CheckoutKind.booking,
-            reference_id=booking.id,
-            org_id=booking.org_id,
-        )
-    except PaymentProviderError as exc:
-        # Nothing is committed: get_db rolls back on the raised exception, so
-        # no unpayable booking is left holding the slot.
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not start the payment session",
-        ) from exc
-    booking.stripe_checkout_session_id = session.id
+    checkout_url: str | None = None
+    if not pays_with_package:
+        try:
+            session = await gateway.create_checkout_session(
+                amount=total_amount,
+                description=f"{room.name} — {duration_hours}h",
+                kind=CheckoutKind.booking,
+                reference_id=booking.id,
+                org_id=booking.org_id,
+            )
+        except PaymentProviderError as exc:
+            # Nothing is committed: get_db rolls back on the raised exception,
+            # so no unpayable booking is left holding the slot.
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not start the payment session",
+            ) from exc
+        booking.stripe_checkout_session_id = session.id
+        checkout_url = session.url
+
     await db.flush()
     await db.refresh(booking)
 
     # Load room for response
     result = await db.execute(
-        select(Booking)
-        .options(selectinload(Booking.room))
-        .where(Booking.id == booking.id)
+        select(Booking).options(selectinload(Booking.room)).where(Booking.id == booking.id)
     )
     booking = result.scalar_one()
 
-    return BookingCheckoutOut(
-        booking=BookingOut.model_validate(booking), checkout_url=session.url
-    )
+    if pays_with_package:
+        # An `hourly` booking gets this from the webhook when it flips to
+        # confirmed (Epic 4). A package booking never reaches the webhook, so
+        # without this the only bookings that confirm silently would be the
+        # prepaid ones.
+        email.enqueue_email(
+            background_tasks,
+            email_gateway,
+            email.booking_confirmation_email(
+                to=user.email,
+                space_name=room.space.name,
+                room_name=room.name,
+                start_time=booking.start_time,
+                end_time=booking.end_time,
+            ),
+        )
+
+    return BookingCheckoutOut(booking=BookingOut.model_validate(booking), checkout_url=checkout_url)
 
 
 @router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -184,6 +226,8 @@ async def cancel_booking(
         select(Booking)
         .options(selectinload(Booking.room).selectinload(Room.space))
         .where(Booking.id == booking_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     booking = result.scalar_one_or_none()
 
@@ -196,30 +240,5 @@ async def cancel_booking(
             detail="You can only cancel your own bookings",
         )
 
-    if booking.status in (BookingStatus.cancelled, BookingStatus.completed):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Booking is already {booking.status.value}",
-        )
-
-    now = datetime.now(tz=UTC)
-    # booking.start_time is TIMESTAMPTZ — SQLAlchemy returns an aware UTC datetime.
-    if booking.start_time - now < timedelta(hours=24):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bookings can only be cancelled more than 24 hours in advance",
-        )
-
-    booking.status = BookingStatus.cancelled
-
-    email.enqueue_email(
-        background_tasks,
-        email_gateway,
-        email.booking_cancellation_email(
-            to=user.email,
-            space_name=booking.room.space.name,
-            room_name=booking.room.name,
-            start_time=booking.start_time,
-            end_time=booking.end_time,
-        ),
-    )
+    validate_cancellation(booking, datetime.now(tz=UTC))
+    await apply_cancellation(db, booking, user, background_tasks, email_gateway)

@@ -29,9 +29,7 @@ WEBHOOK_URL = "/api/v1/webhooks/stripe"
 def _future_slot(duration_hours: int = 2):
     today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
-    start = datetime.combine(
-        today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=UTC
-    )
+    start = datetime.combine(today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=UTC)
     return start, start + timedelta(hours=duration_hours)
 
 
@@ -225,9 +223,7 @@ class TestBookingCancellationEmail:
         await db_session.commit()
         await db_session.refresh(booking)
 
-        resp = await client.delete(
-            f"/api/v1/bookings/{booking.id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/api/v1/bookings/{booking.id}", headers=auth_headers)
         assert resp.status_code == 204, resp.text
 
         assert len(emails.sent) == 1

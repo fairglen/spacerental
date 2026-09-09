@@ -55,9 +55,7 @@ async def promote_admin(
         return await _promote_admin(session, email=email, role=role, org_slug=org_slug)
 
     async with async_session_factory() as owned_session:
-        member = await _promote_admin(
-            owned_session, email=email, role=role, org_slug=org_slug
-        )
+        member = await _promote_admin(owned_session, email=email, role=role, org_slug=org_slug)
         await owned_session.commit()
         await owned_session.refresh(member)
         return member
@@ -71,9 +69,7 @@ async def _promote_admin(
     if user is None:
         raise PromoteAdminError(f"No user found with email {email!r}.")
 
-    org_result = await session.execute(
-        select(Organization).where(Organization.slug == org_slug)
-    )
+    org_result = await session.execute(select(Organization).where(Organization.slug == org_slug))
     org = org_result.scalar_one_or_none()
     if org is None:
         raise PromoteAdminError(f"No organization found with slug {org_slug!r}.")
@@ -110,9 +106,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Promote an existing user to admin/owner of an organization."
     )
-    parser.add_argument(
-        "email", help="Email of the user to promote (must already be registered)."
-    )
+    parser.add_argument("email", help="Email of the user to promote (must already be registered).")
     parser.add_argument(
         "--role",
         choices=[MemberRole.owner.value, MemberRole.admin.value],
