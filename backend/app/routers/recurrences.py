@@ -2,14 +2,18 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import and_, or_, select, text, update
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_user
+from app.booking_cancellation import apply_cancellation, validate_cancellation
+from app.config import settings
 from app.database import get_db
+from app.email import EmailGateway, get_email_gateway
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember
 from app.models.recurrence import RecurrenceFrequency, RecurrenceRule
@@ -24,7 +28,16 @@ from app.schemas.recurrence import (
     RecurrenceWithBookingsOut,
 )
 
-router = APIRouter(prefix="/recurrences", tags=["recurrences"])
+
+def require_recurrence_enabled() -> None:
+    if not settings.RECURRING_BOOKINGS_ENABLED:
+        raise HTTPException(status_code=404, detail="Recurring bookings are not enabled")
+
+
+router = APIRouter(
+    prefix="/recurrences", tags=["recurrences"],
+    dependencies=[Depends(require_recurrence_enabled)],
+)
 
 # A booking only holds its slot while pending or confirmed; cancelled and
 # completed rows may overlap freely. Mirrors the predicate of the
@@ -153,6 +166,8 @@ def _validate_window(
     end_time: datetime,
     until_date: date,
     frequency: RecurrenceFrequency,
+    *,
+    allow_past_anchor: bool = False,
 ) -> list[tuple[datetime, datetime]]:
     """Validate the requested series and return its expansion."""
     if end_time <= start_time:
@@ -160,7 +175,7 @@ def _validate_window(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="end_time must be after start_time",
         )
-    if start_time <= datetime.now(tz=timezone.utc):
+    if not allow_past_anchor and start_time <= datetime.now(tz=timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="start_time must be in the future",
@@ -178,12 +193,17 @@ def _validate_window(
             detail="An occurrence cannot be longer than the recurrence interval",
         )
 
-    occurrences = expand_occurrences(start_time, end_time, until_date, frequency)
-    if len(occurrences) > MAX_OCCURRENCES:
+    if (until_date - start_time.date()).days // 7 + 1 > MAX_OCCURRENCES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"A series cannot have more than {MAX_OCCURRENCES} occurrences",
         )
+    occurrences = expand_occurrences(start_time, end_time, until_date, frequency)
+    if allow_past_anchor:
+        now = datetime.now(tz=timezone.utc)
+        occurrences = [occ for occ in occurrences if occ[0] > now]
+        if not occurrences:
+            raise HTTPException(status_code=400, detail="The series has no future occurrences")
     return occurrences
 
 
@@ -253,6 +273,7 @@ async def _get_own_rule(
 ) -> RecurrenceRule:
     result = await db.execute(
         select(RecurrenceRule).where(RecurrenceRule.id == recurrence_id)
+        .with_for_update().execution_options(populate_existing=True)
     )
     rule = result.scalar_one_or_none()
     if rule is None:
@@ -339,8 +360,10 @@ async def create_recurrence(
 async def update_recurrence(
     recurrence_id: uuid.UUID,
     body: RecurrenceUpdate,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
 ):
     """Move a series to new times, all-or-nothing.
 
@@ -356,27 +379,34 @@ async def update_recurrence(
             detail="This series has been cancelled",
         )
 
-    result = await db.execute(select(Room).where(Room.id == rule.room_id))
+    await _require_membership(db, user, rule.org_id)
+    result = await db.execute(
+        select(Room).where(Room.id == rule.room_id, Room.is_active == True)  # noqa: E712
+    )
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
     until_date = body.until_date or rule.until_date
     occurrences = _validate_window(
-        body.start_time, body.end_time, until_date, rule.frequency
+        body.start_time, body.end_time, until_date, rule.frequency, allow_past_anchor=True
     )
 
     await _lock_room(db, rule.room_id)
 
     now = datetime.now(tz=timezone.utc)
     result = await db.execute(
-        select(Booking).where(
+        select(Booking)
+        .options(selectinload(Booking.room).selectinload(Room.space))
+        .where(
             Booking.recurrence_rule_id == rule.id,
             Booking.status.in_(ACTIVE_STATUSES),
             Booking.start_time > now,
-        )
+        ).order_by(Booking.id).with_for_update().execution_options(populate_existing=True)
     )
     replaceable = list(result.scalars().all())
+    for booking in replaceable:
+        validate_cancellation(booking, now)
 
     conflicts = await _find_conflicts(
         db, rule.room_id, occurrences, ignore_booking_ids=[b.id for b in replaceable]
@@ -385,8 +415,9 @@ async def update_recurrence(
         await db.rollback()
         return _conflict_response(conflicts)
 
+    staged_tasks = BackgroundTasks()
     for booking in replaceable:
-        booking.status = BookingStatus.cancelled
+        await apply_cancellation(db, booking, user, staged_tasks, email_gateway)
     # Flush before inserting: a cancelled row falls outside the partial EXCLUDE
     # index, so the slots are released before their replacements claim them.
     await db.flush()
@@ -395,19 +426,21 @@ async def update_recurrence(
     rule.end_time = body.end_time
     rule.until_date = until_date
 
+    room_id = room.id
     bookings = _build_bookings(rule=rule, room=room, occurrences=occurrences)
     db.add_all(bookings)
     try:
         await db.flush()
     except IntegrityError:
         await db.rollback()
-        conflicts = await _find_conflicts(db, rule.room_id, occurrences)
+        conflicts = await _find_conflicts(db, room_id, occurrences)
         return _conflict_response(conflicts or [occ[0] for occ in occurrences])
 
     booking_ids = [b.id for b in bookings]
     await db.refresh(rule)
     created = await _load_bookings(db, booking_ids)
 
+    background_tasks.tasks.extend(staged_tasks.tasks)
     return RecurrenceWithBookingsOut(
         recurrence=RecurrenceOut.model_validate(rule),
         bookings=[BookingOut.model_validate(b) for b in created],
@@ -417,6 +450,7 @@ async def update_recurrence(
 @router.delete("/{recurrence_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_recurrence(
     recurrence_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     from_date: date | None = Query(
         None,
         description="Cancel occurrences starting on or after this date (UTC). "
@@ -424,6 +458,7 @@ async def cancel_recurrence(
     ),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
 ):
     """Cancel the rest of the series ("this and all future").
 
@@ -433,20 +468,24 @@ async def cancel_recurrence(
     rule = await _get_own_rule(db, recurrence_id, user)
     await _lock_room(db, rule.room_id)
 
-    cutoff = (
-        datetime.combine(from_date, time.min, tzinfo=timezone.utc)
-        if from_date is not None
-        else datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=timezone.utc)
+    cutoff = max(
+        datetime.combine(from_date, time.min, tzinfo=timezone.utc) if from_date else now,
+        now,
     )
-
-    await db.execute(
-        update(Booking)
+    result = await db.execute(
+        select(Booking)
+        .options(selectinload(Booking.room).selectinload(Room.space))
         .where(
             Booking.recurrence_rule_id == rule.id,
             Booking.start_time >= cutoff,
             Booking.status.in_(ACTIVE_STATUSES),
         )
-        .values(status=BookingStatus.cancelled)
-        .execution_options(synchronize_session=False)
+        .order_by(Booking.id).with_for_update().execution_options(populate_existing=True)
     )
+    bookings = list(result.scalars().all())
+    for booking in bookings:
+        validate_cancellation(booking, now)
+    for booking in bookings:
+        await apply_cancellation(db, booking, user, background_tasks, email_gateway)
     rule.is_active = False

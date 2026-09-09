@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select, and_
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import email, package_hours
 from app.auth import get_current_user
+from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.models.booking import Booking, BookingStatus, PaymentMethod
@@ -244,42 +245,5 @@ async def cancel_booking(
             detail="You can only cancel your own bookings",
         )
 
-    if booking.status in (BookingStatus.cancelled, BookingStatus.completed):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Booking is already {booking.status.value}",
-        )
-
-    now = datetime.now(tz=timezone.utc)
-    # booking.start_time is TIMESTAMPTZ — SQLAlchemy returns an aware UTC datetime.
-    if booking.start_time - now < timedelta(hours=24):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bookings can only be cancelled more than 24 hours in advance",
-        )
-
-    booking.status = BookingStatus.cancelled
-
-    if booking.package_purchase_id is not None:
-        # Cancelling more than 24h out is free, so the hours go back on the
-        # package. Same transaction as the status change: the booking is never
-        # cancelled without the credit, and never credited twice — the
-        # already-cancelled guard above is what makes a repeat call a 400
-        # rather than a second refund.
-        await package_hours.credit_hours(
-            db,
-            purchase_id=booking.package_purchase_id,
-            hours=booking.duration_hours,
-        )
-
-    email.enqueue_email(
-        background_tasks,
-        email_gateway,
-        email.booking_cancellation_email(
-            to=user.email,
-            space_name=booking.room.space.name,
-            room_name=booking.room.name,
-            start_time=booking.start_time,
-            end_time=booking.end_time,
-        ),
-    )
+    validate_cancellation(booking, datetime.now(tz=timezone.utc))
+    await apply_cancellation(db, booking, user, background_tasks, email_gateway)

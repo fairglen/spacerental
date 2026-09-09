@@ -76,6 +76,7 @@ occurrence** of a recurring series: the occurrence is marked `cancelled` and the
 exact purchase they were taken from.
 
 ### POST /recurrences
+Experimental; returns 404 unless `RECURRING_BOOKINGS_ENABLED=true`.
 Create a weekly recurring series, all-or-nothing. One `RecurrenceRule` plus one
 `pending` booking per occurrence; each booking carries `recurrence_rule_id`.
 Body: `{ room_id, start_time, end_time, until_date, frequency?, notes? }`
@@ -92,7 +93,10 @@ Response: `{ recurrence: Recurrence, bookings: Booking[] }`, or the same `409`
 `conflicts` shape with nothing changed.
 
 ### DELETE /recurrences/:id
-Cancel this occurrence and all later ones, and deactivate the rule.
+Cancel future occurrences on/after the cutoff and deactivate the rule. Past
+cutoffs cannot change history. If any affected occurrence starts within 24h,
+the whole request is rejected (400); successful cancellation uses the individual
+booking notification and package-credit behavior.
 Query: `?from_date=YYYY-MM-DD` (UTC; defaults to now, i.e. everything remaining)
 Response: `204`
 
