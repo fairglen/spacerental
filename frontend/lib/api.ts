@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
-  BookingCheckout, PackagePurchaseCheckout, PaginatedBookings,
+  BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -124,6 +124,26 @@ export const bookingsApi = {
 
   cancel: (id: string, api: Api) =>
     api.delete(`/bookings/${id}`),
+}
+
+export const recurrencesApi = {
+  // Same all-or-nothing create as bookingsApi.create, but for a weekly series.
+  // No checkout_url in the response — see RecurrenceWithBookings.
+  create: (
+    data: {
+      room_id: string
+      start_time: string
+      end_time: string
+      until_date: string
+      frequency?: 'weekly'
+      notes?: string
+    },
+    api: Api,
+  ) =>
+    api.post<RecurrenceWithBookings>('/recurrences', data).then(r => ({
+      recurrence: r.data.recurrence,
+      bookings: r.data.bookings.map(normBooking),
+    })),
 }
 
 export const packagesApi = {

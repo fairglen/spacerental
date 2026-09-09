@@ -75,6 +75,7 @@ services:
     environment:
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required — copy .env.example to .env}
+      NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: ${RECURRING_BOOKINGS_ENABLED:-false}
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
       INTERNAL_API_URL: http://backend:8000/api/v1
     depends_on:

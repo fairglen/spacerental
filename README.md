@@ -212,3 +212,22 @@ apply the same 24-hour cancellation window and notification/credit behavior as
 individual bookings. A rejected edit changes no bookings and sends no emails.
 The test suite explicitly enables the foundation and also verifies the disabled
 API, concurrent edits, cancellation policy and all-or-nothing conflicts.
+
+### Experimental weekly-series UI
+
+Recurring booking controls are hidden by default. Set `RECURRING_BOOKINGS_ENABLED=true`
+in `.env` and recreate both services; Compose forwards the same switch to the API
+and `NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED` in Next.js. Outside Compose, set both
+explicitly and rebuild the frontend when changing a public environment variable.
+The preview uses a fixed UTC cadence (local hours can shift at daylight-saving
+changes). Creating a series leaves every occurrence **pending**, with no checkout
+or pack debit. The modal requires acknowledgement of manual confirmation/payment.
+Paid series and local-time scheduling remain roadmap R02/R03 work.
+
+```bash
+RECURRING_BOOKINGS_ENABLED=true docker compose up -d --build
+# After seeding as above, sign in and select a room and future slot.
+# Toggle “Repetir semanalmente”, choose an end date, then confirm the series.
+cd frontend
+RECURRING_BOOKINGS_ENABLED=true npm run test:e2e
+```
