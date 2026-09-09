@@ -933,3 +933,16 @@ async def test_concurrent_status_transition_moves_hours_once(
     booking = await db_session.get(Booking, uuid.UUID(booking_id))
     assert booking.status.value == target
     assert len(emails.sent) == 1
+
+
+async def test_package_confirmation_issues_access_and_cancel_revokes_it(
+    client, auth_headers, test_room, test_member, payments, active_purchase, locks,
+):
+    response = await _book_with_package(client, auth_headers, test_room)
+    assert response.status_code == 201, response.text
+    booking = response.json()["booking"]
+    booking_id = uuid.UUID(booking["id"])
+    assert booking["access_code"] == locks.issued_code_for(booking_id).code
+    cancelled = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
+    assert cancelled.status_code == 204, cancelled.text
+    assert locks.issued_code_for(booking_id) is None

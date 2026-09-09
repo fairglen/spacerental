@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import email, package_hours
 from app.email import EmailGateway
+from app.locks import LockGateway, try_revoke_access_code
 from app.models.booking import Booking, BookingStatus
 from app.models.user import User
 
@@ -30,6 +31,7 @@ async def apply_cancellation(
     user: User,
     background_tasks: BackgroundTasks,
     email_gateway: EmailGateway,
+    lock_gateway: LockGateway,
 ) -> None:
     """Apply an already validated cancellation to a locked, eagerly loaded row."""
     booking.status = BookingStatus.cancelled
@@ -57,3 +59,7 @@ async def apply_cancellation(
             end_time=booking.end_time,
         ),
     )
+
+    # Series edits stage these tasks until replacement rows have flushed. A
+    # rolled-back edit must not revoke access to the original valid bookings.
+    background_tasks.add_task(try_revoke_access_code, lock_gateway, booking_id=booking.id)

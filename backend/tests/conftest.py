@@ -35,6 +35,7 @@ from app.payments import (  # noqa: E402
     get_payment_gateway,
 )
 from app.email import StubEmailGateway, get_email_gateway  # noqa: E402
+from app.locks import StubLockGateway, get_lock_gateway  # noqa: E402
 
 TEST_STRIPE_WEBHOOK_SECRET = "whsec_test_not_a_real_secret"
 
@@ -194,6 +195,20 @@ async def emails(client) -> StubEmailGateway:
     app.dependency_overrides[get_email_gateway] = lambda: gateway
     yield gateway
     app.dependency_overrides.pop(get_email_gateway, None)
+
+
+@pytest_asyncio.fixture
+async def locks(client) -> StubLockGateway:
+    """The stub Seam gateway the app under test will use.
+
+    Same StubLockGateway that SEAM_MODE=stub serves in dev — `.issued_code_for`
+    and `.revoked_booking_ids` are the observable side effects tests assert
+    against instead of a Seam dashboard. No network, no credentials required.
+    """
+    gateway = StubLockGateway()
+    app.dependency_overrides[get_lock_gateway] = lambda: gateway
+    yield gateway
+    app.dependency_overrides.pop(get_lock_gateway, None)
 
 
 @pytest_asyncio.fixture
