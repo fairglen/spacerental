@@ -11,8 +11,8 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from functools import lru_cache
+from datetime import UTC, datetime
+from functools import cache
 
 import httpx
 
@@ -26,7 +26,7 @@ LIVE_MODE = "live"
 SEAM_API_BASE_URL = "https://connect.getseam.com"
 
 
-class LockNotConfigured(RuntimeError):
+class LockNotConfiguredError(RuntimeError):
     """Live mode is selected but the Seam configuration is incomplete."""
 
 
@@ -149,8 +149,8 @@ class SeamGateway(LockGateway):
                     json={
                         "device_id": device_id,
                         "name": name,
-                        "starts_at": starts_at.astimezone(timezone.utc).isoformat(),
-                        "ends_at": ends_at.astimezone(timezone.utc).isoformat(),
+                        "starts_at": starts_at.astimezone(UTC).isoformat(),
+                        "ends_at": ends_at.astimezone(UTC).isoformat(),
                     },
                 )
                 response.raise_for_status()
@@ -274,14 +274,14 @@ def validate_lock_settings() -> None:
     """
     mode = settings.SEAM_MODE
     if mode not in (STUB_MODE, LIVE_MODE):
-        raise LockNotConfigured(
+        raise LockNotConfiguredError(
             f"SEAM_MODE must be '{STUB_MODE}' or '{LIVE_MODE}', got {mode!r}"
         )
     if mode == STUB_MODE:
         return
     if not settings.SEAM_API_KEY:
-        raise LockNotConfigured(f"SEAM_MODE={LIVE_MODE} but SEAM_API_KEY is not set")
-    raise LockNotConfigured(
+        raise LockNotConfiguredError(f"SEAM_MODE={LIVE_MODE} but SEAM_API_KEY is not set")
+    raise LockNotConfiguredError(
         "Live smart-lock operation is disabled until access-code identifiers "
         "and retry state are persisted (roadmap O04). Use SEAM_MODE=stub locally."
     )
@@ -293,19 +293,19 @@ def _parse_device_id_map(raw: str | None) -> dict[str, str]:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise LockNotConfigured(
+        raise LockNotConfiguredError(
             "SEAM_DEVICE_ID_MAP must be a JSON object of room id -> Seam device id"
         ) from exc
     if not isinstance(parsed, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()
     ):
-        raise LockNotConfigured(
+        raise LockNotConfiguredError(
             "SEAM_DEVICE_ID_MAP must be a JSON object of string room id -> string device id"
         )
     return parsed
 
 
-@lru_cache(maxsize=None)
+@cache
 def _build_gateway(
     mode: str, api_key: str | None, device_id_map_json: str | None, timeout_seconds: float
 ) -> LockGateway:

@@ -5,32 +5,30 @@ verification, zero Stripe credentials, zero network.
 """
 
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-
 from app.config import settings
 from app.models.package import Package
 from app.payments import (
     CheckoutKind,
-    PaymentsNotConfigured,
+    PaymentsNotConfiguredError,
     StubPaymentGateway,
     to_cents,
     validate_payment_settings,
 )
+
 from tests.conftest import TEST_STRIPE_WEBHOOK_SECRET, checkout_completed_event
 
 WEBHOOK_URL = "/api/v1/webhooks/stripe"
 
 
 def _future_slot(duration_hours: int = 2):
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
-    start = datetime.combine(
-        today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=timezone.utc
-    )
+    start = datetime.combine(today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=UTC)
     return start.isoformat(), (start + timedelta(hours=duration_hours)).isoformat()
 
 
@@ -231,9 +229,7 @@ class TestBookingWebhook:
         assert resp.json()["handled"] is False
         assert await _booking_status(client, auth_headers, booking["id"]) == "pending"
 
-    async def test_malformed_body_with_valid_signature_is_rejected(
-        self, client, payments
-    ):
+    async def test_malformed_body_with_valid_signature_is_rejected(self, client, payments):
         payload = b"not json"
         resp = await client.post(
             WEBHOOK_URL,
@@ -306,12 +302,12 @@ class TestDecimalToCents:
     @pytest.mark.parametrize(
         "amount,expected",
         [
-            (Decimal("0"), 0),
+            (Decimal(0), 0),
             (Decimal("0.01"), 1),
             (Decimal("22.00"), 2200),
             (Decimal("99.99"), 9999),
             (Decimal("1234.56"), 123456),
-            (Decimal("10"), 1000),
+            (Decimal(10), 1000),
             # Half-up at the sub-cent boundary, never truncation.
             (Decimal("1.005"), 101),
             (Decimal("1.004"), 100),
@@ -342,18 +338,16 @@ class TestPaymentSettingsValidation:
         "secret_key,webhook_secret",
         [(None, "whsec_x"), ("sk_live_x", None), (None, None)],
     )
-    def test_live_mode_without_keys_raises(
-        self, monkeypatch, secret_key, webhook_secret
-    ):
+    def test_live_mode_without_keys_raises(self, monkeypatch, secret_key, webhook_secret):
         monkeypatch.setattr(settings, "STRIPE_MODE", "live")
         monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", secret_key)
         monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", webhook_secret)
-        with pytest.raises(PaymentsNotConfigured):
+        with pytest.raises(PaymentsNotConfiguredError):
             validate_payment_settings()
 
     def test_unknown_mode_raises(self, monkeypatch):
         monkeypatch.setattr(settings, "STRIPE_MODE", "sandbox")
-        with pytest.raises(PaymentsNotConfigured):
+        with pytest.raises(PaymentsNotConfiguredError):
             validate_payment_settings()
 
 
@@ -361,18 +355,18 @@ class TestStubSignature:
     """Unit — the stub enforces Stripe's scheme, not a rubber stamp."""
 
     def test_signature_outside_tolerance_is_rejected(self):
-        from app.payments import InvalidWebhookSignature
+        from app.payments import InvalidWebhookSignatureError
 
         gateway = StubPaymentGateway(webhook_secret=TEST_STRIPE_WEBHOOK_SECRET)
         payload = b'{"type":"ping"}'
         stale = gateway.sign_payload(payload, timestamp=1)
-        with pytest.raises(InvalidWebhookSignature):
+        with pytest.raises(InvalidWebhookSignatureError):
             gateway.parse_webhook_event(payload, stale)
 
     def test_payload_tampering_is_rejected(self):
-        from app.payments import InvalidWebhookSignature
+        from app.payments import InvalidWebhookSignatureError
 
         gateway = StubPaymentGateway(webhook_secret=TEST_STRIPE_WEBHOOK_SECRET)
         header = gateway.sign_payload(b'{"type":"ping"}')
-        with pytest.raises(InvalidWebhookSignature):
+        with pytest.raises(InvalidWebhookSignatureError):
             gateway.parse_webhook_event(b'{"type":"pong"}', header)

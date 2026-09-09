@@ -33,9 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.package import PurchaseStatus, UserPackagePurchase
 
 
-async def _lock(
-    db: AsyncSession, purchase_id: uuid.UUID
-) -> UserPackagePurchase | None:
+async def _lock(db: AsyncSession, purchase_id: uuid.UUID) -> UserPackagePurchase | None:
     """Re-read one purchase under a row lock, bypassing the identity map.
 
     `populate_existing` matters as much as the lock: without it the session can
@@ -101,9 +99,7 @@ async def redeem_hours(
     return None
 
 
-async def credit_hours(
-    db: AsyncSession, *, purchase_id: uuid.UUID, hours: Decimal
-) -> None:
+async def credit_hours(db: AsyncSession, *, purchase_id: uuid.UUID, hours: Decimal) -> None:
     """Give `hours` back to the purchase they were debited from.
 
     Unconditional by design: an expired or cancelled purchase still gets its

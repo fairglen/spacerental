@@ -9,31 +9,29 @@ network, no credentials required to run the suite (CLAUDE.md §10.3).
 """
 
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
-
 from app.config import settings
 from app.locks import (
-    LockNotConfigured,
+    LockNotConfiguredError,
     LockProviderError,
     StubLockGateway,
     validate_lock_settings,
 )
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.payments import CheckoutKind
+
 from tests.conftest import checkout_completed_event
 
 WEBHOOK_URL = "/api/v1/webhooks/stripe"
 
 
 def _future_slot(duration_hours: int = 2):
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
-    start = datetime.combine(
-        today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=timezone.utc
-    )
+    start = datetime.combine(today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=UTC)
     return start, start + timedelta(hours=duration_hours)
 
 
@@ -91,12 +89,12 @@ class TestLockSettingsValidation:
     def test_live_mode_without_key_raises(self, monkeypatch):
         monkeypatch.setattr(settings, "SEAM_MODE", "live")
         monkeypatch.setattr(settings, "SEAM_API_KEY", None)
-        with pytest.raises(LockNotConfigured):
+        with pytest.raises(LockNotConfiguredError):
             validate_lock_settings()
 
     def test_unknown_mode_raises(self, monkeypatch):
         monkeypatch.setattr(settings, "SEAM_MODE", "sandbox")
-        with pytest.raises(LockNotConfigured):
+        with pytest.raises(LockNotConfiguredError):
             validate_lock_settings()
 
 
@@ -336,8 +334,17 @@ class TestSeamBestEffort:
         assert resp.status_code == 200, resp.text
 
     async def test_revoke_failure_still_cancels_booking(
-        self, client, auth_headers, db_session, test_org, test_room, test_user, test_member,
-        locks, monkeypatch, caplog,
+        self,
+        client,
+        auth_headers,
+        db_session,
+        test_org,
+        test_room,
+        test_user,
+        test_member,
+        locks,
+        monkeypatch,
+        caplog,
     ):
         booking = await _make_confirmed_booking(
             db_session, org=test_org, room=test_room, user=test_user
@@ -400,7 +407,9 @@ async def test_failed_revoke_retains_identifier_until_successful_retry(monkeypat
     gateway = StubLockGateway()
     booking_id = uuid.uuid4()
     start, end = _future_slot()
-    code = await gateway.issue_access_code(booking_id=booking_id, room_id=uuid.uuid4(), name="test", starts_at=start, ends_at=end)
+    code = await gateway.issue_access_code(
+        booking_id=booking_id, room_id=uuid.uuid4(), name="test", starts_at=start, ends_at=end
+    )
     original = gateway._revoke
 
     async def fail(**kwargs):
@@ -419,7 +428,13 @@ async def test_failed_revoke_retains_identifier_until_successful_retry(monkeypat
 async def test_repeat_issue_does_not_create_another_code(monkeypatch):
     gateway = StubLockGateway()
     start, end = _future_slot()
-    args = dict(booking_id=uuid.uuid4(), room_id=uuid.uuid4(), name="test", starts_at=start, ends_at=end)
+    args = {
+        "booking_id": uuid.uuid4(),
+        "room_id": uuid.uuid4(),
+        "name": "test",
+        "starts_at": start,
+        "ends_at": end,
+    }
     first = await gateway.issue_access_code(**args)
 
     async def unexpected(**kwargs):
@@ -432,15 +447,31 @@ async def test_repeat_issue_does_not_create_another_code(monkeypatch):
 def test_live_mode_with_credentials_is_gated_until_codes_are_durable(monkeypatch):
     monkeypatch.setattr(settings, "SEAM_MODE", "live")
     monkeypatch.setattr(settings, "SEAM_API_KEY", "test-only")
-    with pytest.raises(LockNotConfigured, match="persisted"):
+    with pytest.raises(LockNotConfiguredError, match="persisted"):
         validate_lock_settings()
 
 
 async def test_cancelled_booking_hides_code_after_failed_revocation(
-    client, auth_headers, db_session, test_org, test_room, test_user, test_member, locks, monkeypatch,
+    client,
+    auth_headers,
+    db_session,
+    test_org,
+    test_room,
+    test_user,
+    test_member,
+    locks,
+    monkeypatch,
 ):
-    booking = await _make_confirmed_booking(db_session, org=test_org, room=test_room, user=test_user)
-    await locks.issue_access_code(booking_id=booking.id, room_id=test_room.id, name="test", starts_at=booking.start_time, ends_at=booking.end_time)
+    booking = await _make_confirmed_booking(
+        db_session, org=test_org, room=test_room, user=test_user
+    )
+    await locks.issue_access_code(
+        booking_id=booking.id,
+        room_id=test_room.id,
+        name="test",
+        starts_at=booking.start_time,
+        ends_at=booking.end_time,
+    )
 
     async def fail(**kwargs):
         raise LockProviderError("temporarily unavailable")

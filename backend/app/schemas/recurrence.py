@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -16,8 +16,8 @@ def _as_utc(value: datetime) -> datetime:
     rather than silently producing a series in the server's local time.
     """
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class RecurrenceOut(BaseModel):

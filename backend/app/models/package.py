@@ -1,15 +1,17 @@
-import enum
-import uuid
 import decimal
+import uuid
 from datetime import datetime
-from sqlalchemy import Integer, Boolean, Numeric, DateTime, ForeignKey, func, Enum as SAEnum
+from enum import StrEnum
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String
+
 from app.database import Base
 
 
-class PurchaseStatus(str, enum.Enum):
+class PurchaseStatus(StrEnum):
     pending = "pending"
     active = "active"
     cancelled = "cancelled"
@@ -72,7 +74,7 @@ class UserPackagePurchase(Base):
     )
     hours_total: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     hours_used: Mapped[decimal.Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False, default=decimal.Decimal("0"), server_default="0"
+        Numeric(5, 2), nullable=False, default=decimal.Decimal(0), server_default="0"
     )
     hours_remaining: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     # A purchase only becomes `active` — i.e. its hours become spendable —
@@ -93,6 +95,4 @@ class UserPackagePurchase(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="package_purchases", lazy="noload")  # noqa: F821
-    package: Mapped["Package"] = relationship(
-        "Package", back_populates="purchases", lazy="noload"
-    )
+    package: Mapped["Package"] = relationship("Package", back_populates="purchases", lazy="noload")

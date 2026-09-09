@@ -1,7 +1,6 @@
-from sqlalchemy import select
-
 from app.auth import hash_password, verify_password
 from app.models.organization import Organization
+from sqlalchemy import select
 
 
 class TestRegister:

@@ -7,25 +7,24 @@ last hour, as they do about the happy path.
 
 import asyncio
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text, func, select
-
 from app import package_hours
 from app.models.booking import Booking, PaymentMethod
 from app.models.organization import Organization, OrgPlan
 from app.models.package import Package, PurchaseStatus, UserPackagePurchase
+from sqlalchemy import func, select, text
 
 
 def _future_slot(*, days_offset: int = 0, hour: int = 10, duration_hours: int = 2):
     """(start, end) ISO strings on an upcoming Monday, inside opening hours."""
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
     target_date = today + timedelta(days=days_ahead + 7 + days_offset)
-    start = datetime.combine(target_date, time(hour, 0), tzinfo=timezone.utc)
+    start = datetime.combine(target_date, time(hour, 0), tzinfo=UTC)
     end = start + timedelta(hours=duration_hours)
     return start.isoformat(), end.isoformat()
 
@@ -55,13 +54,13 @@ async def _make_purchase(
     status: PurchaseStatus = PurchaseStatus.active,
     expires_in_days: int = 30,
 ) -> UserPackagePurchase:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     purchase = UserPackagePurchase(
         user_id=user.id,
         package_id=package.id,
         org_id=org.id,
         hours_total=Decimal(hours),
-        hours_used=Decimal("0"),
+        hours_used=Decimal(0),
         hours_remaining=Decimal(hours),
         purchased_at=now,
         expires_at=now + timedelta(days=expires_in_days),
@@ -336,7 +335,7 @@ class TestRedeemConcurrency:
             "user_id": test_user.id,
             "org_id": test_org.id,
             "hours": Decimal("2.00"),
-            "now": datetime.now(tz=timezone.utc),
+            "now": datetime.now(tz=UTC),
         }
 
         async with session_factory() as first, session_factory() as second:
@@ -419,9 +418,7 @@ class TestRefundOnCancel:
         await db_session.refresh(active_purchase)
         assert active_purchase.hours_remaining == Decimal("8.00")
 
-        cancelled = await client.delete(
-            f"/api/v1/bookings/{booking_id}", headers=auth_headers
-        )
+        cancelled = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
         assert cancelled.status_code == 204, cancelled.text
 
         await db_session.refresh(active_purchase)
@@ -453,9 +450,7 @@ class TestRefundOnCancel:
         assert first.status_code == 201, first.text
 
         # Balance is now zero, so a second booking cannot be paid for.
-        blocked = await _book_with_package(
-            client, auth_headers, test_room, days_offset=1
-        )
+        blocked = await _book_with_package(client, auth_headers, test_room, days_offset=1)
         assert blocked.status_code == 409, blocked.text
 
         cancelled = await client.delete(
@@ -463,9 +458,7 @@ class TestRefundOnCancel:
         )
         assert cancelled.status_code == 204, cancelled.text
 
-        retried = await _book_with_package(
-            client, auth_headers, test_room, days_offset=1
-        )
+        retried = await _book_with_package(client, auth_headers, test_room, days_offset=1)
         assert retried.status_code == 201, retried.text
 
         await db_session.refresh(purchase)
@@ -486,13 +479,9 @@ class TestRefundOnCancel:
         created = await _book_with_package(client, auth_headers, test_room)
         booking_id = created.json()["booking"]["id"]
 
-        first = await client.delete(
-            f"/api/v1/bookings/{booking_id}", headers=auth_headers
-        )
+        first = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
         assert first.status_code == 204
-        second = await client.delete(
-            f"/api/v1/bookings/{booking_id}", headers=auth_headers
-        )
+        second = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
         assert second.status_code == 400, second.text
 
         await db_session.refresh(active_purchase)
@@ -625,9 +614,7 @@ class TestAdminStatusChangesMoveHours:
         assert cancelled.status_code == 200, cancelled.text
 
         # The customer immediately rebooks elsewhere with the refunded hours.
-        rebooked = await _book_with_package(
-            client, auth_headers, test_room, days_offset=1
-        )
+        rebooked = await _book_with_package(client, auth_headers, test_room, days_offset=1)
         assert rebooked.status_code == 201, rebooked.text
 
         reinstated = await client.put(
@@ -706,9 +693,7 @@ class TestRedemptionEmails:
         created = await _book_with_package(client, auth_headers, test_room)
         booking_id = created.json()["booking"]["id"]
 
-        cancelled = await client.delete(
-            f"/api/v1/bookings/{booking_id}", headers=auth_headers
-        )
+        cancelled = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
         assert cancelled.status_code == 204
 
         subjects = [m.subject.lower() for m in emails.sent]
@@ -751,9 +736,7 @@ class TestLinkedPurchase:
         assert created.status_code == 201, created.text
 
         booking = await db_session.execute(
-            select(Booking).where(
-                Booking.id == uuid.UUID(created.json()["booking"]["id"])
-            )
+            select(Booking).where(Booking.id == uuid.UUID(created.json()["booking"]["id"]))
         )
         # Soonest-expiring hours are spent first so nothing lapses unused.
         assert booking.scalar_one().package_purchase_id == soon.id
@@ -780,9 +763,7 @@ class TestLinkedPurchase:
         assert created.status_code == 201, created.text
 
         booking = await db_session.execute(
-            select(Booking).where(
-                Booking.id == uuid.UUID(created.json()["booking"]["id"])
-            )
+            select(Booking).where(Booking.id == uuid.UUID(created.json()["booking"]["id"]))
         )
         assert booking.scalar_one().package_purchase_id is None
 
@@ -861,35 +842,46 @@ class TestRevenueAccounting:
         assert stats.json()["total_revenue"] == 22.0
 
 
-@pytest.mark.parametrize("actors,target", [
-    (("member", "member"), "cancelled"),
-    (("member", "admin"), "cancelled"),
-    (("admin", "admin"), "cancelled"),
-    (("admin", "admin"), "confirmed"),
-])
+@pytest.mark.parametrize(
+    "actors,target",
+    [
+        (("member", "member"), "cancelled"),
+        (("member", "admin"), "cancelled"),
+        (("admin", "admin"), "cancelled"),
+        (("admin", "admin"), "confirmed"),
+    ],
+)
 async def test_concurrent_status_transition_moves_hours_once(
-    client, auth_headers, admin_headers, test_room, test_member, test_org,
-    payments, emails, db_session, session_factory, active_purchase, actors, target,
+    client,
+    auth_headers,
+    admin_headers,
+    test_room,
+    test_member,
+    test_org,
+    payments,
+    emails,
+    db_session,
+    session_factory,
+    active_purchase,
+    actors,
+    target,
 ):
     created = await _book_with_package(client, auth_headers, test_room)
     assert created.status_code == 201, created.text
     booking_id = created.json()["booking"]["id"]
     if target == "confirmed":
-        cancelled = await client.delete(
-            f"/api/v1/bookings/{booking_id}", headers=auth_headers
-        )
+        cancelled = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
         assert cancelled.status_code == 204, cancelled.text
     emails.sent.clear()
 
     async def transition(actor):
         if actor == "member":
-            return await client.delete(
-                f"/api/v1/bookings/{booking_id}", headers=auth_headers
-            )
+            return await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
         return await client.put(
             f"/api/v1/admin/bookings/{booking_id}",
             params={"org_id": str(test_org.id)},
-            json={"status": target}, headers=admin_headers,
+            json={"status": target},
+            headers=admin_headers,
         )
 
     async with session_factory() as blocker, session_factory() as observer:
@@ -902,14 +894,17 @@ async def test_concurrent_status_transition_moves_hours_once(
             # Without the route lock both can decide from the old booking status.
             async def both_waiting():
                 while True:
-                    count = await observer.scalar(text(
-                        "SELECT count(*) FROM pg_stat_activity "
-                        "WHERE datname = current_database() AND wait_event_type = 'Lock'"
-                    ))
+                    count = await observer.scalar(
+                        text(
+                            "SELECT count(*) FROM pg_stat_activity "
+                            "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                        )
+                    )
                     await observer.rollback()
                     if count >= 2:
                         return
                     await asyncio.sleep(0.01)
+
             await asyncio.wait_for(both_waiting(), timeout=10)
             await blocker.commit()
             responses = await asyncio.wait_for(asyncio.gather(*requests), timeout=10)
@@ -936,7 +931,13 @@ async def test_concurrent_status_transition_moves_hours_once(
 
 
 async def test_package_confirmation_issues_access_and_cancel_revokes_it(
-    client, auth_headers, test_room, test_member, payments, active_purchase, locks,
+    client,
+    auth_headers,
+    test_room,
+    test_member,
+    payments,
+    active_purchase,
+    locks,
 ):
     response = await _book_with_package(client, auth_headers, test_room)
     assert response.status_code == 201, response.text

@@ -1,12 +1,11 @@
 import asyncio
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from itertools import pairwise
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select, text
-
 from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import MemberRole, OrganizationMember
@@ -14,6 +13,7 @@ from app.models.recurrence import RecurrenceFrequency, RecurrenceRule
 from app.models.user import User
 from app.routers import recurrences
 from app.routers.recurrences import expand_occurrences
+from sqlalchemy import func, select, text
 
 
 @pytest.fixture(autouse=True)
@@ -27,11 +27,11 @@ def _next_monday(hour: int = 10) -> datetime:
     The series endpoints refuse a start in the past, so every fixture time has
     to be anchored forward rather than on today.
     """
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
-    start = datetime.combine(today + timedelta(days=days_ahead), time(hour, 0), tzinfo=timezone.utc)
+    start = datetime.combine(today + timedelta(days=days_ahead), time(hour, 0), tzinfo=UTC)
     # Series cancellation tests must stay outside the 24-hour window on Sundays too.
-    if start <= datetime.now(tz=timezone.utc) + timedelta(hours=24):
+    if start <= datetime.now(tz=UTC) + timedelta(hours=24):
         start += timedelta(weeks=1)
     return start
 
@@ -50,7 +50,9 @@ def _series_body(room_id, *, start: datetime, weeks: int, duration_hours: int = 
     return body
 
 
-async def _insert_booking(db_session, *, org, room, user, start, end, status=BookingStatus.confirmed, rule=None):
+async def _insert_booking(
+    db_session, *, org, room, user, start, end, status=BookingStatus.confirmed, rule=None
+):
     booking = Booking(
         org_id=org.id,
         room_id=room.id,
@@ -110,25 +112,19 @@ class TestExpandOccurrences:
     """Pure expansion logic — no I/O, so it belongs at the unit level (§10.2)."""
 
     def test_weekly_expansion_is_inclusive_of_until_date(self):
-        start = datetime(2026, 10, 5, 10, 0, tzinfo=timezone.utc)
-        occurrences = expand_occurrences(
-            start, start + timedelta(hours=2), datetime(2026, 10, 26).date()
-        )
+        start = datetime(2026, 10, 5, 10, 0, tzinfo=UTC)
+        occurrences = expand_occurrences(start, start + timedelta(hours=2), date(2026, 10, 26))
         assert [o[0].day for o in occurrences] == [5, 12, 19, 26]
         assert all(end - begin == timedelta(hours=2) for begin, end in occurrences)
 
     def test_until_date_before_the_next_step_stops_the_series(self):
-        start = datetime(2026, 10, 5, 10, 0, tzinfo=timezone.utc)
-        occurrences = expand_occurrences(
-            start, start + timedelta(hours=1), datetime(2026, 10, 11).date()
-        )
+        start = datetime(2026, 10, 5, 10, 0, tzinfo=UTC)
+        occurrences = expand_occurrences(start, start + timedelta(hours=1), date(2026, 10, 11))
         assert len(occurrences) == 1
 
     def test_occurrences_are_ascending(self):
-        start = datetime(2026, 10, 5, 10, 0, tzinfo=timezone.utc)
-        occurrences = expand_occurrences(
-            start, start + timedelta(hours=1), datetime(2026, 12, 31).date()
-        )
+        start = datetime(2026, 10, 5, 10, 0, tzinfo=UTC)
+        occurrences = expand_occurrences(start, start + timedelta(hours=1), date(2026, 12, 31))
         assert occurrences == sorted(occurrences)
 
 
@@ -163,7 +159,7 @@ class TestCreateRecurrence:
         assert [b["recurrence_rule_id"] for b in bookings] == [rule["id"]] * 4
         starts = [datetime.fromisoformat(b["start_time"]) for b in bookings]
         assert starts[0] == start
-        assert all(b - a == timedelta(days=7) for a, b in zip(starts, starts[1:]))
+        assert all(b - a == timedelta(days=7) for a, b in pairwise(starts))
         # Payment-first, exactly like POST /bookings: pending holds the slot.
         assert {b["status"] for b in bookings} == {"pending"}
         assert all(Decimal(b["duration_hours"]) == Decimal("2.00") for b in bookings)
@@ -208,9 +204,7 @@ class TestCreateRecurrence:
             headers=auth_headers,
         )
         assert resp.status_code == 409, resp.text
-        assert resp.json()["conflicts"] == [
-            blocked_start.isoformat().replace("+00:00", "Z")
-        ]
+        assert resp.json()["conflicts"] == [blocked_start.isoformat().replace("+00:00", "Z")]
 
         # Nothing at all was written: no rule, and no occurrence rows.
         db_session.expire_all()
@@ -257,7 +251,12 @@ class TestCreateRecurrence:
         await db_session.commit()
         await db_session.refresh(outsider)
         token = create_access_token(
-            {"sub": str(outsider.id), "email": outsider.email, "name": outsider.name, "role": "member"}
+            {
+                "sub": str(outsider.id),
+                "email": outsider.email,
+                "name": outsider.name,
+                "role": "member",
+            }
         )
 
         resp = await client.post(
@@ -273,7 +272,7 @@ class TestCreateRecurrence:
             (lambda b, s: b.update(end_time=s.isoformat()), "end_time must be after start_time"),
             (
                 lambda b, s: b.update(
-                    start_time=(datetime.now(tz=timezone.utc) - timedelta(days=1)).isoformat()
+                    start_time=(datetime.now(tz=UTC) - timedelta(days=1)).isoformat()
                 ),
                 "start_time must be in the future",
             ),
@@ -445,7 +444,12 @@ class TestCancelSeries:
         await db_session.commit()
         await db_session.refresh(intruder)
         token = create_access_token(
-            {"sub": str(intruder.id), "email": intruder.email, "name": intruder.name, "role": "member"}
+            {
+                "sub": str(intruder.id),
+                "email": intruder.email,
+                "name": intruder.name,
+                "role": "member",
+            }
         )
 
         resp = await client.delete(
@@ -478,7 +482,7 @@ async def _seed_series_with_history(db_session, org, room, user):
     await db_session.commit()
     await db_session.refresh(rule)
 
-    past_start = datetime.now(tz=timezone.utc) - timedelta(days=7)
+    past_start = datetime.now(tz=UTC) - timedelta(days=7)
     past = await _insert_booking(
         db_session,
         org=org,
@@ -543,9 +547,7 @@ class TestEditSeries:
         by_id = dict(result.all())
         assert all(by_id[uuid.UUID(i)] is BookingStatus.cancelled for i in old_ids)
 
-    async def test_until_date_can_be_extended(
-        self, client, auth_headers, test_room, test_member
-    ):
+    async def test_until_date_can_be_extended(self, client, auth_headers, test_room, test_member):
         start = _next_monday()
         created = await client.post(
             "/api/v1/recurrences",
@@ -662,7 +664,7 @@ class TestEditSeries:
         await db_session.refresh(past)
         await db_session.refresh(future)
         assert past.status is BookingStatus.completed
-        assert past.start_time < datetime.now(tz=timezone.utc)
+        assert past.start_time < datetime.now(tz=UTC)
         assert future.status is BookingStatus.cancelled
 
     async def test_other_users_series_is_forbidden(
@@ -687,7 +689,12 @@ class TestEditSeries:
         await db_session.commit()
         await db_session.refresh(intruder)
         token = create_access_token(
-            {"sub": str(intruder.id), "email": intruder.email, "name": intruder.name, "role": "member"}
+            {
+                "sub": str(intruder.id),
+                "email": intruder.email,
+                "name": intruder.name,
+                "role": "member",
+            }
         )
 
         resp = await client.put(
@@ -746,7 +753,9 @@ class TestConcurrentSeriesCreation:
             client.post("/api/v1/recurrences", json=body, headers=auth_headers),
         )
         codes = sorted([first.status_code, second.status_code])
-        assert codes == [201, 409], f"{first.status_code}/{first.text} {second.status_code}/{second.text}"
+        assert codes == [201, 409], (
+            f"{first.status_code}/{first.text} {second.status_code}/{second.text}"
+        )
 
         loser = first if first.status_code == 409 else second
         assert loser.json()["conflicts"]
@@ -756,14 +765,24 @@ class TestConcurrentSeriesCreation:
         assert rules.scalar_one() == 1
 
         result = await db_session.execute(
-            select(Booking).where(Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]))
+            select(Booking).where(
+                Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed])
+            )
         )
         held = list(result.scalars().all())
         assert len(held) == 4
         assert len({b.recurrence_rule_id for b in held}) == 1
 
     async def test_a_series_cannot_steal_a_slot_a_single_booking_holds(
-        self, client, auth_headers, db_session, test_org, test_room, test_user, test_member, overlap_constraint
+        self,
+        client,
+        auth_headers,
+        db_session,
+        test_org,
+        test_room,
+        test_user,
+        test_member,
+        overlap_constraint,
     ):
         start = _next_monday()
         await _insert_booking(
@@ -847,7 +866,9 @@ class TestConcurrentSeriesCreation:
         assert series_bookings.scalar_one() == 0
         # The booking that held the slot is untouched.
         held = await db_session.execute(
-            select(func.count()).select_from(Booking).where(Booking.status == BookingStatus.confirmed)
+            select(func.count())
+            .select_from(Booking)
+            .where(Booking.status == BookingStatus.confirmed)
         )
         assert held.scalar_one() == 1
 
@@ -884,7 +905,9 @@ class TestConcurrentSeriesCreation:
 
         db_session.expire_all()
         result = await db_session.execute(
-            select(Booking).where(Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]))
+            select(Booking).where(
+                Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed])
+            )
         )
         held = list(result.scalars().all())
         rules = await db_session.execute(select(func.count()).select_from(RecurrenceRule))
@@ -908,7 +931,8 @@ class TestRecurrenceReviewRegressions:
     ):
         start = _next_monday()
         created = await client.post(
-            "/api/v1/recurrences", headers=auth_headers,
+            "/api/v1/recurrences",
+            headers=auth_headers,
             json=_series_body(test_room.id, start=start, weeks=2),
         )
         assert created.status_code == 201, created.text
@@ -916,51 +940,67 @@ class TestRecurrenceReviewRegressions:
         await db_session.delete(test_member)
         await db_session.commit()
         response = await client.put(
-            f"/api/v1/recurrences/{rule_id}", headers=auth_headers,
+            f"/api/v1/recurrences/{rule_id}",
+            headers=auth_headers,
             json=_series_body(test_room.id, start=start + timedelta(hours=3), weeks=2),
         )
         assert response.status_code == 403, response.text
         cancelled = await client.delete(f"/api/v1/recurrences/{rule_id}", headers=auth_headers)
         assert cancelled.status_code == 204, cancelled.text
 
-    async def test_disabled_foundation_rejects_all_mutations(self, client, auth_headers, test_room, monkeypatch):
+    async def test_disabled_foundation_rejects_all_mutations(
+        self, client, auth_headers, test_room, monkeypatch
+    ):
         monkeypatch.setattr(recurrences.settings, "RECURRING_BOOKINGS_ENABLED", False)
         body = _series_body(test_room.id, start=_next_monday(), weeks=2)
-        for method, path in (("POST", ""), ("PUT", f"/{uuid.uuid4()}"), ("DELETE", f"/{uuid.uuid4()}")):
-            response = await client.request(method, f"/api/v1/recurrences{path}", json=body, headers=auth_headers)
+        for method, path in (
+            ("POST", ""),
+            ("PUT", f"/{uuid.uuid4()}"),
+            ("DELETE", f"/{uuid.uuid4()}"),
+        ):
+            response = await client.request(
+                method, f"/api/v1/recurrences{path}", json=body, headers=auth_headers
+            )
             assert response.status_code == 404
 
     @pytest.mark.parametrize("edit", [False, True])
     async def test_bulk_changes_cannot_bypass_24_hour_window(
         self, client, auth_headers, db_session, test_room, test_member, emails, edit
     ):
-        start = datetime.now(tz=timezone.utc) + timedelta(hours=12)
+        start = datetime.now(tz=UTC) + timedelta(hours=12)
         created = await client.post(
-            "/api/v1/recurrences", headers=auth_headers,
+            "/api/v1/recurrences",
+            headers=auth_headers,
             json=_series_body(test_room.id, start=start, weeks=2),
         )
         assert created.status_code == 201, created.text
         rule_id = created.json()["recurrence"]["id"]
         if edit:
             response = await client.put(
-                f"/api/v1/recurrences/{rule_id}", headers=auth_headers,
+                f"/api/v1/recurrences/{rule_id}",
+                headers=auth_headers,
                 json=_series_body(test_room.id, start=start + timedelta(days=2), weeks=2),
             )
         else:
             response = await client.delete(f"/api/v1/recurrences/{rule_id}", headers=auth_headers)
         assert response.status_code == 400, response.text
         assert "24 hours" in response.json()["detail"]
-        assert {status for _, status in await _statuses_by_start(db_session, test_room.id)} == {BookingStatus.pending}
+        assert {status for _, status in await _statuses_by_start(db_session, test_room.id)} == {
+            BookingStatus.pending
+        }
         assert emails.sent == []
 
     async def test_cancel_with_past_cutoff_preserves_historical_confirmed_booking(
         self, client, auth_headers, db_session, test_org, test_room, test_user, test_member, emails
     ):
-        rule, past, future = await _seed_series_with_history(db_session, test_org, test_room, test_user)
+        rule, past, future = await _seed_series_with_history(
+            db_session, test_org, test_room, test_user
+        )
         past.status = BookingStatus.confirmed
         await db_session.commit()
         response = await client.delete(
-            f"/api/v1/recurrences/{rule.id}", headers=auth_headers,
+            f"/api/v1/recurrences/{rule.id}",
+            headers=auth_headers,
             params={"from_date": (past.start_time - timedelta(days=1)).date().isoformat()},
         )
         assert response.status_code == 204, response.text
@@ -976,16 +1016,22 @@ class TestRecurrenceReviewRegressions:
     async def test_edit_accepts_past_anchor_and_only_expands_future_occurrences(
         self, client, auth_headers, db_session, test_org, test_room, test_user, test_member, emails
     ):
-        rule, past, future = await _seed_series_with_history(db_session, test_org, test_room, test_user)
+        rule, past, future = await _seed_series_with_history(
+            db_session, test_org, test_room, test_user
+        )
         response = await client.put(
-            f"/api/v1/recurrences/{rule.id}", headers=auth_headers,
+            f"/api/v1/recurrences/{rule.id}",
+            headers=auth_headers,
             json={
                 "start_time": (rule.start_time + timedelta(hours=3)).isoformat(),
                 "end_time": (rule.end_time + timedelta(hours=3)).isoformat(),
             },
         )
         assert response.status_code == 200, response.text
-        assert all(datetime.fromisoformat(b["start_time"]) > datetime.now(tz=timezone.utc) for b in response.json()["bookings"])
+        assert all(
+            datetime.fromisoformat(b["start_time"]) > datetime.now(tz=UTC)
+            for b in response.json()["bookings"]
+        )
         await db_session.refresh(past)
         await db_session.refresh(future)
         assert past.status is BookingStatus.completed
@@ -996,15 +1042,23 @@ class TestRecurrenceReviewRegressions:
         self, client, auth_headers, db_session, test_room, test_member
     ):
         created = await client.post(
-            "/api/v1/recurrences", headers=auth_headers,
+            "/api/v1/recurrences",
+            headers=auth_headers,
             json=_series_body(test_room.id, start=_next_monday(), weeks=2),
         )
         rule_id = created.json()["recurrence"]["id"]
-        rule = (await db_session.execute(select(RecurrenceRule).where(RecurrenceRule.id == rule_id).with_for_update())).scalar_one()
-        task = asyncio.create_task(client.put(
-            f"/api/v1/recurrences/{rule_id}", headers=auth_headers,
-            json=_series_body(test_room.id, start=_next_monday(14), weeks=2),
-        ))
+        rule = (
+            await db_session.execute(
+                select(RecurrenceRule).where(RecurrenceRule.id == rule_id).with_for_update()
+            )
+        ).scalar_one()
+        task = asyncio.create_task(
+            client.put(
+                f"/api/v1/recurrences/{rule_id}",
+                headers=auth_headers,
+                json=_series_body(test_room.id, start=_next_monday(14), weeks=2),
+            )
+        )
         try:
             await asyncio.sleep(0.1)
             assert not task.done(), "the edit must wait for the locked rule"
@@ -1020,18 +1074,43 @@ class TestRecurrenceReviewRegressions:
                 await asyncio.gather(task, return_exceptions=True)
 
     async def test_lost_edit_race_rolls_back_without_cancellation_emails(
-        self, client, auth_headers, db_session, test_org, test_room, test_user, test_member, emails, overlap_constraint, monkeypatch, locks
+        self,
+        client,
+        auth_headers,
+        db_session,
+        test_org,
+        test_room,
+        test_user,
+        test_member,
+        emails,
+        overlap_constraint,
+        monkeypatch,
+        locks,
     ):
         start = _next_monday()
         created = await client.post(
-            "/api/v1/recurrences", headers=auth_headers,
+            "/api/v1/recurrences",
+            headers=auth_headers,
             json=_series_body(test_room.id, start=start, weeks=2),
         )
         rule_id = created.json()["recurrence"]["id"]
         moved = start + timedelta(hours=3)
-        await _insert_booking(db_session, org=test_org, room=test_room, user=test_user, start=moved, end=moved + timedelta(hours=2))
+        await _insert_booking(
+            db_session,
+            org=test_org,
+            room=test_room,
+            user=test_user,
+            start=moved,
+            end=moved + timedelta(hours=2),
+        )
         for row in created.json()["bookings"]:
-            await locks.issue_access_code(booking_id=uuid.UUID(row["id"]), room_id=test_room.id, name="test", starts_at=start, ends_at=start + timedelta(hours=2))
+            await locks.issue_access_code(
+                booking_id=uuid.UUID(row["id"]),
+                room_id=test_room.id,
+                name="test",
+                starts_at=start,
+                ends_at=start + timedelta(hours=2),
+            )
         original = recurrences._find_conflicts
         calls = 0
 
@@ -1042,39 +1121,68 @@ class TestRecurrenceReviewRegressions:
 
         monkeypatch.setattr(recurrences, "_find_conflicts", stale_check)
         response = await client.put(
-            f"/api/v1/recurrences/{rule_id}", headers=auth_headers,
+            f"/api/v1/recurrences/{rule_id}",
+            headers=auth_headers,
             json=_series_body(test_room.id, start=moved, weeks=2),
         )
         assert locks.revoked_booking_ids == []
-        assert all(locks.issued_code_for(uuid.UUID(row["id"])) is not None for row in created.json()["bookings"])
+        assert all(
+            locks.issued_code_for(uuid.UUID(row["id"])) is not None
+            for row in created.json()["bookings"]
+        )
         assert response.status_code == 409, response.text
         assert response.json()["conflicts"]
         assert emails.sent == []
         db_session.expire_all()
-        bookings = (await db_session.execute(select(Booking).where(Booking.recurrence_rule_id == rule_id))).scalars().all()
+        bookings = (
+            (await db_session.execute(select(Booking).where(Booking.recurrence_rule_id == rule_id)))
+            .scalars()
+            .all()
+        )
         assert len(bookings) == 2
         assert {b.status for b in bookings} == {BookingStatus.pending}
 
 
 @pytest.mark.parametrize("action", ["cancel", "edit"])
 async def test_series_changes_revoke_only_replaced_codes(
-    client, auth_headers, db_session, test_org, test_room, test_user, test_member, locks, action,
+    client,
+    auth_headers,
+    db_session,
+    test_org,
+    test_room,
+    test_user,
+    test_member,
+    locks,
+    action,
 ):
     rule, past, future = await _seed_series_with_history(db_session, test_org, test_room, test_user)
     for booking in (past, future):
         booking.status = BookingStatus.confirmed
-        await locks.issue_access_code(booking_id=booking.id, room_id=test_room.id, name="test", starts_at=booking.start_time, ends_at=booking.end_time)
+        await locks.issue_access_code(
+            booking_id=booking.id,
+            room_id=test_room.id,
+            name="test",
+            starts_at=booking.start_time,
+            ends_at=booking.end_time,
+        )
     await db_session.commit()
     if action == "cancel":
         response = await client.delete(f"/api/v1/recurrences/{rule.id}", headers=auth_headers)
         assert response.status_code == 204, response.text
     else:
-        response = await client.put(f"/api/v1/recurrences/{rule.id}", headers=auth_headers, json={
-            "start_time": (rule.start_time + timedelta(hours=3)).isoformat(),
-            "end_time": (rule.end_time + timedelta(hours=3)).isoformat(),
-        })
+        response = await client.put(
+            f"/api/v1/recurrences/{rule.id}",
+            headers=auth_headers,
+            json={
+                "start_time": (rule.start_time + timedelta(hours=3)).isoformat(),
+                "end_time": (rule.end_time + timedelta(hours=3)).isoformat(),
+            },
+        )
         assert response.status_code == 200, response.text
-        assert all(locks.issued_code_for(uuid.UUID(row["id"])) is None for row in response.json()["bookings"])
+        assert all(
+            locks.issued_code_for(uuid.UUID(row["id"])) is None
+            for row in response.json()["bookings"]
+        )
     assert locks.revoked_booking_ids == [future.id]
     assert locks.issued_code_for(future.id) is None
     assert locks.issued_code_for(past.id) is not None

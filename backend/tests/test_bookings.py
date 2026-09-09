@@ -1,20 +1,20 @@
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
-from app.models.organization import OrganizationMember, MemberRole
+from app.models.organization import MemberRole, OrganizationMember
 from app.models.user import User
 from app.payments import PaymentProviderError
 
 
 def _future_slot(hours_offset_from_now: int = 24 * 7, duration_hours: int = 2):
     """Return (start, end) ISO strings on an upcoming Monday at 10:00 UTC."""
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
     target_date = today + timedelta(days=days_ahead + 7)
-    start = datetime.combine(target_date, time(10, 0), tzinfo=timezone.utc)
+    start = datetime.combine(target_date, time(10, 0), tzinfo=UTC)
     end = start + timedelta(hours=duration_hours)
     return start.isoformat(), end.isoformat()
 
@@ -28,9 +28,7 @@ class TestCreateBooking:
         )
         assert resp.status_code == 401
 
-    async def test_create_booking_success(
-        self, client, auth_headers, test_room, test_member
-    ):
+    async def test_create_booking_success(self, client, auth_headers, test_room, test_member):
         start, end = _future_slot()
         resp = await client.post(
             "/api/v1/bookings",
@@ -162,9 +160,7 @@ class TestListMyBookings:
         db_session.add(other)
         await db_session.flush()
         db_session.add(
-            OrganizationMember(
-                org_id=test_org.id, user_id=other.id, role=MemberRole.member
-            )
+            OrganizationMember(org_id=test_org.id, user_id=other.id, role=MemberRole.member)
         )
         await db_session.commit()
         await db_session.refresh(other)
@@ -215,9 +211,7 @@ class TestListMyBookings:
 
 
 class TestCancelBooking:
-    async def test_cancel_booking_own_success(
-        self, client, auth_headers, test_room, test_member
-    ):
+    async def test_cancel_booking_own_success(self, client, auth_headers, test_room, test_member):
         start, end = _future_slot()
         r = await client.post(
             "/api/v1/bookings",
@@ -227,9 +221,7 @@ class TestCancelBooking:
         assert r.status_code == 201, r.text
         booking_id = r.json()["booking"]["id"]
 
-        resp = await client.delete(
-            f"/api/v1/bookings/{booking_id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
         assert resp.status_code == 204
 
     async def test_cancel_booking_other_user_forbidden(
@@ -260,9 +252,7 @@ class TestCancelBooking:
         db_session.add(intruder)
         await db_session.flush()
         db_session.add(
-            OrganizationMember(
-                org_id=test_org.id, user_id=intruder.id, role=MemberRole.member
-            )
+            OrganizationMember(org_id=test_org.id, user_id=intruder.id, role=MemberRole.member)
         )
         await db_session.commit()
         await db_session.refresh(intruder)
@@ -292,7 +282,7 @@ class TestCancelBookingTooSoon:
         auth_headers,
     ):
         # Insert directly: create_booking enforces other rules we want to sidestep.
-        start = datetime.now(tz=timezone.utc) + timedelta(hours=1)
+        start = datetime.now(tz=UTC) + timedelta(hours=1)
         end = start + timedelta(hours=2)
         booking = Booking(
             org_id=test_org.id,
@@ -309,8 +299,6 @@ class TestCancelBookingTooSoon:
         await db_session.commit()
         await db_session.refresh(booking)
 
-        resp = await client.delete(
-            f"/api/v1/bookings/{booking.id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/api/v1/bookings/{booking.id}", headers=auth_headers)
         assert resp.status_code == 400, resp.text
         assert "24" in resp.json()["detail"]

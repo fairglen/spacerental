@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
-from app.models.organization import OrgPlan, MemberRole
+
+from app.models.organization import MemberRole, OrgPlan
 
 
 class OrganizationOut(BaseModel):
@@ -39,6 +41,7 @@ class OrgMembershipOut(BaseModel):
 
 class OrgMembershipDetail(BaseModel):
     """Membership with denormalized org fields for the switcher UI."""
+
     model_config = ConfigDict(from_attributes=True)
 
     org_id: uuid.UUID

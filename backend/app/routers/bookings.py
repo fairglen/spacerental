@@ -1,11 +1,12 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app import email, package_hours
 from app.auth import get_current_user
@@ -14,8 +15,8 @@ from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_issue_access_code
 from app.models.booking import Booking, BookingStatus, PaymentMethod
-from app.models.space import Room
 from app.models.organization import OrganizationMember
+from app.models.space import Room
 from app.models.user import User
 from app.payments import (
     CheckoutKind,
@@ -23,7 +24,7 @@ from app.payments import (
     PaymentProviderError,
     get_payment_gateway,
 )
-from app.schemas.booking import BookingOut, BookingCreate, BookingCheckoutOut
+from app.schemas.booking import BookingCheckoutOut, BookingCreate, BookingOut
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
@@ -130,16 +131,14 @@ async def create_booking(
             user_id=user.id,
             org_id=room.org_id,
             hours=duration_hours,
-            now=datetime.now(tz=timezone.utc),
+            now=datetime.now(tz=UTC),
         )
         if purchase is None:
             # Nothing was deducted and no booking exists yet — the request is
             # refused before anything is written.
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"No active package with {duration_hours} hours remaining"
-                ),
+                detail=(f"No active package with {duration_hours} hours remaining"),
             )
         purchase_id = purchase.id
 
@@ -167,7 +166,7 @@ async def create_booking(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This time slot is already booked",
-        )
+        ) from None
 
     checkout_url: str | None = None
     if not pays_with_package:
@@ -194,9 +193,7 @@ async def create_booking(
 
     # Load room for response
     result = await db.execute(
-        select(Booking)
-        .options(selectinload(Booking.room))
-        .where(Booking.id == booking.id)
+        select(Booking).options(selectinload(Booking.room)).where(Booking.id == booking.id)
     )
     booking = result.scalar_one()
 
@@ -227,9 +224,7 @@ async def create_booking(
         )
     attach_access_codes(lock_gateway, booking)
 
-    return BookingCheckoutOut(
-        booking=BookingOut.model_validate(booking), checkout_url=checkout_url
-    )
+    return BookingCheckoutOut(booking=BookingOut.model_validate(booking), checkout_url=checkout_url)
 
 
 @router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -260,5 +255,5 @@ async def cancel_booking(
             detail="You can only cancel your own bookings",
         )
 
-    validate_cancellation(booking, datetime.now(tz=timezone.utc))
+    validate_cancellation(booking, datetime.now(tz=UTC))
     await apply_cancellation(db, booking, user, background_tasks, email_gateway, lock_gateway)

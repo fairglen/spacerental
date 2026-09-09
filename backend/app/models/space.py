@@ -1,21 +1,23 @@
+import decimal
 import uuid
 from datetime import datetime, time
+
 from sqlalchemy import (
-    String,
-    Text,
     Boolean,
-    Integer,
-    Numeric,
     DateTime,
-    Time,
     ForeignKey,
     Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    Time,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
-import decimal
 
 
 class Space(Base):
@@ -55,9 +57,7 @@ class Space(Base):
     organization: Mapped["Organization"] = relationship(  # noqa: F821
         "Organization", back_populates="spaces", lazy="noload"
     )
-    rooms: Mapped[list["Room"]] = relationship(
-        "Room", back_populates="space", lazy="noload"
-    )
+    rooms: Mapped[list["Room"]] = relationship("Room", back_populates="space", lazy="noload")
 
 
 class Room(Base):
@@ -114,9 +114,7 @@ class Room(Base):
 
 class AvailabilityRule(Base):
     __tablename__ = "availability_rules"
-    __table_args__ = (
-        Index("ix_availability_rules_room_id_day", "room_id", "day_of_week"),
-    )
+    __table_args__ = (Index("ix_availability_rules_room_id_day", "room_id", "day_of_week"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -127,12 +125,8 @@ class AvailabilityRule(Base):
         UUID(as_uuid=True), ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False
     )
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
-    open_time: Mapped[time] = mapped_column(
-        Time, nullable=False, server_default="09:00:00"
-    )
-    close_time: Mapped[time] = mapped_column(
-        Time, nullable=False, server_default="20:00:00"
-    )
+    open_time: Mapped[time] = mapped_column(Time, nullable=False, server_default="09:00:00")
+    close_time: Mapped[time] = mapped_column(Time, nullable=False, server_default="20:00:00")
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )

@@ -1,6 +1,7 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,8 +9,8 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.organization import OrganizationMember
+from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.user import User
 from app.payments import (
     CheckoutKind,
@@ -34,10 +35,12 @@ async def list_packages(
 ):
     """List available packages for an org (public)."""
     result = await db.execute(
-        select(Package).where(
+        select(Package)
+        .where(
             Package.org_id == org_id,
             Package.is_active == True,  # noqa: E712
-        ).order_by(Package.hours.asc())
+        )
+        .order_by(Package.hours.asc())
     )
     packages = result.scalars().all()
     return {"packages": [PackageOut.model_validate(p) for p in packages]}
@@ -81,7 +84,7 @@ async def purchase_package(
             detail="You are not a member of this organization",
         )
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     expires_at = now + timedelta(days=package.validity_days)
     hours_total = Decimal(str(package.hours))
 
@@ -90,7 +93,7 @@ async def purchase_package(
         package_id=package.id,
         org_id=body.org_id,
         hours_total=hours_total,
-        hours_used=Decimal("0"),
+        hours_used=Decimal(0),
         hours_remaining=hours_total,
         purchased_at=now,
         expires_at=expires_at,

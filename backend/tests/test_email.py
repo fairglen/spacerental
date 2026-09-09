@@ -7,30 +7,29 @@ system.
 """
 
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
-
 from app.config import settings
 from app.email import (
-    EmailNotConfigured,
+    EmailNotConfiguredError,
     booking_cancellation_email,
     booking_confirmation_email,
     validate_email_settings,
 )
+from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.payments import CheckoutKind
+
 from tests.conftest import checkout_completed_event
 
 WEBHOOK_URL = "/api/v1/webhooks/stripe"
 
 
 def _future_slot(duration_hours: int = 2):
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
-    start = datetime.combine(
-        today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=timezone.utc
-    )
+    start = datetime.combine(today + timedelta(days=days_ahead + 7), time(10, 0), tzinfo=UTC)
     return start, start + timedelta(hours=duration_hours)
 
 
@@ -55,7 +54,7 @@ class TestEmailContentTemplates:
     """Unit — pure content builders, no I/O."""
 
     def test_confirmation_email_is_portuguese_and_has_cancel_link(self):
-        start = datetime(2026, 10, 8, 10, 0, tzinfo=timezone.utc)  # a Thursday
+        start = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)  # a Thursday
         end = start + timedelta(hours=2)
         message = booking_confirmation_email(
             to="cliente@example.com",
@@ -73,7 +72,7 @@ class TestEmailContentTemplates:
         assert f"{settings.FRONTEND_URL}/dashboard" in message.html_body
 
     def test_cancellation_email_is_portuguese(self):
-        start = datetime(2026, 10, 8, 10, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)
         end = start + timedelta(hours=2)
         message = booking_cancellation_email(
             to="cliente@example.com",
@@ -98,12 +97,12 @@ class TestEmailSettingsValidation:
     def test_live_mode_without_key_raises(self, monkeypatch):
         monkeypatch.setattr(settings, "EMAIL_MODE", "live")
         monkeypatch.setattr(settings, "RESEND_API_KEY", None)
-        with pytest.raises(EmailNotConfigured):
+        with pytest.raises(EmailNotConfiguredError):
             validate_email_settings()
 
     def test_unknown_mode_raises(self, monkeypatch):
         monkeypatch.setattr(settings, "EMAIL_MODE", "sandbox")
-        with pytest.raises(EmailNotConfigured):
+        with pytest.raises(EmailNotConfiguredError):
             validate_email_settings()
 
 
@@ -138,8 +137,6 @@ class TestBookingConfirmationEmail:
     async def test_admin_direct_confirm_sends_email(
         self, client, admin_headers, db_session, test_org, test_room, admin_user, emails
     ):
-        from app.models.booking import Booking, BookingStatus, PaymentMethod
-
         start, end = _future_slot()
         booking = Booking(
             org_id=test_org.id,
@@ -226,9 +223,7 @@ class TestBookingCancellationEmail:
         await db_session.commit()
         await db_session.refresh(booking)
 
-        resp = await client.delete(
-            f"/api/v1/bookings/{booking.id}", headers=auth_headers
-        )
+        resp = await client.delete(f"/api/v1/bookings/{booking.id}", headers=auth_headers)
         assert resp.status_code == 204, resp.text
 
         assert len(emails.sent) == 1

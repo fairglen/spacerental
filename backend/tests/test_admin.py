@@ -1,10 +1,10 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
-from app.models.organization import OrganizationMember, MemberRole
+from app.models.organization import MemberRole, OrganizationMember
 from app.models.package import Package
 from app.models.user import User
 
@@ -21,9 +21,7 @@ class TestAdminDashboard:
         )
         assert resp.status_code == 403
 
-    async def test_admin_dashboard_returns_stats_shape(
-        self, client, admin_headers, test_org
-    ):
+    async def test_admin_dashboard_returns_stats_shape(self, client, admin_headers, test_org):
         resp = await client.get(
             "/api/v1/admin/dashboard",
             params={"org_id": str(test_org.id)},
@@ -60,9 +58,7 @@ class TestAdminSpaces:
 
 
 class TestAdminRooms:
-    async def test_admin_create_room_in_space(
-        self, client, admin_headers, test_org, test_space
-    ):
+    async def test_admin_create_room_in_space(self, client, admin_headers, test_org, test_space):
         resp = await client.post(
             f"/api/v1/admin/spaces/{test_space.id}/rooms",
             params={"org_id": str(test_org.id)},
@@ -88,21 +84,23 @@ class TestAdminBookings:
     async def test_pagination_keeps_bookings_with_equal_start_times(
         self, client, admin_headers, db_session, test_org, test_room, admin_user
     ):
-        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        start = datetime.now(tz=UTC) + timedelta(days=2)
         ids = [uuid.UUID(int=i) for i in (2, 5, 1, 4, 3)]
         for booking_id in ids:
-            db_session.add(Booking(
-                id=booking_id,
-                org_id=test_org.id,
-                room_id=test_room.id,
-                user_id=admin_user.id,
-                start_time=start,
-                end_time=start + timedelta(hours=1),
-                duration_hours=Decimal("1.00"),
-                total_amount=Decimal("11.00"),
-                status=BookingStatus.cancelled,
-                payment_method=PaymentMethod.hourly,
-            ))
+            db_session.add(
+                Booking(
+                    id=booking_id,
+                    org_id=test_org.id,
+                    room_id=test_room.id,
+                    user_id=admin_user.id,
+                    start_time=start,
+                    end_time=start + timedelta(hours=1),
+                    duration_hours=Decimal("1.00"),
+                    total_amount=Decimal("11.00"),
+                    status=BookingStatus.cancelled,
+                    payment_method=PaymentMethod.hourly,
+                )
+            )
         await db_session.commit()
 
         # Cancelled bookings can legitimately share both room and start time.
@@ -128,7 +126,7 @@ class TestAdminBookings:
         admin_user,
     ):
         # Insert a booking directly
-        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        start = datetime.now(tz=UTC) + timedelta(days=2)
         end = start + timedelta(hours=2)
         booking = Booking(
             org_id=test_org.id,
@@ -165,7 +163,7 @@ class TestAdminBookings:
     ):
         """No page/page_size params → page=1, page_size=20, all bookings still returned
         when there are fewer than a page's worth (today's behavior, unchanged)."""
-        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        start = datetime.now(tz=UTC) + timedelta(days=2)
         for i in range(3):
             booking_start = start + timedelta(hours=i * 3)
             booking = Booking(
@@ -203,7 +201,7 @@ class TestAdminBookings:
         test_room,
         admin_user,
     ):
-        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        start = datetime.now(tz=UTC) + timedelta(days=2)
         for i in range(25):
             booking_start = start + timedelta(hours=i * 3)
             booking = Booking(
@@ -257,7 +255,7 @@ class TestAdminBookings:
         test_room,
         admin_user,
     ):
-        start = datetime.now(tz=timezone.utc) + timedelta(days=2)
+        start = datetime.now(tz=UTC) + timedelta(days=2)
         end = start + timedelta(hours=2)
         booking = Booking(
             org_id=test_org.id,
@@ -362,9 +360,7 @@ class TestAdminPackages:
 
 
 class TestAdminAvailability:
-    async def test_admin_get_availability_rules(
-        self, client, admin_headers, test_org, test_room
-    ):
+    async def test_admin_get_availability_rules(self, client, admin_headers, test_org, test_room):
         # test_room fixture seeds Mon-Sat 08:00-20:00 (6 rules, Sunday closed).
         resp = await client.get(
             f"/api/v1/admin/rooms/{test_room.id}/availability",
@@ -423,9 +419,7 @@ class TestAdminAvailability:
 
 
 class TestAdminAccessControl:
-    async def test_member_role_forbidden_on_admin_dashboard(
-        self, client, db_session, test_org
-    ):
+    async def test_member_role_forbidden_on_admin_dashboard(self, client, db_session, test_org):
         # test_member fixture grants member-role; build inline to avoid coupling.
         member = User(
             email="plain-member@test.com",
@@ -435,9 +429,7 @@ class TestAdminAccessControl:
         db_session.add(member)
         await db_session.flush()
         db_session.add(
-            OrganizationMember(
-                org_id=test_org.id, user_id=member.id, role=MemberRole.member
-            )
+            OrganizationMember(org_id=test_org.id, user_id=member.id, role=MemberRole.member)
         )
         await db_session.commit()
         await db_session.refresh(member)

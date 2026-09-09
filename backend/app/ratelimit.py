@@ -14,9 +14,10 @@ on traffic we are about to refuse.
 import math
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from threading import Lock
-from typing import Callable, Iterable, Optional, TypeVar
+from typing import TypeVar
 
 from starlette.responses import JSONResponse
 from starlette.routing import BaseRoute, Match
@@ -92,7 +93,7 @@ class RateLimiter:
         identity: str,
         limit: int,
         window_seconds: int,
-        now: Optional[float] = None,
+        now: float | None = None,
     ) -> RateLimitResult:
         """Record a hit and report whether it is allowed.
 
@@ -112,9 +113,7 @@ class RateLimiter:
                 return RateLimitResult(allowed=False, remaining=0, retry_after=retry_after)
 
             hits.append(current)
-            return RateLimitResult(
-                allowed=True, remaining=limit - len(hits), retry_after=0
-            )
+            return RateLimitResult(allowed=True, remaining=limit - len(hits), retry_after=0)
 
     def reset(self) -> None:
         """Drop all recorded hits. Used by tests between cases."""
@@ -166,7 +165,7 @@ class RateLimitMiddleware:
         self.routes = routes
         self.limiter = limiter
 
-    def _tier_for(self, scope: Scope) -> Optional[str]:
+    def _tier_for(self, scope: Scope) -> str | None:
         for route in self.routes:
             match, _ = route.matches(scope)
             if match is Match.FULL:
