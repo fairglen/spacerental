@@ -166,6 +166,21 @@ As a member, I want to see what I'm about to book before committing to a series.
 ### 2.3 Package purchase checkout
 - **Given** `POST /api/v1/packages/{id}/purchase`, **when** payment integration is enabled, **then** it follows the same Checkout Session + webhook pattern as bookings, and `UserPackagePurchase` is only marked active after the webhook confirms.
 
+### 2.4 Redeem package hours at booking time — ✅ Done
+`payment_method: "package"` was accepted by the schema but hard-rejected in
+`create_booking`, so a package holder could buy hours and never spend them.
+
+- **Given** `POST /api/v1/bookings` with `payment_method: "package"`, **when** the caller has an active, unexpired purchase in the room's org with enough hours, **then** the hours are debited and the booking is `confirmed` with `checkout_url: null`.
+- **Given** no such purchase, **then** the response is `409` and nothing is written.
+- **Given** two requests racing for the last hour, **then** exactly one succeeds — `app/package_hours.py` takes `SELECT … FOR UPDATE` on the purchase row and re-validates under the lock.
+- **Given** a package booking is cancelled (by the member or by an admin), **then** the hours are credited back to the purchase they came from.
+
+Still open, deliberately: the dashboard's `total_revenue` counts booking charges
+only, so package *sales* revenue is now counted nowhere. Totalling
+`UserPackagePurchase` is its own story. There is also no E2E spec for the
+redemption flow — the demo account is shared across spec files, so it needs a
+dedicated fixture user rather than a bolt-on to `booking.spec.ts`.
+
 ---
 
 ## Epic 3 — Seam Smart-Lock Integration

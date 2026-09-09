@@ -1,5 +1,4 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
-import { createHmac } from 'node:crypto'
 import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
 
@@ -7,17 +6,13 @@ import { pt } from 'date-fns/locale'
  * Booking flows people actually perform (TODO.md B1, B2, B4, B5).
  *
  * The whole payment leg runs on STRIPE_MODE=stub: `POST /bookings` returns a
- * deterministic `https://checkout.stripe.stub/cs_stub_<id>` URL, and the
- * `checkout.session.completed` webhook we sign below is what promotes the
- * booking to `confirmed`. No Stripe account, no credentials, no network beyond
- * localhost (CLAUDE.md §10.3).
+ * `.../checkout/stub/cs_stub_<id>` URL served by this app itself (T10), and
+ * clicking "Pagar" there is what promotes the booking to `confirmed` — the
+ * same walk a human does locally with zero Stripe credentials, no route
+ * interception needed (CLAUDE.md §10.3).
  */
 
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
-const CHECKOUT_ORIGIN = 'https://checkout.stripe.stub'
-// Mirrors app/payments.DEFAULT_STUB_WEBHOOK_SECRET — what stub mode signs with
-// when STRIPE_WEBHOOK_SECRET is unset, which is the docker-compose default.
-const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_stub_local_secret'
 const CREDENTIALS = { email: 'admin@demo.com', password: 'admin123' }
 
 // The calendar day view starts at 08:00 with one 1-hour slot per group.
@@ -84,29 +79,6 @@ async function createBookingViaApi(
 
 async function cancelViaApi(api: APIRequestContext, token: string, id: string) {
   await api.delete(apiUrl(`/bookings/${id}`), { headers: auth(token) })
-}
-
-/** Complete a stub Checkout Session the way Stripe would: a signed webhook. */
-async function payStubCheckout(api: APIRequestContext, sessionId: string, booking: ApiBooking) {
-  const payload = JSON.stringify({
-    type: 'checkout.session.completed',
-    data: {
-      object: {
-        object: 'checkout.session',
-        id: sessionId,
-        payment_status: 'paid',
-        metadata: { kind: 'booking', reference_id: booking.id, org_id: booking.org_id },
-      },
-    },
-  })
-  const timestamp = Math.floor(Date.now() / 1000)
-  const signature = createHmac('sha256', WEBHOOK_SECRET).update(`${timestamp}.${payload}`).digest('hex')
-  const res = await api.post(apiUrl('/webhooks/stripe'), {
-    headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${timestamp},v1=${signature}` },
-    data: payload,
-  })
-  expect(res.ok(), `webhook rejected: ${res.status()} ${await res.text()}`).toBeTruthy()
-  expect((await res.json()).handled, 'webhook did not confirm the booking').toBe(true)
 }
 
 // ── Date helpers ──────────────────────────────────────────────────────────
@@ -228,15 +200,28 @@ async function dragHours(page: Page, fromHour: number, toHour: number) {
   await page.mouse.up()
 }
 
+/** Select "pay now" in the modal, if a package alternative is even offered. */
+async function chooseHourly(page: Page) {
+  const hourly = page.getByRole('radio', { name: /Pagar/i })
+  if (await hourly.count()) await hourly.check()
+}
+
 /**
- * Confirm the modal, follow the redirect to stub Checkout, and pay it.
- * Returns the booking the checkout belongs to.
+ * Confirm the modal, follow the redirect to the real stub Checkout page
+ * (T10), and click "Pagar" there — the whole thing running as a walkable
+ * page rather than an intercepted route. Returns the booking the checkout
+ * belongs to.
  */
 async function confirmAndPay(page: Page, api: APIRequestContext, token: string): Promise<ApiBooking> {
+  // packages.spec.ts buys packs for this same demo account, so depending on
+  // run order the modal may default to spending prepaid hours. These tests are
+  // about the Stripe leg, so pick hourly explicitly rather than depending on
+  // whichever spec ran first.
+  await chooseHourly(page)
   await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
-  await page.waitForURL(/checkout\.stripe\.stub\/cs_stub_/, { timeout: 20000 })
+  await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
 
-  const sessionId = new URL(page.url()).pathname.replace('/', '')
+  const sessionId = new URL(page.url()).pathname.split('/').pop()!
   const bookingId = sessionId
     .replace('cs_stub_', '')
     .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
@@ -244,9 +229,10 @@ async function confirmAndPay(page: Page, api: APIRequestContext, token: string):
   const booking = (await myBookings(api, token)).find((b) => b.id === bookingId)
   expect(booking, `no booking behind checkout session ${sessionId}`).toBeTruthy()
   created.push(booking!.id)
-  expect(booking!.status, 'booking should stay pending until the webhook lands').toBe('pending')
+  expect(booking!.status, 'booking should stay pending until payment').toBe('pending')
 
-  await payStubCheckout(api, sessionId, booking!)
+  await page.getByRole('button', { name: /^Pagar$/ }).click()
+  await page.waitForURL(/\/dashboard/, { timeout: 20000 })
   return booking!
 }
 
@@ -277,11 +263,6 @@ test.describe('Reservas — fluxos reais', () => {
 
     const context = await browser.newContext({ timezoneId: 'UTC' })
     page = await context.newPage()
-    // Stub Checkout has no server to answer; standing in for it keeps the
-    // redirect itself under test.
-    await page.route(`${CHECKOUT_ORIGIN}/**`, (route) =>
-      route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Stub Checkout</h1>' }),
-    )
     await signIn(page)
   })
 
@@ -318,6 +299,63 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(card).toHaveCount(1, { timeout: 10000 })
     await expect(card).toContainText('33,00')
     await expect(card).toContainText('Confirmado')
+  })
+
+  test('a single click still books exactly one hour, same as before B1 (B1)', async () => {
+    const offset = bookableDayOffset(3)
+    await openRoomCalendar(page, 'Sala Calma')
+    await goToDay(page, offset)
+
+    // A real DOM click (not the dragHours helper's mouse-down/move/up), on an
+    // hour none of the other tests touch — B1's third acceptance criterion is
+    // that single-click behaviour is unchanged, and until now nothing drove an
+    // actual click through the full stack; only a synthetic onSelectSlot call
+    // in the component test and API-created bookings in the E2E suite.
+    await slotAt(page, 15).scrollIntoViewIfNeeded()
+    const target = await slotAt(page, 15).boundingBox()
+    expect(target, 'slot 15:00 is not laid out').toBeTruthy()
+    await page.mouse.click(target!.x + target!.width / 2, target!.y + target!.height / 2)
+
+    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText('Duração', { exact: true }).locator('..')).toContainText('1h')
+
+    const booking = await confirmAndPay(page, api, token)
+    expect(booking.start_time).toBe(utcHour(offset, 15).toISOString().replace('.000Z', 'Z'))
+    expect(booking.end_time).toBe(utcHour(offset, 16).toISOString().replace('.000Z', 'Z'))
+
+    await page.goto('/dashboard')
+    const card = bookingCard(page, 'Sala Calma', utcHour(offset, 15), utcHour(offset, 16))
+    await expect(card).toHaveCount(1, { timeout: 10000 })
+    await expect(card).toContainText('Confirmado')
+  })
+
+  test('a slot taken between opening the modal and confirming surfaces the specific conflict message (B1)', async () => {
+    const offset = bookableDayOffset(3)
+    const roomId = await roomIdByName(api, 'Sala Névoa')
+
+    await openRoomCalendar(page, 'Sala Névoa')
+    await goToDay(page, offset)
+
+    // Opens on an hour that reads free client-side (an hour none of the other
+    // tests touch on this room/day).
+    await dragHours(page, 13, 14)
+    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
+
+    // A concurrent booking wins the race on the backend before this one
+    // confirms — the modal's availability snapshot is now stale.
+    await createBookingViaApi(api, token, roomId, utcHour(offset, 13), utcHour(offset, 14))
+
+    await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
+
+    // B1's fourth criterion: the 409 is surfaced as the specific slot
+    // conflict, not BookingModal's generic "Erro ao criar reserva". Note the
+    // gender agreement differs from the calendar's own selectionError text
+    // ("a hora ... reservada") — this is BookingModal's "horário ... reservado".
+    const alert = page.getByRole('alert').filter({ hasText: /já está reservado/ })
+    await expect(alert).toBeVisible({ timeout: 10000 })
+    await expect(alert).not.toContainText(/Erro ao criar reserva/i)
+
+    await page.getByRole('button', { name: /^Cancelar$/ }).click()
   })
 
   test('two blocks on one day keep the lunch gap free (B2)', async () => {
