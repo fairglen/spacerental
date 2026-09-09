@@ -1,3 +1,6 @@
+import { createHmac } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { decode, encode } from 'next-auth/jwt'
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
 
 /**
@@ -161,6 +164,63 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
     const card = page.locator('div.rounded-xl').filter({ hasText: pkg20h.name })
     await expect(card.first()).toBeVisible({ timeout: 10000 })
     await expect(card.first()).toContainText(`restantes de ${pkg20h.hours}h`)
+  })
+
+  test('an expired backend token in an active browser session can reauthenticate and buy the selected pack (B14)', async () => {
+    // Local fixture only: create an expired, correctly signed backend JWT
+    // inside a genuine NextAuth cookie. Neither API response is intercepted.
+    expect(new URL(API_URL).hostname).toBe('localhost')
+    const envText = readFileSync(existsSync('../.env') ? '../.env' : '../.env.example', 'utf8')
+    function localSecret(key: string): string {
+      const value = process.env[key] ?? envText.match(new RegExp(`^${key}=(.+)$`, 'm'))?.[1].trim().replace(/^['"]|['"]$/g, '')
+      if (!value) throw new Error(`Local E2E configuration requires ${key}`)
+      return value
+    }
+    const cookies = await page.context().cookies()
+    const cookie = cookies.find(c => c.name === 'next-auth.session-token')
+    expect(cookie, 'Expected one local NextAuth session cookie').toBeTruthy()
+    const nextAuthSecret = localSecret('NEXTAUTH_SECRET')
+    const current = await decode({ token: cookie!.value, secret: nextAuthSecret })
+    if (!current || typeof current.accessToken !== 'string') throw new Error('No backend token in the active session')
+    const [header, payload] = current.accessToken.split('.')
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
+    function signedToken(exp: number): string {
+      const body = `${header}.${Buffer.from(JSON.stringify({ ...claims, exp })).toString('base64url')}`
+      return `${body}.${createHmac('sha256', localSecret('SECRET_KEY')).update(body).digest('base64url')}`
+    }
+    const now = Math.floor(Date.now() / 1000)
+    const valid = await api.get(apiUrl('/auth/memberships'), { headers: auth(signedToken(now + 300)) })
+    expect(valid.status(), 'Fixture must use the running backend signing key').toBe(200)
+    const expired = signedToken(now - 60)
+    const expiredCookie = await encode({ token: { ...current, accessToken: expired }, secret: nextAuthSecret })
+    await page.context().addCookies([{ ...cookie!, value: expiredCookie }])
+    const sessionResponse = await page.request.get('/api/auth/session')
+    const activeSession = await sessionResponse.json()
+    expect(activeSession.user.email).toBe(CREDENTIALS.email)
+    expect(activeSession.accessToken).toBe(expired)
+    const orgId = await seededOrgId(api)
+    const pkg = await packageByHours(api, orgId, 20)
+    const before = await myPurchases(api, token)
+    await page.goto('/#precos')
+    const rejected = page.waitForResponse(r => r.url().endsWith(`/packages/${pkg.id}/purchase`) && r.request().method() === 'POST')
+    await page.getByRole('button', { name: /Comprar Pack/i }).nth(1).click()
+    expect((await rejected).status()).toBe(401)
+    await expect(page.getByRole('alert').filter({ hasText: /sessão deixou de ser válida/ })).toBeVisible()
+    expect(await myPurchases(api, token)).toHaveLength(before.length)
+    await page.getByRole('link', { name: 'Entrar e continuar a compra' }).click()
+    await expect(page).toHaveURL(new RegExp(`/sign-in\\?packageId=${pkg.id}`))
+    await page.getByLabel('Email').fill(CREDENTIALS.email)
+    await page.getByLabel('Password').fill(CREDENTIALS.password)
+    await page.getByRole('button', { name: /^Entrar$/ }).click()
+    await page.waitForURL(new RegExp(`/dashboard/packages\\?packageId=${pkg.id}`))
+    const targetCard = page.locator('div.rounded-xl').filter({ hasText: `${pkg.hours}h ·` })
+    await targetCard.getByRole('button', { name: /Comprar Pack/i }).click()
+    await page.waitForURL(/\/checkout\/stub\/cs_stub_/)
+    const { purchaseId } = decodeCheckoutUrl(page.url())
+    await payOnStubCheckoutPage(page)
+    const purchases = await myPurchases(api, token)
+    expect(purchases).toHaveLength(before.length + 1)
+    expect(purchases.find(p => p.id === purchaseId)).toMatchObject({ package_id: pkg.id, status: 'active' })
   })
 
   test('a signed-out visitor\'s chosen package survives sign-up and lands them on a highlighted card (B12)', async ({ browser }) => {
