@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
 import { spacesApi, packagesApi } from '@/lib/api'
-import { t } from '@/lib/i18n'
+import { useT } from '@/lib/i18n'
 
 type PlanCopy = {
   name: string
@@ -18,51 +18,6 @@ type PlanCopy = {
   features: string[]
   highlighted: boolean
   badge?: string
-}
-
-const hourlyPlan: PlanCopy = {
-  name: t('pricing.hourly_plan_name'),
-  price: t('pricing.hourly_plan_price'),
-  unit: t('pricing.hourly_plan_unit'),
-  desc: t('pricing.hourly_plan_desc'),
-  features: [
-    t('pricing.hourly_plan_feature_1'),
-    t('pricing.hourly_plan_feature_2'),
-    t('pricing.hourly_plan_feature_3'),
-  ],
-  highlighted: false,
-}
-
-// Marketing copy per seeded package (backend/app/seed.py), keyed by `hours` so
-// it can be paired with the real Package the CTA needs to purchase.
-const packageCopyByHours: Record<number, PlanCopy> = {
-  10: {
-    name: t('pricing.pack_10_name'),
-    price: t('pricing.pack_10_price'),
-    unit: t('pricing.pack_10_unit'),
-    desc: t('pricing.pack_10_desc'),
-    features: [
-      t('pricing.pack_10_feature_1'),
-      t('pricing.pack_10_feature_2'),
-      t('pricing.pack_10_feature_3'),
-      t('pricing.pack_10_feature_4'),
-    ],
-    highlighted: true,
-    badge: t('pricing.pack_10_badge'),
-  },
-  20: {
-    name: t('pricing.pack_20_name'),
-    price: t('pricing.pack_20_price'),
-    unit: t('pricing.pack_20_unit'),
-    desc: t('pricing.pack_20_desc'),
-    features: [
-      t('pricing.pack_20_feature_1'),
-      t('pricing.pack_20_feature_2'),
-      t('pricing.pack_20_feature_3'),
-      t('pricing.pack_20_feature_4'),
-    ],
-    highlighted: false,
-  },
 }
 
 function PlanCard({ plan, children }: { plan: PlanCopy; children: React.ReactNode }) {
@@ -97,6 +52,53 @@ function PlanCard({ plan, children }: { plan: PlanCopy; children: React.ReactNod
 }
 
 export function Pricing() {
+  const t = useT()
+
+  const hourlyPlan: PlanCopy = {
+    name: t('pricing.hourly_plan_name'),
+    price: t('pricing.hourly_plan_price'),
+    unit: t('pricing.hourly_plan_unit'),
+    desc: t('pricing.hourly_plan_desc'),
+    features: [
+      t('pricing.hourly_plan_feature_1'),
+      t('pricing.hourly_plan_feature_2'),
+      t('pricing.hourly_plan_feature_3'),
+    ],
+    highlighted: false,
+  }
+
+  // Marketing copy per seeded package (backend/app/seed.py), keyed by `hours` so
+  // it can be paired with the real Package the CTA needs to purchase.
+  const packageCopyByHours: Record<number, PlanCopy> = {
+    10: {
+      name: t('pricing.pack_10_name'),
+      price: t('pricing.pack_10_price'),
+      unit: t('pricing.pack_10_unit'),
+      desc: t('pricing.pack_10_desc'),
+      features: [
+        t('pricing.pack_10_feature_1'),
+        t('pricing.pack_10_feature_2'),
+        t('pricing.pack_10_feature_3'),
+        t('pricing.pack_10_feature_4'),
+      ],
+      highlighted: true,
+      badge: t('pricing.pack_10_badge'),
+    },
+    20: {
+      name: t('pricing.pack_20_name'),
+      price: t('pricing.pack_20_price'),
+      unit: t('pricing.pack_20_unit'),
+      desc: t('pricing.pack_20_desc'),
+      features: [
+        t('pricing.pack_20_feature_1'),
+        t('pricing.pack_20_feature_2'),
+        t('pricing.pack_20_feature_3'),
+        t('pricing.pack_20_feature_4'),
+      ],
+      highlighted: false,
+    },
+  }
+
   // Packages are org-scoped (§4) and this is a public landing page with no
   // org context of its own, so resolve the one seeded org through the public
   // spaces list — consistent with the single-main-space scoping decision.

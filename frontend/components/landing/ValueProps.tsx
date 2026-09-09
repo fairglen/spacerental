@@ -1,25 +1,26 @@
+'use client'
 import { Shield, Calendar, Clock } from 'lucide-react'
-import { t } from '@/lib/i18n'
-
-const props = [
-  {
-    icon: Shield,
-    title: t('valueProps.privacy_title'),
-    desc: t('valueProps.privacy_desc'),
-  },
-  {
-    icon: Calendar,
-    title: t('valueProps.booking_title'),
-    desc: t('valueProps.booking_desc'),
-  },
-  {
-    icon: Clock,
-    title: t('valueProps.flexibility_title'),
-    desc: t('valueProps.flexibility_desc'),
-  },
-]
+import { useT } from '@/lib/i18n'
 
 export function ValueProps() {
+  const t = useT()
+  const props = [
+    {
+      icon: Shield,
+      title: t('valueProps.privacy_title'),
+      desc: t('valueProps.privacy_desc'),
+    },
+    {
+      icon: Calendar,
+      title: t('valueProps.booking_title'),
+      desc: t('valueProps.booking_desc'),
+    },
+    {
+      icon: Clock,
+      title: t('valueProps.flexibility_title'),
+      desc: t('valueProps.flexibility_desc'),
+    },
+  ]
   return (
     <section className="py-16 bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
