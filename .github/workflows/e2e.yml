@@ -30,8 +30,11 @@ jobs:
       - name: Wait for backend
         run: |
           for i in {1..30}; do
-            curl -sf http://localhost:8000/health && break || sleep 2
+            if curl -sf http://localhost:8000/health; then exit 0; fi
+            sleep 2
           done
+          echo "Backend did not become healthy" >&2
+          exit 1
       - name: Seed
         run: docker compose exec -T backend python -m app.seed
       - name: Run E2E
@@ -39,9 +42,15 @@ jobs:
         env:
           E2E_BASE_URL: http://localhost:3000
         run: npm run test:e2e
+      - name: Capture stack diagnostics
+        if: failure()
+        run: docker compose logs --no-color > stack.log
       - name: Upload report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: frontend/playwright-report/
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            stack.log
