@@ -1,11 +1,11 @@
 # EspaçoHora — Space Rental Platform
 
-> ⚠️ **Work in Progress** — this is an early proof-of-concept. The architecture is in place (auth, bookings, admin, smart-lock-ready data model) and a test suite exists, but the product is not production-ready. Expect breaking changes, rough edges, and missing features (payments, email notifications, smart-lock integration). Feedback and contributions welcome.
+> **Early proof of concept.** Hourly checkout, prepaid packs, admin tools and local email/access-code flows are implemented. The product is not production-ready: customer enrollment, payment recovery, durable notifications/access and other outcome gates remain open. See [roadmap.md](roadmap.md) for the agreed outcome order and [TODO.md](TODO.md) for executable tasks; broader implementation is on hold.
 
 ## Stack
 - **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind CSS + NextAuth.js
 - **Backend**: FastAPI (Python) + SQLAlchemy async + PostgreSQL
-- **Auth**: Self-hosted — FastAPI issues JWTs after email/password verification (Argon2id hashing, NIST SP 800-63B + OWASP compliant). NextAuth manages the session cookie. No external auth service.
+- **Auth**: Self-hosted — FastAPI issues JWTs after email/password verification (Argon2id password hashing). NextAuth manages the session cookie. No external auth service.
 - **Smart locks**: Local stub access-code lifecycle; live Seam operation gated until durable storage
 
 ## Setup
@@ -118,13 +118,14 @@ before uvicorn starts, so `docker-compose up` on a fresh clone comes up
 migrated. Only `backend/tests/conftest.py` builds tables straight from
 `Base.metadata`, because each test wants a throwaway schema in milliseconds.
 
-If you already have a local `pgdata` volume from before this change, it likely
-contains tables but no `alembic_version`, so `alembic upgrade head` will fail at
-boot. The entrypoint detects this specific shape (schema objects already exist,
-`alembic_version` doesn't) and prints the fix directly instead of leaving a raw
-traceback as the only clue. The simplest fix is to recreate the DB with
-`docker-compose down -v`; if you need to keep the data and the schema matches,
-run `docker-compose exec backend alembic stamp head` once.
+A retained database from before Alembic ownership can contain tables without a
+matching migration history. The entrypoint recognizes duplicate-object errors
+and prints diagnostic guidance; that error alone does not prove a missing
+`alembic_version` table or that stamping is safe. Back up retained data and inspect
+its schema and migration state before reconciliation. Do not stamp a revision
+unless every schema change in that revision is already present. Do not delete a
+retained volume to silence migration errors.
+
 After changing a model:
 
 ```bash
@@ -133,22 +134,34 @@ docker-compose exec backend alembic revision --autogenerate -m "what changed"
 docker-compose restart backend        # the entrypoint applies it
 ```
 
-To check a schema matches the models, and to walk the full round-trip the CI
-`Migrations` workflow runs:
+Check model drift on the development database with:
 
 ```bash
-docker-compose exec backend alembic check          # models vs. live schema
-docker-compose exec backend alembic downgrade base
-docker-compose exec backend alembic upgrade head
+docker-compose exec backend alembic check
 ```
 
-`alembic check` failing means someone changed a model without writing a
-migration. Both halves are enforced by `.github/workflows/migrations.yml`,
-which runs the whole chain against an empty PostgreSQL 16 on every backend PR.
+The `Migrations` workflow verifies upgrade → check → downgrade → upgrade → check
+against its own empty PostgreSQL database, including no leftover tables/enums.
+Never run `alembic downgrade base` against retained development or production
+data to perform this check. A failed `alembic check` indicates schema/model drift;
+inspect the diff before deciding whether a migration or metadata repair is needed.
 
-## What's not wired yet
-- **Payments** (Stripe): booking model has `payment_method` and `total_amount` ready; add Stripe checkout before going live
-- **Email notifications**: add on booking confirmation
+## Implemented foundations and remaining work
+
+- Stripe checkout and signed completion handling exist for hourly bookings and
+  pack purchases, with a walkable local stub checkout. Abandoned holds, payment
+  recovery and refunds remain C03/O02.
+- Pack redemption confirms immediately and restores hours on eligible
+  cancellation. Fresh customer enrollment and an isolated complete customer
+  journey remain C01/C02; signup currently creates a new operator organization.
+- Weekly series are an explicit opt-in pending UTC foundation. Paid series,
+  Lisbon wall-clock scheduling and full series management remain R01–R03.
+- Email confirmation/cancellation uses stub/live gateways and in-process
+  background tasks. Durable jobs/retries remain O01.
+- Smart-lock stub lifecycle is Q28; live startup is gated until durable
+  identifiers and retry state exist (O04).
+- Admin booking pagination and PT/EN marketing/layout translation are present.
+  Booking and admin copy remain Portuguese. Further pagination/i18n are deferred.
 
 ## Third-party integrations (stub/live)
 
@@ -232,8 +245,8 @@ GitHub Actions (`.github/workflows/frontend-tests.yml` and `e2e.yml`) run unit t
 ### Experimental weekly series
 
 Weekly recurrence is a foundation for local testing, disabled by default. Set
-`RECURRING_BOOKINGS_ENABLED=true` in `.env` and recreate the backend with
-`docker compose up -d backend` to opt in. The API creates pending occurrences
+`RECURRING_BOOKINGS_ENABLED=true` in `.env` and recreate both services with
+`docker compose up -d --build backend frontend` to opt in. The API creates pending occurrences
 without checkout; an administrator must handle them manually. Keep this disabled
 for customer use until series payment and local-time scheduling are complete.
 Times recur in UTC and therefore shift in Lisbon at daylight-saving changes.
@@ -253,7 +266,7 @@ explicitly and rebuild the frontend when changing a public environment variable.
 The preview uses a fixed UTC cadence (local hours can shift at daylight-saving
 changes). Creating a series leaves every occurrence **pending**, with no checkout
 or pack debit. The modal requires acknowledgement of manual confirmation/payment.
-Paid series and local-time scheduling remain roadmap R02/R03 work.
+Paid series, local-time scheduling and full management remain roadmap R01–R03 work.
 
 ```bash
 RECURRING_BOOKINGS_ENABLED=true docker compose up -d --build
