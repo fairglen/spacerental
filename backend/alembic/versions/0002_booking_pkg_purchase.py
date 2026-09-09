@@ -15,9 +15,8 @@ Revises: 0001_baseline_schema
 Create Date: 2026-09-02
 
 """
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # Keep revision ids <= 32 chars: alembic's alembic_version.version_num is
 # varchar(32) and a longer id fails to stamp with StringDataRightTruncationError.

@@ -12,8 +12,8 @@ target-version = "py312"
 line-length = 100
 
 [lint]
-# Ruff 0.16's extended default set: pycodestyle, pyflakes, plus additional
-# linters for code quality, imports, and modernization.
+# Project-selected rules: pycodestyle, pyflakes, plus additional linters
+# for code quality, imports, and modernization.
 select = [
     "E",     # pycodestyle errors
     "W",     # pycodestyle warnings

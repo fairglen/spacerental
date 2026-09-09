@@ -3,6 +3,11 @@ import type { NextAuthOptions } from 'next-auth'
 
 type SessionMembership = { org_id: string; role: 'owner' | 'admin' | 'member' }
 
+const secret = process.env.NEXTAUTH_SECRET
+if (!secret?.trim()) {
+  throw new Error('NEXTAUTH_SECRET is required; configure it before starting or building the frontend')
+}
+
 // Server-side calls (this file runs in Next.js server/container, not the browser).
 // INTERNAL_API_URL uses the Docker service name; falls back to localhost for local dev without Docker.
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -78,6 +83,5 @@ export const authOptions: NextAuthOptions = {
     error: '/sign-in',
   },
   session: { strategy: 'jwt' },
-  secret: process.env.NEXTAUTH_SECRET || 'dev-nextauth-secret-change-in-production',
+  secret,
 }
-
