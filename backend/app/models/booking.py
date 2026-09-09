@@ -71,6 +71,18 @@ class Booking(Base):
         server_default="hourly",
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The prepaid purchase this booking's hours were debited from, so cancelling
+    # can credit them back to that exact purchase rather than guessing which of
+    # the user's packages to refund. NULL for every `hourly` booking.
+    package_purchase_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "user_package_purchases.id",
+            ondelete="SET NULL",
+            name="fk_bookings_package_purchase_id",
+        ),
+        nullable=True,
+    )
     # Stripe Checkout Session that pays for this booking. Unique so a webhook
     # replay can never confirm two rows; NULL when payments are disabled.
     stripe_checkout_session_id: Mapped[str | None] = mapped_column(
@@ -88,3 +100,6 @@ class Booking(Base):
 
     room: Mapped["Room"] = relationship("Room", back_populates="bookings", lazy="noload")  # noqa: F821
     user: Mapped["User"] = relationship("User", back_populates="bookings", lazy="noload")  # noqa: F821
+    package_purchase: Mapped["UserPackagePurchase | None"] = relationship(  # noqa: F821
+        "UserPackagePurchase", lazy="noload"
+    )

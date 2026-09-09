@@ -102,9 +102,11 @@ class TestBookingCheckout:
         listed = await client.get("/api/v1/bookings/me", headers=auth_headers)
         assert listed.json()["bookings"][0]["status"] == "pending"
 
-    async def test_package_payment_method_rejected(
+    async def test_package_payment_without_hours_is_rejected(
         self, client, auth_headers, test_room, test_member, payments
     ):
+        """Story 2.4 covers redemption; with no purchase there is nothing to
+        redeem, and no Checkout Session is opened as a fallback."""
         start, end = _future_slot()
         resp = await client.post(
             "/api/v1/bookings",
@@ -116,7 +118,7 @@ class TestBookingCheckout:
             },
             headers=auth_headers,
         )
-        assert resp.status_code == 400, resp.text
+        assert resp.status_code == 409, resp.text
         assert payments.sessions == {}
 
     async def test_checkout_failure_leaves_no_booking(

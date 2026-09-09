@@ -10,6 +10,40 @@
 set -e
 
 echo "Running database migrations..."
-alembic upgrade head
+# Note: capture via redirection, not a `cmd | tee` pipe — under `set -e` in
+# POSIX sh (no `pipefail`), a pipeline's exit status is the last command's
+# (tee, which always succeeds), so a piped form would never detect failure.
+LOG_FILE="$(mktemp)"
+if alembic upgrade head > "$LOG_FILE" 2>&1; then
+    cat "$LOG_FILE"
+    rm -f "$LOG_FILE"
+else
+    cat "$LOG_FILE" >&2
+    # Duplicate objects can indicate a legacy unversioned schema, but also
+    # migration drift in an already-versioned database. Do not infer either
+    # diagnosis from the exception name alone.
+    if grep -qE "DuplicateObjectError|DuplicateTableError" "$LOG_FILE"; then
+        echo "" >&2
+        echo "============================================================" >&2
+        echo "Migration failed because a schema object already exists." >&2
+        echo "Inspect the failed migration and database version first:" >&2
+        echo "    docker-compose run --rm --entrypoint alembic backend current" >&2
+        echo "A legacy volume without an Alembic revision is one possible" >&2
+        echo "cause; a versioned database can also have migration drift." >&2
+        echo "" >&2
+        echo "For disposable local data ONLY (deletes Compose volumes):" >&2
+        echo "    docker-compose down -v" >&2
+        echo "    docker-compose up --build" >&2
+        echo "    docker-compose exec backend python -m app.seed" >&2
+        echo "" >&2
+        echo "To preserve data, back it up and reconcile the schema first." >&2
+        echo "Only if you have verified it matches migration head exactly:" >&2
+        echo "    docker-compose run --rm --entrypoint alembic backend stamp head" >&2
+        echo "Stamping records a revision; it does not apply migrations." >&2
+        echo "============================================================" >&2
+    fi
+    rm -f "$LOG_FILE"
+    exit 1
+fi
 
 exec "$@"
