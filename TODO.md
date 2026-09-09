@@ -68,8 +68,8 @@ For the dev stack, first ensure the configured ports are free or configure
 isolated ports and matching frontend/backend URLs.
 
 ```bash
-# Once, on a fresh worktree only:
-cp .env.example .env
+# Create local configuration only when absent:
+if [ ! -e .env ]; then cp .env.example .env; fi
 
 # Full backend suite, isolated PostgreSQL 16:
 docker compose -p spacerental-delivery-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests
@@ -89,8 +89,8 @@ cd frontend
 npx tsc --noEmit
 npm test
 npm run test:e2e
-# On a fresh worktree; preserve an existing .env.local:
-cp .env.local.example .env.local
+# Preserve existing frontend configuration on reruns:
+if [ ! -e .env.local ]; then cp .env.local.example .env.local; fi
 npm run build
 cd ..
 ```
