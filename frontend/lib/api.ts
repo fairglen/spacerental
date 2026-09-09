@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
-  BookingCheckout, PackagePurchaseCheckout,
+  BookingCheckout, PackagePurchaseCheckout, PaginatedBookings,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -165,11 +165,15 @@ export const adminApi = {
   updateRoom: (id: string, data: Partial<Room>, api: Api) =>
     api.put<{ room: Room }>(`/admin/rooms/${id}`, data).then(r => normRoom(r.data.room)),
 
-  getBookings: (params: Record<string, string>, api: Api) =>
-    api.get<{ bookings: Booking[] }>('/admin/bookings', {
+  // Response carries pagination metadata (total/page/page_size) alongside the
+  // page of bookings — see backend/app/routers/admin.py::admin_list_bookings.
+  // page/page_size default to 1/20 server-side when omitted, so passing {} keeps
+  // today's behavior for callers that don't care about paging.
+  getBookings: (params: Record<string, string | number>, api: Api): Promise<PaginatedBookings> =>
+    api.get<PaginatedBookings>('/admin/bookings', {
       // Merge with instance defaults (e.g. org_id injected by useApi).
       params: { ...(api.defaults.params || {}), ...params },
-    }).then(r => r.data.bookings.map(normBooking)),
+    }).then(r => ({ ...r.data, bookings: r.data.bookings.map(normBooking) })),
 
   updateBooking: (id: string, status: string, api: Api) =>
     api.put<{ booking: Booking }>(`/admin/bookings/${id}`, { status }).then(r => normBooking(r.data.booking)),
