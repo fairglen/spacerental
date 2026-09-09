@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { ArrowRight, Clock } from 'lucide-react'
+import { t } from '@/lib/i18n'
 
 export function Hero() {
   return (
@@ -16,38 +17,36 @@ export function Hero() {
           >
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-sm text-primary">
               <Clock className="h-3.5 w-3.5" />
-              <span>Disponível à hora, por pacote ou recorrente</span>
+              <span>{t('hero.badge')}</span>
             </div>
             <h1 className="text-5xl md:text-6xl font-bold text-foreground leading-tight mb-6">
-              O teu espaço,{' '}
-              <span className="text-primary italic">no teu tempo</span>
+              {t('hero.headline_start')}{' '}
+              <span className="text-primary italic">{t('hero.headline_highlight')}</span>
             </h1>
             <p className="text-xl text-muted-foreground mb-8 max-w-xl">
-              Salas privadas para psicólogos, terapeutas e profissionais de saúde. Reserva online em
-              segundos, sem contratos longos.
+              {t('hero.description')}
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <Link href="/spaces">
                 <Button size="lg" className="gap-2">
-                  Ver Espaços <ArrowRight className="h-4 w-4" />
+                  {t('hero.cta_primary')} <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
               <Link href="/#como-funciona">
                 <Button size="lg" variant="outline">
-                  Saber Mais
+                  {t('hero.cta_secondary')}
                 </Button>
               </Link>
             </div>
             <div className="mt-10 flex items-center gap-6 text-sm text-muted-foreground">
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-primary" /> Sem caução
+                <span className="h-2 w-2 rounded-full bg-primary" /> {t('hero.benefit_1')}
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-primary" /> Cancelamento gratuito 24h
-                antes
+                <span className="h-2 w-2 rounded-full bg-primary" /> {t('hero.benefit_2')}
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-primary" /> Pagamento seguro
+                <span className="h-2 w-2 rounded-full bg-primary" /> {t('hero.benefit_3')}
               </div>
             </div>
           </motion.div>
