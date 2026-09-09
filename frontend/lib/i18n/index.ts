@@ -14,10 +14,11 @@ export function t(
   key: string,
   replacements?: Record<string, string | number>
 ): string {
-  // Navigate through nested object using dot notation
-  let value: any = catalog
+  let value: unknown = catalog
   for (const part of key.split('.')) {
-    value = value?.[part]
+    value = value !== null && typeof value === 'object' && Object.hasOwn(value, part)
+      ? (value as Record<string, unknown>)[part]
+      : undefined
   }
 
   if (typeof value !== 'string') {
@@ -28,7 +29,7 @@ export function t(
   // Apply string replacements if provided
   if (replacements) {
     return Object.entries(replacements).reduce((acc, [k, v]) => {
-      return acc.replace(`{${k}}`, String(v))
+      return acc.split(`{${k}}`).join(String(v))
     }, value)
   }
 

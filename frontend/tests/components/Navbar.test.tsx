@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useSession } from 'next-auth/react'
 import { Navbar } from '@/components/layout/Navbar'
@@ -18,13 +18,15 @@ describe('Navbar component i18n refactor (9.1)', () => {
     vi.mocked(useSession).mockReturnValue({
       data: null,
       status: 'unauthenticated',
-    } as any)
+      update: vi.fn(),
+    })
     vi.mocked(useOrg).mockReturnValue({
       memberships: [],
       currentOrgId: null,
       currentMembership: null,
       setCurrentOrgId: vi.fn(),
-    } as any)
+      isLoading: false,
+    })
   })
 
   it('renders nav links in Portuguese', () => {
@@ -35,18 +37,25 @@ describe('Navbar component i18n refactor (9.1)', () => {
     expect(screen.getByText('Preços')).toBeInTheDocument()
   })
 
-  it('renders sign-out auth buttons for unauthenticated users', () => {
+  it('offers sign-in and booking links to unauthenticated users', () => {
     render(<Navbar />)
 
     expect(screen.getByRole('link', { name: /Entrar/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Reservar/ })).toBeInTheDocument()
   })
 
-  it('renders sign-in auth buttons for authenticated users', () => {
+  it('offers reservations and sign-out to authenticated users', () => {
     vi.mocked(useSession).mockReturnValue({
-      data: { accessToken: 'jwt-token', user: { name: 'Demo' }, role: 'member' } as any,
+      data: {
+        accessToken: 'jwt-token',
+        user: { id: 'user-1', email: 'demo@example.com', name: 'Demo' },
+        role: 'member',
+        memberships: [],
+        expires: '2030-01-01T00:00:00Z',
+      },
       status: 'authenticated',
-    } as any)
+      update: vi.fn(),
+    })
 
     render(<Navbar />)
 
