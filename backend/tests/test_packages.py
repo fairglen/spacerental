@@ -1,9 +1,15 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest_asyncio
+from jose import jwt
+from sqlalchemy import select, func
 
-from app.models.package import Package
+from app.config import settings
+from app.auth import ALGORITHM
+
+from app.models.package import Package, UserPackagePurchase
 
 
 @pytest_asyncio.fixture
@@ -129,3 +135,16 @@ class TestMyPackages:
         # so the dashboard can show its name instead of a generic "Pacote".
         assert purchases[0]["package"]["name"] == "Starter Pack"
         assert purchases[0]["package"]["hours"] == 10
+
+
+async def test_expired_credentials_cannot_create_a_pending_purchase(
+    client, db_session, test_org, test_package, test_user, test_member,
+):
+    token = jwt.encode({"sub": str(test_user.id), "exp": datetime.now(timezone.utc) - timedelta(minutes=1)}, settings.SECRET_KEY, algorithm=ALGORITHM)
+    response = await client.post(
+        f"/api/v1/packages/{test_package.id}/purchase",
+        json={"org_id": str(test_org.id)}, headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Could not validate credentials"
+    assert await db_session.scalar(select(func.count(UserPackagePurchase.id))) == 0

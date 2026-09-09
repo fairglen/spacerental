@@ -47,6 +47,17 @@ export function PackageBuyButton({ pkg, label = 'Comprar Pack', variant = 'defau
     },
   })
 
+  if (statusOf(mutation.error) === 401) {
+    return (
+      <div className={className}>
+        <p role="alert" className="text-sm text-amber-700 mb-2">A tua sessão deixou de ser válida. Volta a entrar para continuar a compra.</p>
+        <Link href={`/sign-in?packageId=${encodeURIComponent(pkg.id)}`} className="text-primary font-medium underline">
+          Entrar e continuar a compra
+        </Link>
+      </div>
+    )
+  }
+
   if (status === 'unauthenticated') {
     // The chosen package must survive sign-up (B12) — carried as a query
     // param the sign-up/sign-in pages read and resume into on success.
