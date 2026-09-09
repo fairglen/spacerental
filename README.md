@@ -8,7 +8,6 @@
 - **Auth**: Self-hosted — FastAPI issues JWTs after email/password verification (Argon2id password hashing). NextAuth manages the session cookie. No external auth service.
 - **Smart locks**: Local stub access-code lifecycle; live Seam operation gated until durable storage
 
-
 ## Setup
 
 ### 1. Create your `.env`
@@ -159,7 +158,6 @@ inspect the diff before deciding whether a migration or metadata repair is neede
 - Admin booking pagination and PT/EN marketing/layout translation are present.
   Booking and admin copy remain Portuguese. Further pagination/i18n are deferred.
 
-
 ## Third-party integrations (stub/live)
 
 Stripe, Resend (email), and Seam (smart locks) sit behind credential-free stub
@@ -242,8 +240,8 @@ GitHub Actions (`.github/workflows/frontend-tests.yml` and `e2e.yml`) run unit t
 ### Experimental weekly series
 
 Weekly recurrence is a foundation for local testing, disabled by default. Set
-`RECURRING_BOOKINGS_ENABLED=true` in `.env` and recreate the backend with
-`docker compose up -d backend` to opt in. The API creates pending occurrences
+`RECURRING_BOOKINGS_ENABLED=true` in `.env` and recreate both services with
+`docker compose up -d --build backend frontend` to opt in. The API creates pending occurrences
 without checkout; an administrator must handle them manually. Keep this disabled
 for customer use until series payment and local-time scheduling are complete.
 Times recur in UTC and therefore shift in Lisbon at daylight-saving changes.
@@ -263,7 +261,7 @@ explicitly and rebuild the frontend when changing a public environment variable.
 The preview uses a fixed UTC cadence (local hours can shift at daylight-saving
 changes). Creating a series leaves every occurrence **pending**, with no checkout
 or pack debit. The modal requires acknowledgement of manual confirmation/payment.
-Paid series and local-time scheduling remain roadmap R02/R03 work.
+Paid series, local-time scheduling and full management remain roadmap R01–R03 work.
 
 ```bash
 RECURRING_BOOKINGS_ENABLED=true docker compose up -d --build

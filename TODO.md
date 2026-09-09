@@ -139,6 +139,9 @@ recorded under Q90 after the remaining code and documentation PRs land.
 ### Q00 — Refresh evidence and choose the merge sequence
 
 **State: DONE.** Merge sequence, fixes and evidence are recorded above.
+GitHub reported main as unprotected on 2026-09-09; frontend and migration
+checks have path filters, so their absence on documentation-only PRs is expected.
+Every applicable check is still required by this delivery contract.
 
 **Depends on:** assignment to work on the existing PRs.
 **Scope:** GitHub PR heads/bases, reviews, CI logs, changed files, migration graph.
