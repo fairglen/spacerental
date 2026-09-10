@@ -417,13 +417,19 @@ repeating registration. Validate failed/throwing sign-in component behavior.
 
 ### B16 — Test database health probe logs a missing database repeatedly
 
-**Priority: P2. State: QUEUED; group with C08 diagnostics.** Observed during C01
-backend validation on 2026-09-10. `docker-compose.test.yml` runs `pg_isready -U
-spacerental` while the test database is `spacerental_test`; PostgreSQL logs
-`FATAL: database "spacerental" does not exist` every three seconds even though
-the suite connects correctly and proceeds. Set the explicit test database in
-the probe; verify healthy startup and the absence of these messages without
-weakening readiness detection. It does not block C01.
+**Priority: P2. State: DONE — merged as PR #<num> pending merge.** Fixed
+`docker-compose.test.yml`'s healthcheck to `pg_isready -U spacerental -d
+$$POSTGRES_DB` (referencing the container's own `POSTGRES_DB` env var, not a
+hardcoded literal, so it can't drift from `spacerental_test`). Checked
+`docker-compose.yml` (dev stack) for the same pattern — its `POSTGRES_USER`
+and `POSTGRES_DB` are both `spacerental`, so the unqualified `pg_isready -U
+spacerental` already probes the right database; left unchanged. Evidence:
+`docker compose -p spacerental-b16-tests -f docker-compose.test.yml up --build
+--abort-on-container-exit --exit-code-from backend-tests` → `231 passed`; `docker
+compose -p spacerental-b16-tests -f docker-compose.test.yml logs test-db | grep
+-i fatal` → no output (previously logged `FATAL: database "spacerental" does
+not exist` every ~3s). Cleaned up with `docker compose -p spacerental-b16-tests
+down -v`.
 
 ### B17 — Dialog descriptions and noisy component test diagnostics
 
