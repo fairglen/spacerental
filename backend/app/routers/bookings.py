@@ -128,7 +128,9 @@ async def create_booking(
     if body.end_time - body.start_time > MAX_BOOKING_DURATION:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Booking duration cannot exceed {MAX_BOOKING_DURATION}",
+            detail=(
+                f"Booking duration cannot exceed {int(MAX_BOOKING_DURATION.total_seconds() // 3600)} hours"
+            ),
         )
 
     # Mirrors what BookingCalendar already offers: whole-hour slots inside an
