@@ -441,10 +441,14 @@ or remove assertions. Validate affected components with clean diagnostics.
 suite. Backend logs show 429s on availability and public space reads, causing
 later calendar/package tests to fail. Use dedicated nearer future inventory and bounded probing. The second run
 still reaches 429 late in the package suite, so pace the added full customer
-journey with one public-rate window at the auth-suite boundary. All browser/API
-clients share one host peer address in Compose. Preserve the real public/auth
-limits and keep this cooldown outside assertions; do not retry failed journeys
-or change application throttling to make tests pass.
+journey with one public-rate window at the auth-suite boundary. C02 CI confirmed
+the late visitor failure was a public 429, and its redemption check also picked
+Sunday inventory. The test now waits for the real window and chooses the next
+non-Sunday day. The cooldown test has an explicit timeout so the wait is outside
+the normal 30-second assertion budget. All browser/API clients share one host
+peer address in Compose.
+Preserve the real public/auth limits and keep this cooldown outside assertions;
+do not retry failed journeys or change application throttling to make tests pass.
 Validation: full browser suite with the default limits, including existing
 booking/package flows and the new customer journeys.
 
@@ -460,6 +464,23 @@ unique slugs, and failure creates no partial account/org/membership. Preserve
 normal duplicate-email and shared rate-limit behavior.
 
 ### C02 — Complete the package-holder journey
+
+**Priority: P1. State: IN PROGRESS.** Branch: `feat/package-holder-journey`.
+The merged backend already provides atomic purchase activation, package debit,
+and exact-once cancellation credit. This delivery closes the remaining UI/API
+error distinction and adds a fresh-customer purchase → redemption → cancellation
+browser journey. C02 remains open until its PR is merged and integrated checks
+are recorded.
+
+**Evidence so far (2026-09-10):** 19 BookingModal component tests pass,
+including a package booking conflict that now displays the slot conflict rather
+than an insufficient-hours message; TypeScript and Ruff pass. The existing
+real-PG package redemption/concurrency suite remains green from C01 (the full
+backend suite passed 231 tests). Full frontend and browser validation is pending
+on the C02 branch. The package E2E now also covers a fresh signed-out customer
+buying the seeded pack, redeeming two hours for a booking, and cancelling to
+restore the full balance. Full frontend validation is 127 tests; the targeted
+browser journey is pending against the C02 image.
 
 **Depends on:** C01 and Q22 merged (otherwise revive its accepted scope first).
 **Scope:** package/booking routes, `package_hours.py` if merged, booking modal,
