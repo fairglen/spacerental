@@ -444,7 +444,9 @@ still reaches 429 late in the package suite, so pace the added full customer
 journey with one public-rate window at the auth-suite boundary. C02 CI confirmed
 the late visitor failure was a public 429, and its redemption check also picked
 Sunday inventory. The test now waits for the real window and chooses the next
-non-Sunday day. All browser/API clients share one host peer address in Compose.
+non-Sunday day. The cooldown test has an explicit timeout so the wait is outside
+the normal 30-second assertion budget. All browser/API clients share one host
+peer address in Compose.
 Preserve the real public/auth limits and keep this cooldown outside assertions;
 do not retry failed journeys or change application throttling to make tests pass.
 Validation: full browser suite with the default limits, including existing

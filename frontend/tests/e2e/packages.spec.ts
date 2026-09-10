@@ -228,6 +228,7 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
     // The public limiter is intentionally shared by all browser contexts in
     // Compose. Earlier package and booking tests use the same peer address;
     // allow the real window to expire before this isolated visitor journey.
+    test.setTimeout(120_000)
     await delay(60_000)
     const orgId = await seededOrgId(api)
     const pkg10h = await packageByHours(api, orgId, 10)
