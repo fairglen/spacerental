@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { decode, encode } from 'next-auth/jwt'
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
@@ -224,6 +225,10 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
   })
 
   test('a signed-out visitor\'s chosen package survives sign-up and lands them on a highlighted card (B12)', async ({ browser }) => {
+    // The public limiter is intentionally shared by all browser contexts in
+    // Compose. Earlier package and booking tests use the same peer address;
+    // allow the real window to expire before this isolated visitor journey.
+    await delay(60_000)
     const orgId = await seededOrgId(api)
     const pkg10h = await packageByHours(api, orgId, 10)
 
@@ -276,6 +281,7 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
       const room = detail.rooms[0]
       const date = new Date()
       date.setUTCDate(date.getUTCDate() + 3)
+      while (date.getUTCDay() === 0) date.setUTCDate(date.getUTCDate() + 1)
       const availability = await (await visitor.request.get(`${API_URL}/rooms/${room.id}/availability`, {
         params: { date: date.toISOString().slice(0, 10) },
       })).json()
