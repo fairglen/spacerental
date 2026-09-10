@@ -52,8 +52,11 @@ describe('Admin org-switch cache behavior (B7)', () => {
         <AdminSpacesPage />
       </QueryClientProvider>,
     )
-    await new Promise((r) => setTimeout(r, 0))
-    expect(adminApi.getSpaces).not.toHaveBeenCalled()
+    // Give any pending effects a chance to run (there should be none, since
+    // the query is disabled without an org) while keeping the check itself
+    // wrapped in act() via waitFor, instead of a bare synchronous assertion
+    // after an un-awaited setTimeout.
+    await waitFor(() => expect(adminApi.getSpaces).not.toHaveBeenCalled())
   })
 
   it('refetches instead of serving stale cache when the admin switches org', async () => {

@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { Space } from '@/types'
@@ -106,7 +106,12 @@ export default function AdminSpacesPage() {
 
       <Dialog open={!!editingSpace} onOpenChange={(open) => !open && setEditingSpace(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Editar Espaço</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Editar Espaço</DialogTitle>
+            <DialogDescription>
+              Atualiza o nome, a descrição e a morada deste espaço visíveis aos clientes.
+            </DialogDescription>
+          </DialogHeader>
           <form
             onSubmit={handleSubmit((d) => {
               if (!editingSpace) return

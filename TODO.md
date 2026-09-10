@@ -427,12 +427,22 @@ weakening readiness detection. It does not block C01.
 
 ### B17 — Dialog descriptions and noisy component test diagnostics
 
-**Priority: P2. State: QUEUED after C99.** C01's frontend suite passes but reports
+**Priority: P2. State: DONE (2026-09-10).** C01's frontend suite passed but reported
 missing accessible descriptions in booking/admin dialogs, an unwrapped React
 update in the org-switch test, and unsupported jsdom navigation in a package
-recovery test. Fix dialog descriptions with accessible behavior coverage and
-make the test interactions await the intended events; do not silence warnings
-or remove assertions. Validate affected components with clean diagnostics.
+recovery test. Fixed at the root cause: added a real, specific Portuguese
+`DialogDescription` to every `DialogContent` under `frontend/components/booking/`
+and the admin/dashboard dialogs (`BookingModal`, `admin/spaces`, `admin/packages`,
+`admin/rooms/[id]`, `dashboard` cancel-booking); rewrote the org-switch "no org
+selected" assertion in `AdminOrgSwitchCache.test.tsx` to `await waitFor(...)`
+instead of a bare assertion after an un-awaited `setTimeout`; and mocked
+`next/link` in `frontend/tests/setup.ts` (alongside the existing `next/navigation`
+mock) so its click handler prevents default navigation instead of falling through
+to a real anchor click, which is what jsdom's "Not implemented: navigation" was
+coming from in `PackageBuyButton.test.tsx`'s recovery-flow test. No assertions
+removed or weakened. Evidence: `cd frontend && npx vitest run` — 22 files, 127
+tests, all passing with zero console warnings/errors (previously 1 act warning +
+1 jsdom navigation error); `npx tsc --noEmit` clean.
 
 ### B18 — Fresh-customer E2E exhausts the shared public request budget
 

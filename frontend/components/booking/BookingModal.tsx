@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import type { Room, UserPackagePurchase } from '@/types'
 
@@ -152,7 +152,12 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
     return (
       <Dialog open onOpenChange={onClose}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Série criada — aguarda confirmação</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Série criada — aguarda confirmação</DialogTitle>
+            <DialogDescription>
+              Resumo do pedido de reserva semanal recorrente e do que falta para ficar confirmada.
+            </DialogDescription>
+          </DialogHeader>
           <p role="status">{mutation.data.bookings.length} reservas pendentes. O espaço precisa de confirmar a série e combinar o pagamento contigo. Ainda não tens acesso confirmado.</p>
           <DialogFooter><Button onClick={onClose}>Fechar</Button></DialogFooter>
         </DialogContent>
@@ -165,6 +170,9 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Confirmar Reserva</DialogTitle>
+          <DialogDescription>
+            Revê a sala, o horário e a forma de pagamento antes de confirmar esta reserva.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="rounded-lg bg-accent p-4 space-y-2">

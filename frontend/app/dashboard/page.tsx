@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 
 export default function DashboardPage() {
@@ -128,10 +128,10 @@ export default function DashboardPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Cancelar reserva</DialogTitle>
+            <DialogDescription>
+              Tens a certeza que queres cancelar esta reserva? Esta ação não pode ser desfeita.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground py-2">
-            Tens a certeza que queres cancelar esta reserva? Esta ação não pode ser desfeita.
-          </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCancelId(null)} disabled={cancelMutation.isPending}>
               Manter reserva
