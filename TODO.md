@@ -417,13 +417,13 @@ repeating registration. Validate failed/throwing sign-in component behavior.
 
 ### B16 — Test database health probe logs a missing database repeatedly
 
-**Priority: P2. State: DONE — merged as PR #<num> pending merge.** Fixed
+**Priority: P2. State: IN PROGRESS (PR pending).** Fixed
 `docker-compose.test.yml`'s healthcheck to `pg_isready -U spacerental -d
-$$POSTGRES_DB` (referencing the container's own `POSTGRES_DB` env var, not a
-hardcoded literal, so it can't drift from `spacerental_test`). Checked
-`docker-compose.yml` (dev stack) for the same pattern — its `POSTGRES_USER`
-and `POSTGRES_DB` are both `spacerental`, so the unqualified `pg_isready -U
-spacerental` already probes the right database; left unchanged. Evidence:
+$$POSTGRES_DB` (so it probes the configured DB, not the default `spacerental`).
+Note: GitHub Actions service health checks still run `pg_isready -U spacerental`
+while `POSTGRES_DB` is set to `spacerental_test`/`spacerental_migrations` in
+`.github/workflows/backend-tests.yml` and `.github/workflows/migrations.yml`;
+update those probes before marking DONE. Evidence (local Compose):
 `docker compose -p spacerental-b16-tests -f docker-compose.test.yml up --build
 --abort-on-container-exit --exit-code-from backend-tests` → `231 passed`; `docker
 compose -p spacerental-b16-tests -f docker-compose.test.yml logs test-db | grep
