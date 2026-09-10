@@ -48,3 +48,7 @@ class OrgMembershipDetail(BaseModel):
     org_name: str
     org_slug: str
     role: MemberRole
+
+
+class EnrollmentOut(BaseModel):
+    membership: OrgMembershipOut

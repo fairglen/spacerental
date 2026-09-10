@@ -60,3 +60,31 @@ describe('Sign-up resumes an interrupted package purchase (B12)', () => {
     )
   })
 })
+
+
+describe('Customer signup failures', () => {
+  it('keeps a rejected enrollment on the form without starting a session', async () => {
+    vi.mocked(authApi.register).mockRejectedValue({
+      isAxiosError: true, response: { status: 403, data: { detail: 'A adesão ao espaço está encerrada.' } },
+    })
+    render(<SignUpPage />)
+    await fillAndSubmit(userEvent.setup())
+    expect(await screen.findByRole('alert')).toHaveTextContent('A adesão ao espaço está encerrada.')
+    expect(signIn).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Criar Conta/i })).toBeEnabled()
+  })
+
+  it.each(['rejected', 'network'])('offers sign-in recovery after %s automatic sign-in', async (failure) => {
+    searchParams = new URLSearchParams('packageId=pkg-10h')
+    if (failure === 'network') vi.mocked(signIn).mockRejectedValue(new Error('offline'))
+    else vi.mocked(signIn).mockResolvedValue({ ok: false, error: 'CredentialsSignin', status: 401, url: null })
+    render(<SignUpPage />)
+    await fillAndSubmit(userEvent.setup())
+    expect(await screen.findByRole('status')).toHaveTextContent('Conta criada')
+    expect(push).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Criar Conta/i })).toBeDisabled()
+    expect(screen.getByRole('link', { name: /Entrar/i })).toHaveAttribute('href', '/sign-in?packageId=pkg-10h')
+    expect(authApi.register).toHaveBeenCalledTimes(1)
+  })
+})

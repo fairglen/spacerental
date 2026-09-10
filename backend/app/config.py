@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-key-change-this-in-production-min-32-chars"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     CORS_ORIGINS: str = "http://localhost:3000"
+    # One explicit public enrollment target; never infer it from database order.
+    CUSTOMER_ENROLLMENT_ORG_SLUG: str | None = None
+    CUSTOMER_ENROLLMENT_ENABLED: bool = True
     # Experimental UTC series have no customer payment path yet.
     RECURRING_BOOKINGS_ENABLED: bool = False
 

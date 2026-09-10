@@ -11,13 +11,12 @@ are starting points, not proof that an outcome is complete. Check their current
 state before implementation, integrate related work, and verify the resulting
 journey. Keep `TODO.md` aligned with this roadmap as work lands.
 
-**Execution hold:** Gate 0 code repairs are merged and verified on main
-`02c80d4`; the documentation merge in PR #23 closes the delivery record in
-[TODO.md](TODO.md). New roadmap implementation remains on hold until the user
-resumes roadmap delivery. Existing
-foundation PRs may land before their outcome is complete; their remaining work
-stays tracked below. Within new outcome-1 work, start with customer enrollment
-and its E2E test, then complete the package-holder journey on the merged work.
+**Delivery resumed 2026-09-10.** Gate 0 is complete: documentation PR #23 merged
+as `49433c3`, and the open PR queue is empty. The user resumed the TODO backlog.
+C01 customer enrollment is in progress on `feat/customer-enrollment`; then C02
+completes the package-holder journey. Later outcomes retain their entry gates.
+New bugs and follow-ups are recorded and prioritized in `TODO.md` before work
+starts; discovery alone does not expand the active task.
 
 **Reported purchase blocker:** [TODO.md B14](TODO.md#b14--pack-purchase-fails-credential-validation-reported-as-monthly-booking)
 tracks the user's monthly/pack purchase failure (`Could not validate credentials`
