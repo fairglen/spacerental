@@ -8,8 +8,11 @@ preserves its history and outstanding requirements.
 
 **Current assignment (2026-09-10): roadmap delivery resumed by the user.**
 Gate 0 is DONE: #23 merged as `49433c3`; origin/main and the empty open PR/issue
-queues were verified on 2026-09-10. Start C01, then C02–C08 in dependency order.
-Later outcomes remain HOLD until their entry gates pass.
+queues were verified on 2026-09-10. C01 ([#33](https://github.com/fairglen/spacerental/pull/33),
+`2304e8c`) and C02 ([#34](https://github.com/fairglen/spacerental/pull/34), `d919f52`)
+are now DONE — verified merged on main via `git log`/`gh pr list` on 2026-09-10
+after this file had gone stale showing them IN PROGRESS. B16/B17/B19 and C05
+are now IN PROGRESS. Later outcomes remain HOLD until their entry gates pass.
 
 New work must be recorded before implementation: give it an ID, reproduction or
 scope, priority, dependencies, and acceptance/validation. Prioritize P0 for an
@@ -18,10 +21,12 @@ outcomes, and P3 for deferred improvements. An unrelated discovery enters the
 queue; it does not silently expand the active task. Link already-known gaps to
 their existing item instead of duplicating them.
 
-Current queue: C01 (P1, IN PROGRESS), C02–C08/C99 (P1, QUEUED in order),
-R/O tasks (P2, HOLD), D tasks (P3, DEFERRED). C04 dependency advisories, C05
-booking validity, and C08 diagnostics are known work, retained at their agreed
-positions. Reassess priority if new evidence establishes an immediate blocker.
+Current queue: C01–C02 (P1, DONE), C05 (P1, IN PROGRESS — reprioritized ahead
+of C04; see C05 below for the confirmed live bug that justified this), C04/
+C06–C08/C99 (P1, QUEUED in order), B16/B17/B19 (P2, IN PROGRESS), R/O tasks
+(P2, HOLD), D tasks (P3, DEFERRED). C08 diagnostics is known work, retained at
+its agreed position. Reassess priority if new evidence establishes an immediate
+blocker.
 
 States used below:
 
@@ -354,11 +359,10 @@ to that shared entry gate.
 
 ### C01 — Customer enrollment and first paid booking
 
-**Priority: P1. State: IN PROGRESS.** Branch: `feat/customer-enrollment`,
-worktree `/private/tmp/spacerental-customer-enrollment`;
-[PR #33](https://github.com/fairglen/spacerental/pull/33), implementation `94c10bd`.
-Implementation and local validation complete; remains IN PROGRESS until reviewed
-and merged. Evidence (2026-09-10):
+**Priority: P1. State: DONE — merged as `2304e8c` (2026-09-10).** Branch:
+`feat/customer-enrollment`, worktree `/private/tmp/spacerental-customer-enrollment`;
+[PR #33](https://github.com/fairglen/spacerental/pull/33) merged and verified
+present on main via `git log`/`gh pr list` on 2026-09-10. Evidence:
 
 - 231 backend tests on isolated PostgreSQL 16 (`spacerental-c01-tests`), including
   explicit registration roles, missing/closed targets, tenant denial, legacy
@@ -408,7 +412,7 @@ existing-user cases; fresh-customer E2E with a unique user and booking dates.
 
 ### B15 — Signup ignores a failed automatic sign-in
 
-**Priority: P1. State: IN PROGRESS with C01 (implemented and validated, awaiting merge).** Discovered 2026-09-10 in
+**Priority: P1. State: DONE — merged with C01 in [PR #33](https://github.com/fairglen/spacerental/pull/33) as `2304e8c`.** Discovered 2026-09-10 in
 `sign-up/[[...sign-up]]/page.tsx`: the result of `signIn(..., redirect: false)`
 is ignored, so a created account can be sent to a protected page with no session.
 Fix within C01 because signup → booking depends on it. Preserve the selected
@@ -417,7 +421,10 @@ repeating registration. Validate failed/throwing sign-in component behavior.
 
 ### B16 — Test database health probe logs a missing database repeatedly
 
-**Priority: P2. State: QUEUED; group with C08 diagnostics.** Observed during C01
+**Priority: P2. State: IN PROGRESS.** Branch: `fix/test-db-health-probe`.
+Confirmed still open on 2026-09-10 by reading `docker-compose.test.yml`: the
+healthcheck still runs `pg_isready -U spacerental` against the default database
+rather than the actual test database. Observed during C01
 backend validation on 2026-09-10. `docker-compose.test.yml` runs `pg_isready -U
 spacerental` while the test database is `spacerental_test`; PostgreSQL logs
 `FATAL: database "spacerental" does not exist` every three seconds even though
@@ -427,7 +434,10 @@ weakening readiness detection. It does not block C01.
 
 ### B17 — Dialog descriptions and noisy component test diagnostics
 
-**Priority: P2. State: QUEUED after C99.** C01's frontend suite passes but reports
+**Priority: P2. State: IN PROGRESS.** Branch: `fix/dialog-accessibility-test-noise`.
+Confirmed still open on 2026-09-10: no `DialogDescription` usage found in
+`BookingModal.tsx`. Reprioritized ahead of C99 since it is small, independently
+scoped, and does not depend on C03–C08. C01's frontend suite passes but reports
 missing accessible descriptions in booking/admin dialogs, an unwrapped React
 update in the org-switch test, and unsupported jsdom navigation in a package
 recovery test. Fix dialog descriptions with accessible behavior coverage and
@@ -436,7 +446,7 @@ or remove assertions. Validate affected components with clean diagnostics.
 
 ### B18 — Fresh-customer E2E exhausts the shared public request budget
 
-**Priority: P1. State: IN PROGRESS with C01 (validated in the full 20-test browser run).** First C01 browser run on
+**Priority: P1. State: DONE — merged with C01 in [PR #33](https://github.com/fairglen/spacerental/pull/33).** First C01 browser run on
 2026-09-10 adds up to 33 day-navigation requests before the existing booking
 suite. Backend logs show 429s on availability and public space reads, causing
 later calendar/package tests to fail. Use dedicated nearer future inventory and bounded probing. The second run
@@ -454,43 +464,27 @@ booking/package flows and the new customer journeys.
 
 ### B19 — Concurrent registration can surface uniqueness errors
 
-**Priority: P2. State: DONE.** Branch: `fix/concurrent-registration-race`.
-C01 review found existing check-then-insert patterns for user email and
-generated operator slugs in `auth.py`, without `IntegrityError` translation.
-Two simultaneous requests could both pass the preliminary lookup and make one
-fail with an unhandled 500. Fixed in `backend/app/routers/auth.py`:
-`_register` now wraps the user insert/flush in `try/except IntegrityError`,
-rolling back and returning the existing "Este email já está registado." 400
-on a losing race — same wording as the non-concurrent path, no second error
-message introduced. `_create_default_org` now retries slug generation inside
-a SAVEPOINT (`db.begin_nested()`) per candidate: a concurrent operator with an
-equal/similar name that wins the same slug causes only that SAVEPOINT to roll
-back (the already-flushed user row and outer transaction survive), and the
-loser retries with the next `-N` suffix instead of failing the whole
-registration. A losing request leaves no partial user/organization/membership
-row in either race — the outer transaction only ever commits once the entire
-chain (user, org if operator, membership) has succeeded.
-
-**Evidence (2026-09-10):** two new real-PostgreSQL concurrency tests added to
-`backend/tests/test_auth.py`, both driving truly concurrent requests via
-`asyncio.gather` against the `client` fixture (each request gets its own DB
-session, per `tests/conftest.py`): `test_concurrent_duplicate_email_registration_is_race_safe`
-(one 201 + one 400 with the standard wording, exactly one `users` row and one
-membership row survive) and `test_concurrent_operator_registration_gets_distinct_slugs`
-(both requests return 201, two distinct orgs/slugs and two owner memberships
-are committed, no partial rows). Full backend suite:
-`docker compose -p spacerental-b19-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests`
-→ **233 passed** (231 pre-existing + 2 new), including all existing
-duplicate-email and Epic 7 rate-limit tests unchanged and green.
+**Priority: P2. State: IN PROGRESS.** Branch: `fix/concurrent-registration-race`.
+Confirmed still open on 2026-09-10: no `IntegrityError` handling exists around
+the register routes in `auth.py`. Reprioritized ahead of C99 since it is small,
+independently scoped, and does not depend on C03–C08. C01 review found
+existing check-then-insert patterns for user email and generated operator slugs
+in `auth.py`, without `IntegrityError` translation. Two simultaneous requests
+may both pass the preliminary lookup and make one fail with a server error.
+Reproduce with real PostgreSQL before implementing. Acceptance: duplicate email
+has a clear client response, distinct operator accounts with equal names get
+unique slugs, and failure creates no partial account/org/membership. Preserve
+normal duplicate-email and shared rate-limit behavior.
 
 ### C02 — Complete the package-holder journey
 
-**Priority: P1. State: IN PROGRESS.** Branch: `feat/package-holder-journey`.
-The merged backend already provides atomic purchase activation, package debit,
-and exact-once cancellation credit. This delivery closes the remaining UI/API
-error distinction and adds a fresh-customer purchase → redemption → cancellation
-browser journey. C02 remains open until its PR is merged and integrated checks
-are recorded.
+**Priority: P1. State: DONE — merged as `d919f52` (2026-09-10).** Branch:
+`feat/package-holder-journey`; [PR #34](https://github.com/fairglen/spacerental/pull/34)
+merged and verified present on main via `git log`/`gh pr list` on 2026-09-10.
+The merged backend already provided atomic purchase activation, package debit,
+and exact-once cancellation credit; this delivery closed the remaining UI/API
+error distinction and added a fresh-customer purchase → redemption → cancellation
+browser journey.
 
 **Evidence so far (2026-09-10):** 19 BookingModal component tests pass,
 including a package booking conflict that now displays the slot conflict rather
@@ -564,6 +558,15 @@ build/start and auth, public browsing, checkout, and admin protection work.
 production build and smoke checks against a production-mode server.
 
 ### C05 — Enforce booking validity at the API boundary
+
+**Priority: P1. State: IN PROGRESS.** Branch: `feat/booking-validity-boundary`.
+Reprioritized ahead of C04 under this file's own "reassess priority if new
+evidence establishes an immediate blocker" rule: confirmed on 2026-09-10 that
+`create_booking` in `backend/app/routers/bookings.py` calls `scalar_one_or_none()`
+on the overlap-conflict query, which raises `MultipleResultsFound` (an unhandled
+500) instead of a 409 whenever a requested interval overlaps two or more
+existing bookings on the same room — this is exactly the crash this task's
+acceptance criteria names.
 
 **Depends on:** C04. **Scope:** booking schema/route, shared availability logic,
 admin status transitions that acquire a slot, booking/space integration tests.
