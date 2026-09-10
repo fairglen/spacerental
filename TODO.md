@@ -567,7 +567,7 @@ build/start and auth, public browsing, checkout, and admin protection work.
 **Validation:** full required suites, dependency audit with assessed findings,
 production build and smoke checks against a production-mode server.
 
-### C05 — Enforce booking validity at the API boundary
+### C05 — Enforce booking validity at the API boundary — DONE (2026-09-10)
 
 **Priority: P1. State: IN PROGRESS.** Branch: `feat/booking-validity-boundary`.
 Reprioritized ahead of C04 under this file's own "reassess priority if new
@@ -593,6 +593,91 @@ Document current timezone semantics; R01 supplies the Lisbon-time migration.
 **Validation:** integration boundary and wrong-org cases, including a range
 covering multiple conflicts and lunch closure; concurrent constraint coverage;
 calendar/modal interaction tests where behavior changes.
+
+**Evidence:** `backend/app/routers/bookings.py`'s `create_booking` used
+`scalar_one_or_none()` on a multi-row `select(Booking)` overlap query, raising
+an unhandled `MultipleResultsFound` (500) whenever a request overlapped two or
+more existing bookings — fixed with an existence-only query
+(`has_conflicting_booking` in the new `backend/app/booking_validity.py`), now
+returning 409 as intended. That module is the single source of truth for
+booking-slot validity, shared by `bookings.py` and `admin.py`:
+- `is_within_open_hours` mirrors `BookingCalendar.resolveSelection`'s rule
+  (hour-aligned slots, no closed gap, e.g. a lunch break, inside the range) —
+  the API can no longer accept a range the calendar UI would refuse.
+- `has_conflicting_booking` is reused by `admin_update_booking` so a
+  cancelled/completed booking reinstated to `confirmed`/`pending` cannot
+  create an overlap the customer-facing path would have rejected.
+- `is_lost_slot_race` recognizes that a concurrent INSERT racing another
+  writer for the same `bookings_no_overlap` GIST range can surface as a
+  Postgres deadlock (sqlstate 40P01) instead of `IntegrityError` — both
+  `bookings.py` and `recurrences.py` (whose bulk series insert isn't covered
+  by `_lock_room` against a concurrent one-off booking) now recognize either
+  form as a lost race (409) rather than an unhandled 500. This was found
+  because the added per-request latency from the new checks below made a
+  pre-existing, previously-rare deadlock window in
+  `test_a_series_racing_a_single_booking_leaves_exactly_one_winner` fail
+  consistently; the fix is general, not test-specific.
+- `create_booking` also now rejects a past `start_time` (400), an inactive
+  `Space` (404, alongside the pre-existing `Room.is_active` check — a room
+  under a deactivated space was previously still bookable), and
+  `BookingCreate.start_time`/`end_time` reject naive datetimes (422) instead
+  of the schema silently accepting them (contrast with `RecurrenceCreate`,
+  deliberately left as-is — out of scope). Non-positive intervals were
+  already rejected and are covered by an existing test; unchanged.
+- Timezone semantics: all comparisons are tz-aware UTC instants; storage is
+  `TIMESTAMPTZ`. R01 remains the ticket for Lisbon wall-time.
+
+**Tests:** `backend/tests/test_bookings.py::TestBookingValidityBoundary` (9
+new cases — multi-conflict 409/no-500, wrong-org 403, past-start 400, naive
+datetime 422, lunch-gap rejection, fully-closed-hours rejection, misaligned
+slot rejection, inactive room 404, inactive space 404) and
+`test_admin.py::TestAdminBookings::test_reinstating_a_cancelled_booking_cannot_create_an_overlap`.
+Fixed one pre-existing test (`test_auth.py::test_customer_can_book_and_purchase_only_at_enrolled_org`)
+that used a wall-clock, non-hour-aligned booking time incidental to what it
+was actually testing. The existing EXCLUDE-constraint concurrency suite in
+`test_recurrences.py` (`TestConcurrentSeriesCreation`, `overlap_constraint`
+fixture) is preserved and, per above, hardened rather than left flaky.
+
+**Commands run:**
+`docker compose -p spacerental-c05-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests`
+— 241 passed, run 4 times consecutively with zero failures after the deadlock
+fix (`down -v` after each run). `ruff check` clean on every changed file. No
+model/schema field was added (`Space.is_active` and `AvailabilityRule` already
+existed), so no Alembic migration was needed. No frontend file was changed —
+the UI already only ever offers what the API now enforces.
+
+**Follow-up (2026-09-10):** a GitHub Copilot review on PR #39 raised 5 findings
+(2 serious, 3 low-severity), all confirmed valid and fixed in a follow-up
+commit on the same branch/PR:
+- Serious — `create_booking` resolved org membership (403) *after* the
+  past-start/open-hours (400) and conflict (409) checks, so a non-member could
+  probe another org's calendar before ever being rejected. Moved the
+  membership check to immediately after the room 404 check, before every
+  other validation.
+- Serious — `is_within_open_hours` loops one DB query per calendar day with
+  no cap on the requested range, so an absurdly long interval could force
+  unbounded per-request DB/CPU work. Added `MAX_BOOKING_DURATION` (24h) to
+  `booking_validity.py` as an explicit defensive technical bound (not a
+  product decision), checked in `create_booking` before calling
+  `is_within_open_hours`.
+- Low — the `booking_validity.py` module docstring overclaimed that
+  `spaces.py`'s `GET /rooms/{room_id}/availability` already shares this
+  module's open-hours logic; corrected to state that endpoint still has its
+  own separate, not-yet-unified implementation.
+- Low — `BookingCreate._require_timezone` only checked `tzinfo is None`; a
+  tzinfo whose `utcoffset()` returns `None` slipped past it into an unrelated
+  `ValueError` from `astimezone`. Now also checks `utcoffset() is None`.
+- Low — removed `_future_slot`'s unused `hours_offset_from_now` parameter in
+  `test_bookings.py` (no caller ever varied it).
+
+**Follow-up evidence:** 3 new cases in
+`test_bookings.py::TestBookingValidityBoundary` (multi-day range rejected
+before the open-hours day-loop runs; non-member 403 before the past-start
+check; non-member 403 before the conflict check, with no valid slot needed in
+either). Full suite:
+`docker compose -p spacerental-c05-fixup-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests`
+— 244 passed (`down -v` after). `ruff check backend/` clean. No frontend file
+touched.
 
 ### C06 — Show authoritative pricing and validity
 

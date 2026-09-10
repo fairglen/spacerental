@@ -348,7 +348,13 @@ async def test_customer_can_book_and_purchase_only_at_enrolled_org(
     )
     assert registered.json()["role"] == "member"
     headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
-    start = datetime.now(UTC) + timedelta(days=5)
+    # Hour-aligned and inside test_room's Mon-Sat 08:00-20:00 availability
+    # (C05): an arbitrary `now() + N days` wall-clock instant would otherwise
+    # fail the boundary checks depending on what time the suite happens to run.
+    today = datetime.now(UTC).date()
+    days_ahead = (0 - today.weekday()) % 7 or 7
+    target_date = today + timedelta(days=days_ahead)
+    start = datetime.combine(target_date, datetime.min.time(), tzinfo=UTC) + timedelta(hours=10)
     booking = await client.post(
         "/api/v1/bookings",
         headers=headers,

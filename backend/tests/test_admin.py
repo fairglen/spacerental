@@ -281,6 +281,59 @@ class TestAdminBookings:
         assert resp.status_code == 200, resp.text
         assert resp.json()["booking"]["status"] == "confirmed"
 
+    async def test_reinstating_a_cancelled_booking_cannot_create_an_overlap(
+        self,
+        client,
+        admin_headers,
+        db_session,
+        test_org,
+        test_room,
+        admin_user,
+    ):
+        """C05 item 7: a slot the room already sold again since this booking
+        was cancelled must not be handed out a second time just because an
+        admin flips a cancelled row back to confirmed."""
+        start = datetime.now(tz=UTC) + timedelta(days=2)
+        end = start + timedelta(hours=2)
+        cancelled = Booking(
+            org_id=test_org.id,
+            room_id=test_room.id,
+            user_id=admin_user.id,
+            start_time=start,
+            end_time=end,
+            duration_hours=Decimal("2.00"),
+            total_amount=Decimal("22.00"),
+            status=BookingStatus.cancelled,
+            payment_method=PaymentMethod.hourly,
+        )
+        db_session.add(cancelled)
+        await db_session.flush()
+
+        # The slot was resold to someone else after the cancellation.
+        resold = Booking(
+            org_id=test_org.id,
+            room_id=test_room.id,
+            user_id=admin_user.id,
+            start_time=start,
+            end_time=end,
+            duration_hours=Decimal("2.00"),
+            total_amount=Decimal("22.00"),
+            status=BookingStatus.confirmed,
+            payment_method=PaymentMethod.hourly,
+        )
+        db_session.add(resold)
+        await db_session.commit()
+        await db_session.refresh(cancelled)
+
+        resp = await client.put(
+            f"/api/v1/admin/bookings/{cancelled.id}",
+            params={"org_id": str(test_org.id)},
+            json={"status": "confirmed"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 409, resp.text
+        assert "already booked" in resp.json()["detail"]
+
 
 class TestAdminPackages:
     async def test_admin_create_package(self, client, admin_headers, test_org):

@@ -5,12 +5,13 @@ from decimal import Decimal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import and_, or_, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
+from app.booking_validity import is_lost_slot_race
 from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
@@ -338,9 +339,15 @@ async def create_recurrence(
     db.add_all(bookings)
     try:
         await db.flush()
-    except IntegrityError:
-        # Lost a race with a concurrent booking or series. The rule and every
+    except DBAPIError as exc:
+        # Lost a race with a concurrent booking or series — usually the
+        # `bookings_no_overlap` exclusion constraint, occasionally the same
+        # race reported as a deadlock instead (see `is_lost_slot_race`; a
+        # bulk insert here isn't covered by `_lock_room` against a
+        # concurrent one-off `POST /bookings`). The rule and every
         # occurrence go with the rollback — all-or-nothing holds even here.
+        if not is_lost_slot_race(exc):
+            raise
         await db.rollback()
         conflicts = await _find_conflicts(db, body.room_id, occurrences)
         return _conflict_response(conflicts or [occ[0] for occ in occurrences])
@@ -434,7 +441,10 @@ async def update_recurrence(
     db.add_all(bookings)
     try:
         await db.flush()
-    except IntegrityError:
+    except DBAPIError as exc:
+        # See the matching handler in `create_recurrence` above.
+        if not is_lost_slot_race(exc):
+            raise
         await db.rollback()
         conflicts = await _find_conflicts(db, room_id, occurrences)
         return _conflict_response(conflicts or [occ[0] for occ in occurrences])
