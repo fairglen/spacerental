@@ -57,7 +57,13 @@ class BookingCreate(BaseModel):
         comparisons remain UTC (CLAUDE.md §9); R01 will move wall-time
         semantics to Europe/Lisbon.
         """
-        if value.tzinfo is None:
+        # `tzinfo is not None` isn't sufficient: some non-standard tzinfo
+        # implementations attach a `tzinfo` object whose `utcoffset()` still
+        # returns `None`. `astimezone(UTC)` treats that the same as a naive
+        # datetime would deserve to be treated — reject it here with the same
+        # clear message, rather than let it raise its own unrelated
+        # `ValueError` inside `astimezone`.
+        if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("must include timezone information (e.g. a UTC offset)")
         return value.astimezone(UTC)
 

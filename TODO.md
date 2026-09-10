@@ -613,6 +613,39 @@ model/schema field was added (`Space.is_active` and `AvailabilityRule` already
 existed), so no Alembic migration was needed. No frontend file was changed —
 the UI already only ever offers what the API now enforces.
 
+**Follow-up (2026-09-10):** a GitHub Copilot review on PR #39 raised 5 findings
+(2 serious, 3 low-severity), all confirmed valid and fixed in a follow-up
+commit on the same branch/PR:
+- Serious — `create_booking` resolved org membership (403) *after* the
+  past-start/open-hours (400) and conflict (409) checks, so a non-member could
+  probe another org's calendar before ever being rejected. Moved the
+  membership check to immediately after the room 404 check, before every
+  other validation.
+- Serious — `is_within_open_hours` loops one DB query per calendar day with
+  no cap on the requested range, so an absurdly long interval could force
+  unbounded per-request DB/CPU work. Added `MAX_BOOKING_DURATION` (24h) to
+  `booking_validity.py` as an explicit defensive technical bound (not a
+  product decision), checked in `create_booking` before calling
+  `is_within_open_hours`.
+- Low — the `booking_validity.py` module docstring overclaimed that
+  `spaces.py`'s `GET /rooms/{room_id}/availability` already shares this
+  module's open-hours logic; corrected to state that endpoint still has its
+  own separate, not-yet-unified implementation.
+- Low — `BookingCreate._require_timezone` only checked `tzinfo is None`; a
+  tzinfo whose `utcoffset()` returns `None` slipped past it into an unrelated
+  `ValueError` from `astimezone`. Now also checks `utcoffset() is None`.
+- Low — removed `_future_slot`'s unused `hours_offset_from_now` parameter in
+  `test_bookings.py` (no caller ever varied it).
+
+**Follow-up evidence:** 3 new cases in
+`test_bookings.py::TestBookingValidityBoundary` (multi-day range rejected
+before the open-hours day-loop runs; non-member 403 before the past-start
+check; non-member 403 before the conflict check, with no valid slot needed in
+either). Full suite:
+`docker compose -p spacerental-c05-fixup-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests`
+— 244 passed (`down -v` after). `ruff check backend/` clean. No frontend file
+touched.
+
 ### C06 — Show authoritative pricing and validity
 
 **Depends on:** C05. **Scope:** `Pricing.tsx`, package/room API data, purchase CTA

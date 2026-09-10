@@ -16,7 +16,7 @@ def _next_monday():
     return today + timedelta(days=days_ahead + 7)
 
 
-def _future_slot(hours_offset_from_now: int = 24 * 7, duration_hours: int = 2):
+def _future_slot(duration_hours: int = 2):
     """Return (start, end) ISO strings on an upcoming Monday at 10:00 UTC."""
     target_date = _next_monday()
     start = datetime.combine(target_date, time(10, 0), tzinfo=UTC)

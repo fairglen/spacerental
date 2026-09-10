@@ -2,10 +2,12 @@
 
 `create_booking` (bookings.py) and the admin status transition that can
 reinstate a cancelled/completed booking back to `confirmed`/`pending`
-(admin.py) both have to agree on what counts as a conflict, and the public
-`GET /rooms/{room_id}/availability` slot listing (spaces.py) has to agree on
-what counts as "open". Three separate copies of this logic previously invited
-exactly the kind of drift C05 exists to close, so it lives here once.
+(admin.py) both use `has_conflicting_booking` so they agree on what counts as
+a conflict. The public `GET /rooms/{room_id}/availability` slot listing
+(spaces.py) is *not* on this module yet — it still has its own separate
+slot-generation implementation for what counts as "open" hours. Unifying that
+is follow-up work, not something already done here; don't assume the two
+agree until spaces.py is migrated to `is_within_open_hours`.
 
 All comparisons are done on tz-aware UTC instants. Stored `TIMESTAMPTZ`
 columns and `BookingCreate`'s validator both guarantee that; nothing here
