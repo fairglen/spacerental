@@ -454,14 +454,34 @@ booking/package flows and the new customer journeys.
 
 ### B19 — Concurrent registration can surface uniqueness errors
 
-**Priority: P2. State: QUEUED after C99; reproduction pending.** C01 review found
-existing check-then-insert patterns for user email and generated operator slugs
-in `auth.py`, without `IntegrityError` translation. Two simultaneous requests
-may both pass the preliminary lookup and make one fail with a server error.
-Reproduce with real PostgreSQL before implementing. Acceptance: duplicate email
-has a clear client response, distinct operator accounts with equal names get
-unique slugs, and failure creates no partial account/org/membership. Preserve
-normal duplicate-email and shared rate-limit behavior.
+**Priority: P2. State: DONE.** Branch: `fix/concurrent-registration-race`.
+C01 review found existing check-then-insert patterns for user email and
+generated operator slugs in `auth.py`, without `IntegrityError` translation.
+Two simultaneous requests could both pass the preliminary lookup and make one
+fail with an unhandled 500. Fixed in `backend/app/routers/auth.py`:
+`_register` now wraps the user insert/flush in `try/except IntegrityError`,
+rolling back and returning the existing "Este email já está registado." 400
+on a losing race — same wording as the non-concurrent path, no second error
+message introduced. `_create_default_org` now retries slug generation inside
+a SAVEPOINT (`db.begin_nested()`) per candidate: a concurrent operator with an
+equal/similar name that wins the same slug causes only that SAVEPOINT to roll
+back (the already-flushed user row and outer transaction survive), and the
+loser retries with the next `-N` suffix instead of failing the whole
+registration. A losing request leaves no partial user/organization/membership
+row in either race — the outer transaction only ever commits once the entire
+chain (user, org if operator, membership) has succeeded.
+
+**Evidence (2026-09-10):** two new real-PostgreSQL concurrency tests added to
+`backend/tests/test_auth.py`, both driving truly concurrent requests via
+`asyncio.gather` against the `client` fixture (each request gets its own DB
+session, per `tests/conftest.py`): `test_concurrent_duplicate_email_registration_is_race_safe`
+(one 201 + one 400 with the standard wording, exactly one `users` row and one
+membership row survive) and `test_concurrent_operator_registration_gets_distinct_slugs`
+(both requests return 201, two distinct orgs/slugs and two owner memberships
+are committed, no partial rows). Full backend suite:
+`docker compose -p spacerental-b19-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests`
+→ **233 passed** (231 pre-existing + 2 new), including all existing
+duplicate-email and Epic 7 rate-limit tests unchanged and green.
 
 ### C02 — Complete the package-holder journey
 
