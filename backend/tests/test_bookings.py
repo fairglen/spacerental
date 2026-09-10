@@ -514,3 +514,135 @@ class TestBookingValidityBoundary:
             headers=auth_headers,
         )
         assert resp.status_code == 404, resp.text
+
+    async def test_multi_day_range_is_rejected_before_open_hours_check(
+        self, client, auth_headers, test_room, test_member
+    ):
+        """A range longer than `MAX_BOOKING_DURATION` must be rejected before
+        `is_within_open_hours` ever runs — that function loops one DB query
+        per calendar day in the range, so an unbounded range is a per-request
+        DB/CPU amplification vector, not just a slow booking."""
+        target_date = _next_monday()
+        start = datetime.combine(target_date, time(10, 0), tzinfo=UTC).isoformat()
+        end = datetime.combine(
+            target_date + timedelta(days=10), time(10, 0), tzinfo=UTC
+        ).isoformat()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "duration" in resp.json()["detail"].lower()
+
+    async def test_wrong_org_membership_denied_before_past_start_check(
+        self, client, db_session, auth_headers
+    ):
+        """A non-member must get 403 even when the request's start time is
+        also invalid (in the past) — membership is resolved before any time
+        validation, so this never needs a valid slot to prove the 403, and
+        never leaks 400 detail about an org the requester isn't in."""
+        other_org = Organization(
+            name="Other Org (past-start)",
+            slug="other-org-past-start",
+            plan=OrgPlan.starter,
+            settings={},
+        )
+        db_session.add(other_org)
+        await db_session.flush()
+        other_space = Space(
+            org_id=other_org.id, name="Other Space (past-start)", images=[], amenities=[]
+        )
+        db_session.add(other_space)
+        await db_session.flush()
+        other_room = Room(
+            space_id=other_space.id,
+            org_id=other_org.id,
+            name="Other Room (past-start)",
+            hourly_rate=Decimal("10.00"),
+            images=[],
+            amenities=[],
+        )
+        db_session.add(other_room)
+        await db_session.commit()
+        await db_session.refresh(other_room)
+
+        start = (datetime.now(tz=UTC) - timedelta(days=1)).isoformat()
+        end = (datetime.now(tz=UTC) - timedelta(hours=23)).isoformat()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(other_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_wrong_org_membership_denied_before_conflict_check(
+        self, client, db_session, auth_headers
+    ):
+        """A non-member must get 403 even when the request also collides with
+        an existing confirmed booking in that other org — the conflict check
+        must never run (and never leak a 409) for a requester who isn't a
+        member of the room's org."""
+        other_org = Organization(
+            name="Other Org (conflict)",
+            slug="other-org-conflict",
+            plan=OrgPlan.starter,
+            settings={},
+        )
+        db_session.add(other_org)
+        await db_session.flush()
+        other_space = Space(
+            org_id=other_org.id, name="Other Space (conflict)", images=[], amenities=[]
+        )
+        db_session.add(other_space)
+        await db_session.flush()
+        other_room = Room(
+            space_id=other_space.id,
+            org_id=other_org.id,
+            name="Other Room (conflict)",
+            hourly_rate=Decimal("10.00"),
+            images=[],
+            amenities=[],
+        )
+        db_session.add(other_room)
+        await db_session.flush()
+        for day in range(6):
+            db_session.add(
+                AvailabilityRule(
+                    room_id=other_room.id,
+                    day_of_week=day,
+                    open_time=time(8, 0),
+                    close_time=time(20, 0),
+                )
+            )
+        other_org_user = User(
+            email="other-org-owner@example.com",
+            name="Other Org Owner",
+            password_hash=hash_password("Sup3rSecret!1"),
+        )
+        db_session.add(other_org_user)
+        await db_session.flush()
+
+        start, end = _future_slot()
+        db_session.add(
+            Booking(
+                org_id=other_org.id,
+                room_id=other_room.id,
+                user_id=other_org_user.id,
+                start_time=datetime.fromisoformat(start),
+                end_time=datetime.fromisoformat(end),
+                duration_hours=Decimal("2.00"),
+                total_amount=Decimal("20.00"),
+                status=BookingStatus.confirmed,
+                payment_method=PaymentMethod.hourly,
+            )
+        )
+        await db_session.commit()
+        await db_session.refresh(other_room)
+
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(other_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 403, resp.text

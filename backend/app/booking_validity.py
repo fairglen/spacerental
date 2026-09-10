@@ -31,6 +31,17 @@ from app.models.space import AvailabilityRule
 # the single place that assumption lives on the backend.
 SLOT_DURATION = timedelta(hours=1)
 
+# A purely defensive, technical safety bound on how long a range callers may
+# hand to `is_within_open_hours` — NOT a product decision about the maximum
+# length of a booking (that policy call, if one is ever needed, belongs
+# elsewhere and can be tighter than this). `is_within_open_hours` runs one DB
+# query per calendar day in `[start_time, end_time)`; without a cap, a client
+# could request a range spanning months or years and force a correspondingly
+# huge number of queries and in-memory slots in a single request. Callers
+# must check `end_time - start_time` against this *before* calling
+# `is_within_open_hours`, so the day-loop below is bounded no matter what.
+MAX_BOOKING_DURATION = timedelta(hours=24)
+
 # Postgres sqlstate for `deadlock_detected`.
 _DEADLOCK_SQLSTATE = "40P01"
 

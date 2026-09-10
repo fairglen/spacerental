@@ -11,7 +11,12 @@ from sqlalchemy.orm import selectinload
 from app import email, package_hours
 from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
-from app.booking_validity import has_conflicting_booking, is_lost_slot_race, is_within_open_hours
+from app.booking_validity import (
+    MAX_BOOKING_DURATION,
+    has_conflicting_booking,
+    is_lost_slot_race,
+    is_within_open_hours,
+)
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_issue_access_code
@@ -83,6 +88,26 @@ async def create_booking(
     if room is None or not room.space.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
+    # Resolve org membership (user must be a member of this room's org).
+    # This must run before any other validation: a user who isn't a member of
+    # this room's org has no business right to learn *why* a slot they picked
+    # is invalid (past, closed, or conflicting) — that's information about
+    # another org's calendar. Checking membership first means probing those
+    # checks for a room you don't belong to always ends the same way, 403,
+    # rather than leaking 400/409 detail before the org check ever runs.
+    result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.org_id == room.org_id,
+        )
+    )
+    membership = result.scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this organization",
+        )
+
     # Validate times
     if body.end_time <= body.start_time:
         raise HTTPException(
@@ -94,6 +119,16 @@ async def create_booking(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="start_time cannot be in the past",
+        )
+
+    # Defensive technical bound, not a product decision about how long a
+    # booking may be (that's a future call, not this one) — it exists purely
+    # to keep `is_within_open_hours`'s one-query-per-calendar-day loop from
+    # being handed an attacker-controlled range spanning months or years.
+    if body.end_time - body.start_time > MAX_BOOKING_DURATION:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Booking duration cannot exceed {MAX_BOOKING_DURATION}",
         )
 
     # Mirrors what BookingCalendar already offers: whole-hour slots inside an
@@ -119,20 +154,6 @@ async def create_booking(
     delta = body.end_time - body.start_time
     duration_hours = Decimal(str(round(delta.total_seconds() / 3600, 2)))
     total_amount = duration_hours * room.hourly_rate
-
-    # Resolve org membership (user must be a member of this room's org)
-    result = await db.execute(
-        select(OrganizationMember).where(
-            OrganizationMember.user_id == user.id,
-            OrganizationMember.org_id == room.org_id,
-        )
-    )
-    membership = result.scalar_one_or_none()
-    if membership is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this organization",
-        )
 
     pays_with_package = body.payment_method is PaymentMethod.package
     purchase_id: uuid.UUID | None = None
