@@ -82,6 +82,31 @@ class TestRegister:
         )
         assert resp.status_code == 201, resp.text
 
+    async def test_concurrent_duplicate_email_registration_is_race_safe(self, client, db_session):
+        """B19: two truly concurrent requests race past the preliminary SELECT
+        and both attempt the INSERT — the loser must get the same clean 400,
+        not an unhandled IntegrityError/500, and leave no partial row.
+        """
+        payload = {"email": "race@user.com", "password": "password123", "name": "Race"}
+        responses = await asyncio.gather(
+            *[client.post("/api/v1/auth/register", json=payload) for _ in range(2)]
+        )
+        assert sorted(r.status_code for r in responses) == [201, 400]
+        loser = next(r for r in responses if r.status_code == 400)
+        assert "registado" in loser.json()["detail"]
+
+        winner = next(r for r in responses if r.status_code == 201)
+        assert await db_session.scalar(
+            select(func.count()).select_from(User).where(User.email == "race@user.com")
+        ) == 1
+        user_row = await db_session.scalar(select(User).where(User.email == "race@user.com"))
+        assert str(user_row.id) == winner.json()["user"]["id"]
+        assert await db_session.scalar(
+            select(func.count())
+            .select_from(OrganizationMember)
+            .where(OrganizationMember.user_id == user_row.id)
+        ) == 1
+
 
 class TestLogin:
     async def test_login_success_returns_token(self, client):
@@ -149,6 +174,49 @@ class TestDefaultOrgSlug:
         )
         slugs = sorted(o.slug for o in result.scalars().all())
         assert slugs == ["maria-silva", "maria-silva-1"]
+
+    async def test_concurrent_operator_registration_gets_distinct_slugs(self, client, db_session):
+        """B19: two concurrent operator registrations with the same name both
+        pass the preliminary slug-availability SELECT before either commits —
+        the loser must retry with a disambiguating suffix, not fail outright.
+        """
+        payload_a = {
+            "email": "concurrent-a@user.com",
+            "password": "password123",
+            "name": "Concurrent Ops",
+        }
+        payload_b = {
+            "email": "concurrent-b@user.com",
+            "password": "password123",
+            "name": "Concurrent Ops",
+        }
+        responses = await asyncio.gather(
+            client.post("/api/v1/auth/register/operator", json=payload_a),
+            client.post("/api/v1/auth/register/operator", json=payload_b),
+        )
+        for r in responses:
+            assert r.status_code == 201, r.text
+
+        orgs = (
+            await db_session.execute(
+                select(Organization).where(Organization.slug.like("concurrent-ops%"))
+            )
+        ).scalars().all()
+        slugs = sorted(o.slug for o in orgs)
+        assert slugs == ["concurrent-ops", "concurrent-ops-1"]
+
+        memberships = (
+            await db_session.execute(
+                select(OrganizationMember)
+                .join(User, User.id == OrganizationMember.user_id)
+                .where(User.email.in_(["concurrent-a@user.com", "concurrent-b@user.com"]))
+            )
+        ).scalars().all()
+        # No partial rows: each operator got exactly one owner membership,
+        # each pointing at one of the two distinct orgs created above.
+        assert len(memberships) == 2
+        assert all(m.role == MemberRole.owner for m in memberships)
+        assert {m.org_id for m in memberships} == {o.id for o in orgs}
 
 
 class TestPasswordHashing:

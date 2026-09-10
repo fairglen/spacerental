@@ -3,6 +3,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import create_access_token, get_current_user, hash_password, verify_password
@@ -49,30 +50,49 @@ def _memberships_claim(memberships: list[OrgMembershipDetail]) -> list[dict]:
     return [{"org_id": str(m.org_id), "role": m.role.value} for m in memberships]
 
 
+MAX_SLUG_ATTEMPTS = 50
+
+
 async def _create_default_org(user: User, db: AsyncSession) -> OrganizationMember:
     base = re.sub(r"[^a-z0-9]+", "-", (user.name or user.email.split("@")[0]).lower()).strip("-")
-    slug_candidate = base[:90] or "my-space"
-    counter = 1
-    while True:
+    base = base[:90] or "my-space"
+
+    counter = 0
+    for _attempt in range(MAX_SLUG_ATTEMPTS):
+        slug_candidate = base if counter == 0 else f"{base}-{counter}"
         existing = await db.execute(select(Organization).where(Organization.slug == slug_candidate))
-        if existing.scalar_one_or_none() is None:
-            break
-        slug_candidate = f"{base}-{counter}"
-        counter += 1
+        if existing.scalar_one_or_none() is not None:
+            counter += 1
+            continue
 
-    org = Organization(
-        name=f"{user.name or user.email}'s Space",
-        slug=slug_candidate,
-        plan=OrgPlan.starter,
-        settings={},
+        org = Organization(
+            name=f"{user.name or user.email}'s Space",
+            slug=slug_candidate,
+            plan=OrgPlan.starter,
+            settings={},
+        )
+        try:
+            # A SAVEPOINT isolates this attempt: a concurrent operator
+            # registration with the same name can win the same slug between
+            # our SELECT above and this INSERT. A plain flush() would abort
+            # the whole outer transaction — including the user row already
+            # flushed in _register — instead of just this candidate.
+            async with db.begin_nested():
+                db.add(org)
+                await db.flush()
+        except IntegrityError:
+            counter += 1
+            continue
+
+        membership = OrganizationMember(org_id=org.id, user_id=user.id, role=MemberRole.owner)
+        db.add(membership)
+        await db.flush()
+        return membership
+
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Não foi possível gerar um identificador único para a organização.",
     )
-    db.add(org)
-    await db.flush()
-
-    membership = OrganizationMember(org_id=org.id, user_id=user.id, role=MemberRole.owner)
-    db.add(membership)
-    await db.flush()
-    return membership
 
 
 async def _enrollment_org(db: AsyncSession) -> Organization:
@@ -111,7 +131,14 @@ async def _register(body: UserRegister, db: AsyncSession, *, operator: bool = Fa
 
     user = User(email=body.email, name=body.name, password_hash=hash_password(body.password))
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Race with a concurrent registration for the same email — the
+        # preliminary SELECT above can't see another in-flight, uncommitted
+        # insert. Roll back so no partial user row survives.
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Este email já está registado.") from None
 
     if operator:
         await _create_default_org(user, db)
