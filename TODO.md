@@ -476,6 +476,23 @@ has a clear client response, distinct operator accounts with equal names get
 unique slugs, and failure creates no partial account/org/membership. Preserve
 normal duplicate-email and shared rate-limit behavior.
 
+### B20 — CI health-probe database-name mismatch persists after B16's local fix
+
+**Priority: P2. State: QUEUED.** Discovered 2026-09-10 via automated review on
+[PR #36](https://github.com/fairglen/spacerental/pull/36): B16 fixed the
+`pg_isready` healthcheck in `docker-compose.test.yml` to target the actual test
+database, but `.github/workflows/backend-tests.yml` and
+`.github/workflows/migrations.yml` both still run the same unqualified
+`pg_isready -U spacerental` against Postgres services configured with
+`POSTGRES_DB: spacerental_test` and `POSTGRES_DB: spacerental_migrations`
+respectively — the identical mismatch B16 was opened for, still live in CI.
+Fix by qualifying each workflow's healthcheck with its own `POSTGRES_DB` value
+(mirroring B16's `-d $$POSTGRES_DB` approach). Acceptance: neither workflow's
+Postgres service logs a missing-database FATAL during a run; both workflows
+still pass. Not implemented now — recorded for a future pass rather than
+reopening B16, since B16's own local-stack fix and evidence are correct as far
+as they go.
+
 ### C02 — Complete the package-holder journey
 
 **Priority: P1. State: DONE — merged as `d919f52` (2026-09-10).** Branch:
