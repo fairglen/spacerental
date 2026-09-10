@@ -543,7 +543,7 @@ build/start and auth, public browsing, checkout, and admin protection work.
 **Validation:** full required suites, dependency audit with assessed findings,
 production build and smoke checks against a production-mode server.
 
-### C05 — Enforce booking validity at the API boundary
+### C05 — Enforce booking validity at the API boundary — DONE (2026-09-10)
 
 **Depends on:** C04. **Scope:** booking schema/route, shared availability logic,
 admin status transitions that acquire a slot, booking/space integration tests.
@@ -560,6 +560,58 @@ Document current timezone semantics; R01 supplies the Lisbon-time migration.
 **Validation:** integration boundary and wrong-org cases, including a range
 covering multiple conflicts and lunch closure; concurrent constraint coverage;
 calendar/modal interaction tests where behavior changes.
+
+**Evidence:** `backend/app/routers/bookings.py`'s `create_booking` used
+`scalar_one_or_none()` on a multi-row `select(Booking)` overlap query, raising
+an unhandled `MultipleResultsFound` (500) whenever a request overlapped two or
+more existing bookings — fixed with an existence-only query
+(`has_conflicting_booking` in the new `backend/app/booking_validity.py`), now
+returning 409 as intended. That module is the single source of truth for
+booking-slot validity, shared by `bookings.py` and `admin.py`:
+- `is_within_open_hours` mirrors `BookingCalendar.resolveSelection`'s rule
+  (hour-aligned slots, no closed gap, e.g. a lunch break, inside the range) —
+  the API can no longer accept a range the calendar UI would refuse.
+- `has_conflicting_booking` is reused by `admin_update_booking` so a
+  cancelled/completed booking reinstated to `confirmed`/`pending` cannot
+  create an overlap the customer-facing path would have rejected.
+- `is_lost_slot_race` recognizes that a concurrent INSERT racing another
+  writer for the same `bookings_no_overlap` GIST range can surface as a
+  Postgres deadlock (sqlstate 40P01) instead of `IntegrityError` — both
+  `bookings.py` and `recurrences.py` (whose bulk series insert isn't covered
+  by `_lock_room` against a concurrent one-off booking) now recognize either
+  form as a lost race (409) rather than an unhandled 500. This was found
+  because the added per-request latency from the new checks below made a
+  pre-existing, previously-rare deadlock window in
+  `test_a_series_racing_a_single_booking_leaves_exactly_one_winner` fail
+  consistently; the fix is general, not test-specific.
+- `create_booking` also now rejects a past `start_time` (400), an inactive
+  `Space` (404, alongside the pre-existing `Room.is_active` check — a room
+  under a deactivated space was previously still bookable), and
+  `BookingCreate.start_time`/`end_time` reject naive datetimes (422) instead
+  of the schema silently accepting them (contrast with `RecurrenceCreate`,
+  deliberately left as-is — out of scope). Non-positive intervals were
+  already rejected and are covered by an existing test; unchanged.
+- Timezone semantics: all comparisons are tz-aware UTC instants; storage is
+  `TIMESTAMPTZ`. R01 remains the ticket for Lisbon wall-time.
+
+**Tests:** `backend/tests/test_bookings.py::TestBookingValidityBoundary` (9
+new cases — multi-conflict 409/no-500, wrong-org 403, past-start 400, naive
+datetime 422, lunch-gap rejection, fully-closed-hours rejection, misaligned
+slot rejection, inactive room 404, inactive space 404) and
+`test_admin.py::TestAdminBookings::test_reinstating_a_cancelled_booking_cannot_create_an_overlap`.
+Fixed one pre-existing test (`test_auth.py::test_customer_can_book_and_purchase_only_at_enrolled_org`)
+that used a wall-clock, non-hour-aligned booking time incidental to what it
+was actually testing. The existing EXCLUDE-constraint concurrency suite in
+`test_recurrences.py` (`TestConcurrentSeriesCreation`, `overlap_constraint`
+fixture) is preserved and, per above, hardened rather than left flaky.
+
+**Commands run:**
+`docker compose -p spacerental-c05-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests`
+— 241 passed, run 4 times consecutively with zero failures after the deadlock
+fix (`down -v` after each run). `ruff check` clean on every changed file. No
+model/schema field was added (`Space.is_active` and `AvailabilityRule` already
+existed), so no Alembic migration was needed. No frontend file was changed —
+the UI already only ever offers what the API now enforces.
 
 ### C06 — Show authoritative pricing and validity
 

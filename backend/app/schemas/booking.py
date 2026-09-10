@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.booking import BookingStatus, PaymentMethod
 from app.schemas.space import RoomOut
@@ -43,6 +43,23 @@ class BookingCreate(BaseModel):
     end_time: datetime
     notes: str | None = None
     payment_method: PaymentMethod = PaymentMethod.hourly
+
+    @field_validator("start_time", "end_time")
+    @classmethod
+    def _require_timezone(cls, value: datetime) -> datetime:
+        """Reject naive datetimes instead of silently assuming a zone.
+
+        Unlike `RecurrenceCreate` (which treats a naive instant as UTC, C05
+        left that path untouched), a booking is a paid, customer-facing
+        commitment: a client that omits its offset is more likely confused
+        about local vs. UTC than deliberately meaning UTC, so this makes the
+        client be explicit rather than guessing on its behalf. Storage and
+        comparisons remain UTC (CLAUDE.md §9); R01 will move wall-time
+        semantics to Europe/Lisbon.
+        """
+        if value.tzinfo is None:
+            raise ValueError("must include timezone information (e.g. a UTC offset)")
+        return value.astimezone(UTC)
 
 
 class BookingCheckoutOut(BaseModel):

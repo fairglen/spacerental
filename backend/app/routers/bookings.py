@@ -3,14 +3,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import and_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import email, package_hours
 from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
+from app.booking_validity import has_conflicting_booking, is_lost_slot_race, is_within_open_hours
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_issue_access_code
@@ -69,14 +70,17 @@ async def create_booking(
       left to pay, so the response carries no `checkout_url`, and the
       confirmation email is sent from here rather than from the webhook.
     """
-    # Fetch room
+    # Fetch room. Space.is_active is checked alongside Room.is_active — a room
+    # under a deactivated space is just as unbookable, and the public listing
+    # (GET /spaces/{id}) already hides it, so treating it as "not found" here
+    # matches what the customer could ever have seen to book it from.
     result = await db.execute(
         select(Room)
         .options(selectinload(Room.space))
         .where(Room.id == body.room_id, Room.is_active == True)  # noqa: E712
     )
     room = result.scalar_one_or_none()
-    if room is None:
+    if room is None or not room.space.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
     # Validate times
@@ -86,19 +90,26 @@ async def create_booking(
             detail="end_time must be after start_time",
         )
 
-    # Overlap check
-    result = await db.execute(
-        select(Booking).where(
-            and_(
-                Booking.room_id == body.room_id,
-                Booking.status.in_([BookingStatus.confirmed, BookingStatus.pending]),
-                Booking.start_time < body.end_time,
-                Booking.end_time > body.start_time,
-            )
+    if body.start_time < datetime.now(tz=UTC):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_time cannot be in the past",
         )
-    )
-    conflicting = result.scalar_one_or_none()
-    if conflicting is not None:
+
+    # Mirrors what BookingCalendar already offers: whole-hour slots inside an
+    # AvailabilityRule window, with no closed gap (e.g. a lunch break) inside
+    # the requested range. The API must not accept what the UI never would.
+    if not await is_within_open_hours(db, body.room_id, body.start_time, body.end_time):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Requested time is outside the room's opening hours",
+        )
+
+    # Overlap check — existence only. A prior version used
+    # `scalar_one_or_none()` on the matching rows themselves, which raised an
+    # unhandled `MultipleResultsFound` (500) whenever a request overlapped two
+    # or more existing bookings instead of the intended 409.
+    if await has_conflicting_booking(db, body.room_id, body.start_time, body.end_time):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This time slot is already booked",
@@ -160,8 +171,12 @@ async def create_booking(
     db.add(booking)
     try:
         await db.flush()
-    except IntegrityError:
-        # Race with a concurrent booking — DB-level EXCLUDE constraint caught it.
+    except DBAPIError as exc:
+        # Race with a concurrent booking — DB-level EXCLUDE constraint caught
+        # it (or, rarely, Postgres reported the same race as a deadlock; see
+        # `is_lost_slot_race`). Anything else is a real fault, not a conflict.
+        if not is_lost_slot_race(exc):
+            raise
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

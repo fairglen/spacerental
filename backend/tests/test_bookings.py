@@ -4,17 +4,30 @@ from decimal import Decimal
 
 from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
-from app.models.organization import MemberRole, OrganizationMember
+from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
+from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
 from app.payments import PaymentProviderError
 
 
-def _future_slot(hours_offset_from_now: int = 24 * 7, duration_hours: int = 2):
-    """Return (start, end) ISO strings on an upcoming Monday at 10:00 UTC."""
+def _next_monday():
     today = datetime.now(tz=UTC).date()
     days_ahead = (0 - today.weekday()) % 7 or 7
-    target_date = today + timedelta(days=days_ahead + 7)
+    return today + timedelta(days=days_ahead + 7)
+
+
+def _future_slot(hours_offset_from_now: int = 24 * 7, duration_hours: int = 2):
+    """Return (start, end) ISO strings on an upcoming Monday at 10:00 UTC."""
+    target_date = _next_monday()
     start = datetime.combine(target_date, time(10, 0), tzinfo=UTC)
+    end = start + timedelta(hours=duration_hours)
+    return start.isoformat(), end.isoformat()
+
+
+def _monday_slot(hour: int, duration_hours: int = 1):
+    """Return (start, end) ISO strings on the same upcoming Monday `_future_slot` uses."""
+    target_date = _next_monday()
+    start = datetime.combine(target_date, time(hour, 0), tzinfo=UTC)
     end = start + timedelta(hours=duration_hours)
     return start.isoformat(), end.isoformat()
 
@@ -302,3 +315,202 @@ class TestCancelBookingTooSoon:
         resp = await client.delete(f"/api/v1/bookings/{booking.id}", headers=auth_headers)
         assert resp.status_code == 400, resp.text
         assert "24" in resp.json()["detail"]
+
+
+class TestBookingValidityBoundary:
+    """C05 — the API cannot be used to acquire a slot the calendar UI never offers."""
+
+    async def test_overlap_with_two_existing_bookings_returns_409_not_500(
+        self, client, db_session, auth_headers, test_org, test_room, test_user, test_member
+    ):
+        """The confirmed crash: `scalar_one_or_none()` on 2+ overlapping rows
+        raised an unhandled `MultipleResultsFound` (500) instead of a 409."""
+        target_date = _next_monday()
+        first_start = datetime.combine(target_date, time(9, 0), tzinfo=UTC)
+        second_start = datetime.combine(target_date, time(11, 0), tzinfo=UTC)
+        for start in (first_start, second_start):
+            db_session.add(
+                Booking(
+                    org_id=test_org.id,
+                    room_id=test_room.id,
+                    user_id=test_user.id,
+                    start_time=start,
+                    end_time=start + timedelta(hours=1),
+                    duration_hours=Decimal("1.00"),
+                    total_amount=Decimal("11.00"),
+                    status=BookingStatus.confirmed,
+                    payment_method=PaymentMethod.hourly,
+                )
+            )
+        await db_session.commit()
+
+        # 09:00-12:00 overlaps both the 09:00-10:00 and the 11:00-12:00 booking,
+        # while the two existing bookings do not overlap each other.
+        start = first_start.isoformat()
+        end = (first_start + timedelta(hours=3)).isoformat()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 409, resp.text
+        assert "already booked" in resp.json()["detail"]
+
+    async def test_wrong_org_membership_is_denied(
+        self, client, db_session, auth_headers, test_room
+    ):
+        """test_user is not a member of any org other than test_org's — booking
+        against a room in a different org must be refused, not just scoped away."""
+        other_org = Organization(
+            name="Other Org", slug="other-org", plan=OrgPlan.starter, settings={}
+        )
+        db_session.add(other_org)
+        await db_session.flush()
+        other_space = Space(org_id=other_org.id, name="Other Space", images=[], amenities=[])
+        db_session.add(other_space)
+        await db_session.flush()
+        other_room = Room(
+            space_id=other_space.id,
+            org_id=other_org.id,
+            name="Other Room",
+            hourly_rate=Decimal("10.00"),
+            images=[],
+            amenities=[],
+        )
+        db_session.add(other_room)
+        await db_session.flush()
+        for day in range(6):
+            db_session.add(
+                AvailabilityRule(
+                    room_id=other_room.id,
+                    day_of_week=day,
+                    open_time=time(8, 0),
+                    close_time=time(20, 0),
+                )
+            )
+        await db_session.commit()
+        await db_session.refresh(other_room)
+
+        start, end = _future_slot()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(other_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_past_start_time_rejected(self, client, auth_headers, test_room, test_member):
+        start = (datetime.now(tz=UTC) - timedelta(days=1)).isoformat()
+        end = (datetime.now(tz=UTC) + timedelta(hours=1)).isoformat()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "past" in resp.json()["detail"]
+
+    async def test_naive_datetime_is_rejected(self, client, auth_headers, test_room, test_member):
+        target_date = _next_monday()
+        naive_start = datetime.combine(target_date, time(10, 0)).isoformat()
+        naive_end = datetime.combine(target_date, time(11, 0)).isoformat()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": naive_start, "end_time": naive_end},
+            headers=auth_headers,
+        )
+        # Pydantic v2 field validation failures are 422s, not app-level 400s.
+        assert resp.status_code == 422, resp.text
+
+    async def test_range_spanning_a_closed_lunch_gap_is_rejected(
+        self, client, db_session, auth_headers, test_org, test_space, test_user, test_member
+    ):
+        room = Room(
+            space_id=test_space.id,
+            org_id=test_org.id,
+            name="Sala com Almoço",
+            hourly_rate=Decimal("11.00"),
+            images=[],
+            amenities=[],
+        )
+        db_session.add(room)
+        await db_session.flush()
+        for day in range(6):
+            db_session.add(
+                AvailabilityRule(
+                    room_id=room.id, day_of_week=day, open_time=time(8, 0), close_time=time(12, 0)
+                )
+            )
+            db_session.add(
+                AvailabilityRule(
+                    room_id=room.id, day_of_week=day, open_time=time(13, 0), close_time=time(20, 0)
+                )
+            )
+        await db_session.commit()
+        await db_session.refresh(room)
+
+        # 11:00-14:00 straddles the 12:00-13:00 closed gap.
+        start, end = _monday_slot(11, duration_hours=3)
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "opening hours" in resp.json()["detail"]
+
+    async def test_range_entirely_outside_open_hours_is_rejected(
+        self, client, auth_headers, test_room, test_member
+    ):
+        # test_room only opens 08:00-20:00.
+        start, end = _monday_slot(21, duration_hours=1)
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "opening hours" in resp.json()["detail"]
+
+    async def test_misaligned_slot_is_rejected(self, client, auth_headers, test_room, test_member):
+        """The calendar only ever offers hour-aligned slots (step=60, timeslots=1)."""
+        target_date = _next_monday()
+        start = datetime.combine(target_date, time(10, 15), tzinfo=UTC).isoformat()
+        end = datetime.combine(target_date, time(11, 15), tzinfo=UTC).isoformat()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "opening hours" in resp.json()["detail"]
+
+    async def test_inactive_room_is_rejected(
+        self, client, db_session, auth_headers, test_room, test_member
+    ):
+        test_room.is_active = False
+        db_session.add(test_room)
+        await db_session.commit()
+
+        start, end = _future_slot()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404, resp.text
+
+    async def test_inactive_space_is_rejected_even_if_room_is_active(
+        self, client, db_session, auth_headers, test_space, test_room, test_member
+    ):
+        test_space.is_active = False
+        db_session.add(test_space)
+        await db_session.commit()
+
+        start, end = _future_slot()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(test_room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404, resp.text

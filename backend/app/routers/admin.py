@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app import email, package_hours
 from app.auth import require_admin
+from app.booking_validity import has_conflicting_booking
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import (
@@ -370,6 +371,24 @@ async def admin_update_booking(
     room_name = booking.room.name
     start_time = booking.start_time
     end_time = booking.end_time
+
+    holds_slot = (BookingStatus.confirmed, BookingStatus.pending)
+    if (
+        body.status != previous_status
+        and body.status in holds_slot
+        and previous_status not in holds_slot
+        and await has_conflicting_booking(
+            db, booking.room_id, start_time, end_time, exclude_booking_id=booking.id
+        )
+    ):
+        # A cancelled/completed booking's slot may have been sold again since
+        # it let go of it. Reinstating (or admin-confirming a stale row) into
+        # `confirmed`/`pending` must not silently create the double-booking
+        # the customer-facing path would have rejected with a 409.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This time slot is already booked",
+        )
 
     if booking.package_purchase_id is not None and body.status != previous_status:
         # An admin status change moves prepaid hours exactly like a member
