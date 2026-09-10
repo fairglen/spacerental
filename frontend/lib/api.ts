@@ -82,6 +82,9 @@ export const authApi = {
 
   register: (data: { email: string; password: string; name: string }) =>
     apiClient.post<RegisterResponse>('/auth/register', data).then(r => r.data),
+
+  registerOperator: (data: { email: string; password: string; name: string }) =>
+    apiClient.post<RegisterResponse>('/auth/register/operator', data).then(r => r.data),
 }
 
 // ─── Public ──────────────────────────────────────────────────────────────

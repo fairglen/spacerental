@@ -366,6 +366,15 @@ describe('decimal field normalization', () => {
 
 
 describe('customer enrollment API contract', () => {
+  it('keeps operator registration on its explicit endpoint and preserves the auth envelope', async () => {
+    const response = { access_token: 'token', token_type: 'bearer', user: { id: 'operator' }, role: 'owner' }
+    const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: response })
+    const data = { email: 'operator@example.com', password: 'password123', name: 'Operator' }
+    expect(await authApi.registerOperator(data)).toEqual(response)
+    expect(post).toHaveBeenCalledWith('/auth/register/operator', data)
+    post.mockRestore()
+  })
+
   it('extracts the membership from an explicit authenticated enrollment', async () => {
     const api = createAuthenticatedApi('customer-token')
     const membership = { org_id: 'target-org', role: 'member' }

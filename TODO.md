@@ -363,7 +363,7 @@ and merged. Evidence (2026-09-10):
 - 231 backend tests on isolated PostgreSQL 16 (`spacerental-c01-tests`), including
   explicit registration roles, missing/closed targets, tenant denial, legacy
   membership preservation, and concurrent enrollment idempotency.
-- 125 frontend tests, TypeScript, Ruff 0.16.5 across the backend, and production
+- 126 frontend tests, TypeScript, Ruff 0.16.5 across the backend, and production
   build passed. Build uses the existing Google Font download.
 - All 20 Playwright tests passed together on isolated app ports 3300/8300 with
   the default real rate limits and recurrence disabled. New-customer signup →
