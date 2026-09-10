@@ -355,7 +355,8 @@ to that shared entry gate.
 ### C01 — Customer enrollment and first paid booking
 
 **Priority: P1. State: IN PROGRESS.** Branch: `feat/customer-enrollment`,
-worktree `/private/tmp/spacerental-customer-enrollment`; PR publication pending.
+worktree `/private/tmp/spacerental-customer-enrollment`;
+[PR #33](https://github.com/fairglen/spacerental/pull/33), implementation `94c10bd`.
 Implementation and local validation complete; remains IN PROGRESS until reviewed
 and merged. Evidence (2026-09-10):
 
