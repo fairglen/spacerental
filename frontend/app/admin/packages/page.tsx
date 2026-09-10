@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import type { Package } from '@/types'
 
 const schema = z.object({
@@ -143,7 +143,12 @@ export default function AdminPackagesPage() {
 
       <Dialog open={!!editingPackage} onOpenChange={(open) => !open && setEditingPackage(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Editar Pacote</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Editar Pacote</DialogTitle>
+            <DialogDescription>
+              Ajusta as horas, o preço e a validade deste pacote de horas.
+            </DialogDescription>
+          </DialogHeader>
           <form
             onSubmit={editForm.handleSubmit((d) => editingPackage && updateMutation.mutate({ id: editingPackage.id, data: d }))}
             className="space-y-4"

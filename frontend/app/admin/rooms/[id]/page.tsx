@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import type { Room } from '@/types'
 
 const roomSchema = z.object({
@@ -211,7 +211,12 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
 
       <Dialog open={!!editingRoom} onOpenChange={(open) => !open && setEditingRoom(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Editar Sala</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Editar Sala</DialogTitle>
+            <DialogDescription>
+              Atualiza a capacidade, o preço por hora e a cor desta sala.
+            </DialogDescription>
+          </DialogHeader>
           <form
             onSubmit={editForm.handleSubmit((d) => editingRoom && updateRoom.mutate({ id: editingRoom.id, data: d }))}
             className="space-y-4"
@@ -251,10 +256,10 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Horários — {availabilityRoom?.name}</DialogTitle>
+            <DialogDescription>
+              Define os dias e horas em que esta sala está disponível. Isto substitui todas as regras existentes.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-xs text-muted-foreground -mt-2 mb-2">
-            Define os dias e horas em que esta sala está disponível. Isto substitui todas as regras existentes.
-          </p>
           <div className="space-y-3">
             {DAYS.map(({ label }, i) => (
               <div key={label} className="flex items-center gap-3">
