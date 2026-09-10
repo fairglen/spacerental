@@ -54,9 +54,17 @@ describe('Admin org-switch cache behavior (B7)', () => {
     )
     // Give any pending effects a chance to run (there should be none, since
     // the query is disabled without an org) while keeping the check itself
-    // wrapped in act() via waitFor, instead of a bare synchronous assertion
-    // after an un-awaited setTimeout.
-    await waitFor(() => expect(adminApi.getSpaces).not.toHaveBeenCalled())
+    // wrapped in act() via waitFor.
+    let firstCheck = true
+    await waitFor(() => {
+      // Ensure at least one retry cycle (i.e., at least one tick) happens before
+      // the negative assertion, so any queued state update would surface here.
+      if (firstCheck) {
+        firstCheck = false
+        throw new Error('wait for effects')
+      }
+      expect(adminApi.getSpaces).not.toHaveBeenCalled()
+    })
   })
 
   it('refetches instead of serving stale cache when the admin switches org', async () => {
