@@ -270,6 +270,38 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
       expect(active[0].id).toBe(purchaseId)
       expect(active[0].status).toBe('active')
       expect(Number(active[0].hours_remaining)).toBe(10)
+
+      const spaces = await (await visitor.request.get(`${API_URL}/spaces`)).json()
+      const detail = await (await visitor.request.get(`${API_URL}/spaces/${spaces.spaces[0].id}`)).json()
+      const room = detail.rooms[0]
+      const date = new Date()
+      date.setUTCDate(date.getUTCDate() + 3)
+      const availability = await (await visitor.request.get(`${API_URL}/rooms/${room.id}/availability`, {
+        params: { date: date.toISOString().slice(0, 10) },
+      })).json()
+      const first = availability.slots.find((slot: { available: boolean; start: string; end: string }, i: number) =>
+        slot.available && availability.slots[i + 1]?.available && slot.end === availability.slots[i + 1].start,
+      )
+      expect(first, 'an available two-hour block is required for package redemption').toBeTruthy()
+      const bookingResponse = await visitor.request.post(`${API_URL}/bookings`, {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+        data: {
+          room_id: room.id,
+          start_time: first.start,
+          end_time: availability.slots[availability.slots.indexOf(first) + 1].end,
+          payment_method: 'package',
+        },
+      })
+      expect(bookingResponse.status()).toBe(201)
+      const redeemed = await myPurchases(api, session.accessToken)
+      expect(Number(redeemed.find(p => p.id === purchaseId)?.hours_remaining)).toBe(8)
+      const booking = (await bookingResponse.json()).booking
+      const cancelled = await visitor.request.delete(`${API_URL}/bookings/${booking.id}`, {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      })
+      expect(cancelled.status()).toBe(204)
+      const restored = await myPurchases(api, session.accessToken)
+      expect(Number(restored.find(p => p.id === purchaseId)?.hours_remaining)).toBe(10)
     } finally {
       await visitorContext.close()
     }

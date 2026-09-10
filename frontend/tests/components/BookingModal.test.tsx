@@ -273,6 +273,22 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
     expect(alert).toHaveTextContent(/horas suficientes/i)
     expect(alert).not.toHaveTextContent(/horário já está reservado/i)
   })
+
+  it('keeps a package booking slot conflict distinct from insufficient hours', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(5)])
+    vi.mocked(bookingsApi.create).mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 409'), {
+        response: { status: 409, data: { detail: 'This time slot is already booked' } },
+      }),
+    )
+    const user = userEvent.setup()
+    renderModal()
+    await screen.findByRole('radio', { name: /5h disponíveis/i })
+    await user.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/horário já está reservado/i)
+    expect(alert).not.toHaveTextContent(/horas suficientes/i)
+  })
 })
 
 const recurrenceResult: RecurrenceWithBookings = {

@@ -14,6 +14,16 @@ export function statusOf(error: unknown): number | undefined {
   return typeof status === 'number' ? status : undefined
 }
 
+export function detailOf(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return undefined
+  const response = (error as { response?: unknown }).response
+  if (typeof response !== 'object' || response === null || !('data' in response)) return undefined
+  const data = (response as { data?: unknown }).data
+  if (typeof data !== 'object' || data === null || !('detail' in data)) return undefined
+  const detail = (data as { detail?: unknown }).detail
+  return typeof detail === 'string' ? detail : undefined
+}
+
 /**
  * The `conflicts` array from a recurrence 409 (`POST /recurrences`,
  * `PUT /recurrences/{id}`) — ISO instants of the occurrences already taken.

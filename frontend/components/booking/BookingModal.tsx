@@ -7,7 +7,7 @@ import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { bookingsApi, recurrencesApi, packagesApi, createAuthenticatedApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
-import { statusOf, conflictsOf } from '@/lib/httpError'
+import { statusOf, conflictsOf, detailOf } from '@/lib/httpError'
 import { expandWeeklyOccurrences } from '@/lib/recurrence'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,8 +49,9 @@ function spendablePurchases(
 function errorMessage(error: unknown, method: PaymentMethod): string {
   const status = statusOf(error)
   if (status === 409) {
-    // The package path also answers 409 — for hours, not for the slot.
-    return method === 'package'
+    const detail = detailOf(error)?.toLowerCase() ?? ''
+    const slotTaken = detail.includes('time slot') || detail.includes('horário') || detail.includes('reservado')
+    return method === 'package' && !slotTaken
       ? 'O teu pack já não tem horas suficientes para esta reserva.'
       : 'Este horário já está reservado. Escolhe outro intervalo no calendário.'
   }
