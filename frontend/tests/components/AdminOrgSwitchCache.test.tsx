@@ -57,14 +57,14 @@ describe('Admin org-switch cache behavior (B7)', () => {
     // wrapped in act() via waitFor.
     let firstCheck = true
     await waitFor(() => {
-      // Ensure at least one retry cycle (i.e., at least one tick) happens before
-      // the negative assertion, so any queued state update would surface here.
+      // Ensure at least one retry cycle happens before the negative assertion,
+      // so any queued state update would surface here.
       if (firstCheck) {
         firstCheck = false
         throw new Error('wait for effects')
       }
       expect(adminApi.getSpaces).not.toHaveBeenCalled()
-    })
+    }, { interval: 1 })
   })
 
   it('refetches instead of serving stale cache when the admin switches org', async () => {
