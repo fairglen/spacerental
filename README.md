@@ -1,6 +1,6 @@
 # EspaçoHora — Space Rental Platform
 
-> **Early proof of concept.** Hourly checkout, prepaid packs, admin tools and local email/access-code flows are implemented. The product is not production-ready: customer enrollment, payment recovery, durable notifications/access and other outcome gates remain open. See [roadmap.md](roadmap.md) for the agreed outcome order and [TODO.md](TODO.md) for executable tasks; broader implementation is on hold.
+> **Early proof of concept.** Hourly checkout, prepaid packs, admin tools and local email/access-code flows are implemented. The product is not production-ready: payment recovery, durable notifications/access and other outcome gates remain open. See [roadmap.md](roadmap.md) for the agreed outcome order and [TODO.md](TODO.md) for executable tasks; roadmap delivery has resumed with customer enrollment (C01).
 
 ## Stack
 - **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind CSS + NextAuth.js
@@ -152,8 +152,8 @@ inspect the diff before deciding whether a migration or metadata repair is neede
   pack purchases, with a walkable local stub checkout. Abandoned holds, payment
   recovery and refunds remain C03/O02.
 - Pack redemption confirms immediately and restores hours on eligible
-  cancellation. Fresh customer enrollment and an isolated complete customer
-  journey remain C01/C02; signup currently creates a new operator organization.
+  cancellation. Customer signup joins the configured location as a member (C01).
+  The complete isolated package redemption/cancellation journey remains C02.
 - Weekly series are an explicit opt-in pending UTC foundation. Paid series,
   Lisbon wall-clock scheduling and full series management remain R01–R03.
 - Email confirmation/cancellation uses stub/live gateways and in-process
@@ -275,3 +275,66 @@ RECURRING_BOOKINGS_ENABLED=true docker compose up -d --build
 cd frontend
 RECURRING_BOOKINGS_ENABLED=true npm run test:e2e
 ```
+
+
+### Customer enrollment and operator setup (C01)
+
+`/sign-up` creates a customer in exactly `CUSTOMER_ENROLLMENT_ORG_SLUG` with the
+`member` role. In the local template this is `demo-space`; run the normal seeder
+before signup. Set the actual operator slug explicitly elsewhere. An empty or
+unknown slug returns 503 without creating an account; setting
+`CUSTOMER_ENROLLMENT_ENABLED=false` returns 403 and closes both new signup and
+existing-account enrollment. Existing sign-ins and memberships continue working.
+Customer signup never creates an organization or grants admin access.
+
+```bash
+# From a fresh checkout (preserve existing config on reruns):
+if [ ! -e .env ]; then cp .env.example .env; fi
+docker compose up -d --build
+docker compose exec -T backend python -m app.seed
+# Open http://localhost:3000/sign-up and create a unique customer.
+# Browse rooms, drag across two free future hours, confirm, then click Pagar
+# on the local checkout page. The dashboard shows the confirmed reservation.
+cd frontend
+npm ci
+npx playwright install chromium
+npm run test:e2e -- tests/e2e/auth.spec.ts tests/e2e/packages.spec.ts
+```
+
+Operator creation is deliberate: `POST /api/v1/auth/register/operator` takes
+`{email, password, name}` and creates a new organization owned by that user.
+It does not enroll them in any existing location. It uses the same password
+validation and shared auth rate limit as customer signup and login. Example
+for local stub development only (choose a unique local email on reruns):
+
+```bash
+curl --fail-with-body http://localhost:8000/api/v1/auth/register/operator \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"operator@example.com","password":"local-password123","name":"Local Operator"}'
+```
+
+Accounts created by the old signup flow keep their empty organizations and
+owner roles. There is no automatic migration or enrollment on login. To join
+the configured location explicitly, authenticate and call `POST /auth/enroll`.
+The following local script prompts for the existing account and prints only the
+resulting membership (requires the backend dependencies):
+
+```bash
+docker compose exec backend python -c '
+import getpass, httpx
+with httpx.Client(base_url="http://127.0.0.1:8000/api/v1") as client:
+    login = client.post("/auth/login", json={"email": input("Email: "), "password": getpass.getpass()})
+    login.raise_for_status()
+    joined = client.post("/auth/enroll", headers={"Authorization": "Bearer " + login.json()["access_token"]})
+    joined.raise_for_status()
+    print(joined.json())
+'
+```
+
+Reload the dashboard afterwards, then choose the enrolled location in the
+"Organização ativa" selector. Existing accounts may still default to their
+original owner organization; membership checks read the database. Repeating
+this operation is safe, including concurrent requests: existing member/admin/
+owner roles and memberships in other organizations are preserved. No SQL or
+schema migration is needed. This explicit API recovery path is intended for
+legacy accounts; ordinary new customers use signup.

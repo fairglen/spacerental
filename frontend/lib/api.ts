@@ -76,6 +76,10 @@ export const authApi = {
   getMemberships: (api: Api) =>
     api.get<{ memberships: Membership[] }>('/auth/memberships').then(r => r.data.memberships),
 
+  enroll: (api: Api) =>
+    api.post<{ membership: Pick<Membership, 'org_id' | 'role'> }>('/auth/enroll')
+      .then(r => r.data.membership),
+
   register: (data: { email: string; password: string; name: string }) =>
     apiClient.post<RegisterResponse>('/auth/register', data).then(r => r.data),
 }

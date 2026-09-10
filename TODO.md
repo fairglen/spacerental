@@ -1,28 +1,34 @@
 # TODO — Delivery backlog
 
-Updated 2026-09-09. Product priorities come from [roadmap.md](roadmap.md).
+Updated 2026-09-10. Product priorities come from [roadmap.md](roadmap.md).
 This replaces the previous epic-first queue; the legacy mapping at the end
 preserves its history and outstanding requirements.
 
 ## Execution boundary and task states
 
-**Current assignment (2026-09-09): review existing PRs and merge those without
-critical remaining issues. New roadmap feature implementation remains on hold.**
+**Current assignment (2026-09-10): roadmap delivery resumed by the user.**
+Gate 0 is DONE: #23 merged as `49433c3`; origin/main and the empty open PR/issue
+queues were verified on 2026-09-10. Start C01, then C02–C08 in dependency order.
+Later outcomes remain HOLD until their entry gates pass.
 
-Gate 0 code repairs are merged and verified. This documentation PR (#23)
-records the result and closes Gate 0 when merged; until that merge, Q23/Q90
-remain IN PROGRESS.
-New roadmap implementation stays on hold until that gate is verified and the
-user resumes roadmap delivery. Finishing a PR does not authorize pulling in its
-later roadmap follow-ups. In particular, do not expand the recurring or Seam
-PRs into their entire production roadmap just to empty the queue.
+New work must be recorded before implementation: give it an ID, reproduction or
+scope, priority, dependencies, and acceptance/validation. Prioritize P0 for an
+immediate critical blocker, P1 for the current customer outcome, P2 for subsequent
+outcomes, and P3 for deferred improvements. An unrelated discovery enters the
+queue; it does not silently expand the active task. Link already-known gaps to
+their existing item instead of duplicating them.
+
+Current queue: C01 (P1, IN PROGRESS), C02–C08/C99 (P1, QUEUED in order),
+R/O tasks (P2, HOLD), D tasks (P3, DEFERRED). C04 dependency advisories, C05
+booking validity, and C08 diagnostics are known work, retained at their agreed
+positions. Reassess priority if new evidence establishes an immediate blocker.
 
 States used below:
 
-- **QUEUED:** existing-PR work or an explicitly reported bug for the next
-  assigned Gate 0 task. Recording a bug does not start its implementation.
-- **HOLD:** specified future work; do not start under a PR-cleanup assignment.
-- **IN PROGRESS:** an assigned task with a recorded branch and PR.
+- **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
+  bug does not start its implementation.
+- **HOLD:** future work awaiting its outcome entry gate.
+- **IN PROGRESS:** an assigned task with a recorded branch; link its PR when opened.
 - **DONE:** merged into main with acceptance evidence, not merely a green branch.
 - **DEFERRED:** outside the current product scope.
 
@@ -104,7 +110,7 @@ changes need diff/link/status verification, not application test reruns.
 
 ## Gate 0 — Fix and merge the existing PR queue
 
-**State: code verification complete; closes on merge of #23.**
+**State: DONE — #23 merged as `49433c3` on 2026-09-09.**
 Initial snapshot: main `bc3112b`, 12 open PRs checked on 2026-09-09.
 Green below means reported checks passed, not approval or proof of completeness.
 The recorded failure diagnoses came from the September 9 assessment; re-read
@@ -285,8 +291,8 @@ a different account; no purchase POST is automatically replayed.
 
 ### Q90 — Verify the combined result and close Gate 0
 
-**State: code verified on `02c80d4`; DONE on merge of #23.** This completion
-record takes effect on the documentation merge, not merely on a green branch.
+**State: DONE — #23 merged as `49433c3`.** Integrated code verification remains
+recorded below. Gate completion verified again on 2026-09-10.
 
 Final evidence from the integrated code revision `cf7a602` (merged unchanged as
 `02c80d4`):
@@ -341,12 +347,44 @@ Gate 0 alone does not start new feature implementation.
 
 ## Outcome 1 — First customer can reliably pay and book
 
-**All tasks: HOLD.** Entry gate: Q90 complete and roadmap implementation resumed.
+**State: ACTIVE.** Q90 is complete; roadmap implementation resumed 2026-09-10.
 Start C01, then C02. Continue in the listed order unless the user's next
 assignment explicitly reprioritizes a task. Dependencies below are additional
 to that shared entry gate.
 
 ### C01 — Customer enrollment and first paid booking
+
+**Priority: P1. State: IN PROGRESS.** Branch: `feat/customer-enrollment`,
+worktree `/private/tmp/spacerental-customer-enrollment`; PR publication pending.
+Implementation and local validation complete; remains IN PROGRESS until reviewed
+and merged. Evidence (2026-09-10):
+
+- 231 backend tests on isolated PostgreSQL 16 (`spacerental-c01-tests`), including
+  explicit registration roles, missing/closed targets, tenant denial, legacy
+  membership preservation, and concurrent enrollment idempotency.
+- 125 frontend tests, TypeScript, Ruff 0.16.5 across the backend, and production
+  build passed. Build uses the existing Google Font download.
+- All 20 Playwright tests passed together on isolated app ports 3300/8300 with
+  the default real rate limits and recurrence disabled. New-customer signup →
+  two-hour selection → local payment → confirmed dashboard and selected pack →
+  signup → pending purchase → payment → active 10h balance both pass.
+- Fresh stack applied the existing Alembic chain; no model change/migration.
+  README operator creation and authenticated legacy enrollment commands passed
+  against the isolated app; no existing privileges were removed.
+- B15 signup recovery and B18 browser fixture fixes are included. B16/B17/B19
+  remain queued; C02 starts after C01's merge. Main checkout and its app retained.
+
+**Enrollment policy (2026-09-10):** customer registration enrolls only in
+`CUSTOMER_ENROLLMENT_ORG_SLUG`, configured as `demo-space` for the seeded local
+stack. No first-org lookup or caller-selected tenant. A global explicit
+`CUSTOMER_ENROLLMENT_ENABLED` switch closes enrollment; missing/unknown targets
+fail clearly without creating an account. Member is the only assigned role.
+Operator registration has a separate explicit endpoint and creates its own org.
+Existing users may explicitly enroll using an authenticated endpoint; repeated
+requests preserve existing privileges and memberships. No automatic conversion,
+removal, or migration of legacy organizations. Alternatives (automatic enrollment
+on login, arbitrary public tenant selection) would change existing access or
+require a multi-location product policy and are outside C01.
 
 **Depends on:** Q90. **Scope:** `backend/app/routers/auth.py`, organization
 membership, registration UI, auth tests, and `frontend/tests/e2e/`.
@@ -366,6 +404,59 @@ explicit enrollment path for existing customers stranded in empty organizations.
 
 **Validation:** real-route register/login/membership tests including denial and
 existing-user cases; fresh-customer E2E with a unique user and booking dates.
+
+### B15 — Signup ignores a failed automatic sign-in
+
+**Priority: P1. State: IN PROGRESS with C01 (implemented and validated, awaiting merge).** Discovered 2026-09-10 in
+`sign-up/[[...sign-up]]/page.tsx`: the result of `signIn(..., redirect: false)`
+is ignored, so a created account can be sent to a protected page with no session.
+Fix within C01 because signup → booking depends on it. Preserve the selected
+package, explain that the account exists, and offer sign-in recovery without
+repeating registration. Validate failed/throwing sign-in component behavior.
+
+### B16 — Test database health probe logs a missing database repeatedly
+
+**Priority: P2. State: QUEUED; group with C08 diagnostics.** Observed during C01
+backend validation on 2026-09-10. `docker-compose.test.yml` runs `pg_isready -U
+spacerental` while the test database is `spacerental_test`; PostgreSQL logs
+`FATAL: database "spacerental" does not exist` every three seconds even though
+the suite connects correctly and proceeds. Set the explicit test database in
+the probe; verify healthy startup and the absence of these messages without
+weakening readiness detection. It does not block C01.
+
+### B17 — Dialog descriptions and noisy component test diagnostics
+
+**Priority: P2. State: QUEUED after C99.** C01's frontend suite passes but reports
+missing accessible descriptions in booking/admin dialogs, an unwrapped React
+update in the org-switch test, and unsupported jsdom navigation in a package
+recovery test. Fix dialog descriptions with accessible behavior coverage and
+make the test interactions await the intended events; do not silence warnings
+or remove assertions. Validate affected components with clean diagnostics.
+
+### B18 — Fresh-customer E2E exhausts the shared public request budget
+
+**Priority: P1. State: IN PROGRESS with C01 (validated in the full 20-test browser run).** First C01 browser run on
+2026-09-10 adds up to 33 day-navigation requests before the existing booking
+suite. Backend logs show 429s on availability and public space reads, causing
+later calendar/package tests to fail. Use dedicated nearer future inventory and bounded probing. The second run
+still reaches 429 late in the package suite, so pace the added full customer
+journey with one public-rate window at the auth-suite boundary. All browser/API
+clients share one host peer address in Compose. Preserve the real public/auth
+limits and keep this cooldown outside assertions; do not retry failed journeys
+or change application throttling to make tests pass.
+Validation: full browser suite with the default limits, including existing
+booking/package flows and the new customer journeys.
+
+### B19 — Concurrent registration can surface uniqueness errors
+
+**Priority: P2. State: QUEUED after C99; reproduction pending.** C01 review found
+existing check-then-insert patterns for user email and generated operator slugs
+in `auth.py`, without `IntegrityError` translation. Two simultaneous requests
+may both pass the preliminary lookup and make one fail with a server error.
+Reproduce with real PostgreSQL before implementing. Acceptance: duplicate email
+has a clear client response, distinct operator accounts with equal names get
+unique slugs, and failure creates no partial account/org/membership. Preserve
+normal duplicate-email and shared rate-limit behavior.
 
 ### C02 — Complete the package-holder journey
 
@@ -411,6 +502,12 @@ resumption and late payment; E2E abandon → recover and expire → slot availab
 Use controllable clocks/failure injection rather than long wall-clock sleeps.
 
 ### C04 — Patch dependencies and validate a production build
+
+**Intake evidence (2026-09-10):** C01's pinned `npm ci` reported 24 audit findings
+(1 low, 5 moderate, 14 high, 4 critical), plus the known Next.js deprecation/
+security notice. This is linked to existing C04 rather than a duplicate task.
+Inspect current advisories and reachability when assigned; no dependency changes
+or production deployment are included in C01.
 
 **Depends on:** C03. **Scope:** manifests/lockfiles, affected compatibility code,
 Docker/build configuration, CI and dependency documentation.

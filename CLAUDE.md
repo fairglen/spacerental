@@ -378,8 +378,12 @@ This applies hardest to the integrations in §11 (Stripe, Seam, Resend/Postmark)
 ## 11. Implemented foundations and deferred delivery
 
 The authoritative priorities and task acceptance criteria are in `roadmap.md`
-and `TODO.md`. Completing the PR cleanup does not resume broader roadmap work.
+and `TODO.md`. Roadmap delivery resumed on 2026-09-10; C01 is active, with later outcome gates
+unchanged. Record and prioritize new discoveries in TODO.md before implementation.
 
+- **Enrollment:** customer signup joins only the configured organization as a
+  member. Explicit operator signup creates a new organization; existing users
+  may explicitly enroll without changing previous memberships or roles.
 - **Payments:** Stripe/stub checkout and signed completion handling exist for
   hourly bookings and pack purchases. Pack redemption and eligible cancellation
   credits are implemented. Abandoned holds/recovery and cash refunds remain C03/O02.

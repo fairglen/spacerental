@@ -93,7 +93,8 @@ class TestAuthTierThrottling:
         assert int(blocked.headers["retry-after"]) >= 1
         assert blocked.headers["x-ratelimit-limit"] == str(limit)
 
-    async def test_requests_under_the_limit_still_succeed(self, client):
+    async def test_requests_under_the_limit_still_succeed(self, client, test_org, monkeypatch):
+        monkeypatch.setattr(settings, "CUSTOMER_ENROLLMENT_ORG_SLUG", test_org.slug)
         limit = settings.RATE_LIMIT_AUTH_MAX_REQUESTS
 
         created = await client.post(REGISTER_URL, json=_register_payload("under@limit.com"))

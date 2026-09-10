@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, createAuthenticatedApi } from '@/lib/api'
+import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, createAuthenticatedApi } from '@/lib/api'
 
 describe('spacesApi.list', () => {
   it('extracts spaces array from wrapped response', async () => {
@@ -361,5 +361,25 @@ describe('decimal field normalization', () => {
     const result = await bookingsApi.listMine(mockApi)
     expect(result[0].total_amount).toBe(0)
     expect(result[0].duration_hours).toBe(0)
+  })
+})
+
+
+describe('customer enrollment API contract', () => {
+  it('extracts the membership from an explicit authenticated enrollment', async () => {
+    const api = createAuthenticatedApi('customer-token')
+    const membership = { org_id: 'target-org', role: 'member' }
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { membership } })
+    expect(await authApi.enroll(api)).toEqual(membership)
+    expect(post).toHaveBeenCalledWith('/auth/enroll')
+  })
+
+  it('preserves the authentication envelope returned by customer registration', async () => {
+    const response = { access_token: 'token', token_type: 'bearer', user: { id: 'user' }, role: 'member' }
+    const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: response })
+    const data = { email: 'customer@example.com', password: 'password123', name: 'Customer' }
+    expect(await authApi.register(data)).toEqual(response)
+    expect(post).toHaveBeenCalledWith('/auth/register', data)
+    post.mockRestore()
   })
 })

@@ -2,14 +2,16 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import create_access_token, get_current_user, hash_password, verify_password
+from app.config import settings
 from app.database import get_db
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.user import User
 from app.ratelimit import AUTH_TIER, rate_limit
-from app.schemas.organization import OrgMembershipDetail
+from app.schemas.organization import EnrollmentOut, OrgMembershipDetail, OrgMembershipOut
 from app.schemas.user import TokenOut, UserLogin, UserOut, UserRegister
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -73,25 +75,52 @@ async def _create_default_org(user: User, db: AsyncSession) -> OrganizationMembe
     return membership
 
 
-@router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
-@rate_limit(AUTH_TIER)
-async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
+async def _enrollment_org(db: AsyncSession) -> Organization:
+    if not settings.CUSTOMER_ENROLLMENT_ENABLED:
+        raise HTTPException(status_code=403, detail="A adesão ao espaço está encerrada.")
+    slug = (settings.CUSTOMER_ENROLLMENT_ORG_SLUG or "").strip()
+    if not slug:
+        raise HTTPException(status_code=503, detail="O espaço de adesão não está configurado.")
+    org = await db.scalar(select(Organization).where(Organization.slug == slug))
+    if org is None:
+        raise HTTPException(status_code=503, detail="O espaço de adesão não está disponível.")
+    return org
+
+
+async def _enroll_member(user: User, org: Organization, db: AsyncSession) -> OrganizationMember:
+    # Concurrent retries must not create duplicates or downgrade an existing owner.
+    await db.execute(
+        insert(OrganizationMember)
+        .values(org_id=org.id, user_id=user.id, role=MemberRole.member)
+        .on_conflict_do_nothing(constraint="uq_org_user")
+    )
+    return (
+        await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.org_id == org.id, OrganizationMember.user_id == user.id
+            )
+        )
+    ).scalar_one()
+
+
+async def _register(body: UserRegister, db: AsyncSession, *, operator: bool = False) -> TokenOut:
+    org = None if operator else await _enrollment_org(db)
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
-        )
+        raise HTTPException(status_code=400, detail="Este email já está registado.")
 
     user = User(email=body.email, name=body.name, password_hash=hash_password(body.password))
     db.add(user)
     await db.flush()
 
-    await _create_default_org(user, db)
+    if operator:
+        await _create_default_org(user, db)
+    else:
+        await _enroll_member(user, org, db)
     await db.commit()
     await db.refresh(user)
 
-    role = "owner"
+    role = await _get_highest_role(user, db)
     memberships = await _get_memberships(user, db)
     token = create_access_token(
         {
@@ -103,6 +132,26 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
         }
     )
     return TokenOut(access_token=token, user=UserOut.model_validate(user), role=role)
+
+
+@router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+@rate_limit(AUTH_TIER)
+async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
+    return await _register(body, db)
+
+
+@router.post("/register/operator", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+@rate_limit(AUTH_TIER)
+async def register_operator(body: UserRegister, db: AsyncSession = Depends(get_db)):
+    return await _register(body, db, operator=True)
+
+
+@router.post("/enroll", response_model=EnrollmentOut)
+async def enroll(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    org = await _enrollment_org(db)
+    membership = await _enroll_member(user, org, db)
+    await db.commit()
+    return {"membership": OrgMembershipOut.model_validate(membership)}
 
 
 @router.post("/login", response_model=TokenOut)

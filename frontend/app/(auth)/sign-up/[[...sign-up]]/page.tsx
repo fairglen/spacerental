@@ -33,6 +33,7 @@ export default function SignUpPage() {
   // instead of a generic dashboard.
   const packageId = searchParams.get('packageId')
   const [error, setError] = useState('')
+  const [accountCreated, setAccountCreated] = useState(false)
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
 
@@ -41,7 +42,12 @@ export default function SignUpPage() {
     setError('')
     try {
       await authApi.register({ email: data.email, password: data.password, name: data.name })
-      await signIn('credentials', { email: data.email, password: data.password, redirect: false })
+      setAccountCreated(true)
+      const result = await signIn('credentials', { email: data.email, password: data.password, redirect: false })
+      if (!result?.ok || result.error) {
+        setError('A conta foi criada, mas não foi possível iniciar sessão. Usa o link Entrar abaixo.')
+        return
+      }
       router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : '/dashboard')
       router.refresh()
     } catch (err) {
@@ -51,7 +57,9 @@ export default function SignUpPage() {
         setError('Erro de ligação. Tenta novamente.')
       }
     }
-    setLoading(false)
+    finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -66,7 +74,7 @@ export default function SignUpPage() {
         <Card>
           <CardHeader className="text-center pb-2">
             <CardTitle>Criar conta</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Começa a reservar em segundos</p>
+            <p className="text-sm text-muted-foreground mt-1">Cria uma conta de cliente para reservar salas e comprar packs de horas</p>
           </CardHeader>
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -90,8 +98,9 @@ export default function SignUpPage() {
                 <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="mt-1" placeholder="Repete a password" autoComplete="new-password" />
                 {errors.confirmPassword && <p className="text-xs text-red-500 mt-1">{errors.confirmPassword.message}</p>}
               </div>
-              {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
+              {accountCreated && <p role="status" className="text-sm">Conta criada. Se a sessão não iniciou, usa o link Entrar abaixo.</p>}
+              {error && <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+              <Button type="submit" className="w-full" disabled={loading || accountCreated}>
                 {loading ? 'A criar conta...' : 'Criar Conta'}
               </Button>
             </form>

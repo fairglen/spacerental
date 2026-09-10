@@ -255,15 +255,21 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
       await visitor.waitForURL(new RegExp(`/dashboard/packages\\?packageId=${pkg10h.id}`), { timeout: 15000 })
       await expect(visitor.getByRole('heading', { name: 'Comprar mais horas' })).toBeVisible({ timeout: 10000 })
 
-      // What the page does with that id here is a separate, pre-existing gap
-      // (TODO.md: POST /auth/register gives every new user their own
-      // brand-new org, not membership in the seeded org that owns this
-      // package) — so the freshly-created org has no packages to highlight
-      // yet, and the page correctly says so instead of crashing or showing a
-      // stale/wrong package. The highlight-and-buy behaviour itself (once a
-      // user *does* belong to the package's org) is covered by
-      // tests/components/MyPackagesPage.test.tsx.
-      await expect(visitor.getByText('Não há pacotes disponíveis de momento.')).toBeVisible()
+      const session = await (await visitor.request.get('/api/auth/session')).json()
+      expect(session.role).toBe('member')
+      await visitor.locator('div.rounded-xl').filter({ hasText: pkg10h.name })
+        .getByRole('button', { name: 'Comprar Pack', exact: true }).click()
+      await visitor.waitForURL(/\/checkout\/stub\/cs_stub_/)
+      const { purchaseId } = decodeCheckoutUrl(visitor.url())
+      const pending = await myPurchases(api, session.accessToken)
+      expect(pending).toHaveLength(1)
+      expect(pending[0].status).toBe('pending')
+      await payOnStubCheckoutPage(visitor)
+      const active = await myPurchases(api, session.accessToken)
+      expect(active).toHaveLength(1)
+      expect(active[0].id).toBe(purchaseId)
+      expect(active[0].status).toBe('active')
+      expect(Number(active[0].hours_remaining)).toBe(10)
     } finally {
       await visitorContext.close()
     }

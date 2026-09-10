@@ -35,6 +35,27 @@ Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool }] }`
 Body: `{ email, password, name? }` (password 8-128 chars, Argon2id hashed)
 Response: `{ access_token, token_type: "bearer", user: User, role: "owner"|"admin"|"member" }`
 
+Customer registration returns 201 and `role: "member"`, enrolling only in
+`CUSTOMER_ENROLLMENT_ORG_SLUG`. It creates no organization. Duplicate email: 400;
+closed enrollment: 403; blank or unknown configured target: 503. Failures create
+neither an account nor a membership. Caller-supplied tenant/role fields do not
+select the target or grant privileges.
+
+### POST /auth/register/operator
+Body and authentication response envelope match `/auth/register`. Creates a new
+organization and an owner membership deliberately; no access to existing orgs.
+201 on success, 400 for duplicate email, 422 for invalid credentials. Shares
+login/customer registration rate limits. Customer enrollment settings do not
+control independent operator creation.
+
+### POST /auth/enroll
+Headers: `Authorization: Bearer <jwt>`. No request body.
+Response (200): `{ membership: { org_id, role } }`.
+Explicitly enrolls an existing user in the configured location. Idempotent even
+under concurrent retries; preserves any existing role and other memberships.
+401 without authentication; 403 when closed; 503 for a missing/unknown target.
+No automatic account migration or enrollment on login.
+
 ### POST /auth/login
 Body: `{ email, password }`
 Response: `{ access_token, token_type, user, role }` — same shape as register
