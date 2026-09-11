@@ -1,0 +1,40 @@
+name: Deploy flowspace-site
+
+# NOTE: path-filtered to flowspace-site/** so this workflow only runs for
+# changes to the standalone FlowSpace marketing site, not the EspaçoHora SaaS
+# app in frontend/ or backend/. See TODO.md F01 and frontend-tests.yml's note
+# on path-filter/required-check interaction (TODO.md T4) if this is ever made
+# a required status check.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flowspace-site/**'
+      - '.github/workflows/deploy-flowspace-site.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: flowspace-site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

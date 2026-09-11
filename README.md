@@ -338,3 +338,10 @@ this operation is safe, including concurrent requests: existing member/admin/
 owner roles and memberships in other organizations are preserved. No SQL or
 schema migration is needed. This explicit API recovery path is intended for
 legacy accounts; ordinary new customers use signup.
+
+## flowspace-site
+
+This repo also contains an unrelated static marketing site for the real
+flowspace.pt business in `flowspace-site/`, fully decoupled from the
+EspaçoHora SaaS app (no shared build, no shared server). See
+`flowspace-site/README.md`.
