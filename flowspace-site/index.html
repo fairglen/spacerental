@@ -27,7 +27,7 @@
       <div class="nav-actions">
         <a href="#contacto" class="btn btn-primary">Reservar sala</a>
       </div>
-      <button class="nav-toggle" id="navToggle" aria-label="Abrir menu" aria-expanded="false">☰</button>
+      <button class="nav-toggle" id="navToggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="navMobile">☰</button>
     </div>
     <div class="nav-mobile" id="navMobile">
       <a href="#espaco">O espaço</a>
@@ -195,10 +195,10 @@
         <p>Diz-nos o que precisas e respondemos em menos de 24 horas.</p>
       </div>
       <div class="contact-wrap">
-        <div class="form-banner success" id="formSuccess" role="status">
+        <div class="form-banner success" id="formSuccess" role="status" aria-live="polite">
           Mensagem enviada! Entraremos em contacto em menos de 24 horas.
         </div>
-        <div class="form-banner error" id="formError" role="alert"></div>
+        <div class="form-banner error" id="formError" role="alert" aria-live="assertive"></div>
 
         <form id="contactForm" novalidate>
           <!-- Honeypot: a hidden field a bot autofiller may target. Real users
@@ -210,37 +210,37 @@
 
           <div class="form-row">
             <label for="nome">Nome completo</label>
-            <input type="text" id="nome" name="nome" maxlength="120" required />
-            <p class="field-error" data-error-for="nome">Indica o teu nome completo.</p>
+            <input type="text" id="nome" name="nome" maxlength="120" required aria-describedby="nome-error" />
+            <p class="field-error" id="nome-error" data-error-for="nome">Indica o teu nome completo.</p>
           </div>
 
           <div class="form-row">
             <label for="email">Email profissional</label>
-            <input type="email" id="email" name="email" maxlength="254" required />
-            <p class="field-error" data-error-for="email">Indica um email válido.</p>
+            <input type="email" id="email" name="email" maxlength="254" required aria-describedby="email-error" />
+            <p class="field-error" id="email-error" data-error-for="email">Indica um email válido.</p>
           </div>
 
           <div class="form-row">
             <label for="especialidade">Especialidade</label>
-            <select id="especialidade" name="especialidade" required>
+            <select id="especialidade" name="especialidade" required aria-describedby="especialidade-error">
               <option value="" disabled selected>Seleciona uma opção</option>
               <option value="Psicologia">Psicologia</option>
               <option value="Psiquiatria">Psiquiatria</option>
               <option value="Outra">Outra</option>
             </select>
-            <p class="field-error" data-error-for="especialidade">Seleciona a tua especialidade.</p>
+            <p class="field-error" id="especialidade-error" data-error-for="especialidade">Seleciona a tua especialidade.</p>
           </div>
 
           <div class="form-row">
             <label for="interesse">Interesse</label>
-            <select id="interesse" name="interesse" required>
+            <select id="interesse" name="interesse" required aria-describedby="interesse-error">
               <option value="" disabled selected>Seleciona uma opção</option>
               <option value="Reserva avulsa">Reserva avulsa</option>
               <option value="Pack 10 horas">Pack 10 horas</option>
               <option value="Reserva recorrente">Reserva recorrente</option>
               <option value="Só quero saber mais">Só quero saber mais</option>
             </select>
-            <p class="field-error" data-error-for="interesse">Seleciona uma opção.</p>
+            <p class="field-error" id="interesse-error" data-error-for="interesse">Seleciona uma opção.</p>
           </div>
 
           <div class="form-row">
@@ -287,14 +287,19 @@
     // form logic that lives in assets/js/contact-form.js.
     var navToggle = document.getElementById('navToggle');
     var navMobile = document.getElementById('navMobile');
-    navToggle.addEventListener('click', function () {
-      var isOpen = navMobile.classList.toggle('is-open');
+    function setNavState(isOpen) {
       navToggle.setAttribute('aria-expanded', String(isOpen));
+      // The label has to track the action the button will perform, otherwise
+      // a screen reader announces "Abrir menu" on an already-open menu.
+      navToggle.setAttribute('aria-label', isOpen ? 'Fechar menu' : 'Abrir menu');
+    }
+    navToggle.addEventListener('click', function () {
+      setNavState(navMobile.classList.toggle('is-open'));
     });
     Array.prototype.forEach.call(navMobile.querySelectorAll('a'), function (link) {
       link.addEventListener('click', function () {
         navMobile.classList.remove('is-open');
-        navToggle.setAttribute('aria-expanded', 'false');
+        setNavState(false);
       });
     });
   </script>

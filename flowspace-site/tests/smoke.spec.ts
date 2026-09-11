@@ -100,3 +100,43 @@ test('the placeholder Apps Script URL disables the form instead of faking succes
   await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
   expect(requests.filter((url) => url.includes('PASTE_DEPLOYED_URL_HERE'))).toHaveLength(0);
 });
+
+test('field errors are wired to their controls for screen readers', async ({ page }) => {
+  await stubConfiguredEndpoint(page);
+  await page.goto('/');
+
+  const nome = page.locator('#nome');
+  await expect(nome).toHaveAttribute('aria-describedby', 'nome-error');
+  await expect(nome).not.toHaveAttribute('aria-invalid', 'true');
+
+  await page.click('#submitBtn');
+
+  await expect(page.locator('#nome-error')).toHaveClass(/is-visible/);
+  await expect(nome).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#email')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#especialidade')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#interesse')).toHaveAttribute('aria-invalid', 'true');
+
+  await fillValidForm(page);
+  await page.click('#submitBtn');
+
+  await expect(nome).toHaveAttribute('aria-invalid', 'false');
+});
+
+test('the menu toggle announces the action it will perform', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto('/');
+
+  const toggle = page.locator('#navToggle');
+  await expect(toggle).toHaveAttribute('aria-controls', 'navMobile');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(toggle).toHaveAttribute('aria-label', 'Abrir menu');
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(toggle).toHaveAttribute('aria-label', 'Fechar menu');
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(toggle).toHaveAttribute('aria-label', 'Abrir menu');
+});
