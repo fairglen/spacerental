@@ -134,16 +134,30 @@ async def is_within_open_hours(
     A day with no active rule at all is closed, same as the calendar's "no
     rule for this day" case.
     """
-    if (end_time - start_time) % SLOT_DURATION != timedelta(0):
+    start_utc = start_time.astimezone(UTC)
+    end_utc = end_time.astimezone(UTC)
+
+    # A whole number of hours between the two endpoints is not the same as
+    # both endpoints landing *on* the hour: 08:30-09:30 satisfies the former.
+    # Nothing stops an operator configuring an `AvailabilityRule` at
+    # `open_time = 08:30`, which would generate 08:30-09:30 slots and let the
+    # API accept a start the calendar (`step={60}`) can never produce.
+    if (end_utc - start_utc) % SLOT_DURATION != timedelta(0):
+        return False
+    if any(dt.minute or dt.second or dt.microsecond for dt in (start_utc, end_utc)):
         return False
 
-    all_slots: list[tuple[datetime, datetime]] = []
-    day = start_time.astimezone(UTC).date()
-    last_day = (end_time.astimezone(UTC) - timedelta(microseconds=1)).date()
+    all_slots: set[tuple[datetime, datetime]] = set()
+    day = start_utc.date()
+    last_day = (end_utc - timedelta(microseconds=1)).date()
     while day <= last_day:
-        all_slots.extend(_hourly_slots(await _open_windows_for_day(db, room_id, day)))
+        all_slots.update(_hourly_slots(await _open_windows_for_day(db, room_id, day)))
         day += timedelta(days=1)
 
+    # Deduplicated on purpose: two `AvailabilityRule` rows for the same room
+    # and weekday may overlap (nothing in the schema or the admin UI prevents
+    # it), and the same hour emitted twice would sit adjacent after sorting
+    # and break the contiguity check below, rejecting a perfectly open slot.
     covered = sorted(s for s in all_slots if s[0] < end_time and s[1] > start_time)
     if not covered or covered[0][0] != start_time or covered[-1][1] != end_time:
         return False
