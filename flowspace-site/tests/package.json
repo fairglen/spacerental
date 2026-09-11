@@ -1,0 +1,11 @@
+{
+  "name": "flowspace-site-smoke-tests",
+  "private": true,
+  "description": "Standalone, optional Playwright smoke test for flowspace-site. Not part of any npm workspace or CI workflow — run manually with `npx playwright test`.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}

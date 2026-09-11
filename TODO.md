@@ -914,6 +914,20 @@ capability. Demonstrate accurate operator statuses, revenue reconciliation and
 audit history. Record unavoidable external-delivery limits and manual recovery
 procedures. Required suites and migration checks pass without external credentials.
 
+## Non-roadmap deliverable — flowspace-site marketing page
+
+### F01 — Build and deploy the flowspace-site static marketing page
+Priority: P2 (independent of the active C-series queue). State: QUEUED.
+Scope: flowspace-site/**, .github/workflows/deploy-flowspace-site.yml. No
+changes to frontend/ or backend/.
+Acceptance: all real flowspace.pt content present verbatim; contact form
+sends to geral@flowspace.pt via a deployed Apps Script Web App with
+honeypot + timestamp + enum validation + CacheService rate-limiting;
+palette matches frontend/tailwind.config.ts; manual checklist in
+flowspace-site/README.md passes; GitHub Pages deploy workflow succeeds.
+Explicitly out of scope now: Google Sheets submission logging (future
+follow-up, not half-built).
+
 ## Deferred scope
 
 | ID | Previous work | Reactivation condition |

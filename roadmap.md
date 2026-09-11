@@ -18,6 +18,9 @@ completes the package-holder journey. Later outcomes retain their entry gates.
 New bugs and follow-ups are recorded and prioritized in `TODO.md` before work
 starts; discovery alone does not expand the active task.
 
+Unrelated to the outcomes below: `flowspace-site/` is a standalone marketing
+site, tracked separately as [TODO.md F01](TODO.md#f01--build-and-deploy-the-flowspace-site-static-marketing-page).
+
 **Reported purchase blocker:** [TODO.md B14](TODO.md#b14--pack-purchase-fails-credential-validation-reported-as-monthly-booking)
 tracks the user's monthly/pack purchase failure (`Could not validate credentials`
 from `POST /packages/{id}/purchase`). Authentication recovery was delivered in Gate 0: the selected package survives
