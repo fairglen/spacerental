@@ -22,6 +22,22 @@ const CONFIG = {
   TIMESTAMP_MAX_AGE_MS: 60 * 60 * 1000, // 1 hour
   TIMESTAMP_MAX_FUTURE_MS: 5 * 60 * 1000, // 5 minutes
   RATE_LIMIT_TTL_SECONDS: 5 * 60, // 5 minutes, CacheService max is 6 hours
+  // Global circuit breaker (see checkAndReserveSendSlot). The per-email limit
+  // below keys on attacker-supplied data, so a bot cycling unique valid
+  // addresses walks straight past it; Apps Script exposes no requester IP, so
+  // an IP-based limit is not available to us. These caps are the fallback:
+  // they bound total sends per window regardless of who submitted.
+  //
+  // Deliberate tradeoff: a genuine burst of traffic (a newsletter mention, a
+  // conference) can trip these and turn real enquiries away. That is the
+  // preferred failure — a bot exhausting MailApp's ~100/day consumer quota
+  // would silently kill *all* lead delivery for the rest of the day, and we
+  // would not even see the rejections. Raise these if real traffic warrants
+  // it; add a CAPTCHA (see README) if spam is the reason they keep tripping.
+  GLOBAL_HOURLY_LIMIT: 15,
+  GLOBAL_DAILY_LIMIT: 50,
+  GLOBAL_HOUR_TTL_SECONDS: 2 * 60 * 60,
+  LOCK_TIMEOUT_MS: 5000,
   ALLOWED_ESPECIALIDADE: ['Psicologia', 'Psiquiatria', 'Outra'],
   ALLOWED_INTERESSE: [
     'Reserva avulsa',
@@ -45,6 +61,14 @@ function doPost(e) {
   try {
     data = JSON.parse(e.postData.contents);
   } catch (err) {
+    return errorResponse('invalid_payload');
+  }
+
+  // JSON.parse succeeds on 'null', '"x"', '3' and '[]' — all of which would
+  // then throw a TypeError (or read nonsense) on the property access below and
+  // surface as a 500 instead of a clean invalid_payload. This endpoint is
+  // public, so those bodies can and will be sent directly.
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     return errorResponse('invalid_payload');
   }
 
@@ -102,19 +126,10 @@ function doPost(e) {
 
   const sanitized = sanitize({ nome: nome, email: email, especialidade: especialidade, interesse: interesse, mensagem: mensagem });
 
-  // Rate limiting without a Sheet: pixelforge scans its Sheet for prior
-  // submissions from the same email within a window. We have no Sheet, so we
-  // use CacheService.getScriptCache() keyed on the sanitized email instead.
-  // This is best-effort and per-script only — it does not survive a script
-  // restart/redeploy and is not a durable guarantee, the same caveat
-  // pixelforge documents for its own rate limiter, just without the Sheet
-  // dependency. See SECURITY.md-equivalent notes in flowspace-site/README.md.
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'flowspace-submission:' + sanitized.email;
-  if (cache.get(cacheKey)) {
-    return errorResponse('rate_limited');
+  const rejection = checkAndReserveSendSlot(sanitized.email);
+  if (rejection) {
+    return errorResponse(rejection);
   }
-  cache.put(cacheKey, '1', CONFIG.RATE_LIMIT_TTL_SECONDS);
 
   try {
     MailApp.sendEmail({
@@ -139,6 +154,103 @@ function doPost(e) {
   }
 
   return successResponse();
+}
+
+/**
+ * Decide whether this submission may send mail, and consume its slot if so.
+ *
+ * Two layers, both enforced here:
+ *
+ * 1. Per-email cooldown (CacheService, RATE_LIMIT_TTL_SECONDS). pixelforge
+ *    scans its Sheet for prior submissions from the same email; we have no
+ *    Sheet, so we use the script cache. Best-effort and per-script only — it
+ *    does not survive a runtime restart or a redeploy, the same caveat
+ *    pixelforge documents for its own limiter. On its own it is bypassed by
+ *    any bot that varies the address, which is why layer 2 exists.
+ * 2. Global caps (CONFIG.GLOBAL_HOURLY_LIMIT / GLOBAL_DAILY_LIMIT), keyed on
+ *    nothing the submitter controls. See the tradeoff note in CONFIG. These
+ *    are fixed calendar-hour and UTC-day windows rather than true rolling
+ *    ones — the boundary lets at most one extra window's worth through, which
+ *    is well inside the margin these caps leave against the MailApp quota.
+ *
+ * The whole check-and-set runs under a script lock: without it two concurrent
+ * executions both read an empty cache and both send, which defeats every
+ * count above. If the lock cannot be taken we fail closed (rate_limited)
+ * rather than send unchecked.
+ *
+ * Slots are consumed before the send, so a send that then fails still counts.
+ * That is the conservative direction — MailApp failures are usually quota
+ * exhaustion, and retrying into an exhausted quota helps nobody.
+ *
+ * @return {?string} an error code to return to the caller, or null to proceed.
+ */
+function checkAndReserveSendSlot(email) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(CONFIG.LOCK_TIMEOUT_MS);
+  } catch (err) {
+    return 'rate_limited';
+  }
+
+  try {
+    const cache = CacheService.getScriptCache();
+
+    // Hash the address: CacheService keys cap at 250 characters, and
+    // MAX_EMAIL_LENGTH (254) plus this prefix can exceed that on its own —
+    // non-ASCII addresses hit the limit sooner still. A raw key would throw
+    // here, before the mail is ever sent.
+    const emailKey = 'flowspace-submission:' + sha256Hex(email).slice(0, 32);
+    if (cache.get(emailKey)) {
+      return 'rate_limited';
+    }
+
+    const now = new Date();
+    const hourKey =
+      'flowspace-global-hour:' + Math.floor(now.getTime() / (60 * 60 * 1000));
+    const hourCount = Number(cache.get(hourKey)) || 0;
+    if (hourCount >= CONFIG.GLOBAL_HOURLY_LIMIT) {
+      return 'rate_limited';
+    }
+
+    // The daily window outlives CacheService's 6-hour maximum TTL, so it has
+    // to live in PropertiesService.
+    const properties = PropertiesService.getScriptProperties();
+    const today = now.toISOString().slice(0, 10);
+    const storedDay = properties.getProperty('flowspace-global-day');
+    const dayCount = storedDay === today
+      ? Number(properties.getProperty('flowspace-global-day-count')) || 0
+      : 0;
+    if (dayCount >= CONFIG.GLOBAL_DAILY_LIMIT) {
+      return 'rate_limited';
+    }
+
+    cache.put(emailKey, '1', CONFIG.RATE_LIMIT_TTL_SECONDS);
+    cache.put(hourKey, String(hourCount + 1), CONFIG.GLOBAL_HOUR_TTL_SECONDS);
+    properties.setProperties({
+      'flowspace-global-day': today,
+      'flowspace-global-day-count': String(dayCount + 1),
+    });
+
+    return null;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Hex-encoded SHA-256 of a string. Used only to bound cache key length.
+ */
+function sha256Hex(value) {
+  const bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    value,
+    Utilities.Charset.UTF_8
+  );
+  return bytes
+    .map(function (byte) {
+      return ('0' + (byte & 0xff).toString(16)).slice(-2);
+    })
+    .join('');
 }
 
 /**

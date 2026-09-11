@@ -34,10 +34,21 @@ Then open `http://localhost:8080/`. Any static file server works equally
 well (`npx serve`, VS Code's Live Server, etc.) — Python's is just always
 available.
 
-The contact form will attempt to POST to whatever `APPS_SCRIPT_URL` is set to
-in `assets/js/contact-form.js`. Until a real Apps Script Web App is deployed
-(see below), that URL is the placeholder `PASTE_DEPLOYED_URL_HERE` and
-submissions will fail with a network error — this is expected before deploy.
+The contact form POSTs to whatever `APPS_SCRIPT_URL` is set to in
+`assets/js/contact-form.js`. Until a real Apps Script Web App is deployed
+(see below), that URL is the placeholder `PASTE_DEPLOYED_URL_HERE`, and the
+form **disables itself on load**: the submit button is greyed out, an error
+banner tells the visitor the form is temporarily unavailable, and a
+`console.error` points back at this runbook. This is expected before deploy.
+
+That guard is not cosmetic. The placeholder is a *relative* URL, and a 404
+still **fulfills** `fetch()` — only network-level failures reject it — while
+`mode: 'no-cors'` makes the response opaque. Without the guard the success
+path ran and the visitor was told "Mensagem enviada!" while nothing had been
+sent. `contact-form.js` therefore refuses to call `fetch()` unless
+`APPS_SCRIPT_URL` is an absolute `https://script.google.com/...` URL, and an
+unconfigured URL can never render a success banner. `tests/smoke.spec.ts`
+pins that behavior.
 
 ## Apps Script deploy runbook
 
@@ -82,16 +93,50 @@ that Sheet to rate-limit repeat submissions per email. This project does
 **not** do that:
 
 - There is no `SpreadsheetApp` call anywhere in `Code.gs`.
-- Rate limiting instead uses `CacheService.getScriptCache()` keyed on the
-  sanitized email, with a 5-minute TTL — see the comment above the rate-limit
-  block in `Code.gs`. This is deliberately **best-effort and per-script
-  only**: it does not survive an Apps Script runtime restart or a redeploy,
-  and it is not a durable, auditable log of who submitted what. It is an
-  honest equivalent of pixelforge's own documented rate-limit caveat, just
-  without the Sheet dependency.
+- Rate limiting instead uses `CacheService`/`PropertiesService` — see "Rate
+  limiting and the global cap" below.
 - If durable logging is ever needed (e.g. for follow-up or analytics), that
   is tracked as a future follow-up, not something half-built here — do not
   add commented-out `SpreadsheetApp` code "just in case."
+
+## Rate limiting and the global cap
+
+`checkAndReserveSendSlot()` in `Code.gs` enforces two layers, both under a
+`LockService` script lock (an unlocked check-then-set lets two concurrent
+executions both see an empty cache and both send):
+
+1. **Per-email cooldown** — `CacheService.getScriptCache()` with a 5-minute
+   TTL, keyed on a SHA-256 hash of the sanitized email. The hash is not for
+   privacy; it bounds the key length, because a 254-character address plus
+   the key prefix exceeds `CacheService`'s 250-character limit and would
+   throw *before* the mail was sent. This layer is deliberately best-effort
+   and per-script: it does not survive a runtime restart or a redeploy, the
+   same caveat pixelforge documents for its own limiter.
+2. **Global cap** — **15 sends/hour** and **50 sends/day**, counted across
+   all submitters and keyed on nothing the submitter controls.
+
+Layer 2 exists because layer 1 keys on attacker-supplied data: a bot cycling
+unique, valid-looking addresses walks straight past a per-email limit. Apps
+Script does not expose the requester's IP, so an IP-based limit is not
+available to us. Both counters are fixed windows (calendar hour, UTC day)
+rather than true rolling ones — at a window boundary that lets at most one
+extra window through, comfortably inside the margin these caps leave against
+the mail quota.
+
+**This is a deliberate tradeoff, and it is honestly a blunt one.** A genuine
+burst of traffic — a newsletter mention, a conference, a busy launch day —
+can trip the cap and turn real enquiries away with `rate_limited`. That is
+the failure we chose. The alternative is a bot exhausting the ~100/day
+`MailApp` quota, which silently kills *all* lead delivery for the rest of the
+day, with no signal to anyone. Turning some leads away loudly beats losing
+every lead quietly. Raise `GLOBAL_HOURLY_LIMIT`/`GLOBAL_DAILY_LIMIT` in
+`CONFIG` if real traffic justifies it (and the account's quota allows it).
+
+**A CAPTCHA is the real long-term fix.** If spam — rather than genuine
+traffic — is what keeps tripping the cap, raising the numbers just hands the
+quota back to the bot. reCAPTCHA v3 (which the pixelforge reference documents
+as its own recommended next layer) is the right answer at that point: it
+distinguishes bots from humans instead of rationing everyone equally.
 
 ## Mail quota
 
@@ -104,9 +149,10 @@ returning `send_failed`, check the quota first
 
 ## Manual verification checklist
 
-Run this before the first deploy, and again after any content/JS change.
-There is no automated test suite for this site (see "Testing" below for why)
-— this checklist is the actual gate.
+Run this before the first deploy, and again after any content/JS change. The
+optional Playwright smoke test below covers a slice of it automatically, but
+this checklist is the actual gate — it is the only thing that covers
+`Code.gs`, which cannot run locally at all.
 
 **Content and navigation**
 - [ ] Every section's content matches `index.html` verbatim against the spec
@@ -121,7 +167,22 @@ There is no automated test suite for this site (see "Testing" below for why)
       `https://www.google.com/maps/search/?api=1&query=Rua+12+de+Julho+de+1997%2C+2745-841+Queluz+%E2%80%94+Massam%C3%A3`
       in a new tab and resolves to the correct address.
 
-**Contact form**
+**Contact form — unconfigured endpoint guard** (check this *before* pasting
+the deployed URL in, and again any time `APPS_SCRIPT_URL` changes)
+- [ ] With `APPS_SCRIPT_URL` still `PASTE_DEPLOYED_URL_HERE`, the page loads
+      with the submit button **disabled** and the error banner visible
+      reading "O formulário está temporariamente indisponível…".
+- [ ] The browser console shows the `APPS_SCRIPT_URL is not configured` error
+      pointing at this runbook.
+- [ ] Forcing a submit anyway (devtools:
+      `document.getElementById('contactForm').dispatchEvent(new Event('submit', {cancelable: true}))`)
+      fires **no** network request and shows **no** success banner. This is
+      the regression that matters most — a false "Mensagem enviada!" loses
+      the enquiry silently.
+- [ ] Same checks with a *malformed* URL (e.g. `http://example.com/exec`, or
+      an https URL not on `script.google.com`) — also refused.
+
+**Contact form — normal operation**
 - [ ] Submitting with each required field empty (nome, email, especialidade,
       interesse) in turn shows that field's inline error and does not submit.
 - [ ] An invalid email (e.g. `foo@bar`) is rejected client-side.
@@ -132,6 +193,23 @@ There is no automated test suite for this site (see "Testing" below for why)
       second attempt.
 - [ ] One real submission (after the Apps Script is deployed) arrives at
       `geral@flowspace.pt` with all fields populated correctly.
+
+**Accessibility**
+- [ ] Each invalid control gets `aria-invalid="true"` after a failed submit,
+      and clears back to `"false"` once corrected (inspect `#nome`, `#email`,
+      `#especialidade`, `#interesse`).
+- [ ] Each control's `aria-describedby` points at its `*-error` paragraph, so
+      a screen reader reads the field-specific message.
+- [ ] The mobile menu button's `aria-label` tracks its action ("Abrir menu"
+      closed / "Fechar menu" open) alongside `aria-expanded`, and its
+      `aria-controls` points at `navMobile`.
+
+**Apps Script global cap** (after deploy, optional — it consumes quota)
+- [ ] Submitting more than `GLOBAL_HOURLY_LIMIT` (15) messages from
+      *different* email addresses within one hour returns `rate_limited` and
+      sends no further mail. The per-email cooldown alone does **not** catch
+      this — the global cap is what does, and it is the whole point of it.
+- [ ] The cap resets on the next calendar hour.
 
 **Responsive**
 - [ ] Layout checked at 375px, 768px, and 1280px viewport widths — no
@@ -157,9 +235,22 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed. It
-asserts the hero copy renders, the Google Maps link href is exactly correct,
-and submitting the form (with the Apps Script call intercepted via
-`page.route()`) shows the success banner without any real network request.
+asserts:
+
+- the hero copy renders, and the Google Maps link href is exactly correct;
+- submitting a **configured** form shows the success banner without any real
+  network request. Because the committed `APPS_SCRIPT_URL` is the
+  placeholder, the spec rewrites that constant in the served script via
+  `page.route()` and stubs the endpoint — rather than adding a test-only
+  override hook to the production file;
+- the **unconfigured** placeholder disables the submit button, shows the
+  unavailable banner, and produces neither a request nor a success banner;
+- field errors set `aria-invalid` on their controls and clear it once fixed;
+- the menu toggle's `aria-label`/`aria-expanded`/`aria-controls` behave.
+
+`apps-script/Code.gs` is **not** covered here — it needs a real Apps Script
+runtime and a Google account authorized to send as `geral@flowspace.pt`, so
+it cannot run locally. Verify it via the checklist above after deploying.
 
 ## Testing
 

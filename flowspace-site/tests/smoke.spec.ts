@@ -34,22 +34,69 @@ test('maps link points at the correct address', async ({ page }) => {
   await expect(mapsLink).toHaveAttribute('target', '_blank');
 });
 
-test('submitting the form shows the success banner without a real network call', async ({ page }) => {
-  // Intercept the Apps Script call so this test never hits a real endpoint.
-  // contact-form.js ships with the placeholder APPS_SCRIPT_URL until a real
-  // deploy replaces it (see README), so route on that literal string — this
-  // also covers the real '.../macros/s/.../exec' URL once deployed.
-  await page.route(
-    (url) => url.href.includes('PASTE_DEPLOYED_URL_HERE') || url.href.includes('/macros/s/'),
-    (route) => route.fulfill({ status: 200, body: 'ok' })
-  );
+const STUB_URL = 'https://script.google.com/macros/s/TESTDEPLOYMENT/exec';
 
-  await page.goto('/');
+/**
+ * contact-form.js ships with the placeholder APPS_SCRIPT_URL until a human
+ * pastes the deployed /exec URL in (see the README runbook). To exercise the
+ * configured happy path we rewrite that constant in the served script rather
+ * than adding a test-only override hook to the production file, then stub the
+ * endpoint itself so no real request leaves the machine.
+ */
+async function stubConfiguredEndpoint(page: import('@playwright/test').Page) {
+  await page.route('**/assets/js/contact-form.js', async (route) => {
+    const response = await route.fetch();
+    const body = (await response.text()).replace(
+      "const APPS_SCRIPT_URL = 'PASTE_DEPLOYED_URL_HERE';",
+      `const APPS_SCRIPT_URL = '${STUB_URL}';`
+    );
+    await route.fulfill({ body, contentType: 'application/javascript' });
+  });
+  await page.route(STUB_URL, (route) => route.fulfill({ status: 200, body: 'ok' }));
+}
+
+async function fillValidForm(page: import('@playwright/test').Page) {
   await page.fill('#nome', 'Maria Silva');
   await page.fill('#email', 'maria@example.com');
   await page.selectOption('#especialidade', 'Psicologia');
   await page.selectOption('#interesse', 'Reserva avulsa');
+}
+
+test('submitting the form shows the success banner without a real network call', async ({ page }) => {
+  await stubConfiguredEndpoint(page);
+
+  await page.goto('/');
+  await fillValidForm(page);
   await page.click('#submitBtn');
 
   await expect(page.locator('#formSuccess')).toHaveClass(/is-visible/);
+  await expect(page.locator('#formError')).not.toHaveClass(/is-visible/);
+});
+
+/**
+ * The regression this suite exists for: an unconfigured APPS_SCRIPT_URL is a
+ * relative URL, a 404 on it still *fulfills* fetch(), and mode: 'no-cors'
+ * makes the response opaque — so the form used to report "Mensagem enviada!"
+ * while nothing had been sent. Every visitor enquiry would be lost silently.
+ */
+test('the placeholder Apps Script URL disables the form instead of faking success', async ({
+  page,
+}) => {
+  const requests: string[] = [];
+  page.on('request', (request) => requests.push(request.url()));
+
+  await page.goto('/');
+
+  const submit = page.locator('#submitBtn');
+  await expect(submit).toBeDisabled();
+  await expect(page.locator('#formError')).toHaveClass(/is-visible/);
+  await expect(page.locator('#formError')).toContainText('temporariamente indisponível');
+
+  await fillValidForm(page);
+  await page.locator('#contactForm').evaluate((form: HTMLFormElement) =>
+    form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+  );
+
+  await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
+  expect(requests.filter((url) => url.includes('PASTE_DEPLOYED_URL_HERE'))).toHaveLength(0);
 });
