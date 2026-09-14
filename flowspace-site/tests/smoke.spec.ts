@@ -36,34 +36,80 @@ test('maps link points at the correct address', async ({ page }) => {
 
 const STUB_URL = 'https://script.google.com/macros/s/TESTDEPLOYMENT/exec';
 
+type Page = import('@playwright/test').Page;
+
 /**
  * contact-form.js ships with the placeholder APPS_SCRIPT_URL until a human
- * pastes the deployed /exec URL in (see the README runbook). To exercise the
- * configured happy path we rewrite that constant in the served script rather
- * than adding a test-only override hook to the production file, then stub the
- * endpoint itself so no real request leaves the machine.
+ * pastes the deployed /exec URL in (see the README runbook). To exercise a
+ * configured form we rewrite that constant in the served script rather than
+ * adding a test-only override hook to the production file.
  */
-async function stubConfiguredEndpoint(page: import('@playwright/test').Page) {
+async function serveWithUrl(page: Page, url: string) {
   await page.route('**/assets/js/contact-form.js', async (route) => {
     const response = await route.fetch();
     const body = (await response.text()).replace(
       "const APPS_SCRIPT_URL = 'PASTE_DEPLOYED_URL_HERE';",
-      `const APPS_SCRIPT_URL = '${STUB_URL}';`
+      `const APPS_SCRIPT_URL = '${url}';`
     );
     await route.fulfill({ body, contentType: 'application/javascript' });
   });
-  await page.route(STUB_URL, (route) => route.fulfill({ status: 200, body: 'ok' }));
 }
 
-async function fillValidForm(page: import('@playwright/test').Page) {
+/**
+ * Stub the Apps Script endpoint so no real request leaves the machine.
+ *
+ * The mock is shaped exactly like a real "Anyone"-access Web App reply — same
+ * cross-origin URL, an Access-Control-Allow-Origin header, and a text/plain
+ * JSON body — so the client runs its real read-and-parse path rather than a
+ * short-circuited one.
+ *
+ * Honest limit: Playwright fulfils intercepted requests below the browser's
+ * CORS check, so these mocks cannot *prove* the cross-origin read works. The
+ * header is set because it is what production must send, not because omitting
+ * it would fail here. What the mocks do prove is everything downstream of the
+ * read: the branch on `result`, the per-code messages, and that nothing but a
+ * parsed `result === 'success'` shows the success banner.
+ *
+ * Returns the content-type the client actually sent, so a test can pin that
+ * the request stayed a CORS "simple request" (no preflight) — the property
+ * that makes the readable response possible in the first place.
+ */
+function stubEndpoint(page: Page, body: string, status = 200) {
+  const sentContentType: string[] = [];
+  const routed = page.route(STUB_URL, async (route) => {
+    sentContentType.push(route.request().headers()['content-type'] ?? '');
+    await route.fulfill({
+      status,
+      headers: {
+        'content-type': 'text/plain;charset=utf-8',
+        'access-control-allow-origin': '*',
+      },
+      body,
+    });
+  });
+  return { sentContentType, routed };
+}
+
+function stubJson(page: Page, payload: unknown, status = 200) {
+  return stubEndpoint(page, JSON.stringify(payload), status);
+}
+
+async function stubConfiguredEndpoint(page: Page) {
+  await serveWithUrl(page, STUB_URL);
+  await stubJson(page, { result: 'success', message: 'Mensagem enviada com sucesso.' }).routed;
+}
+
+async function fillValidForm(page: Page) {
   await page.fill('#nome', 'Maria Silva');
   await page.fill('#email', 'maria@example.com');
   await page.selectOption('#especialidade', 'Psicologia');
   await page.selectOption('#interesse', 'Reserva avulsa');
 }
 
-test('submitting the form shows the success banner without a real network call', async ({ page }) => {
-  await stubConfiguredEndpoint(page);
+test('a confirmed success response shows the success banner', async ({ page }) => {
+  await serveWithUrl(page, STUB_URL);
+  const stub = stubJson(page, { result: 'success', message: 'Mensagem enviada com sucesso.' });
+  await stub.routed;
 
   await page.goto('/');
   await fillValidForm(page);
@@ -71,13 +117,108 @@ test('submitting the form shows the success banner without a real network call',
 
   await expect(page.locator('#formSuccess')).toHaveClass(/is-visible/);
   await expect(page.locator('#formError')).not.toHaveClass(/is-visible/);
+  // Form cleared only on positive confirmation.
+  await expect(page.locator('#nome')).toHaveValue('');
+
+  // text/plain keeps this a CORS simple request; application/json would
+  // trigger a preflight Apps Script cannot answer.
+  expect(stub.sentContentType).toEqual(['text/plain;charset=utf-8']);
+});
+
+/**
+ * The reason mode: 'no-cors' had to go. Under an opaque response every one of
+ * these rejections looked exactly like a delivered message, and the visitor
+ * was told "Mensagem enviada!" while the enquiry was dropped.
+ */
+const ERROR_CASES: Array<{ code: string; contains: string }> = [
+  { code: 'rate_limited', contains: 'demasiados pedidos' },
+  { code: 'invalid_email', contains: 'email indicado não foi aceite' },
+  { code: 'invalid_option', contains: 'não é válido' },
+  { code: 'missing_fields', contains: 'Faltam dados obrigatórios' },
+  { code: 'send_failed', contains: 'não pôde ser entregue' },
+  { code: 'invalid_payload', contains: 'não foi aceite' },
+];
+
+for (const { code, contains } of ERROR_CASES) {
+  test(`a ${code} response shows its own message and never a success banner`, async ({ page }) => {
+    await serveWithUrl(page, STUB_URL);
+    await stubJson(page, { result: 'error', error: code }).routed;
+
+    await page.goto('/');
+    await fillValidForm(page);
+    await page.click('#submitBtn');
+
+    await expect(page.locator('#formError')).toHaveClass(/is-visible/);
+    await expect(page.locator('#formError')).toContainText(contains);
+    await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
+    // The visitor's input survives a retryable rejection.
+    await expect(page.locator('#nome')).toHaveValue('Maria Silva');
+    await expect(page.locator('#submitBtn')).toBeEnabled();
+  });
+}
+
+test('an unrecognised error code degrades to the neutral message, not success', async ({
+  page,
+}) => {
+  await serveWithUrl(page, STUB_URL);
+  await stubJson(page, { result: 'error', error: 'something_new' }).routed;
+
+  await page.goto('/');
+  await fillValidForm(page);
+  await page.click('#submitBtn');
+
+  await expect(page.locator('#formError')).toContainText('Não conseguimos confirmar o envio');
+  await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
+});
+
+test('an unreadable response body is reported as unconfirmed, not as success', async ({ page }) => {
+  await serveWithUrl(page, STUB_URL);
+  // What an Apps Script error page or a truncated proxy response looks like:
+  // HTML, not JSON. Under no-cors this was indistinguishable from a send.
+  await stubEndpoint(page, '<!doctype html><title>Error</title>', 500).routed;
+
+  await page.goto('/');
+  await fillValidForm(page);
+  await page.click('#submitBtn');
+
+  await expect(page.locator('#formError')).toHaveClass(/is-visible/);
+  await expect(page.locator('#formError')).toContainText('Não conseguimos confirmar o envio');
+  await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
+});
+
+/**
+ * Covers every way the read itself can fail: offline, DNS failure, and — the
+ * one that matters most in production — the browser blocking the response
+ * because the Web App was deployed with something other than "Anyone" access,
+ * so it carries no Access-Control-Allow-Origin. All three reject fetch() and
+ * land on the same branch.
+ *
+ * A missing CORS header cannot be mocked here: Playwright fulfils intercepted
+ * requests below the browser's CORS check, so a fulfilled response is readable
+ * whether or not it carries the header (verified — a fulfil with no ACAO is
+ * still read successfully). route.abort() is the closest faithful stand-in for
+ * the rejection a real blocked read produces. Actual cross-origin readability
+ * is therefore only provable against a real deployment; see the README.
+ */
+test('a request whose response cannot be read is unconfirmed, not a hard failure', async ({
+  page,
+}) => {
+  await serveWithUrl(page, STUB_URL);
+  await page.route(STUB_URL, (route) => route.abort('connectionrefused'));
+
+  await page.goto('/');
+  await fillValidForm(page);
+  await page.click('#submitBtn');
+
+  await expect(page.locator('#formError')).toContainText('Não conseguimos confirmar o envio');
+  await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
 });
 
 /**
  * The regression this suite exists for: an unconfigured APPS_SCRIPT_URL is a
- * relative URL, a 404 on it still *fulfills* fetch(), and mode: 'no-cors'
- * makes the response opaque — so the form used to report "Mensagem enviada!"
- * while nothing had been sent. Every visitor enquiry would be lost silently.
+ * relative URL, a 404 on it still *fulfills* fetch(), so the form used to
+ * report "Mensagem enviada!" while nothing had been sent. Every visitor
+ * enquiry would be lost silently.
  */
 test('the placeholder Apps Script URL disables the form instead of faking success', async ({
   page,
@@ -99,6 +240,66 @@ test('the placeholder Apps Script URL disables the form instead of faking succes
 
   await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
   expect(requests.filter((url) => url.includes('PASTE_DEPLOYED_URL_HERE'))).toHaveLength(0);
+});
+
+/**
+ * Checking only the origin accepted every one of these. They reach fetch(),
+ * come back as an HTML error page, and used to be reported as a success — the
+ * same bug as the placeholder, one typo away at any time.
+ */
+const MALFORMED_URLS = [
+  'https://script.google.com/',
+  'https://script.google.com/macros/s/TESTDEPLOYMENT/dev',
+  'https://script.google.com/macros/TESTDEPLOYMENT/exec',
+  'http://script.google.com/macros/s/TESTDEPLOYMENT/exec',
+];
+
+for (const url of MALFORMED_URLS) {
+  test(`a malformed Web App URL (${url}) counts as unconfigured`, async ({ page }) => {
+    const requests: string[] = [];
+    page.on('request', (request) => requests.push(request.url()));
+    await serveWithUrl(page, url);
+
+    await page.goto('/');
+
+    await expect(page.locator('#submitBtn')).toBeDisabled();
+    await expect(page.locator('#formError')).toContainText('temporariamente indisponível');
+
+    await fillValidForm(page);
+    await page.locator('#contactForm').evaluate((form: HTMLFormElement) =>
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+    );
+
+    await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
+    expect(requests.filter((r) => r.includes('script.google.com'))).toHaveLength(0);
+  });
+}
+
+/**
+ * Mirrors CONFIG.ALLOWED_ESPECIALIDADE / ALLOWED_INTERESSE in Code.gs. The
+ * server is still the real enforcement; this is the immediate feedback, and it
+ * stops a tampered value burning a send slot only to come back as
+ * invalid_option.
+ */
+test('a tampered select value is rejected client-side before any request', async ({ page }) => {
+  const requests: string[] = [];
+  page.on('request', (request) => requests.push(request.url()));
+  await stubConfiguredEndpoint(page);
+
+  await page.goto('/');
+  await fillValidForm(page);
+  await page.locator('#especialidade').evaluate((el: HTMLSelectElement) => {
+    const option = document.createElement('option');
+    option.value = 'Cardiologia';
+    el.appendChild(option);
+    el.value = 'Cardiologia';
+  });
+  await page.click('#submitBtn');
+
+  await expect(page.locator('#especialidade-error')).toHaveClass(/is-visible/);
+  await expect(page.locator('#especialidade')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
+  expect(requests.filter((r) => r.includes('script.google.com'))).toHaveLength(0);
 });
 
 test('field errors are wired to their controls for screen readers', async ({ page }) => {

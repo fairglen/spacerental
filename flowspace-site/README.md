@@ -42,13 +42,96 @@ banner tells the visitor the form is temporarily unavailable, and a
 `console.error` points back at this runbook. This is expected before deploy.
 
 That guard is not cosmetic. The placeholder is a *relative* URL, and a 404
-still **fulfills** `fetch()` — only network-level failures reject it — while
-`mode: 'no-cors'` makes the response opaque. Without the guard the success
-path ran and the visitor was told "Mensagem enviada!" while nothing had been
-sent. `contact-form.js` therefore refuses to call `fetch()` unless
-`APPS_SCRIPT_URL` is an absolute `https://script.google.com/...` URL, and an
-unconfigured URL can never render a success banner. `tests/smoke.spec.ts`
-pins that behavior.
+still **fulfills** `fetch()` — only network-level failures reject it. Without
+the guard the success path ran and the visitor was told "Mensagem enviada!"
+while nothing had been sent. `contact-form.js` therefore refuses to call
+`fetch()` unless `APPS_SCRIPT_URL` matches the deployed Web App shape exactly:
+
+```
+https://script.google.com/macros/s/<deployment-id>/exec
+```
+
+Checking only the origin is **not** enough — `https://script.google.com/`, a
+`/dev` URL, or any typo'd path on that host would pass an origin-only check,
+reach `fetch()`, and come back as an HTML error page. Anything that does not
+match the full pattern above is treated as unconfigured and fails loudly at
+load. `tests/smoke.spec.ts` pins that for the placeholder and for four
+same-host-but-malformed URLs.
+
+## How the form knows a submission actually landed
+
+**A success banner is shown only on positive confirmation** — the response was
+read, parsed as JSON, and said `result === 'success'`. Never because
+`fetch()` failed to throw. This is the property the whole design hangs on, and
+it is worth understanding before changing anything in `contact-form.js`.
+
+The form originally posted with `mode: 'no-cors'` (inherited from the
+pixelforge reference). That makes the response **opaque**: no readable status,
+no readable body. Every server-side rejection — rate limited, mail quota
+exhausted, a DevTools-tampered dropdown value, a malformed body — was
+therefore indistinguishable from a delivered message, and the visitor was
+shown "Mensagem enviada!" while the enquiry was dropped. Four separate review
+findings were all symptoms of that single choice.
+
+The fix is to make the request a CORS **"simple request"**, which needs no
+preflight (Apps Script cannot answer an `OPTIONS` preflight):
+
+- `method: 'POST'`, no `mode: 'no-cors'`;
+- `Content-Type: text/plain;charset=utf-8` — a safelisted header value.
+  `application/json` is *not* safelisted and would trigger a preflight;
+- the body is still a JSON string. `Code.gs` reads `e.postData.contents` and
+  `JSON.parse`s it regardless of the declared content type, so the server
+  needs no change to accept it.
+
+A Web App deployed with **access "Anyone"** answers such a request with a
+readable, CORS-permitted response (the `/exec` URL 302s to
+`script.googleusercontent.com`, and `fetch` follows that redirect
+transparently). **This is why the "Who has access: Anyone" step in the runbook
+below is load-bearing, not just convenience** — any other access setting means
+the browser blocks the read.
+
+The client then branches three ways:
+
+| Outcome | When | What the visitor sees |
+|---|---|---|
+| Success | body parsed, `result === 'success'` | success banner; form cleared |
+| Error | body parsed, `result === 'error'` | the specific Portuguese message for that error code; entered values kept |
+| **Unconfirmed** | `fetch()` threw, body unreadable, or an unrecognised shape | a neutral "we could not confirm the send, try again shortly" message |
+
+The unconfirmed branch is deliberately neutral rather than a hard "failed". A
+false failure on a message that *did* send pushes the visitor into submitting a
+duplicate, so the copy overclaims in neither direction. It is also the branch a
+misconfigured deployment lands in — degrading safely to "we don't know" instead
+of a false success.
+
+Each error code `Code.gs` can return has its own message in `ERROR_MESSAGES`
+(`rate_limited`, `invalid_email`, `invalid_option`, `missing_fields`,
+`send_failed`, `invalid_payload`, `field_too_long`,
+`stale_or_future_timestamp`). **If you add an error code to `Code.gs`, add its
+message there too** — an unmapped code degrades to the neutral message, which
+is safe but unhelpful.
+
+The two enum allowlists (`ALLOWED_ESPECIALIDADE`, `ALLOWED_INTERESSE`) are
+mirrored client-side, defined once at the top of `contact-form.js`, so a
+tampered `<select>` gets immediate feedback instead of burning a send slot.
+That mirror is **feedback only** — `Code.gs` re-checks every value and is the
+real enforcement. Never remove the server-side check.
+
+### What is still unverified
+
+Cross-origin readability cannot be proven without a real deployment. The smoke
+tests mock the endpoint via Playwright's `page.route()`, and Playwright fulfils
+intercepted requests *below* the browser's CORS check — a fulfilled response is
+readable whether or not it carries `Access-Control-Allow-Origin` (this was
+measured, not assumed). The mocks therefore prove everything downstream of the
+read — the branching, the per-code messages, and that nothing but a parsed
+`result === 'success'` shows the success banner — but **not** that a real
+`/exec` deployment returns a readable response to this origin.
+
+That single fact has to be confirmed by hand on the first real deploy: see the
+"response is actually readable" checks in the verification checklist below. If
+it turns out not to hold, the form degrades to the neutral unconfirmed message
+on every submission — never to a false success.
 
 ## Apps Script deploy runbook
 
@@ -64,10 +147,19 @@ without that account's credentials — it is a one-time, human, in-browser step.
 3. Click **Deploy → New deployment**.
    - Type: **Web app**.
    - Execute as: **Me** (the Google account that will authorize `MailApp`).
-   - Who has access: **Anyone**.
+   - Who has access: **Anyone**. ⚠️ **Required, and not merely for
+     convenience.** Only an "Anyone" deployment returns a response the browser
+     is permitted to read cross-origin. With any other setting the read is
+     blocked, the form can never confirm a send, and every submission — even a
+     delivered one — shows the neutral "could not confirm" message. Do not
+     substitute "Anyone with Google account".
 4. Click **Deploy**. The first deploy will prompt an OAuth consent screen —
    review and authorize the requested `MailApp` (send email) scope.
-5. Copy the resulting **Web app URL** (ends in `/exec`).
+5. Copy the resulting **Web app URL**. It must look exactly like
+   `https://script.google.com/macros/s/<deployment-id>/exec` — the `/exec`
+   suffix matters. A `/dev` URL is the editor-only test URL: it requires the
+   deploying account to be signed in, so it fails for real visitors, and
+   `contact-form.js` rejects it as unconfigured.
 6. Paste that URL into `assets/js/contact-form.js`, replacing
    `PASTE_DEPLOYED_URL_HERE`:
    ```js
@@ -76,8 +168,11 @@ without that account's credentials — it is a one-time, human, in-browser step.
 7. Commit that change (a public client file referencing a public "Anyone"
    Web App URL is the expected, accepted model here — see the code comment
    for why; pixelforge, the reference implementation, does the same).
-8. Send one real test submission through the deployed site and confirm the
-   email arrives at `geral@flowspace.pt` with all fields populated.
+8. Send one real test submission through the deployed site and confirm **both**
+   that the email arrives at `geral@flowspace.pt` with all fields populated
+   **and** that the browser actually read the response — see "response is
+   actually readable" in the checklist below. This is the one property the
+   local test suite cannot prove.
 
 **Redeploying after editing `Code.gs`:** a plain "Deploy" from the editor
 does **not** update the live Web App URL's behavior. You must go to
@@ -179,13 +274,64 @@ the deployed URL in, and again any time `APPS_SCRIPT_URL` changes)
       fires **no** network request and shows **no** success banner. This is
       the regression that matters most — a false "Mensagem enviada!" loses
       the enquiry silently.
-- [ ] Same checks with a *malformed* URL (e.g. `http://example.com/exec`, or
-      an https URL not on `script.google.com`) — also refused.
+- [ ] Same checks with a *malformed* URL — all refused. An origin-only check
+      accepted the last four of these, which is why the guard now matches the
+      full `/macros/s/<id>/exec` path:
+      - `http://example.com/exec` (wrong host)
+      - `https://example.com/macros/s/AKfy.../exec` (wrong host, right shape)
+      - `https://script.google.com/` (right host, no path)
+      - `https://script.google.com/macros/s/AKfy.../dev` (editor-only URL)
+      - `https://script.google.com/macros/AKfy.../exec` (missing `/s/`)
+      - `http://script.google.com/macros/s/AKfy.../exec` (not https)
+
+**Contact form — response is actually readable** (the one thing no local test
+can prove; check on the first deploy and after any redeploy that changes the
+access setting)
+- [ ] With the deployed URL in place, submit a valid message with the devtools
+      **Network** tab open. The `/exec` request 302s to
+      `script.googleusercontent.com`; the final response must be **status 200
+      with a readable JSON body** `{"result":"success",...}` and carry an
+      `Access-Control-Allow-Origin` response header.
+- [ ] The **Console** shows no CORS error and no
+      `could not read the contact form response` message.
+- [ ] The success banner appears. If instead you get "Não conseguimos confirmar
+      o envio" *and* the email still arrives, the send works but the read is
+      blocked — re-check that the deployment's access is **Anyone** (step 3),
+      and that it was redeployed as a **New version** (see below). Do not
+      "fix" this by reverting to `mode: 'no-cors'`; that restores the false
+      success this design exists to prevent.
+
+**Contact form — error paths** (each shows its own message and **never** the
+success banner; the entered values must survive so the visitor can retry)
+- [ ] `rate_limited` — submit twice with the same email inside the 5-minute
+      cooldown, waiting out the 5-second client cooldown between attempts.
+      Expect "Recebemos demasiados pedidos neste momento…".
+- [ ] `invalid_option` — tamper a dropdown past the client mirror
+      (`const s = document.getElementById('especialidade'); s.appendChild(Object.assign(document.createElement('option'), {value:'Cardiologia'})); s.value='Cardiologia';`)
+      and force a submit. The client catches it first and shows the inline
+      field error with no request; to reach the server message, comment out
+      the client enum check locally and expect "A especialidade ou o interesse
+      selecionado não é válido…".
+- [ ] `stale_or_future_timestamp` — leave the page open for over an hour, then
+      submit. Expect "O formulário esteve aberto demasiado tempo…".
+- [ ] Unconfirmed — go offline (devtools → Network → Offline) and submit.
+      Expect the neutral "Não conseguimos confirmar o envio da tua mensagem…",
+      **not** a hard failure and **not** a success. A hard "failed" on a
+      message that did send causes duplicate submissions.
+- [ ] Unconfirmed — with devtools, override the response to non-JSON (or point
+      `APPS_SCRIPT_URL` at a deployment returning an error page). Same neutral
+      message, no success banner.
 
 **Contact form — normal operation**
 - [ ] Submitting with each required field empty (nome, email, especialidade,
       interesse) in turn shows that field's inline error and does not submit.
 - [ ] An invalid email (e.g. `foo@bar`) is rejected client-side.
+- [ ] A dropdown value tampered past the allowlist (see `invalid_option`
+      above) shows that field's inline error and fires **no** request. The
+      three `especialidade` and four `interesse` values in
+      `ALLOWED_ESPECIALIDADE`/`ALLOWED_INTERESSE` must match the `<option>`
+      values in `index.html` and `CONFIG` in `Code.gs` — all three lists
+      still agree.
 - [ ] Filling the hidden honeypot field via devtools (`document.getElementById('assunto2').value = 'x'`)
       and submitting results in a silent no-op — no network request fires,
       no banner shows.
@@ -234,19 +380,39 @@ npx playwright test
 ```
 
 The config's `webServer` starts `python3 -m http.server` against
-`flowspace-site/` automatically, so no separate preview server is needed. It
-asserts:
+`flowspace-site/` automatically, so no separate preview server is needed.
+20 tests, all passing at time of writing. They assert:
 
 - the hero copy renders, and the Google Maps link href is exactly correct;
-- submitting a **configured** form shows the success banner without any real
-  network request. Because the committed `APPS_SCRIPT_URL` is the
-  placeholder, the spec rewrites that constant in the served script via
-  `page.route()` and stubs the endpoint — rather than adding a test-only
-  override hook to the production file;
-- the **unconfigured** placeholder disables the submit button, shows the
-  unavailable banner, and produces neither a request nor a success banner;
+- a mocked `{"result":"success"}` shows the success banner, clears the form,
+  and that the request went out as `Content-Type: text/plain;charset=utf-8` —
+  the simple-request property that makes the response readable at all;
+- each of the six mocked error codes shows **its own** Portuguese message,
+  keeps the entered values, re-enables the button, and shows **no** success
+  banner;
+- an unrecognised error code, an unparseable body (an HTML error page), and a
+  request that fails outright all show the neutral "could not confirm"
+  message — never success, never a hard failure;
+- the **unconfigured** placeholder, and four same-host-but-malformed URLs,
+  disable the submit button, show the unavailable banner, and produce neither
+  a request nor a success banner;
+- a `<select>` tampered past the client allowlist is caught before any
+  request;
 - field errors set `aria-invalid` on their controls and clear it once fixed;
 - the menu toggle's `aria-label`/`aria-expanded`/`aria-controls` behave.
+
+Because the committed `APPS_SCRIPT_URL` is the placeholder, the spec rewrites
+that constant in the served script via `page.route()` rather than adding a
+test-only override hook to the production file, and stubs the endpoint so no
+real request leaves the machine.
+
+**What these tests cannot prove:** that a real deployment's response is
+readable cross-origin. Playwright fulfils intercepted requests below the
+browser's CORS check, so the mocks are readable regardless of headers (the
+stubs set `Access-Control-Allow-Origin` anyway, because that is what
+production must send). Everything downstream of the read is covered; the read
+itself is confirmed by hand on the first deploy — see "response is actually
+readable" in the checklist above.
 
 `apps-script/Code.gs` is **not** covered here — it needs a real Apps Script
 runtime and a Google account authorized to send as `geral@flowspace.pt`, so

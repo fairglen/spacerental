@@ -55,8 +55,27 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Handle POST requests from the FlowSpace contact form.
+ *
+ * The browser sends this body with Content-Type: text/plain;charset=utf-8, not
+ * application/json — that keeps the request a CORS "simple request" so no
+ * preflight is sent (Apps Script cannot answer an OPTIONS preflight), which in
+ * turn is what lets the page read this response instead of an opaque one. The
+ * declared content type is irrelevant here: the body is a JSON string either
+ * way and e.postData.contents is the raw text.
+ *
+ * The client branches on the { result, error } shape returned below, so an
+ * error code added here needs a matching Portuguese message in
+ * assets/js/contact-form.js (ERROR_MESSAGES); an unmapped code degrades to the
+ * neutral "could not confirm" message rather than a false success.
  */
 function doPost(e) {
+  // A GET, an empty POST, or a probe with no body arrives with no postData at
+  // all. Reading .contents off it would throw a TypeError and surface as a
+  // 500 HTML error page, which the client can only treat as unconfirmed.
+  if (!e || !e.postData || typeof e.postData.contents !== 'string') {
+    return errorResponse('invalid_payload');
+  }
+
   let data;
   try {
     data = JSON.parse(e.postData.contents);
