@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, time
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class AvailabilityRuleOut(BaseModel):
@@ -20,6 +20,13 @@ class AvailabilityRuleIn(BaseModel):
     day_of_week: int
     open_time: time
     close_time: time
+
+    @field_validator("open_time", "close_time")
+    @classmethod
+    def _require_hour_aligned_time(cls, value: time) -> time:
+        if value.minute or value.second or value.microsecond:
+            raise ValueError("must be on the hour")
+        return value
 
 
 class AvailabilityRulesSetBody(BaseModel):

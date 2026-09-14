@@ -126,11 +126,10 @@ async def create_booking(
     # to keep `is_within_open_hours`'s one-query-per-calendar-day loop from
     # being handed an attacker-controlled range spanning months or years.
     if body.end_time - body.start_time > MAX_BOOKING_DURATION:
+        max_hours = int(MAX_BOOKING_DURATION.total_seconds() // 3600)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Booking duration cannot exceed {int(MAX_BOOKING_DURATION.total_seconds() // 3600)} hours"
-            ),
+            detail=f"Booking duration cannot exceed {max_hours} hours",
         )
 
     # Mirrors what BookingCalendar already offers: whole-hour slots inside an
