@@ -36,7 +36,6 @@ const CONFIG = {
   // it; add a CAPTCHA (see README) if spam is the reason they keep tripping.
   GLOBAL_HOURLY_LIMIT: 15,
   GLOBAL_DAILY_LIMIT: 50,
-  GLOBAL_HOUR_TTL_SECONDS: 2 * 60 * 60,
   LOCK_TIMEOUT_MS: 5000,
   ALLOWED_ESPECIALIDADE: ['Psicologia', 'Psiquiatria', 'Outra'],
   ALLOWED_INTERESSE: [
@@ -52,6 +51,15 @@ const CONFIG = {
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// PropertiesService keys for the global caps. Both windows live here rather
+// than in CacheService: see checkAndReserveSendSlot.
+const PROP_KEYS = {
+  HOUR_WINDOW: 'flowspace-global-hour',
+  HOUR_COUNT: 'flowspace-global-hour-count',
+  DAY_WINDOW: 'flowspace-global-day',
+  DAY_COUNT: 'flowspace-global-day-count',
+};
 
 /**
  * Handle POST requests from the FlowSpace contact form.
@@ -97,43 +105,57 @@ function doPost(e) {
     return successResponse();
   }
 
-  const missing = ['nome', 'email', 'especialidade', 'interesse', 'timestamp'].filter(
-    function (field) {
-      return !data[field] || String(data[field]).trim() === '';
-    }
-  );
-  if (missing.length > 0) {
-    return errorResponse('missing_fields');
-  }
+  const raw = {
+    nome: asText(data.nome),
+    email: asText(data.email),
+    especialidade: asText(data.especialidade),
+    interesse: asText(data.interesse),
+    mensagem: asText(data.mensagem),
+  };
 
-  const nome = String(data.nome);
-  const email = String(data.email);
-  const especialidade = String(data.especialidade);
-  const interesse = String(data.interesse);
-  const mensagem = data.mensagem ? String(data.mensagem) : '';
-
+  // Length is checked against what was actually sent, before sanitization:
+  // sanitize() only ever shortens a value, so checking afterwards would let an
+  // oversized payload through whenever stripping happened to bring it under
+  // the cap.
   if (
-    nome.length > CONFIG.MAX_NOME_LENGTH ||
-    email.length > CONFIG.MAX_EMAIL_LENGTH ||
-    especialidade.length > CONFIG.MAX_ENUM_LENGTH ||
-    interesse.length > CONFIG.MAX_ENUM_LENGTH ||
-    mensagem.length > CONFIG.MAX_MENSAGEM_LENGTH
+    raw.nome.length > CONFIG.MAX_NOME_LENGTH ||
+    raw.email.length > CONFIG.MAX_EMAIL_LENGTH ||
+    raw.especialidade.length > CONFIG.MAX_ENUM_LENGTH ||
+    raw.interesse.length > CONFIG.MAX_ENUM_LENGTH ||
+    raw.mensagem.length > CONFIG.MAX_MENSAGEM_LENGTH
   ) {
     return errorResponse('field_too_long');
   }
 
-  if (!EMAIL_REGEX.test(email)) {
+  // Sanitize first, then validate what sanitization actually produced.
+  //
+  // Validating the raw values instead was a real bug: nome: "<>" is non-empty,
+  // so it passed the required-field check; sanitize() then stripped the angle
+  // brackets to an empty string, and the blank-name enquiry still reserved a
+  // send slot and was mailed. Everything below — required, email, enum — must
+  // therefore run on `sanitized`, which is also exactly what gets emailed.
+  const sanitized = sanitize(raw);
+
+  const timestamp = asText(data.timestamp).trim();
+  const missing = ['nome', 'email', 'especialidade', 'interesse'].filter(function (field) {
+    return sanitized[field] === '';
+  });
+  if (missing.length > 0 || timestamp === '') {
+    return errorResponse('missing_fields');
+  }
+
+  if (!EMAIL_REGEX.test(sanitized.email)) {
     return errorResponse('invalid_email');
   }
 
   if (
-    CONFIG.ALLOWED_ESPECIALIDADE.indexOf(especialidade) === -1 ||
-    CONFIG.ALLOWED_INTERESSE.indexOf(interesse) === -1
+    CONFIG.ALLOWED_ESPECIALIDADE.indexOf(sanitized.especialidade) === -1 ||
+    CONFIG.ALLOWED_INTERESSE.indexOf(sanitized.interesse) === -1
   ) {
     return errorResponse('invalid_option');
   }
 
-  const submittedTime = new Date(data.timestamp);
+  const submittedTime = new Date(timestamp);
   const now = new Date();
   if (
     isNaN(submittedTime.getTime()) ||
@@ -142,8 +164,6 @@ function doPost(e) {
   ) {
     return errorResponse('stale_or_future_timestamp');
   }
-
-  const sanitized = sanitize({ nome: nome, email: email, especialidade: especialidade, interesse: interesse, mensagem: mensagem });
 
   const rejection = checkAndReserveSendSlot(sanitized.email);
   if (rejection) {
@@ -192,9 +212,18 @@ function doPost(e) {
  *    ones — the boundary lets at most one extra window's worth through, which
  *    is well inside the margin these caps leave against the MailApp quota.
  *
+ *    Both windows are stored in PropertiesService, which is durable. The
+ *    hourly window used to live in CacheService, and that made the cap a
+ *    claim rather than a control: cache entries can be evicted at any time
+ *    before their TTL, and an evicted counter reads back as 0, resetting the
+ *    window and handing out a fresh 15 sends. A limiter whose state can
+ *    vanish under load is exactly the limiter that fails when it matters.
+ *    CacheService is still used for layer 1, which is documented as
+ *    best-effort and whose worst case is one extra mail per address.
+ *
  * The whole check-and-set runs under a script lock: without it two concurrent
- * executions both read an empty cache and both send, which defeats every
- * count above. If the lock cannot be taken we fail closed (rate_limited)
+ * executions both read the same counts, both find room, and both send, which
+ * defeats every count above. If the lock cannot be taken we fail closed (rate_limited)
  * rather than send unchecked.
  *
  * Slots are consumed before the send, so a send that then fails still counts.
@@ -224,31 +253,37 @@ function checkAndReserveSendSlot(email) {
     }
 
     const now = new Date();
-    const hourKey =
-      'flowspace-global-hour:' + Math.floor(now.getTime() / (60 * 60 * 1000));
-    const hourCount = Number(cache.get(hourKey)) || 0;
+    const properties = PropertiesService.getScriptProperties();
+    // One read for all four values: getProperties() is a single API call, and
+    // both windows have to be consistent with each other within this lock.
+    const stored = properties.getProperties();
+
+    const hourWindow = String(Math.floor(now.getTime() / (60 * 60 * 1000)));
+    const hourCount = stored[PROP_KEYS.HOUR_WINDOW] === hourWindow
+      ? Number(stored[PROP_KEYS.HOUR_COUNT]) || 0
+      : 0;
     if (hourCount >= CONFIG.GLOBAL_HOURLY_LIMIT) {
       return 'rate_limited';
     }
 
-    // The daily window outlives CacheService's 6-hour maximum TTL, so it has
-    // to live in PropertiesService.
-    const properties = PropertiesService.getScriptProperties();
     const today = now.toISOString().slice(0, 10);
-    const storedDay = properties.getProperty('flowspace-global-day');
-    const dayCount = storedDay === today
-      ? Number(properties.getProperty('flowspace-global-day-count')) || 0
+    const dayCount = stored[PROP_KEYS.DAY_WINDOW] === today
+      ? Number(stored[PROP_KEYS.DAY_COUNT]) || 0
       : 0;
     if (dayCount >= CONFIG.GLOBAL_DAILY_LIMIT) {
       return 'rate_limited';
     }
 
+    // Both counters advance in one setProperties call, so a failure mid-write
+    // cannot leave the hour counted and the day not (or the reverse).
+    const update = {};
+    update[PROP_KEYS.HOUR_WINDOW] = hourWindow;
+    update[PROP_KEYS.HOUR_COUNT] = String(hourCount + 1);
+    update[PROP_KEYS.DAY_WINDOW] = today;
+    update[PROP_KEYS.DAY_COUNT] = String(dayCount + 1);
+    properties.setProperties(update);
+
     cache.put(emailKey, '1', CONFIG.RATE_LIMIT_TTL_SECONDS);
-    cache.put(hourKey, String(hourCount + 1), CONFIG.GLOBAL_HOUR_TTL_SECONDS);
-    properties.setProperties({
-      'flowspace-global-day': today,
-      'flowspace-global-day-count': String(dayCount + 1),
-    });
 
     return null;
   } finally {
@@ -273,8 +308,23 @@ function sha256Hex(value) {
 }
 
 /**
+ * Coerce a submitted field to a string, treating anything that is not already
+ * one as absent.
+ *
+ * Not String(value): this endpoint is public, so `{}` and `[]` can and will be
+ * submitted, and String() turns them into "[object Object]" / "" — the first
+ * of which is non-empty, passes the required-field check, and gets emailed
+ * verbatim. A field that isn't a string is missing, not a value.
+ */
+function asText(value) {
+  return typeof value === 'string' ? value : '';
+}
+
+/**
  * Trim all strings, strip angle brackets from free-text fields, and
  * lowercase the email for consistent rate-limit keys.
+ *
+ * Callers must validate the *result* of this, not its input — see doPost.
  */
 function sanitize(fields) {
   return {

@@ -39,18 +39,40 @@ const STUB_URL = 'https://script.google.com/macros/s/TESTDEPLOYMENT/exec';
 type Page = import('@playwright/test').Page;
 
 /**
+ * Replace a constant's declaration in the served script, failing loudly if it
+ * is not there. A silent no-op would leave the test running against the
+ * unmodified file — still green, but proving nothing.
+ */
+function replaceOnce(source: string, needle: string, replacement: string): string {
+  if (!source.includes(needle)) {
+    throw new Error(`contact-form.js no longer contains \`${needle}\` — update this test.`);
+  }
+  return source.replace(needle, replacement);
+}
+
+/**
  * contact-form.js ships with the placeholder APPS_SCRIPT_URL until a human
  * pastes the deployed /exec URL in (see the README runbook). To exercise a
  * configured form we rewrite that constant in the served script rather than
- * adding a test-only override hook to the production file.
+ * adding a test-only override hook to the production file. The request
+ * deadline is rewritten the same way, so the timeout test does not have to
+ * wait out the real 15s.
  */
-async function serveWithUrl(page: Page, url: string) {
+async function serveWithUrl(page: Page, url: string, opts: { timeoutMs?: number } = {}) {
   await page.route('**/assets/js/contact-form.js', async (route) => {
     const response = await route.fetch();
-    const body = (await response.text()).replace(
+    let body = replaceOnce(
+      await response.text(),
       "const APPS_SCRIPT_URL = 'PASTE_DEPLOYED_URL_HERE';",
       `const APPS_SCRIPT_URL = '${url}';`
     );
+    if (opts.timeoutMs !== undefined) {
+      body = replaceOnce(
+        body,
+        'const REQUEST_TIMEOUT_MS = 15000;',
+        `const REQUEST_TIMEOUT_MS = ${opts.timeoutMs};`
+      );
+    }
     await route.fulfill({ body, contentType: 'application/javascript' });
   });
 }
@@ -212,6 +234,39 @@ test('a request whose response cannot be read is unconfirmed, not a hard failure
 
   await expect(page.locator('#formError')).toContainText('Não conseguimos confirmar o envio');
   await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
+});
+
+/**
+ * fetch() has no timeout of its own. A connection that opens and then stalls
+ * never settles the promise, so before the AbortController the button stayed
+ * on "A enviar..." indefinitely, disabled, with no way to retry and no
+ * message — the worst outcome available, because the visitor cannot even tell
+ * something went wrong. The deadline routes through the neutral "unconfirmed"
+ * branch (the request may have been delivered), never through success.
+ *
+ * The route handler here never fulfils or aborts, which is what a stalled
+ * connection looks like to the page. REQUEST_TIMEOUT_MS is rewritten down so
+ * the test does not wait out the real 15 seconds.
+ */
+test('a stalled request times out as unconfirmed and re-enables the button', async ({ page }) => {
+  await serveWithUrl(page, STUB_URL, { timeoutMs: 750 });
+  await page.route(STUB_URL, () => {
+    /* deliberately never settled */
+  });
+
+  await page.goto('/');
+  await fillValidForm(page);
+  await page.click('#submitBtn');
+
+  await expect(page.locator('#submitBtn')).toHaveText('A enviar...');
+
+  await expect(page.locator('#formError')).toContainText('Não conseguimos confirmar o envio');
+  await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
+  // The point of the deadline: the visitor can try again.
+  await expect(page.locator('#submitBtn')).toBeEnabled();
+  await expect(page.locator('#submitBtn')).toHaveText('Enviar mensagem');
+  // Their input survives, so retrying does not mean retyping.
+  await expect(page.locator('#nome')).toHaveValue('Maria Silva');
 });
 
 /**

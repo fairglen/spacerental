@@ -39,7 +39,9 @@ The contact form POSTs to whatever `APPS_SCRIPT_URL` is set to in
 (see below), that URL is the placeholder `PASTE_DEPLOYED_URL_HERE`, and the
 form **disables itself on load**: the submit button is greyed out, an error
 banner tells the visitor the form is temporarily unavailable, and a
-`console.error` points back at this runbook. This is expected before deploy.
+`console.error` points back at this runbook. This is expected before deploy —
+and the Pages workflow refuses to publish while it is the case, see
+"Deploying to GitHub Pages" below.
 
 That guard is not cosmetic. The placeholder is a *relative* URL, and a 404
 still **fulfills** `fetch()` — only network-level failures reject it. Without
@@ -57,6 +59,55 @@ reach `fetch()`, and come back as an HTML error page. Anything that does not
 match the full pattern above is treated as unconfigured and fails loudly at
 load. `tests/smoke.spec.ts` pins that for the placeholder and for four
 same-host-but-malformed URLs.
+
+## Deploying to GitHub Pages
+
+`.github/workflows/deploy-flowspace-site.yml` publishes this directory to
+GitHub Pages on every push to `main` that touches `flowspace-site/**` (or the
+workflow itself), and on manual `workflow_dispatch`.
+
+**Only an explicit allowlist of files is published.** The workflow stages
+`index.html`, `privacidade.html`, `assets/**` and a short list of optional
+root files (`favicon.*`, `robots.txt`, `sitemap.xml`, `CNAME`, `.nojekyll`, …)
+into a clean directory and uploads *that*. It previously uploaded
+`flowspace-site/` wholesale, which also served `README.md`, `apps-script/Code.gs`
+and `tests/**` at public URLs — and `Code.gs` hands out the honeypot field name
+and the exact rate-limit thresholds, which is precisely what a spammer needs to
+evade them.
+
+It is an allowlist rather than a denylist on purpose: a denylist silently leaks
+whatever file someone adds next. **If you add a file that belongs on the public
+site, add it to `SITE_PATHS`/`OPTIONAL_PATHS` in that workflow** — otherwise it
+simply will not be published. Each run logs both what it published and what it
+skipped, so an omission is visible in the Actions log.
+
+### ⚠️ The deploy fails on purpose until the Apps Script URL is committed
+
+The workflow refuses to publish a site whose contact form is dead on arrival.
+Before uploading anything it checks `APPS_SCRIPT_URL` in
+`assets/js/contact-form.js` and **fails the job** if it is still
+`PASTE_DEPLOYED_URL_HERE`, or if it does not match
+`https://script.google.com/macros/s/<deployment-id>/exec` exactly (the same
+pattern `contact-form.js` enforces at runtime).
+
+**This means the deploy workflow is red today, and will stay red until someone
+completes the Apps Script runbook below and commits the real `/exec` URL.**
+That is the intended behaviour, not a bug to route around. Without the gate the
+site would publish happily with a permanently disabled contact form: it fails
+safe, but silently, and nobody would notice that every enquiry route was shut.
+The failure message in the Actions log names the file and the exact fix.
+
+The workflow also runs `actions/configure-pages`, which supplies the
+base path and origin that `upload-pages-artifact` and `deploy-pages` expect —
+without it a first-time Pages setup can fail at the deploy step.
+
+**Unverified:** no real Pages run has been observed for this workflow. The two
+`run` steps (the URL gate and the staging allowlist) were executed locally
+against this checkout — the gate fails on the committed placeholder, passes on
+a valid `/exec` URL, and rejects a `/dev` URL; the staging step produced exactly
+the six site files and excluded `README.md`, `apps-script/` and `tests/`. The
+Pages actions themselves (`configure-pages`, `upload-pages-artifact`,
+`deploy-pages`) have not run.
 
 ## How the form knows a submission actually landed
 
@@ -117,9 +168,81 @@ tampered `<select>` gets immediate feedback instead of burning a send slot.
 That mirror is **feedback only** — `Code.gs` re-checks every value and is the
 real enforcement. Never remove the server-side check.
 
+### The request has a deadline
+
+`fetch()` has no timeout of its own, and a connection that opens and then
+stalls never settles the promise. Without a deadline the submit button sat on
+"A enviar…", disabled, indefinitely — no message, no retry, and no way for the
+visitor to tell that anything had gone wrong.
+
+`REQUEST_TIMEOUT_MS` (15s) drives an `AbortController` that covers **both** the
+connection and the body read — aborting also rejects an in-flight
+`response.text()`, which is the case a connect-only timeout misses (headers
+arrive, body never does). A trip routes through the **unconfirmed** branch,
+never through success: the request may well have been delivered, so the visitor
+gets the same neutral "could not confirm" message and a re-enabled button with
+their input intact. 15s is deliberately generous — Apps Script's `/exec`
+redirects to `script.googleusercontent.com` and a cold script start is slow, so
+a timeout means genuinely stuck rather than merely slow.
+
+### Validation order in `Code.gs`: sanitize first, then validate
+
+`doPost` validates the **sanitized** values, not the raw ones. This ordering is
+load-bearing and was a real bug: `nome: "<>"` is non-empty, so it passed the
+raw required-field check; `sanitize()` then stripped the angle brackets to an
+empty string, and the resulting blank-name enquiry still reserved a global send
+slot and was emailed. Anything that sanitizes to empty now returns
+`missing_fields` *before* `checkAndReserveSendSlot()` is reached.
+
+Two ordering details that must survive any future edit:
+
+- **Length is still checked on the raw values, before sanitizing.**
+  `sanitize()` only ever shortens, so checking afterwards would let an
+  oversized payload through whenever stripping happened to bring it under the
+  cap.
+- **Fields that are not strings count as missing.** `String({})` is
+  `"[object Object]"` — non-empty, and it would pass a required-field check and
+  be emailed verbatim. `asText()` treats any non-string as absent; this
+  endpoint is public, so those bodies do get sent.
+
+### Apps Script *does* send `Access-Control-Allow-Origin` (measured)
+
+An automated review asserted that Apps Script "cannot add the
+`Access-Control-Allow-Origin` header", that the cross-origin read will
+therefore always fail, and that this design needs "a same-origin relay or a
+different backend". **That is wrong**, and it was checked empirically rather
+than reasoned about: `curl -L -D -` against a live Apps Script `/exec`
+endpoint, sending an `Origin:` header, returns the header on *both* hops:
+
+```
+HTTP/2 302
+access-control-allow-origin: *
+location: https://script.googleusercontent.com/macros/echo?...
+
+HTTP/2 404
+access-control-allow-origin: *
+```
+
+Google's infrastructure attaches `access-control-allow-origin: *` on its own —
+it is not something `ContentService` has to set, and there is nothing in
+`Code.gs` that could add it. So the premise behind "rebuild this with a relay"
+does not hold. **Do not re-architect this on that false premise**; if the read
+ever does fail in practice, check the deployment's access setting first (step 3
+of the runbook — it must be **Anyone**).
+
+Recorded here because the claim is plausible-sounding, is repeated widely, and
+would otherwise cost someone a rewrite.
+
 ### What is still unverified
 
-Cross-origin readability cannot be proven without a real deployment. The smoke
+The measurement above proves the header is present. It does **not** prove a
+full successful JSON read end to end: the final hop in that test returned 404
+(the `script.googleusercontent.com/macros/echo` URL appears to be single-use,
+so replaying it by hand misses the body). A real submission from the deployed
+page is still the only way to confirm the whole path, which is why the
+first-deploy checklist below keeps its "response is actually readable" checks.
+
+Cross-origin readability cannot be proven from the local suite either. The smoke
 tests mock the endpoint via Playwright's `page.route()`, and Playwright fulfils
 intercepted requests *below* the browser's CORS check — a fulfilled response is
 readable whether or not it carries `Access-Control-Allow-Origin` (this was
@@ -206,9 +329,21 @@ executions both see an empty cache and both send):
    the key prefix exceeds `CacheService`'s 250-character limit and would
    throw *before* the mail was sent. This layer is deliberately best-effort
    and per-script: it does not survive a runtime restart or a redeploy, the
-   same caveat pixelforge documents for its own limiter.
+   same caveat pixelforge documents for its own limiter. Its worst case is one
+   extra mail per address, which is why best-effort is acceptable *here*.
 2. **Global cap** — **15 sends/hour** and **50 sends/day**, counted across
-   all submitters and keyed on nothing the submitter controls.
+   all submitters and keyed on nothing the submitter controls. **Both windows
+   live in `PropertiesService`, which is durable.**
+
+The hourly window used to live in `CacheService`, and that made the cap a claim
+rather than a control: cache entries can be evicted at any time before their
+TTL, an evicted counter reads back as `0`, and the window silently restarts
+with a fresh 15 sends. A limiter whose state can vanish under load is exactly
+the limiter that fails when it matters — and unlike layer 1 this one is
+presented as real protection for the `MailApp` quota, so it now matches its
+claim. Both counters advance in a single `setProperties()` call inside the same
+`LockService` critical section, so a mid-write failure cannot count the hour
+without the day.
 
 Layer 2 exists because layer 1 keys on attacker-supplied data: a bot cycling
 unique, valid-looking addresses walks straight past a per-email limit. Apps
@@ -321,6 +456,18 @@ success banner; the entered values must survive so the visitor can retry)
 - [ ] Unconfirmed — with devtools, override the response to non-JSON (or point
       `APPS_SCRIPT_URL` at a deployment returning an error page). Same neutral
       message, no success banner.
+- [ ] Unconfirmed (timeout) — devtools → Network → throttle to "Offline" *after*
+      clicking submit, or use a request-blocking rule that stalls the `/exec`
+      request. Within ~15s the neutral "Não conseguimos confirmar o envio…"
+      appears, the button returns to "Enviar mensagem" and is clickable again,
+      and the entered values are still there. The bug this replaced left the
+      button on "A enviar…" forever.
+- [ ] `missing_fields` on a value that sanitizes away — submit with
+      `nome` set to `<>` via devtools
+      (`document.getElementById('nome').value = '<>'`, then submit). Expect
+      "Faltam dados obrigatórios…" and **no** email at `geral@flowspace.pt`.
+      Before the validation reorder this reserved a send slot and mailed a
+      blank-name enquiry.
 
 **Contact form — normal operation**
 - [ ] Submitting with each required field empty (nome, email, especialidade,
@@ -356,6 +503,27 @@ success banner; the entered values must survive so the visitor can retry)
       sends no further mail. The per-email cooldown alone does **not** catch
       this — the global cap is what does, and it is the whole point of it.
 - [ ] The cap resets on the next calendar hour.
+- [ ] The hourly counter is durable: after tripping the cap, check
+      **Project Settings → Script Properties** in the Apps Script editor and
+      confirm `flowspace-global-hour` / `flowspace-global-hour-count` are
+      present with the current window and a count of 15. Cache eviction cannot
+      be forced by hand, so this property being the source of truth is the
+      observable part; the eviction case itself is only covered in simulation
+      (see "What is verified only in simulation" below).
+
+**GitHub Pages deploy** (after the first successful Actions run)
+- [ ] The published site serves `/`, `/privacidade.html` and everything under
+      `/assets/`.
+- [ ] `/README.md`, `/apps-script/Code.gs`, `/tests/smoke.spec.ts` and
+      `/tests/package.json` all return **404** on the live site. `Code.gs`
+      leaking the honeypot field name and the rate-limit thresholds is the
+      reason the allowlist exists.
+- [ ] The Actions log's "Stage publishable site files" step lists exactly the
+      files you expect under "Publishing:" — check anything newly added is
+      there rather than under "Not published".
+- [ ] Before the Apps Script URL is committed, the run fails at "Require a
+      configured Apps Script URL" and publishes nothing. This is expected; see
+      "Deploying to GitHub Pages" above.
 
 **Responsive**
 - [ ] Layout checked at 375px, 768px, and 1280px viewport widths — no
@@ -381,7 +549,7 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-20 tests, all passing at time of writing. They assert:
+21 tests, all passing at time of writing. They assert:
 
 - the hero copy renders, and the Google Maps link href is exactly correct;
 - a mocked `{"result":"success"}` shows the success banner, clears the form,
@@ -393,6 +561,11 @@ The config's `webServer` starts `python3 -m http.server` against
 - an unrecognised error code, an unparseable body (an HTML error page), and a
   request that fails outright all show the neutral "could not confirm"
   message — never success, never a hard failure;
+- a **stalled** request (a route that never settles) hits the
+  `REQUEST_TIMEOUT_MS` deadline, shows the same neutral message, and leaves the
+  button enabled and back to "Enviar mensagem" with the visitor's input intact.
+  The spec rewrites the deadline down so it doesn't wait 15s; it was confirmed
+  to fail when the `AbortController` signal is removed;
 - the **unconfigured** placeholder, and four same-host-but-malformed URLs,
   disable the submit button, show the unavailable banner, and produce neither
   a request nor a success banner;
@@ -417,6 +590,22 @@ readable" in the checklist above.
 `apps-script/Code.gs` is **not** covered here — it needs a real Apps Script
 runtime and a Google account authorized to send as `geral@flowspace.pt`, so
 it cannot run locally. Verify it via the checklist above after deploying.
+
+### What is verified only in simulation
+
+The `Code.gs` changes (validating sanitized values, and the durable hourly cap)
+were exercised in a throwaway Node harness with hand-written stand-ins for
+`LockService`, `CacheService`, `PropertiesService`, `MailApp`, `Utilities` and
+`ContentService` — including a forced full cache eviction, which proved the
+hourly cap still rejects because the count lives in `PropertiesService`. That
+harness is **not committed**: it is a sketch of Apps Script's semantics, not
+Apps Script, and keeping it would invite mistaking it for real coverage.
+
+So: the *logic* was executed and behaves as described, but **nothing here has
+run on Google's runtime**. Real `CacheService` eviction timing, real
+`PropertiesService` durability and quota limits, and real `LockService`
+contention are all unproven until the script is deployed. The
+`Code.gs`-dependent items in the manual checklist remain the actual gate.
 
 ## Testing
 

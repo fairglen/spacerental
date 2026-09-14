@@ -44,6 +44,16 @@
     /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{10,}\/exec$/;
 
   const SUBMIT_COOLDOWN_MS = 5000;
+
+  // Deadline for the whole request — the connection *and* reading the body.
+  // fetch() has no timeout of its own: a stalled connection never settles, so
+  // without this the button sits on "A enviar..." forever and the visitor has
+  // no way to retry. Generous on purpose (Apps Script's /exec 302s to
+  // script.googleusercontent.com, and a cold script start is slow), so a
+  // trip here means genuinely stuck, not merely slow. Timing out routes
+  // through the "unconfirmed" branch — the request may well have been
+  // delivered, so it is never reported as either success or hard failure.
+  const REQUEST_TIMEOUT_MS = 15000;
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   // Mirrors CONFIG.ALLOWED_ESPECIALIDADE / CONFIG.ALLOWED_INTERESSE in
@@ -191,50 +201,71 @@
    *   'success' only when the body was read, parsed, and said so.
    */
   async function send(values) {
-    let response;
-    try {
-      response = await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        // text/plain keeps this a CORS "simple request" so no preflight is
-        // sent — Apps Script cannot answer an OPTIONS preflight. The body is
-        // still JSON; Code.gs parses e.postData.contents either way.
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(values),
-      });
-    } catch (err) {
-      // Offline, DNS failure, or CORS genuinely blocked the read. The request
-      // may still have reached Apps Script and sent the mail, so we cannot
-      // claim failure any more than we can claim success.
-      console.error('flowspace-site: contact form request failed:', err);
-      return { outcome: 'unconfirmed' };
-    }
+    // The abort covers the body read as well as the connection: aborting
+    // rejects an in-flight response.text() too, which is the case a
+    // fetch-only timeout would miss (headers arrive, body never does).
+    const controller = new AbortController();
+    const timeout = setTimeout(function () {
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
 
-    let payload;
     try {
-      payload = JSON.parse(await response.text());
-    } catch (err) {
-      console.error(
-        'flowspace-site: could not read the contact form response (status ' +
-          response.status +
-          '):',
-        err
-      );
-      return { outcome: 'unconfirmed' };
-    }
+      let response;
+      try {
+        response = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          // text/plain keeps this a CORS "simple request" so no preflight is
+          // sent — Apps Script cannot answer an OPTIONS preflight. The body is
+          // still JSON; Code.gs parses e.postData.contents either way.
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(values),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // Offline, DNS failure, CORS genuinely blocked the read, or our own
+        // timeout fired. The request may still have reached Apps Script and
+        // sent the mail, so we cannot claim failure any more than success.
+        if (err && err.name === 'AbortError') {
+          console.error(
+            'flowspace-site: contact form request timed out after ' +
+              REQUEST_TIMEOUT_MS +
+              'ms; treating it as unconfirmed.'
+          );
+        } else {
+          console.error('flowspace-site: contact form request failed:', err);
+        }
+        return { outcome: 'unconfirmed' };
+      }
 
-    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      let payload;
+      try {
+        payload = JSON.parse(await response.text());
+      } catch (err) {
+        console.error(
+          'flowspace-site: could not read the contact form response (status ' +
+            response.status +
+            '):',
+          err
+        );
+        return { outcome: 'unconfirmed' };
+      }
+
+      if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+        return { outcome: 'unconfirmed' };
+      }
+      if (payload.result === 'success') {
+        return { outcome: 'success' };
+      }
+      if (payload.result === 'error') {
+        return { outcome: 'error', code: String(payload.error || '') };
+      }
+      // A readable body we do not understand — an Apps Script HTML error page
+      // would not have parsed at all, but a future/edited Code.gs might return
+      // something else. Do not guess success.
       return { outcome: 'unconfirmed' };
+    } finally {
+      clearTimeout(timeout);
     }
-    if (payload.result === 'success') {
-      return { outcome: 'success' };
-    }
-    if (payload.result === 'error') {
-      return { outcome: 'error', code: String(payload.error || '') };
-    }
-    // A readable body we do not understand — an Apps Script HTML error page
-    // would not have parsed at all, but a future/edited Code.gs might return
-    // something else. Do not guess success.
-    return { outcome: 'unconfirmed' };
   }
 
   // Fail loudly at load rather than only on submit: a visitor who can see the
