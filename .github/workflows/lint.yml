@@ -1,6 +1,22 @@
 name: Lint
 
-on: [push, pull_request]
+# Filtered like every other workflow here: `ruff check backend` only has an
+# opinion about backend Python, so an unfiltered run made unrelated branches
+# (e.g. a static-site-only change) inherit and report main's lint state as
+# their own failure. `ruff.toml` lives at the repository root, so it has to be
+# listed alongside `backend/**` or a config change would skip its own check.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'ruff.toml'
+      - '.github/workflows/lint.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'ruff.toml'
+      - '.github/workflows/lint.yml'
 
 jobs:
   python:
