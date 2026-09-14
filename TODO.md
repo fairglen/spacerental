@@ -486,6 +486,43 @@ has a clear client response, distinct operator accounts with equal names get
 unique slugs, and failure creates no partial account/org/membership. Preserve
 normal duplicate-email and shared rate-limit behavior.
 
+### B20 — CI health-probe database-name mismatch persists after B16's local fix
+
+**Priority: P2. State: QUEUED.** Discovered 2026-09-10 via automated review on
+[PR #36](https://github.com/fairglen/spacerental/pull/36): B16 fixed the
+`pg_isready` healthcheck in `docker-compose.test.yml` to target the actual test
+database, but `.github/workflows/backend-tests.yml` and
+`.github/workflows/migrations.yml` both still run the same unqualified
+`pg_isready -U spacerental` against Postgres services configured with
+`POSTGRES_DB: spacerental_test` and `POSTGRES_DB: spacerental_migrations`
+respectively — the identical mismatch B16 was opened for, still live in CI.
+Fix by qualifying each workflow's healthcheck with its own `POSTGRES_DB` value
+(mirroring B16's `-d $$POSTGRES_DB` approach). Acceptance: neither workflow's
+Postgres service logs a missing-database FATAL during a run; both workflows
+still pass. Not implemented now — recorded for a future pass rather than
+reopening B16, since B16's own local-stack fix and evidence are correct as far
+as they go.
+
+This entry was originally recorded on the `docs/reconcile-todo-status-2026-09-10`
+branch as `ccb3189`, but that commit was pushed after
+[PR #35](https://github.com/fairglen/spacerental/pull/35) had already merged and
+closed, so it never reached main. Restored here on 2026-09-14.
+
+### B21 — Lint workflow has no path filter, so every branch inherits main's lint state
+
+**Priority: P2. State: DONE — this PR.** Discovered 2026-09-14 while reviewing
+why [PR #40](https://github.com/fairglen/spacerental/pull/40) (a static-HTML-only
+change under `flowspace-site/`) showed a failing `Lint / python` check.
+`.github/workflows/lint.yml` was the only workflow declared as bare
+`on: [push, pull_request]` with no `paths:` filter, so `ruff check backend` ran
+against every branch regardless of what it touched, and reported main's
+pre-existing `E501` failure as that PR's red X. Fixed by giving the workflow the
+same push/pull_request path filters the other workflows already use. The filter
+includes root `ruff.toml` as well as `backend/**`, since the Ruff configuration
+lives at the repository root and a change to it must still trigger the job.
+Verified against Q00's finding that main carries no required-status-check
+configuration, so a skipped run cannot leave a pull request stuck pending.
+
 ### C02 — Complete the package-holder journey
 
 **Priority: P1. State: DONE — merged as `d919f52` (2026-09-10).** Branch:
