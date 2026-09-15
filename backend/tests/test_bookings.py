@@ -646,3 +646,120 @@ class TestBookingValidityBoundary:
             headers=auth_headers,
         )
         assert resp.status_code == 403, resp.text
+
+    async def _room_with_windows(self, db_session, test_org, test_space, name, windows):
+        """A room whose every weekday carries the given (open, close) windows."""
+        room = Room(
+            space_id=test_space.id,
+            org_id=test_org.id,
+            name=name,
+            hourly_rate=Decimal("11.00"),
+            images=[],
+            amenities=[],
+        )
+        db_session.add(room)
+        await db_session.flush()
+        for day in range(7):
+            for open_time, close_time in windows:
+                db_session.add(
+                    AvailabilityRule(
+                        room_id=room.id,
+                        day_of_week=day,
+                        open_time=open_time,
+                        close_time=close_time,
+                    )
+                )
+        await db_session.commit()
+        await db_session.refresh(room)
+        return room
+
+    async def test_overlapping_availability_rules_still_allow_a_booking(
+        self, client, db_session, auth_headers, test_org, test_space, test_member
+    ):
+        """Two overlapping rules for the same room/day emit the same hour twice.
+        Un-deduplicated, the duplicates sit adjacent once sorted and the
+        contiguity check compares 09:00 against 08:00 again, rejecting an
+        obviously open slot. Nothing prevents an operator creating such rules."""
+        room = await self._room_with_windows(
+            db_session,
+            test_org,
+            test_space,
+            "Sala com Regras Sobrepostas",
+            [(time(8, 0), time(18, 0)), (time(9, 0), time(13, 0))],
+        )
+
+        start, end = _monday_slot(10, duration_hours=2)
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+
+    async def test_adjacent_availability_windows_merge(
+        self, client, db_session, auth_headers, test_org, test_space, test_member
+    ):
+        """Deduplication must not break genuinely touching windows: 08:00-12:00
+        and 12:00-18:00 are one continuous run across the 12:00 boundary."""
+        room = await self._room_with_windows(
+            db_session,
+            test_org,
+            test_space,
+            "Sala com Janelas Adjacentes",
+            [(time(8, 0), time(12, 0)), (time(12, 0), time(18, 0))],
+        )
+
+        start, end = _monday_slot(11, duration_hours=2)
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+
+    async def test_non_adjacent_availability_windows_still_reject_the_gap(
+        self, client, db_session, auth_headers, test_org, test_space, test_member
+    ):
+        """The other side of the same coin: a real 12:00-14:00 closure must
+        still reject a range that straddles it."""
+        room = await self._room_with_windows(
+            db_session,
+            test_org,
+            test_space,
+            "Sala com Intervalo Real",
+            [(time(8, 0), time(12, 0)), (time(14, 0), time(18, 0))],
+        )
+
+        start, end = _monday_slot(11, duration_hours=4)
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "opening hours" in resp.json()["detail"]
+
+    async def test_half_hour_rule_does_not_allow_a_half_hour_start(
+        self, client, db_session, auth_headers, test_org, test_space, test_member
+    ):
+        """A rule opening at 08:30 generates 08:30-09:30 slots, so the duration
+        check alone would accept an 08:30 start the calendar (`step={60}`)
+        can never produce. Alignment is checked explicitly instead."""
+        room = await self._room_with_windows(
+            db_session,
+            test_org,
+            test_space,
+            "Sala Meia-Hora",
+            [(time(8, 30), time(18, 30))],
+        )
+
+        target_date = _next_monday()
+        start = datetime.combine(target_date, time(8, 30), tzinfo=UTC).isoformat()
+        end = datetime.combine(target_date, time(9, 30), tzinfo=UTC).isoformat()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={"room_id": str(room.id), "start_time": start, "end_time": end},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert "opening hours" in resp.json()["detail"]

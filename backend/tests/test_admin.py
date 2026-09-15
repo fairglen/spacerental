@@ -470,6 +470,17 @@ class TestAdminAvailability:
         )
         assert resp.status_code == 403
 
+    async def test_admin_set_availability_rejects_non_hour_rules(
+        self, client, admin_headers, test_org, test_room
+    ):
+        resp = await client.post(
+            f"/api/v1/admin/rooms/{test_room.id}/availability",
+            params={"org_id": str(test_org.id)},
+            json={"rules": [{"day_of_week": 0, "open_time": "08:30:00", "close_time": "18:00:00"}]},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 422
+
 
 class TestAdminAccessControl:
     async def test_member_role_forbidden_on_admin_dashboard(self, client, db_session, test_org):
