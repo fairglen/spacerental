@@ -32,7 +32,7 @@
   // flowspace-site/README.md for the exact steps (create project, paste
   // Code.gs, deploy as Web App executing as "Me" with access "Anyone",
   // authorize the MailApp scope, then copy the /exec URL here).
-  const APPS_SCRIPT_URL = 'PASTE_DEPLOYED_URL_HERE';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCLoDGP_Qh2WwngmF6xEL4W4rTY8zZlEd08ywiNA7w_0oaI8s8roEYb0r6aPV9eH1M/exec';
 
   const PLACEHOLDER_URL = 'PASTE_DEPLOYED_URL_HERE';
 
