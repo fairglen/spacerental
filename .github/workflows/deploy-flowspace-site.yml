@@ -1,0 +1,143 @@
+name: Deploy flowspace-site
+
+# NOTE: path-filtered to flowspace-site/** so this workflow only runs for
+# changes to the standalone FlowSpace marketing site, not the EspaçoHora SaaS
+# app in frontend/ or backend/. See TODO.md F01 and frontend-tests.yml's note
+# on path-filter/required-check interaction (TODO.md T4) if this is ever made
+# a required status check.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flowspace-site/**'
+      - '.github/workflows/deploy-flowspace-site.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  SITE_DIR: flowspace-site
+  PUBLISH_DIR: _pages-publish
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Refuse to publish a site whose contact form is dead on arrival.
+      #
+      # APPS_SCRIPT_URL is pasted in by hand after the Apps Script Web App is
+      # deployed (see the runbook in flowspace-site/README.md). Left as the
+      # placeholder, contact-form.js disables the form and tells visitors it is
+      # unavailable — it fails safe, but silently, and a live marketing site
+      # with a permanently broken contact form is worse than no deploy.
+      #
+      # This step is therefore EXPECTED TO FAIL until a real /exec URL is
+      # committed. That is the intended behaviour, not a bug. See "Deploying to
+      # GitHub Pages" in flowspace-site/README.md.
+      - name: Require a configured Apps Script URL
+        run: |
+          set -euo pipefail
+          file="$SITE_DIR/assets/js/contact-form.js"
+          url="$(grep -oE "const APPS_SCRIPT_URL = '[^']*'" "$file" | head -n 1 | cut -d"'" -f2 || true)"
+
+          if [ -z "$url" ]; then
+            echo "::error file=$file::Could not find a 'const APPS_SCRIPT_URL = ...' declaration. If the constant was renamed, update this workflow step to match."
+            exit 1
+          fi
+
+          if [ "$url" = "PASTE_DEPLOYED_URL_HERE" ]; then
+            echo "::error file=$file::APPS_SCRIPT_URL is still the placeholder, so the published contact form would be permanently disabled. Deploy the Apps Script Web App (README.md -> 'Apps Script deploy runbook'), paste its https://script.google.com/macros/s/<deployment-id>/exec URL into $file, and commit that change. This failure is deliberate."
+            exit 1
+          fi
+
+          if ! printf '%s' "$url" | grep -qE '^https://script\.google\.com/macros/s/[A-Za-z0-9_-]{10,}/exec$'; then
+            echo "::error file=$file::APPS_SCRIPT_URL ('$url') is not a deployed Web App URL. It must match https://script.google.com/macros/s/<deployment-id>/exec exactly — a /dev URL is the editor-only test URL and fails for real visitors. contact-form.js applies the same check at runtime and would disable the form."
+            exit 1
+          fi
+
+          echo "APPS_SCRIPT_URL is configured: $url"
+
+      # Publish an explicit allowlist of site files, never the whole directory.
+      #
+      # Uploading flowspace-site/ wholesale also served README.md,
+      # apps-script/Code.gs and tests/** at public URLs. Code.gs in particular
+      # hands out the honeypot field name and the exact rate-limit thresholds —
+      # precisely what a spammer needs to evade them.
+      #
+      # An allowlist, not a denylist: a denylist silently leaks whatever file
+      # someone adds next. Anything new that genuinely belongs on the public
+      # site has to be added to SITE_PATHS (or OPTIONAL_PATHS) below, and the
+      # step logs everything it skipped so an omission is visible in the run.
+      - name: Stage publishable site files
+        run: |
+          set -euo pipefail
+
+          # Required — a missing one is a broken site, so fail rather than ship it.
+          SITE_PATHS="index.html privacidade.html assets"
+          # Published when present; these are all optional by nature.
+          OPTIONAL_PATHS="favicon.ico favicon.svg favicon.png apple-touch-icon.png robots.txt sitemap.xml site.webmanifest manifest.json CNAME .nojekyll"
+
+          rm -rf "$PUBLISH_DIR"
+          mkdir -p "$PUBLISH_DIR"
+
+          for entry in $SITE_PATHS; do
+            if [ ! -e "$SITE_DIR/$entry" ]; then
+              echo "::error::Required site path '$entry' is missing from $SITE_DIR/."
+              exit 1
+            fi
+            cp -R "$SITE_DIR/$entry" "$PUBLISH_DIR/"
+          done
+
+          for entry in $OPTIONAL_PATHS; do
+            if [ -e "$SITE_DIR/$entry" ]; then
+              cp -R "$SITE_DIR/$entry" "$PUBLISH_DIR/"
+            fi
+          done
+
+          echo "Publishing:"
+          find "$PUBLISH_DIR" -type f | sort | sed "s|^$PUBLISH_DIR/|  |"
+
+          echo "Not published (kept out of the artifact on purpose):"
+          for entry in $(ls -A "$SITE_DIR"); do
+            case " $SITE_PATHS $OPTIONAL_PATHS " in
+              *" $entry "*) ;;
+              *) echo "  $entry" ;;
+            esac
+          done
+
+          # The three findings that motivated the allowlist, pinned so a
+          # regression fails the deploy instead of quietly republishing them.
+          for leaked in README.md apps-script tests; do
+            if [ -e "$PUBLISH_DIR/$leaked" ]; then
+              echo "::error::'$leaked' must never be published — it is not part of the public site."
+              exit 1
+            fi
+          done
+
+      # Emits the base_path/origin the artifact upload and deployment expect.
+      # Without it a first-time Pages setup can fail at deploy-pages before
+      # anything is published.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.PUBLISH_DIR }}
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

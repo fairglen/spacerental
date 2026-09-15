@@ -1,0 +1,19 @@
+/*
+ * Design tokens copied 1:1 from `frontend/tailwind.config.ts` (spacerental's
+ * SaaS app). This file has no build step of its own — if the source palette
+ * changes, re-sync these values by hand.
+ */
+:root {
+  --color-primary: #3D7A5E;
+  --color-primary-light: #A8D5BA;
+  --color-accent-bg: #E8F4F0;
+  --color-accent-fg: #3D7A5E;
+  --color-background: #F9FAFB;
+  --color-foreground: #1A1A2E;
+  --color-muted: #6B7280;
+  --color-card: #FFFFFF;
+  --color-border: #E5E7EB;
+  --radius: 0.75rem;
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
