@@ -303,6 +303,107 @@ does **not** update the live Web App URL's behavior. You must go to
 Deploy**. This keeps the same `/exec` URL while pushing the new script logic
 live.
 
+> 🚨 **`Code.gs` is a reference copy — commits to it change nothing live.**
+> The repo and the deployed Web App drift apart the moment either is edited
+> alone. A security fix landed here is not in effect until someone re-pastes
+> the file and publishes a **New version** as above. See "Mail security: the
+> invariants `Code.gs` must never lose" below — the header-injection fix
+> documented there is **pending redeploy**.
+
+## Mail security: the invariants `Code.gs` must never lose
+
+> ### 🚨 The fix described here is NOT live until someone redeploys
+>
+> `apps-script/Code.gs` in this repo is **only a reference copy**. Nothing in
+> version control executes. The code that actually answers requests lives in
+> the Apps Script project editor, and **it still contains the vulnerable
+> version until a human pastes this file in and publishes a new version**:
+>
+> **Apps Script editor → paste the full contents of `apps-script/Code.gs` →
+> Deploy → Manage deployments → (pencil) Edit → Version: **New version** →
+> Deploy**
+>
+> A plain "Deploy" does **not** update the live Web App. Until the step above
+> is done, the public endpoint keeps accepting header-injection payloads.
+
+This endpoint is public, unauthenticated, deployed with access "Anyone", and it
+sends email as the business. The account running it may well be
+`geral@flowspace.pt` itself, so anything that lets a submitter steer delivery
+is an open relay wearing the business's identity. Three invariants hold that
+shut; all three are enforced in code, not by convention.
+
+### 1. The recipient is never derived from request data
+
+`to:` is the constant `CONFIG.TO_EMAIL` and nothing else. No field of the
+request may reach it, directly or by concatenation. `IMMUTABLE_RECIPIENT`
+duplicates the address on purpose, and `assertSendOptions()` — called
+immediately before `MailApp.sendEmail` — refuses to send unless
+`options.to === CONFIG.TO_EMAIL === 'geral@flowspace.pt'`. Editing `CONFIG`
+alone fails closed rather than silently redirecting mail.
+
+The same assertion refuses to send if a `cc`, `bcc`, `from`, `name`,
+`htmlBody`, `attachments` or `inlineImages` option ever appears. The first four
+would add or forge a delivery target; the last three would render
+attacker-controlled markup or files in whoever opens the mail. The options
+object passed today has exactly four keys: `to`, `replyTo`, `subject`, `body`.
+
+### 2. The subject carries no free text
+
+It used to be `'Novo contacto FlowSpace — ' + sanitized.nome`, and that was a
+real header-injection hole: `sanitize()` strips only `<` and `>`, so CR and LF
+survived it untouched. A `nome` of `"Ana\nBcc: vitima@exemplo.com"` reached
+`MailApp.sendEmail` with the newline intact — and `Bcc:` is precisely the
+header that turns this form into a relay.
+
+The subject is now assembled from a constant prefix plus `especialidade` and
+`interesse` only. Both have been compared by identity against
+`ALLOWED_ESPECIALIDADE` / `ALLOWED_INTERESSE` before that point, so their only
+possible values are the literals in `CONFIG`, which contain no control
+characters. The visitor's name is in the **body**, where it belongs.
+
+**Never reintroduce free text into the subject.** Not putting user input in a
+header is a categorically stronger control than filtering it on the way in —
+filtering is one missed encoding away from failing, and not being there cannot
+fail at all.
+
+### 3. Control characters are rejected, not stripped
+
+`hasControlCharacters()` rejects any submission carrying a control character
+with the error code `invalid_characters`, **before** `checkAndReserveSendSlot()`
+runs — so a probe cannot burn the global send quota either.
+
+Rejecting beats stripping. Stripping would launder
+`"Ana\nBcc: vitima@exemplo.com"` into a normal-looking enquiry, mail it, and
+leave nobody any the wiser that the endpoint was being probed. Rejecting is
+unambiguous about what was delivered and makes an attack in progress visible.
+
+The check applies to **every** field, not only the ones that currently reach a
+header — a future edit that promotes a field into the subject must not silently
+reopen this. One deliberate exception: `mensagem` comes from a `<textarea>`
+where line breaks are the entire point, so it permits TAB/LF/CR while still
+rejecting the rest of the C0 range and DEL. That exception is safe only because
+`mensagem` never reaches a header, and `assertSendOptions()` enforces *that* at
+the send boundary rather than trusting a comment to survive.
+
+### `replyTo` is a claimed, unverified address
+
+`replyTo: sanitized.email` is the one attacker-influenced header value. It is
+constrained by `EMAIL_REGEX` (whose `\s` class excludes CR and LF, and whose
+`$` anchors at true end-of-string — there is no `m` flag), that validation runs
+before the send on every path, and `assertSendOptions()` re-checks it.
+
+But it is **not a verified identity**. Nothing proves the submitter owns that
+address. Hitting Reply in the business inbox replies to whatever they typed.
+The body prints the same address on its own line precisely so the reader can
+cross-check before replying — **keep that line.**
+
+### ⚠️ `invalid_characters` has no client message yet
+
+`assets/js/contact-form.js` is out of scope for the change that added the code,
+so `ERROR_MESSAGES` has no entry for `invalid_characters` and it currently
+degrades to the neutral "could not confirm" message. That is safe but
+unhelpful — **add a Portuguese message for it.**
+
 ## Sheet logging is intentionally not implemented
 
 The reference implementation this was adapted from (pixelforge's
@@ -469,6 +570,17 @@ success banner; the entered values must survive so the visitor can retry)
       Before the validation reorder this reserved a send slot and mailed a
       blank-name enquiry.
 
+**Mail security** (after the redeploy — see "Mail security" below)
+- [ ] Submit with `nome` set to a header-injection payload via devtools
+      (`document.getElementById('nome').value = 'Ana\nBcc: ' + 'you@yourdomain.test'`)
+      and force a submit. **No mail may arrive at that Bcc address**, and none
+      at `geral@flowspace.pt` either — the request is rejected before sending.
+- [ ] A normal submission's email has subject
+      `Novo contacto FlowSpace — <especialidade> / <interesse>` with **no
+      visitor-supplied text in it**, and the name appears in the body.
+- [ ] The received mail has exactly one recipient, `geral@flowspace.pt`, and no
+      Cc or Bcc (check "Show original" / full headers, not just the client UI).
+
 **Contact form — normal operation**
 - [ ] Submitting with each required field empty (nome, email, especialidade,
       interesse) in turn shows that field's inline error and does not submit.
@@ -593,19 +705,37 @@ it cannot run locally. Verify it via the checklist above after deploying.
 
 ### What is verified only in simulation
 
-The `Code.gs` changes (validating sanitized values, and the durable hourly cap)
-were exercised in a throwaway Node harness with hand-written stand-ins for
-`LockService`, `CacheService`, `PropertiesService`, `MailApp`, `Utilities` and
-`ContentService` — including a forced full cache eviction, which proved the
-hourly cap still rejects because the count lives in `PropertiesService`. That
-harness is **not committed**: it is a sketch of Apps Script's semantics, not
-Apps Script, and keeping it would invite mistaking it for real coverage.
+The `Code.gs` changes (validating sanitized values, the durable hourly cap, and
+the mail-security invariants above) were exercised in a throwaway Node harness
+with hand-written stand-ins for `LockService`, `CacheService`,
+`PropertiesService`, `MailApp`, `Utilities` and `ContentService` — including a
+forced full cache eviction, which proved the hourly cap still rejects because
+the count lives in `PropertiesService`. That harness is **not committed**: it is
+a sketch of Apps Script's semantics, not Apps Script, and keeping it would
+invite mistaking it for real coverage.
+
+The mail-hardening pass ran **205 checks, all passing**, capturing the exact
+options object handed to a stubbed `MailApp.sendEmail`: control characters
+rejected in every field across ten payloads (LF, CRLF, bare CR, NUL, VT, FF,
+ESC, DEL, TAB, and CR/LF carrying a `Bcc:`/`Cc:` header) with no mail sent;
+`to === 'geral@flowspace.pt'` and exactly the keys `to`/`replyTo`/`subject`/
+`body` across twelve benign and hostile submissions; the subject proven equal
+to its constant-plus-enum form with the name absent; the enum allowlists,
+length caps, email regex, honeypot, malformed bodies and both rate-limit layers
+still gating; and the guard itself refusing every forbidden option key. The
+same harness was run against the **pre-fix** file as a negative control: 58 of
+191 checks failed there, and `nome: "Ana\nBcc: vitima@exemplo.com"` reached
+`sendEmail` with the newline intact — so the checks fail when the bug is
+present rather than passing vacuously.
 
 So: the *logic* was executed and behaves as described, but **nothing here has
-run on Google's runtime**. Real `CacheService` eviction timing, real
-`PropertiesService` durability and quota limits, and real `LockService`
-contention are all unproven until the script is deployed. The
-`Code.gs`-dependent items in the manual checklist remain the actual gate.
+run on Google's runtime**. In particular, whether `MailApp` itself would have
+neutralised an embedded newline is **unknown and untested** — that is exactly
+why the defence is at our layer and not left to the platform. Real
+`CacheService` eviction timing, real `PropertiesService` durability and quota
+limits, and real `LockService` contention are likewise unproven until the
+script is deployed. The `Code.gs`-dependent items in the manual checklist
+remain the actual gate.
 
 ## Testing
 
