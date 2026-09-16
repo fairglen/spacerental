@@ -1,0 +1,39 @@
+name: Docs sync
+
+# AGENTS.md and CLAUDE.md are deliberately the same file under two names: each
+# is the filename a different AI coding tool looks for, so whichever one is
+# pointed at this repo reads the same guidance. They are kept byte-identical
+# rather than one pointing at the other, because a tool that only reads its own
+# filename would otherwise get a stub instead of the actual conventions.
+#
+# This check exists because they already drifted once, silently: AGENTS.md was
+# left describing payments, smart locks and email as "deliberately stubbed"
+# long after those had shipped. A stale copy is worse than no copy — it hands
+# an agent confident, wrong context. Failing CI is the only thing that reliably
+# stops that happening again.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.github/workflows/docs-sync.yml'
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.github/workflows/docs-sync.yml'
+
+jobs:
+  identical:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: AGENTS.md must be identical to CLAUDE.md
+        run: |
+          if ! diff -u CLAUDE.md AGENTS.md; then
+            echo "::error file=AGENTS.md::AGENTS.md and CLAUDE.md have diverged. They must stay byte-identical — edit CLAUDE.md, then run 'cp CLAUDE.md AGENTS.md' and commit both. The diff above shows what changed (CLAUDE.md is the left side)."
+            exit 1
+          fi
+          echo "AGENTS.md and CLAUDE.md are identical."
