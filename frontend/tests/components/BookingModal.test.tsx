@@ -409,3 +409,35 @@ it('hides experimental recurrence by default', () => {
   renderModal()
   expect(screen.queryByLabelText(/Repetir semanalmente/i)).not.toBeInTheDocument()
 })
+
+describe('BookingModal error mapping (B31)', () => {
+  it('explains a past start time instead of the generic error', async () => {
+    vi.mocked(bookingsApi.create).mockRejectedValue({
+      response: { status: 400, data: { detail: 'start_time cannot be in the past' } },
+    })
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/já passou/)
+    expect(alert).not.toHaveTextContent(/Erro ao criar reserva/)
+  })
+
+  it('offers sign-in with a callbackUrl when the session has expired (401)', async () => {
+    vi.mocked(bookingsApi.create).mockRejectedValue({ response: { status: 401, data: {} } })
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/sessão/i)
+    expect(alert.querySelector('a')).toHaveAttribute('href', expect.stringMatching(/^\/sign-in\?callbackUrl=/))
+  })
+
+  it('names a network failure', async () => {
+    vi.mocked(bookingsApi.create).mockRejectedValue(new Error('Network Error'))
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/ligação/i)
+  })
+})

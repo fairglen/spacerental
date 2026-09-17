@@ -29,3 +29,28 @@ describe('cancellationErrorMessage (C07)', () => {
     }
   })
 })
+
+import { bookingErrorMessage } from '@/lib/httpError'
+
+describe('bookingErrorMessage (B31)', () => {
+  it('keeps the 409 distinction between a taken slot and missing pack hours', () => {
+    expect(bookingErrorMessage(httpError(409, 'This time slot is already booked'), 'hourly')).toMatch(/já está reservado/)
+    expect(bookingErrorMessage(httpError(409, 'This time slot is already booked'), 'package')).toMatch(/já está reservado/)
+    expect(bookingErrorMessage(httpError(409, 'No active package with 3 hours remaining'), 'package')).toMatch(/horas suficientes/)
+  })
+  it('explains a past start and hours outside opening time', () => {
+    expect(bookingErrorMessage(httpError(400, 'start_time cannot be in the past'), 'hourly')).toMatch(/já passou/)
+    expect(bookingErrorMessage(httpError(400, "Requested time is outside the room's opening hours"), 'hourly')).toMatch(/horário de funcionamento/)
+    expect(bookingErrorMessage(httpError(400, 'end_time must be after start_time'), 'hourly')).toMatch(/não é válido/)
+  })
+  it('maps an expired session, a non-member, throttling and a payment start failure', () => {
+    expect(bookingErrorMessage(httpError(401), 'hourly')).toMatch(/sessão/i)
+    expect(bookingErrorMessage(httpError(403, 'You are not a member of this organization'), 'hourly')).toMatch(/inscrit/i)
+    expect(bookingErrorMessage(httpError(429), 'hourly')).toMatch(/aguarda/i)
+    expect(bookingErrorMessage(httpError(502, 'Could not start the payment session'), 'hourly')).toMatch(/pagamento/i)
+  })
+  it('names a network failure and keeps the generic fallback for the rest', () => {
+    expect(bookingErrorMessage(new Error('Network Error'), 'hourly')).toMatch(/ligação/i)
+    expect(bookingErrorMessage(httpError(500), 'hourly')).toMatch(/Erro ao criar reserva/)
+  })
+})

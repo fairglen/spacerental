@@ -65,3 +65,43 @@ export function cancellationErrorMessage(error: unknown): string {
   if (status === undefined) return 'Sem ligação ao servidor. Verifica a internet e tenta novamente.'
   return 'Não foi possível cancelar a reserva. Tenta novamente daqui a pouco.'
 }
+
+export type BookingPaymentMethod = 'hourly' | 'package'
+
+/**
+ * Portuguese explanation for a failed `POST /bookings` (B31). Everything that
+ * is not a 409 used to collapse into "Erro ao criar reserva". Kept here, next
+ * to `cancellationErrorMessage`, so other screens can reuse the same words.
+ */
+export function bookingErrorMessage(error: unknown, method: BookingPaymentMethod): string {
+  const status = statusOf(error)
+  const detail = detailOf(error)?.toLowerCase() ?? ''
+  switch (status) {
+    case 409: {
+      const slotTaken = detail.includes('time slot') || detail.includes('horário') || detail.includes('reservado')
+      return method === 'package' && !slotTaken
+        ? 'O teu pack já não tem horas suficientes para esta reserva.'
+        : 'Este horário já está reservado. Escolhe outro intervalo no calendário.'
+    }
+    case 400:
+      if (detail.includes('past')) return 'Essa hora já passou. Escolhe um horário a partir de agora.'
+      if (detail.includes('opening hours')) {
+        return 'O horário escolhido está fora do horário de funcionamento da sala.'
+      }
+      return 'O horário escolhido não é válido. Volta a selecionar as horas no calendário.'
+    case 401:
+      return 'A tua sessão expirou. Entra de novo para concluir a reserva.'
+    case 403:
+      return 'A tua conta ainda não está inscrita neste espaço. Contacta o espaço para te inscrever.'
+    case 404:
+      return 'Esta sala já não está disponível para reservas.'
+    case 429:
+      return 'Demasiados pedidos seguidos. Aguarda um momento e tenta de novo.'
+    case 502:
+      return 'Não foi possível iniciar o pagamento. Tenta novamente daqui a pouco.'
+    case undefined:
+      return 'Sem ligação ao servidor. Verifica a internet e tenta novamente.'
+    default:
+      return 'Erro ao criar reserva. Tenta novamente.'
+  }
+}

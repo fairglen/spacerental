@@ -8,7 +8,7 @@ import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { bookingsApi, recurrencesApi, packagesApi, createAuthenticatedApi } from '@/lib/api'
 import { formatCurrency, formatHours } from '@/lib/utils'
-import { statusOf, conflictsOf, detailOf } from '@/lib/httpError'
+import { statusOf, conflictsOf, bookingErrorMessage } from '@/lib/httpError'
 import { signInHref } from '@/lib/navigation'
 import { expandWeeklyOccurrences } from '@/lib/recurrence'
 import { Button } from '@/components/ui/button'
@@ -46,18 +46,6 @@ function spendablePurchases(
       new Date(p.expires_at).getTime() > now &&
       p.hours_remaining >= duration,
   )
-}
-
-function errorMessage(error: unknown, method: PaymentMethod): string {
-  const status = statusOf(error)
-  if (status === 409) {
-    const detail = detailOf(error)?.toLowerCase() ?? ''
-    const slotTaken = detail.includes('time slot') || detail.includes('horário') || detail.includes('reservado')
-    return method === 'package' && !slotTaken
-      ? 'O teu pack já não tem horas suficientes para esta reserva.'
-      : 'Este horário já está reservado. Escolhe outro intervalo no calendário.'
-  }
-  return 'Erro ao criar reserva. Tenta novamente.'
 }
 
 export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
@@ -361,7 +349,15 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
               </div>
             ) : (
               <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
-                {errorMessage(mutation.error, effectiveMethod)}
+                {bookingErrorMessage(mutation.error, effectiveMethod)}
+                {statusOf(mutation.error) === 401 && (
+                  <>
+                    {' '}
+                    <Link href={signInHref(pathname)} className="font-medium underline" onClick={onClose}>
+                      Entrar na conta
+                    </Link>
+                  </>
+                )}
               </p>
             )
           )}

@@ -1026,7 +1026,16 @@ dashboard component tests; unit test for the hours formatter.
 
 ### B31 — Booking errors are all the same sentence
 
-**Priority: P1. State: QUEUED.** `errorMessage()` in `BookingModal.tsx` maps
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): `bookingErrorMessage(error, method)` in `lib/httpError.ts` maps
+409 (slot taken vs insufficient pack hours, unchanged), 400 past start, 400
+outside opening hours, other 400, 401 (modal adds an "Entrar na conta" link
+with `callbackUrl`), 403 not a member, 404, 429, 502 payment start, network
+failure, and a generic fallback. The modal's private `errorMessage` was
+removed in favour of it. Tests: 4 unit tests over every mapping, 3 modal
+tests (past, 401 link, network); 32 pass across the touched files.
+
+Original report: **Priority: P1.** `errorMessage()` in `BookingModal.tsx` maps
 everything that is not 409 to "Erro ao criar reserva". **Dependencies:** none.
 **Acceptance:** map at least past start time, outside opening hours, 401
 expired session (offer sign-in with `callbackUrl`), 403 not a member, 429 rate
