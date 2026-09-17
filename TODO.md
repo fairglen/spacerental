@@ -580,6 +580,73 @@ with design notes. Tests: real-PG cancel-pending-inside-24h, expiry with a
 controlled clock, late/duplicate webhook; Playwright abandon → pay now →
 confirmed and abandon → slot bookable again.
 
+**C03 decision (recorded 2026-09-18 before implementation, on
+`fix/smoke-findings`; review and reverse per point):**
+
+1. *Hold lifetime.* An unpaid `pending` hourly booking holds its slot until
+   `hold_expires_at`, set at creation to `now + BOOKING_HOLD_MINUTES`
+   (new setting, default 15, forwarded by Compose and documented in
+   `.env.example`). `hold_expires_at` is NULL for package bookings (confirmed
+   at once) and for series occurrences (they await the operator, R02), so
+   those never expire. Alternative rejected: deriving expiry from
+   `created_at` — it cannot be extended by a retry and leaks the rule into
+   every reader.
+2. *Expiry is evaluated at read/conflict time; no sweeper yet.* A pending row
+   whose `hold_expires_at` has passed does not block availability
+   (`GET /rooms/{id}/availability`) or `has_conflicting_booking`. Because the
+   `bookings_no_overlap` EXCLUDE constraint still sees it, the write paths
+   that acquire a slot (`POST /bookings`, retry below, admin reinstatement)
+   first run `expire_stale_holds()`: `UPDATE … SET status='expired' WHERE
+   status='pending' AND hold_expires_at <= now AND overlaps`. The row lock
+   serialises two customers racing for a released slot; the constraint
+   remains the last line and still yields the existing 409. `GET /bookings/me`
+   applies the same update to the caller's own stale holds so the dashboard
+   shows the real state. Alternative rejected: changing the constraint
+   predicate — it cannot reference `now()`.
+3. *New statuses* `expired` and `paid_unfulfilled` on `booking_status`
+   (Alembic `0003_booking_holds`; the downgrade maps `expired → cancelled`
+   and `paid_unfulfilled → confirmed` before recreating the enum, and is
+   exercised by the CI round trip). Neither holds a slot (the EXCLUDE
+   predicate is unchanged: `confirmed`/`pending` only).
+4. *Owner cancellation of an unpaid hold* (`pending`) is always allowed: the
+   24h rule applies to paid (`confirmed`) bookings only. Nothing was paid, no
+   hours are credited (pending rows never carry `package_purchase_id`), the
+   lock revoke is a no-op. The cancellation email is still sent (existing
+   behaviour for pending series occurrences; unchanged).
+5. *Stub checkout "Cancelar"* fast-forwards the hold: `hold_expires_at := now`
+   and `status := expired`, releasing the slot immediately while keeping the
+   same state machine as live Stripe, where the cancel URL is a plain
+   redirect and the hold lapses at (1). Live therefore relies on (1) + (4).
+6. *Resume/retry* — `POST /bookings/{id}/checkout` (owner only). A valid
+   pending hold returns its existing Checkout URL
+   (`PaymentGateway.get_checkout_url`; the stub recreates its in-memory
+   session after a restart, live retrieves the session). An `expired` booking
+   whose slot is free becomes `pending` again with a fresh
+   `hold_expires_at`, a new session, and the old session expired at the
+   gateway (`expire_checkout_session`, so it can no longer be paid); if the
+   slot is taken → 409 and it stays `expired`. No second booking row is ever
+   created. Dashboard: `pending` hourly rows show "A aguardar pagamento" +
+   "Pagar agora" + the deadline; `expired` shows "Expirada" + "Tentar pagar
+   de novo".
+7. *Late or duplicate `checkout.session.completed`.* Matched by
+   `stripe_checkout_session_id`. `pending` → `confirmed` (unchanged).
+   `expired`/`cancelled` with the slot still free → `confirmed` (the money
+   arrived and the customer clicked pay; the row re-enters the EXCLUDE
+   predicate, which is what proves the slot is free). Slot taken →
+   `paid_unfulfilled`: the payment is persisted on the booking, visible to
+   the customer ("Pagamento recebido, mas o horário já não está disponível")
+   and to the operator in the admin table; the refund itself is O02. A
+   duplicate event for a `confirmed` booking is a no-op. Package purchases
+   are unchanged in this slice.
+8. *Out of scope here:* a background sweeper, Stripe `checkout.session.expired`
+   webhooks, live-mode cancel-URL handling, refunds.
+
+State transitions: `pending —pay→ confirmed`; `pending —owner cancel→
+cancelled`; `pending —deadline (lazy)→ expired`; `pending —stub cancel→
+expired`; `expired —retry, slot free→ pending`; `expired —retry, slot
+taken→ 409`; `expired|cancelled —late pay, slot free→ confirmed`;
+`expired|cancelled —late pay, slot taken→ paid_unfulfilled`.
+
 ### C04 — Patch dependencies and validate a production build
 
 **Intake evidence (2026-09-10):** C01's pinned `npm ci` reported 24 audit findings
