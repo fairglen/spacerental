@@ -1006,7 +1006,17 @@ modal component test for the success state; dashboard test for the label.
 
 ### B30 — Packs are undiscoverable
 
-**Priority: P1. State: QUEUED.** Nothing links to `/dashboard/packages` — not
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): navbar (desktop + mobile) shows "Os meus packs" →
+`/dashboard/packages` for signed-in users (`navbar.my_packages` in pt/en);
+the dashboard has an "Os teus packs" region listing active purchases with
+`formatHours(hours_remaining)`, expiry date and a link, or an invitation when
+there is none; `/dashboard/packages` renders "10h" / "7,5h" instead of
+"10.0h". Tests: 2 navbar, 2 dashboard, 1 packages-page test; the existing
+packages-page test that pinned "7.0h" was updated to "7h". Full Vitest: 175
+passed.
+
+Original report: **Priority: P1.** Nothing links to `/dashboard/packages` — not
 the navbar, not the dashboard whose subtitle promises "reservas e pacotes".
 "10.0h restantes" is also shown instead of "10h". **Dependencies:** none.
 **Acceptance:** a nav entry for signed-in users and a compact packs summary on

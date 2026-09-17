@@ -63,3 +63,34 @@ describe('Navbar component i18n refactor (9.1)', () => {
     expect(screen.getByText('Sair')).toBeInTheDocument()
   })
 })
+
+describe('Navbar packs entry (B30)', () => {
+  beforeEach(() => {
+    vi.mocked(useSession).mockReturnValue({ data: null, status: 'unauthenticated', update: vi.fn() })
+    vi.mocked(useOrg).mockReturnValue({
+      memberships: [], currentOrgId: null, currentMembership: null, setCurrentOrgId: vi.fn(), isLoading: false,
+    })
+  })
+
+  it('links signed-in users to their packs', () => {
+    vi.mocked(useSession).mockReturnValue({
+      data: { accessToken: 'jwt-token', user: { name: 'Demo' } } as never,
+      status: 'authenticated',
+      update: vi.fn(),
+    })
+    vi.mocked(useOrg).mockReturnValue({
+      memberships: [{ org_id: 'org-1', org_name: 'Demo', org_slug: 'demo', role: 'member' }],
+      currentOrgId: 'org-1',
+      currentMembership: { org_id: 'org-1', org_name: 'Demo', org_slug: 'demo', role: 'member' },
+      setCurrentOrgId: vi.fn(),
+      isLoading: false,
+    })
+    render(<Navbar />)
+    expect(screen.getAllByRole('link', { name: /packs/i })[0]).toHaveAttribute('href', '/dashboard/packages')
+  })
+
+  it('does not show the packs entry to visitors', () => {
+    render(<Navbar />)
+    expect(screen.queryByRole('link', { name: /packs/i })).toBeNull()
+  })
+})

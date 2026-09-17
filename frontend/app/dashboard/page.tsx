@@ -6,9 +6,9 @@ import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, isPast } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { Calendar, Clock, Building2, KeyRound, X } from 'lucide-react'
+import { Calendar, Clock, Building2, KeyRound, X, Package } from 'lucide-react'
 import type { Booking } from '@/types'
-import { bookingsApi } from '@/lib/api'
+import { bookingsApi, packagesApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { formatCurrency, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS } from '@/lib/utils'
 import { cancellationErrorMessage } from '@/lib/httpError'
@@ -52,6 +52,15 @@ export default function DashboardPage() {
     queryFn: () => bookingsApi.listMine(api),
     enabled: !!session?.accessToken,
   })
+
+  // Compact balance so packs are reachable from the page that promises
+  // "reservas e pacotes" (B30). Only spendable (active) purchases count.
+  const { data: purchases } = useQuery({
+    queryKey: ['packages', 'me'],
+    queryFn: () => packagesApi.listMine(api),
+    enabled: !!session?.accessToken,
+  })
+  const activePacks = (purchases ?? []).filter((p) => p.status === 'active')
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) => bookingsApi.cancel(id, api),
@@ -116,6 +125,35 @@ export default function DashboardPage() {
               </button>
             </div>
           )}
+          <section aria-label="Os teus packs" className="mb-8 rounded-xl border border-border bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Package className="h-4 w-4 text-primary" /> Os teus packs
+              </h2>
+              <Link href="/dashboard/packages" className="text-sm font-medium text-primary hover:underline">
+                {activePacks.length > 0 ? 'Ver e comprar packs' : 'Ver packs'}
+              </Link>
+            </div>
+            {purchases === undefined ? (
+              <Skeleton className="mt-3 h-5 w-48" />
+            ) : activePacks.length === 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Ainda não tens packs de horas. Um pack fica mais barato do que pagar à hora.
+              </p>
+            ) : (
+              <ul className="mt-2 divide-y divide-border text-sm">
+                {activePacks.map((p) => (
+                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                    <span className="font-medium text-foreground">{p.package?.name ?? 'Pack'}</span>
+                    <span className="text-muted-foreground">
+                      <span className="font-semibold text-primary">{formatHours(p.hours_remaining)}</span> restantes ·
+                      expira {format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           <h2 className="text-lg font-semibold text-foreground mb-4">Próximas Reservas</h2>
           {isLoading ? (
             <div className="space-y-3">

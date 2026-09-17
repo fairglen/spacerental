@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '@/app/dashboard/page'
-import { bookingsApi } from '@/lib/api'
+import { bookingsApi, packagesApi } from '@/lib/api'
 import type { Booking } from '@/types'
 
 let searchParams = new URLSearchParams()
@@ -193,5 +193,42 @@ describe('Dashboard — package bookings show hours, not money (B29)', () => {
     expect(await screen.findByText('2h do pack')).toBeVisible()
     expect(screen.getByText(/11,00/)).toBeVisible()
     expect(screen.queryByText(/22,00/)).toBeNull()
+  })
+})
+
+describe('Dashboard — packs summary (B30)', () => {
+  it('summarises active packs with hours left, expiry and a link', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([])
+    vi.mocked(packagesApi.listMine).mockResolvedValue([
+      {
+        id: 'p-1', user_id: 'user-1', package_id: 'pkg-10', org_id: 'org-1',
+        hours_total: 10, hours_used: 2.5, hours_remaining: 7.5, status: 'active',
+        purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
+        package: { id: 'pkg-10', org_id: 'org-1', name: 'Pack 10h', hours: 10, price: 100, validity_days: 365, is_active: true },
+      },
+      {
+        id: 'p-2', user_id: 'user-1', package_id: 'pkg-20', org_id: 'org-1',
+        hours_total: 20, hours_used: 0, hours_remaining: 20, status: 'pending',
+        purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
+      },
+    ])
+    renderPage()
+    await screen.findByText('Pack 10h')
+    const summary = screen.getByRole('region', { name: /packs/i })
+    expect(summary).toHaveTextContent('Pack 10h')
+    expect(summary).toHaveTextContent('7,5h')
+    expect(summary).toHaveTextContent(/2027/)
+    expect(summary).not.toHaveTextContent('20h')
+    expect(summary.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
+  })
+
+  it('invites the customer to buy a pack when there is none', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([])
+    vi.mocked(packagesApi.listMine).mockResolvedValue([])
+    renderPage()
+    await screen.findByText(/ainda não tens/i)
+    const summary = screen.getByRole('region', { name: /packs/i })
+    expect(summary).toHaveTextContent(/ainda não tens/i)
+    expect(summary.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
   })
 })

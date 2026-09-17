@@ -14,6 +14,7 @@ import { Footer } from '@/components/layout/Footer'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
+import { formatHours } from '@/lib/utils'
 
 export default function MyPackagesPage() {
   const { data: session } = useSession()
@@ -79,7 +80,7 @@ export default function MyPackagesPage() {
                         />
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {Number(p.hours_remaining).toFixed(1)}h restantes de {p.hours_total}h
+                        {formatHours(p.hours_remaining)} restantes de {formatHours(p.hours_total)}
                       </p>
                     </CardContent>
                   </Card>
