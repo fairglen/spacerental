@@ -27,8 +27,19 @@ function getDatesForView(date: Date, view: View): string[] {
 type Resolution =
   | { kind: 'range'; start: Date; end: Date }
   | { kind: 'taken'; from: Date; to: Date }
+  | { kind: 'past' }
   | { kind: 'closed' }
   | { kind: 'none' }
+
+/**
+ * A slot that has already started. The API also reports it as unavailable
+ * (B24), but "past" is not "taken": it gets no "Ocupado" chip and its own
+ * message, so the customer is not told someone else booked an hour that has
+ * simply gone by.
+ */
+function isPastSlot(slot: AvailabilitySlot, now: Date): boolean {
+  return parseISO(slot.start) < now
+}
 
 /**
  * Availability slots the selection `[start, end)` touches, in time order.
@@ -56,9 +67,11 @@ function slotAt(slots: AvailabilitySlot[], date: Date): AvailabilitySlot | undef
  * hours are contiguous (a range straddling a closed window is refused rather
  * than silently booking through it).
  */
-function resolveSelection(slots: AvailabilitySlot[], start: Date, end: Date): Resolution {
+function resolveSelection(slots: AvailabilitySlot[], start: Date, end: Date, now: Date): Resolution {
   const covered = slotsInRange(slots, start, end)
   if (covered.length === 0) return { kind: 'none' }
+
+  if (covered.some((s) => isPastSlot(s, now))) return { kind: 'past' }
 
   const taken = covered.find((s) => !s.available)
   if (taken) return { kind: 'taken', from: parseISO(taken.start), to: parseISO(taken.end) }
@@ -93,7 +106,7 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
   const allSlots: AvailabilitySlot[] = slotQueries.flatMap((q) => q.data ?? [])
 
   const events: Event[] = allSlots
-    .filter((s) => !s.available)
+    .filter((s) => !s.available && !isPastSlot(s, new Date()))
     .map((s) => ({
       title: 'Ocupado',
       start: parseISO(s.start),
@@ -102,7 +115,7 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
 
   const handleSelectSlot = useCallback(
     ({ start, end }: SlotInfo) => {
-      const resolution = resolveSelection(allSlots, start, end)
+      const resolution = resolveSelection(allSlots, start, end, new Date())
       if (resolution.kind === 'range') {
         setSelectionError(null)
         onSlotSelect(resolution.start, resolution.end)
@@ -112,6 +125,10 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
         setSelectionError(
           `A hora ${format(resolution.from, 'HH:mm', { locale: pt })}–${format(resolution.to, 'HH:mm', { locale: pt })} já está reservada. Escolhe um intervalo livre.`,
         )
+        return
+      }
+      if (resolution.kind === 'past') {
+        setSelectionError('Essa hora já passou. Escolhe um horário a partir de agora.')
         return
       }
       if (resolution.kind === 'closed') {
@@ -166,6 +183,9 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
           slotPropGetter={(date) => {
             if (view === 'month') return {}
             const slot = slotAt(allSlots, date)
+            if (slot && isPastSlot(slot, new Date())) {
+              return { style: { backgroundColor: '#fafafa', color: '#9ca3af', cursor: 'not-allowed', opacity: 0.6 } }
+            }
             if (slot?.available === false) return { style: { backgroundColor: '#f3f4f6' } }
             if (slot?.available === true) return { style: { cursor: 'pointer', backgroundColor: '#f0faf5' } }
             return {}

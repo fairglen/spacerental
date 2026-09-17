@@ -107,6 +107,44 @@ class TestRoomAvailability:
         # The 10:00 and 11:00 one-hour slots overlap the booking.
         assert len(unavailable) == 2
 
+    async def test_past_slots_are_not_available(self, client, test_room, monkeypatch):
+        """B24: a slot whose start is already behind the clock cannot be booked
+        (POST /bookings rejects past starts), so it must not be advertised as
+        available either. Controlled clock: 12:30 UTC on the requested day."""
+        from app.routers import spaces as spaces_router
+
+        date_str = self._pick_weekday()
+        target_date = datetime.fromisoformat(date_str).date()
+        fixed_now = datetime.combine(target_date, time(12, 30), tzinfo=UTC)
+        monkeypatch.setattr(spaces_router, "utcnow", lambda: fixed_now)
+
+        resp = await client.get(
+            f"/api/v1/rooms/{test_room.id}/availability",
+            params={"date": date_str},
+        )
+        assert resp.status_code == 200, resp.text
+        slots = resp.json()["slots"]
+        assert len(slots) == 12  # response shape and slot count unchanged
+        by_hour = {datetime.fromisoformat(s["start"]).hour: s["available"] for s in slots}
+        # 08:00-12:00 have started (12:00 is in progress at 12:30), so not bookable.
+        assert all(by_hour[h] is False for h in range(8, 13)), by_hour
+        assert all(by_hour[h] is True for h in range(13, 20)), by_hour
+
+    async def test_future_day_is_unaffected_by_the_clock(self, client, test_room, monkeypatch):
+        from app.routers import spaces as spaces_router
+
+        date_str = self._pick_weekday()
+        target_date = datetime.fromisoformat(date_str).date()
+        # Clock is the evening of the previous day: every slot still lies ahead.
+        fixed_now = datetime.combine(target_date - timedelta(days=1), time(22, 11), tzinfo=UTC)
+        monkeypatch.setattr(spaces_router, "utcnow", lambda: fixed_now)
+
+        resp = await client.get(
+            f"/api/v1/rooms/{test_room.id}/availability",
+            params={"date": date_str},
+        )
+        assert all(s["available"] for s in resp.json()["slots"])
+
     async def test_room_availability_404_for_unknown_room(self, client):
         random_id = uuid.uuid4()
         date_str = self._pick_weekday()

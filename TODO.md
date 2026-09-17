@@ -876,7 +876,18 @@ code is visible after stub payment.
 
 ### B24 — Past hours are offered as bookable
 
-**Priority: P1. State: QUEUED.** At 22:11 UTC the availability endpoint
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): `GET /rooms/{id}/availability` now reads the clock through
+`app/clock.py::utcnow()` and marks any slot whose start is behind it as
+`available: false` (shape unchanged). Real-PG tests with a pinned clock
+(`test_past_slots_are_not_available`, `test_future_day_is_unaffected_by_the_clock`)
+fail on the old code and pass now (9 passed in `test_spaces.py`).
+`BookingCalendar` classifies a past slot locally: disabled styling, no
+"Ocupado" chip, and a "já passou" notice instead of "já está reservada"
+(3 new component tests; the existing calendar fixtures were moved from
+2026-08-10, already in the past, to 2030-08-12). Booking E2E 8/8 passed.
+
+Original report: **Priority: P1.** At 22:11 UTC the availability endpoint
 returned every same-day slot as `available: true`; the calendar paints them
 green; clicking one ends in a generic error because `POST /bookings` correctly
 rejects past start times. **Dependencies:** none. **Acceptance:** in

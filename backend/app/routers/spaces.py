@@ -6,6 +6,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.clock import utcnow
 from app.database import get_db
 from app.models.booking import Booking, BookingStatus
 from app.models.space import AvailabilityRule, Room, Space
@@ -120,10 +121,15 @@ async def get_room_availability(
                 return True
         return False
 
+    # A slot that has already started cannot be booked (POST /bookings rejects
+    # a past start_time), so it must not be advertised as available either;
+    # the calendar used to paint every same-day hour green late at night (B24).
+    now = utcnow()
+
     slots: list[AvailabilitySlot] = []
     for slot_start in sorted(slot_starts):
         slot_end = slot_start + timedelta(hours=1)
-        available = not is_slot_taken(slot_start, slot_end)
+        available = slot_start >= now and not is_slot_taken(slot_start, slot_end)
         slots.append(AvailabilitySlot(start=slot_start, end=slot_end, available=available))
 
     return {"slots": [s.model_dump() for s in slots]}
