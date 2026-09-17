@@ -899,7 +899,14 @@ test for the past state.
 
 ### B25 — Payment return is silent
 
-**Priority: P1. State: QUEUED.** Stub/Stripe return to
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): the dashboard reads `?pagamento=sucesso|cancelado`, shows a
+dismissible `role="status"` notice (success links to `/dashboard/packages`;
+cancelled says "Pagamento não concluído. Não foi cobrado nada.") and calls
+`router.replace('/dashboard')` so a reload does not repeat it. Three component
+tests (success + link + dismiss, cancelled, absent) — 2/3 failed before.
+
+Original report: **Priority: P1.** Stub/Stripe return to
 `/dashboard?pagamento=sucesso` or `?pagamento=cancelado` and the page ignores
 the parameter. **Dependencies:** none. **Acceptance:** dismissible success or
 "pagamento não concluído" notice; the parameter is stripped from the URL so a

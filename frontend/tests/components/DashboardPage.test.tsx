@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '@/app/dashboard/page'
 import { bookingsApi } from '@/lib/api'
@@ -7,9 +7,11 @@ import type { Booking } from '@/types'
 
 let searchParams = new URLSearchParams()
 const replace = vi.fn()
+// Stable across renders, like the real App Router instance.
+const router = { push: vi.fn(), replace, refresh: vi.fn(), back: vi.fn() }
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace, refresh: vi.fn(), back: vi.fn() }),
+  useRouter: () => router,
   usePathname: () => '/dashboard',
   useSearchParams: () => searchParams,
   redirect: vi.fn(),
@@ -98,5 +100,38 @@ describe('Dashboard — door code (B23)', () => {
     expect(await screen.findAllByText('Sala Calma')).toHaveLength(2)
     expect(screen.queryByText(/código de acesso/i)).toBeNull()
     expect(screen.queryByText('111111')).toBeNull()
+  })
+})
+
+describe('Dashboard — payment return notice (B25)', () => {
+  beforeEach(() => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([])
+  })
+
+  it('shows a dismissible success notice linking to packs and strips the param', async () => {
+    searchParams = new URLSearchParams('pagamento=sucesso')
+    renderPage()
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent(/pagamento concluído/i)
+    expect(notice.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
+    expect(replace).toHaveBeenCalledWith('/dashboard', expect.anything())
+    fireEvent.click(screen.getByRole('button', { name: /fechar/i }))
+    await screen.findByText('Não tens reservas futuras.')
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('shows a "não concluído" notice when checkout was cancelled', async () => {
+    searchParams = new URLSearchParams('pagamento=cancelado')
+    renderPage()
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent(/pagamento não concluído/i)
+    expect(replace).toHaveBeenCalledWith('/dashboard', expect.anything())
+  })
+
+  it('shows nothing without the param', async () => {
+    renderPage()
+    await screen.findByText('Não tens reservas futuras.')
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(replace).not.toHaveBeenCalled()
   })
 })

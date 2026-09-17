@@ -1,10 +1,12 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, isPast } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { Calendar, Clock, Building2, KeyRound } from 'lucide-react'
+import { Calendar, Clock, Building2, KeyRound, X } from 'lucide-react'
 import { bookingsApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { formatCurrency, STATUS_LABELS, STATUS_COLORS } from '@/lib/utils'
@@ -23,6 +25,20 @@ export default function DashboardPage() {
   const api = useApi()
   const queryClient = useQueryClient()
   const [cancelId, setCancelId] = useState<string | null>(null)
+
+  // Stripe/stub checkout returns to /dashboard?pagamento=sucesso|cancelado
+  // (STRIPE_SUCCESS_URL / STRIPE_CANCEL_URL). Show it once, then drop the
+  // parameter so a reload does not repeat the notice (B25).
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [paymentNotice, setPaymentNotice] = useState<'sucesso' | 'cancelado' | null>(null)
+  useEffect(() => {
+    const outcome = searchParams.get('pagamento')
+    if (outcome === 'sucesso' || outcome === 'cancelado') {
+      setPaymentNotice(outcome)
+      router.replace('/dashboard', { scroll: false })
+    }
+  }, [searchParams, router])
 
   const { data: bookings, isLoading } = useQuery({
     queryKey: ['bookings', 'me'],
@@ -52,6 +68,39 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
+          {paymentNotice && (
+            <div
+              role="status"
+              className={
+                paymentNotice === 'sucesso'
+                  ? 'mb-6 flex items-start justify-between gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900'
+                  : 'mb-6 flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900'
+              }
+            >
+              <p>
+                {paymentNotice === 'sucesso' ? (
+                  <>
+                    <span className="font-semibold">Pagamento concluído.</span> A tua reserva está confirmada.
+                    Se compraste um pack, as horas já estão disponíveis em{' '}
+                    <Link href="/dashboard/packages" className="font-medium underline">Os meus packs</Link>.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">Pagamento não concluído.</span> Não foi cobrado nada.
+                    A reserva fica a aguardar pagamento; podes pagá-la abaixo ou cancelá-la.
+                  </>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => setPaymentNotice(null)}
+                aria-label="Fechar aviso"
+                className="shrink-0 rounded p-1 hover:bg-black/5"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
           <h2 className="text-lg font-semibold text-foreground mb-4">Próximas Reservas</h2>
           {isLoading ? (
             <div className="space-y-3">
