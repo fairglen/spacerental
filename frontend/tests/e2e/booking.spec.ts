@@ -476,6 +476,52 @@ test.describe('Reservas — fluxos reais', () => {
     await page.getByRole('button', { name: /^Cancelar$/ }).click()
   })
 
+  test('a booking inside the 24h window cannot be cancelled and says why (C07)', async () => {
+    // First open hour that starts less than 24h from now, today or tomorrow.
+    // Only Sunday 00:00-08:00 UTC has none (Monday 08:00 is >24h away).
+    const roomId = await roomIdByName(api, 'Sala Calma')
+    const now = Date.now()
+    let start: Date | null = null
+    for (const dayOffset of [0, 1]) {
+      const day = utcHour(dayOffset, 0).toISOString().slice(0, 10)
+      const { slots } = await (await api.get(apiUrl(`/rooms/${roomId}/availability`), { params: { date: day } })).json()
+      const free = (slots as { start: string; available: boolean }[]).find(
+        (s) => s.available && new Date(s.start).getTime() - now < 24 * 3_600_000,
+      )
+      if (free) { start = new Date(free.start); break }
+    }
+    test.skip(start === null, 'no open hour within the next 24h (Sunday before 08:00 UTC)')
+    const end = new Date(start!.getTime() + 3_600_000)
+
+    // Book and pay it through the stub, so it is a confirmed reservation the
+    // customer would genuinely want to cancel, not an unpaid hold.
+    const res = await api.post(apiUrl('/bookings'), {
+      headers: auth(token),
+      data: { room_id: roomId, start_time: start!.toISOString(), end_time: end.toISOString() },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    const { booking, checkout_url } = await res.json()
+    const paid = await api.post(`${checkout_url}/pay`, { maxRedirects: 0 })
+    expect([303, 200]).toContain(paid.status())
+    try {
+      await page.goto('/dashboard')
+      const card = bookingCard(page, 'Sala Calma', start!, end)
+      await expect(card).toHaveCount(1, { timeout: 10000 })
+      await expect(card).toContainText('Confirmado')
+      await expect(card.getByRole('button', { name: /^Cancelar$/ })).toBeDisabled()
+      await expect(card).toContainText(/24 horas/)
+    } finally {
+      // The member API refuses this cancellation by design; clear it as the
+      // operator so reruns do not accumulate near-term bookings.
+      const admin = await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
+        headers: auth(token),
+        params: { org_id: booking.org_id },
+        data: { status: 'cancelled' },
+      })
+      expect(admin.ok(), await admin.text()).toBeTruthy()
+    }
+  })
+
   test('weekly series: preview, pending acknowledgement, isolated cancellation and conflict', async () => {
     const offset = bookableDayOffset(5)
     const first = utcHour(offset, 17)

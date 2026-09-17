@@ -33,3 +33,28 @@ export const STATUS_COLORS: Record<Booking['status'], string> = {
   cancelled: 'bg-red-100 text-red-800',
   completed: 'bg-gray-100 text-gray-800',
 }
+
+export const CANCELLATION_WINDOW_HOURS = 24
+
+/**
+ * Whether the customer may cancel this booking right now, mirroring
+ * `validate_cancellation` in backend/app/booking_cancellation.py: not already
+ * cancelled/completed, and starting at least 24h from now (the backend rejects
+ * strictly less than 24h, so exactly 24h is still allowed). The backend stays
+ * authoritative; this only decides what the dashboard offers (C07).
+ */
+export function cancellationEligibility(
+  booking: Pick<Booking, 'start_time' | 'status'>,
+  now: Date = new Date(),
+): { eligible: boolean; reason?: string } {
+  if (booking.status === 'cancelled') return { eligible: false, reason: 'Reserva já cancelada.' }
+  if (booking.status === 'completed') return { eligible: false, reason: 'Reserva já concluída.' }
+  const hoursAhead = (parseISO(booking.start_time).getTime() - now.getTime()) / 3_600_000
+  if (hoursAhead < CANCELLATION_WINDOW_HOURS) {
+    return {
+      eligible: false,
+      reason: `Só é possível cancelar até ${CANCELLATION_WINDOW_HOURS} horas antes do início.`,
+    }
+  }
+  return { eligible: true }
+}

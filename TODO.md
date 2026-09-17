@@ -800,6 +800,20 @@ from the response; the 24h rule stated in the dialog up front; Cancel disabled
 or hidden for ineligible bookings with a visible reason. Backend stays
 authoritative; no refund promise (O02).
 
+**State: DONE on `fix/smoke-findings` (pending PR), 2026-09-17.** Delivered:
+`cancellationEligibility()` in `lib/utils.ts` mirrors `validate_cancellation`
+(eligible iff start − now ≥ 24h and not cancelled/completed); the dashboard
+disables Cancel with the visible reason, states the rule in the dialog, and on
+rejection keeps the dialog open with `cancellationErrorMessage()` from
+`lib/httpError.ts` (400 24h / already cancelled / completed, 401, 403, 404,
+429, network). No refund wording anywhere. Evidence: backend unit tests pin the
+exact boundary (`test_booking_cancellation.py`: 24h+1s allowed, exactly 24h
+allowed, 24h−1s rejected); frontend unit tests for eligibility at the same
+boundary and for every mapped message; 3 dashboard component tests (11 failed
+before the change, 23 pass after); new booking E2E "a booking inside the 24h
+window cannot be cancelled and says why" passes (9/9 in the spec). Existing
+success-path cancellation E2E unchanged.
+
 ### C08 — Reliable diagnostics and current setup documentation
 
 **Depends on:** C07; reuse Q25/Q31/Q90 work. **Scope:** Playwright fixtures and

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cn, formatCurrency, STATUS_LABELS, STATUS_COLORS } from '@/lib/utils'
+import { cn, formatCurrency, STATUS_LABELS, STATUS_COLORS, cancellationEligibility } from '@/lib/utils'
 
 describe('cn', () => {
   it('merges class names', () => {
@@ -34,5 +34,26 @@ describe('STATUS_COLORS', () => {
   it('returns CSS classes for each status', () => {
     expect(STATUS_COLORS.confirmed).toBeTruthy()
     expect(STATUS_COLORS.cancelled).toBeTruthy()
+  })
+})
+
+describe('cancellationEligibility (C07)', () => {
+  const now = new Date('2026-09-17T12:00:00Z')
+  const at = (iso: string, status: 'pending' | 'confirmed' | 'cancelled' | 'completed' = 'confirmed') => ({
+    start_time: iso,
+    status,
+  })
+
+  it('allows a booking exactly 24h ahead (backend rejects only strictly less)', () => {
+    expect(cancellationEligibility(at('2026-09-18T12:00:00Z'), now).eligible).toBe(true)
+  })
+  it('refuses one second inside the window and says why', () => {
+    const result = cancellationEligibility(at('2026-09-18T11:59:59Z'), now)
+    expect(result.eligible).toBe(false)
+    expect(result.reason).toMatch(/24 horas/)
+  })
+  it('refuses cancelled and completed bookings', () => {
+    expect(cancellationEligibility(at('2026-09-25T12:00:00Z', 'cancelled'), now).eligible).toBe(false)
+    expect(cancellationEligibility(at('2026-09-25T12:00:00Z', 'completed'), now).eligible).toBe(false)
   })
 })

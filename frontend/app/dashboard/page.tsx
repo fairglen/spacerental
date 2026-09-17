@@ -9,7 +9,8 @@ import { pt } from 'date-fns/locale'
 import { Calendar, Clock, Building2, KeyRound, X } from 'lucide-react'
 import { bookingsApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
-import { formatCurrency, STATUS_LABELS, STATUS_COLORS } from '@/lib/utils'
+import { formatCurrency, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS } from '@/lib/utils'
+import { cancellationErrorMessage } from '@/lib/httpError'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { Card, CardContent } from '@/components/ui/card'
@@ -50,9 +51,17 @@ export default function DashboardPage() {
     mutationFn: (id: string) => bookingsApi.cancel(id, api),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['packages', 'me'] })
       setCancelId(null)
     },
+    // The dialog stays open with the reason; the list is refreshed because
+    // the rejection usually means the booking's state moved on (C07).
+    onError: () => queryClient.invalidateQueries({ queryKey: ['bookings'] }),
   })
+  const closeCancelDialog = () => {
+    setCancelId(null)
+    cancelMutation.reset()
+  }
 
   const upcoming = (bookings ?? []).filter((b) => !isPast(parseISO(b.end_time)) && b.status !== 'cancelled')
   const past = (bookings ?? []).filter((b) => isPast(parseISO(b.end_time)) || b.status === 'cancelled')
@@ -147,14 +156,25 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3">
                       <span className="font-semibold text-primary">{formatCurrency(b.total_amount)}</span>
                       <Badge className={STATUS_COLORS[b.status]}>{STATUS_LABELS[b.status]}</Badge>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => setCancelId(b.id)}
-                      >
-                        Cancelar
-                      </Button>
+                      {(() => {
+                        const eligibility = cancellationEligibility(b)
+                        return (
+                          <div className="flex flex-col items-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-500 hover:text-red-700"
+                              onClick={() => setCancelId(b.id)}
+                              disabled={!eligibility.eligible}
+                            >
+                              Cancelar
+                            </Button>
+                            {!eligibility.eligible && eligibility.reason && (
+                              <span className="text-[11px] text-muted-foreground text-right max-w-[11rem]">{eligibility.reason}</span>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
                   </CardContent>
                 </Card>
@@ -186,16 +206,23 @@ export default function DashboardPage() {
       </main>
       <Footer />
 
-      <Dialog open={!!cancelId} onOpenChange={() => setCancelId(null)}>
+      <Dialog open={!!cancelId} onOpenChange={closeCancelDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Cancelar reserva</DialogTitle>
             <DialogDescription>
               Tens a certeza que queres cancelar esta reserva? Esta ação não pode ser desfeita.
+              Os cancelamentos são aceites até {CANCELLATION_WINDOW_HOURS} horas antes do início; as horas
+              pagas com um pack voltam ao teu saldo.
             </DialogDescription>
           </DialogHeader>
+          {cancelMutation.isError && (
+            <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              {cancellationErrorMessage(cancelMutation.error)}
+            </p>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelId(null)} disabled={cancelMutation.isPending}>
+            <Button variant="outline" onClick={closeCancelDialog} disabled={cancelMutation.isPending}>
               Manter reserva
             </Button>
             <Button

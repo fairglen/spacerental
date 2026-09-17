@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '@/app/dashboard/page'
 import { bookingsApi } from '@/lib/api'
@@ -133,5 +133,42 @@ describe('Dashboard — payment return notice (B25)', () => {
     await screen.findByText('Não tens reservas futuras.')
     expect(screen.queryByRole('status')).toBeNull()
     expect(replace).not.toHaveBeenCalled()
+  })
+})
+
+describe('Dashboard — cancellation eligibility and failures (C07)', () => {
+  it('states the 24h rule in the dialog and cancels an eligible booking', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-ok' })])
+    vi.mocked(bookingsApi.cancel).mockResolvedValue(undefined as never)
+    renderPage()
+    const cancel = await screen.findByRole('button', { name: /^Cancelar$/ })
+    expect(cancel).toBeEnabled()
+    fireEvent.click(cancel)
+    expect(await screen.findByRole('dialog')).toHaveTextContent(/24 horas/)
+    fireEvent.click(screen.getByRole('button', { name: /Sim, cancelar/i }))
+    await waitFor(() => expect(bookingsApi.cancel).toHaveBeenCalledWith('b-ok', expect.anything()))
+  })
+
+  it('disables Cancel with a visible reason when the booking starts within 24h', async () => {
+    const soon = new Date(Date.now() + 3 * 3_600_000)
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-soon', start_time: soon.toISOString() })])
+    renderPage()
+    const cancel = await screen.findByRole('button', { name: /^Cancelar$/ })
+    expect(cancel).toBeDisabled()
+    expect(screen.getByText(/24 horas/)).toBeVisible()
+  })
+
+  it('keeps the dialog open and explains a backend 400 in Portuguese', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-late' })])
+    vi.mocked(bookingsApi.cancel).mockRejectedValue({
+      response: { status: 400, data: { detail: 'Bookings can only be cancelled more than 24 hours in advance' } },
+    })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Sim, cancelar/i }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/24 horas/)
+    expect(screen.getByRole('dialog')).toBeVisible()
+    expect(alert).not.toHaveTextContent(/reembols/i)
   })
 })
