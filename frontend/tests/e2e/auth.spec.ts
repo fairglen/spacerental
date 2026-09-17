@@ -5,6 +5,18 @@ import { test, expect } from '@playwright/test'
 test.use({ timezoneId: 'UTC' })
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
 
+/** Resolves once the element's position has been stable for two reads. */
+async function settled(locator: import('@playwright/test').Locator) {
+  await expect
+    .poll(async () => {
+      const a = await locator.boundingBox()
+      await new Promise((r) => setTimeout(r, 120))
+      const b = await locator.boundingBox()
+      return !!a && !!b && a.y === b.y && a.x === b.x
+    }, { timeout: 10000 })
+    .toBe(true)
+}
+
 test.describe('Authentication', () => {
   let walkedCustomerJourney = false
 
@@ -74,18 +86,41 @@ test.describe('Authentication', () => {
     }
     expect(startHour, 'two consecutive free hours within the next week').toBeGreaterThan(0)
     for (let i = 0; i < offset; i++) await page.getByRole('button', { name: '›' }).click()
-    const slot = (hour: number) => page.locator('.rbc-day-slot .rbc-timeslot-group')
-      .nth(hour - 8).locator('.rbc-time-slot').first()
-    await expect(slot(startHour)).toHaveCSS('background-color', 'rgb(240, 250, 245)')
-    await slot(startHour + 1).scrollIntoViewIfNeeded()
-    await slot(startHour).scrollIntoViewIfNeeded()
-    const from = await slot(startHour).boundingBox()
-    const to = await slot(startHour + 1).boundingBox()
+    // Rows are located by their gutter label: the grid's first hour follows
+    // the returned slots (B34), not a fixed 08:00.
+    const slot = async (hour: number) => {
+      const label = `${String(hour).padStart(2, '0')}:00`
+      const labels = await page.locator('.rbc-time-gutter .rbc-timeslot-group .rbc-label').allTextContents()
+      const index = labels.findIndex((text) => text.trim() === label)
+      expect(index, `hour ${label} is not on the calendar grid`).toBeGreaterThanOrEqual(0)
+      return page.locator('.rbc-day-slot .rbc-timeslot-group').nth(index).locator('.rbc-time-slot').first()
+    }
+    // The grid's rows are only final once this day's slots have landed
+    // (B34 derives the visible range from them), so wait for the target hour
+    // to be tinted before resolving any row locator.
+    await expect
+      .poll(async () => {
+        const labels = await page.locator('.rbc-time-gutter .rbc-timeslot-group .rbc-label').allTextContents()
+        const index = labels.findIndex((text) => text.trim() === `${String(startHour).padStart(2, '0')}:00`)
+        if (index < 0) return ''
+        return page.locator('.rbc-day-slot .rbc-timeslot-group').nth(index).locator('.rbc-time-slot').first()
+          .evaluate((el) => window.getComputedStyle(el).backgroundColor)
+      }, { timeout: 15000 })
+      .toBe('rgb(240, 250, 245)')
+    const firstSlot = await slot(startHour)
+    const secondSlot = await slot(startHour + 1)
+    await secondSlot.scrollIntoViewIfNeeded()
+    await firstSlot.scrollIntoViewIfNeeded()
+    await settled(firstSlot)
+    const from = await firstSlot.boundingBox()
+    const to = await secondSlot.boundingBox()
     expect(from && to).toBeTruthy()
     await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2)
     await page.mouse.down()
     await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2, { steps: 12 })
     await page.mouse.up()
+    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText('Duração', { exact: true }).locator('..')).toContainText('2h')
     await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
     await page.waitForURL(/\/checkout\/stub\/cs_stub_/)
     // The browser has left Next.js, so read persisted state through the API;

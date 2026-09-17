@@ -298,3 +298,50 @@ describe('BookingCalendar toolbar label (B33d)', () => {
     expect(props.formats?.dayHeaderFormat?.(new Date(2026, 8, 18), 'pt', ptLocalizer)).toBe('sexta-feira, 18 de setembro')
   })
 })
+
+describe('BookingCalendar visible range follows the slots (B34)', () => {
+  type RangeProps = { min?: Date; max?: Date }
+  const hoursOf = (d?: Date) => (d ? d.getHours() + d.getMinutes() / 60 : undefined)
+
+  // Local-time slots so the expectation does not depend on the test machine's zone.
+  function localSlot(day: Date, fromHour: number, toHour: number, available = true): AvailabilitySlot {
+    const start = new Date(day); start.setHours(fromHour, 0, 0, 0)
+    const end = new Date(day); end.setHours(toHour, 0, 0, 0)
+    return { start: start.toISOString(), end: end.toISOString(), available }
+  }
+  const day = new Date(2030, 7, 12) // a Monday, far in the future
+
+  it('pads one hour around the earliest and latest returned slot', async () => {
+    await renderCalendar([localSlot(day, 9, 10), localSlot(day, 20, 21)])
+    const props = calendar as unknown as RangeProps
+    expect(hoursOf(props.min)).toBe(8)
+    expect(hoursOf(props.max)).toBe(22)
+  })
+
+  it('never hides a bookable hour, whatever the operator configured', async () => {
+    await renderCalendar([localSlot(day, 6, 7), localSlot(day, 22, 23)])
+    const props = calendar as unknown as RangeProps
+    expect(hoursOf(props.min)).toBeLessThanOrEqual(6)
+    expect(hoursOf(props.max)).toBeGreaterThanOrEqual(23)
+  })
+
+  it('clamps to the day and keeps the old window as a fallback with no slots', async () => {
+    await renderCalendar([localSlot(day, 0, 1), localSlot(day, 23, 24)])
+    const first = calendar as unknown as RangeProps
+    expect(hoursOf(first.min)).toBe(0)
+    expect(first.max!.getHours() === 23 && first.max!.getMinutes() >= 59).toBe(true)
+
+    calendar = null
+    vi.mocked(spacesApi.getAvailability).mockResolvedValue([])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BookingCalendar room={room} onSlotSelect={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await screen.findByText(/fechado neste dia/i)
+    const fallback = calendar as unknown as RangeProps
+    expect(hoursOf(fallback.min)).toBe(8)
+    expect(hoursOf(fallback.max)).toBe(20)
+  })
+})

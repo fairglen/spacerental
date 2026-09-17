@@ -15,8 +15,8 @@ import { pt } from 'date-fns/locale'
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
 const CREDENTIALS = { email: 'admin@demo.com', password: 'admin123' }
 
-// The calendar day view starts at 08:00 with one 1-hour slot per group.
-const FIRST_HOUR = 8
+// The calendar's first visible hour follows the returned slots (B34), so
+// rows are located by their gutter label rather than by a fixed offset.
 const AVAILABLE_BG = 'rgb(240, 250, 245)'
 const BUSY_BG = 'rgb(243, 244, 246)'
 
@@ -145,12 +145,17 @@ async function goToDay(page: Page, offset: number) {
     .toMatch(new RegExp(`${AVAILABLE_BG}|${BUSY_BG}`.replace(/[()]/g, '\\$&')))
 }
 
-function slotAt(page: Page, hour: number) {
-  return page
-    .locator('.rbc-day-slot .rbc-timeslot-group')
-    .nth(hour - FIRST_HOUR)
-    .locator('.rbc-time-slot')
-    .first()
+async function rowIndexOf(page: Page, hour: number): Promise<number> {
+  const label = `${String(hour).padStart(2, '0')}:00`
+  const labels = await page.locator('.rbc-time-gutter .rbc-timeslot-group .rbc-label').allTextContents()
+  return labels.findIndex((text) => text.trim() === label)
+}
+
+/** The first selectable cell of the hour row, located by its gutter label (B34). */
+async function slotAt(page: Page, hour: number) {
+  const index = await rowIndexOf(page, hour)
+  expect(index, `hour ${hour}:00 is not on the calendar grid`).toBeGreaterThanOrEqual(0)
+  return page.locator('.rbc-day-slot .rbc-timeslot-group').nth(index).locator('.rbc-time-slot').first()
 }
 
 /**
@@ -176,7 +181,16 @@ function bookingCard(page: Page, roomName: string, start: Date, end: Date) {
 }
 
 async function backgroundOf(page: Page, hour: number): Promise<string> {
-  return slotAt(page, hour).evaluate((el) => window.getComputedStyle(el).backgroundColor)
+  // Empty while the grid has not laid out that hour yet, so goToDay's poll
+  // keeps waiting instead of failing on a transient render.
+  const index = await rowIndexOf(page, hour)
+  if (index < 0) return ''
+  return page
+    .locator('.rbc-day-slot .rbc-timeslot-group')
+    .nth(index)
+    .locator('.rbc-time-slot')
+    .first()
+    .evaluate((el) => window.getComputedStyle(el).backgroundColor)
 }
 
 /**
@@ -185,10 +199,22 @@ async function backgroundOf(page: Page, hour: number): Promise<string> {
  * before they are measured.
  */
 async function dragHours(page: Page, fromHour: number, toHour: number) {
-  await slotAt(page, toHour - 1).scrollIntoViewIfNeeded()
-  await slotAt(page, fromHour).scrollIntoViewIfNeeded()
-  const from = await slotAt(page, fromHour).boundingBox()
-  const to = await slotAt(page, toHour - 1).boundingBox()
+  const last = await slotAt(page, toHour - 1)
+  const first = await slotAt(page, fromHour)
+  await last.scrollIntoViewIfNeeded()
+  await first.scrollIntoViewIfNeeded()
+  // The calendar section scrolls into view with a smooth animation when a
+  // room is selected (B27); measure only once the grid has stopped moving.
+  await expect
+    .poll(async () => {
+      const a = await first.boundingBox()
+      await new Promise((r) => setTimeout(r, 120))
+      const b = await first.boundingBox()
+      return !!a && !!b && a.y === b.y
+    }, { timeout: 10000 })
+    .toBe(true)
+  const from = await first.boundingBox()
+  const to = await last.boundingBox()
   expect(from && to, 'calendar slots are not laid out').toBeTruthy()
   const viewport = page.viewportSize()
   expect(
@@ -328,8 +354,9 @@ test.describe('Reservas — fluxos reais', () => {
     // that single-click behaviour is unchanged, and until now nothing drove an
     // actual click through the full stack; only a synthetic onSelectSlot call
     // in the component test and API-created bookings in the E2E suite.
-    await slotAt(page, 15).scrollIntoViewIfNeeded()
-    const target = await slotAt(page, 15).boundingBox()
+    const fifteen = await slotAt(page, 15)
+    await fifteen.scrollIntoViewIfNeeded()
+    const target = await fifteen.boundingBox()
     expect(target, 'slot 15:00 is not laid out').toBeTruthy()
     await page.mouse.click(target!.x + target!.width / 2, target!.y + target!.height / 2)
 
@@ -437,7 +464,7 @@ test.describe('Reservas — fluxos reais', () => {
       expect(await backgroundOf(visitor, 10)).toBe(BUSY_BG)
       expect(await backgroundOf(visitor, 12)).toBe(AVAILABLE_BG)
 
-      const busy = await slotAt(visitor, 9).boundingBox()
+      const busy = await (await slotAt(visitor, 9)).boundingBox()
       await visitor.mouse.click(busy!.x + busy!.width / 2, busy!.y + busy!.height / 2)
       await expect(visitor.getByRole('heading', { name: /Confirmar Reserva/i })).toBeHidden()
 

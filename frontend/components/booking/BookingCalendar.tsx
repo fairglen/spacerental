@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Calendar, dateFnsLocalizer, type Event, type SlotInfo, type View } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay, parseISO, addDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -88,6 +88,39 @@ function resolveSelection(slots: AvailabilitySlot[], start: Date, end: Date, now
   }
 }
 
+// What the grid showed before B34; still the window while nothing is known.
+const FALLBACK_MIN_HOUR = 8
+const FALLBACK_MAX_HOUR = 20
+
+/**
+ * The hours the grid must show so every returned slot is visible (B34).
+ *
+ * Opening hours are evaluated in UTC on the backend (R01 owns the Lisbon
+ * wall-clock version), so the 08:00–20:00 UTC seed is 09:00–21:00 Lisbon in
+ * summer and a fixed 08:00–20:00 grid hid the last bookable hour. Derive the
+ * window from the slots themselves, in the browser's zone (the zone
+ * react-big-calendar lays the grid out in), with an hour of padding on each
+ * side, clamped to the day.
+ */
+function visibleRange(slots: AvailabilitySlot[]): { min: Date; max: Date } {
+  const day = (h: number, m = 0) => new Date(0, 0, 0, h, m)
+  if (slots.length === 0) return { min: day(FALLBACK_MIN_HOUR), max: day(FALLBACK_MAX_HOUR) }
+  let earliest = 24
+  let latest = 0
+  for (const s of slots) {
+    const start = parseISO(s.start)
+    const end = parseISO(s.end)
+    earliest = Math.min(earliest, start.getHours())
+    // An end on the hour belongs to the previous hour; midnight means 24.
+    const endHour = end.getHours() === 0 && end.getMinutes() === 0 ? 24 : end.getHours() + (end.getMinutes() > 0 ? 1 : 0)
+    latest = Math.max(latest, endHour)
+  }
+  const minHour = Math.max(0, earliest - 1)
+  const maxHour = Math.min(24, latest + 1)
+  // react-big-calendar cannot take 24:00 as `max`; 23:59 shows the last hour.
+  return { min: day(minHour), max: maxHour === 24 ? day(23, 59) : day(maxHour) }
+}
+
 export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [view, setView] = useState<View>('day')
@@ -113,6 +146,11 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
   const isClosed =
     view !== 'month' && !isLoadingSlots && failedQueries.length === 0 && allSlots.length === 0
   const retryFailed = () => failedQueries.forEach((q) => q.refetch())
+  // Keep the last known window while the next day's slots load, so the grid
+  // does not snap to the fallback and back on every navigation.
+  const lastRange = useRef(visibleRange([]))
+  if (allSlots.length > 0) lastRange.current = visibleRange(allSlots)
+  const range = lastRange.current
 
   const events: Event[] = allSlots
     .filter((s) => !s.available && !isPastSlot(s, new Date()))
@@ -193,8 +231,8 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
           onDrillDown={handleDrillDown}
           onNavigate={setSelectedDate}
           date={selectedDate}
-          min={new Date(0, 0, 0, 8, 0)}
-          max={new Date(0, 0, 0, 20, 0)}
+          min={range.min}
+          max={range.max}
           step={60}
           timeslots={1}
           culture="pt"

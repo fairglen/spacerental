@@ -1203,7 +1203,19 @@ database; full suites.
 
 ### B34 — An hour of Lisbon inventory is invisible in the calendar (R01 slice)
 
-**Priority: P1. State: QUEUED.** Opening hours are stored as naive times and
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-18): `visibleRange()` in `BookingCalendar.tsx` derives `min`/`max`
+from the returned slots with one hour of padding, clamped to the day, and
+keeps the last known window while the next day loads (fallback 08:00–20:00
+only until the first slots arrive). Three component tests (padding, an
+operator window outside 08–20 never hidden, clamping + fallback) failed
+before and pass after (18 in the file). The E2E specs located calendar rows
+by a fixed 08:00 offset; they now find rows by the gutter label and resolve
+them only once the day's slots are on the grid (the auth journey was
+otherwise resolving its two rows on different grids and dragging three
+hours). Auth + booking E2E: 16 passed.
+
+Original report: **Priority: P1.** Opening hours are stored as naive times and
 evaluated as UTC (seed 08:00–20:00 = 09:00–21:00 Lisbon during DST) while
 `BookingCalendar` hard-codes `min`/`max` 08:00–20:00 in the browser's zone.
 Today the 20:00–21:00 Lisbon slot can never be booked and 08:00 looks closed.
