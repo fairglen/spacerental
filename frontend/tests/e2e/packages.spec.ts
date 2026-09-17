@@ -139,6 +139,38 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
     await expect(card.first()).toContainText(`restantes de ${pkg10h.hours}h`)
   })
 
+  test('an operator price change reaches the landing page and the checkout amount (C06)', async () => {
+    const orgId = await seededOrgId(api)
+    const pkg20h = await packageByHours(api, orgId, 20)
+    const originalPrice = Number((await (await api.get(apiUrl('/packages'), { params: { org_id: orgId } })).json())
+      .packages.find((p: ApiPackage) => p.id === pkg20h.id).price)
+    const newPrice = 177.5
+
+    const updated = await api.put(apiUrl(`/admin/packages/${pkg20h.id}`), {
+      headers: auth(token), params: { org_id: orgId }, data: { price: newPrice },
+    })
+    expect(updated.ok(), await updated.text()).toBeTruthy()
+    try {
+      await page.goto('/#precos')
+      const card = page.locator('div.rounded-xl').filter({ hasText: pkg20h.name })
+      await expect(card).toContainText('177,50', { timeout: 15000 })
+      // 20h × 11 € = 220 € → the saving line is computed, not copy.
+      await expect(card).toContainText('42,50')
+
+      await card.getByRole('button', { name: /Comprar Pack/i }).click()
+      await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
+      await expect(page.getByText('177,50 €')).toBeVisible()
+      // Back out; the purchase stays unpaid and no hours are granted.
+      await page.getByRole('button', { name: /^Cancelar$/ }).click()
+      await page.waitForURL(/\/dashboard/, { timeout: 20000 })
+    } finally {
+      const restored = await api.put(apiUrl(`/admin/packages/${pkg20h.id}`), {
+        headers: auth(token), params: { org_id: orgId }, data: { price: originalPrice },
+      })
+      expect(restored.ok(), await restored.text()).toBeTruthy()
+    }
+  })
+
   test('a member buys straight from the dashboard "Comprar mais horas" section (B12)', async () => {
     const orgId = await seededOrgId(api)
     const pkg20h = await packageByHours(api, orgId, 20)

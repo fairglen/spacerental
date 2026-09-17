@@ -890,6 +890,25 @@ contradiction), or a backend "marketing" endpoint (a second source of
 truth). Reversal: restore the `pack_10_*`/`pack_20_*` catalog keys and the
 previous `packageCopyByHours` map.
 
+**State: DONE on `fix/smoke-findings` (pending PR), 2026-09-18.** Evidence:
+`Pricing.tsx` now renders one card per active package from the API (name,
+price, "{hours} horas", "Válido {days} dias", computed savings only when
+positive, "Melhor valor" on the lowest price per hour) and the hourly card
+from the lowest active room rate ("desde" when rooms differ); skeleton cards
+while loading, an error notice with retry, and "no packs" copy. The
+`pack_10_*`/`pack_20_*`/`hourly_plan_price`/`unavailable_cta` keys were
+removed from both catalogs and replaced by parameterised labels (key parity
+test passes). Four new Pricing component tests (varying price/validity,
+savings omitted at zero, rate from rooms, error → retry → no packs, loading)
+failed before and pass after; the three existing CTA tests still pass.
+Vitest 210 passed. Playwright `packages.spec.ts` gained "an operator price
+change reaches the landing page and the checkout amount": the 20h pack is
+set to 177,50 € through `PUT /admin/packages/{id}`, the landing shows
+177,50 € and a computed 42,50 € saving, the stub checkout page shows
+177,50 €, and the price is restored (5/5 passed). Public `GET /packages`
+already returns active packs only, so a deactivated pack disappears from
+the cards.
+
 ### C07 — Explain cancellation eligibility and failures
 
 **Depends on:** C06. **Scope:** dashboard, booking cancellation responses, shared
