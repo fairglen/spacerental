@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     CUSTOMER_ENROLLMENT_ENABLED: bool = True
     # Experimental UTC series have no customer payment path yet.
     RECURRING_BOOKINGS_ENABLED: bool = False
+    # How long an unpaid hourly booking holds its slot while the customer is
+    # on Checkout (C03). Evaluated lazily at read/conflict time; no sweeper.
+    BOOKING_HOLD_MINUTES: int = 15
 
     # ── Rate limiting ────────────────────────────────────────────────────
     RATE_LIMIT_ENABLED: bool = True

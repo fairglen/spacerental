@@ -66,3 +66,23 @@ describe('formatHours (B29/B30)', () => {
     expect(formatHours(0.25)).toBe('0,25h')
   })
 })
+
+describe('cancellationEligibility for checkout holds (C03)', () => {
+  const now = new Date('2026-09-17T12:00:00Z')
+  it('lets an unpaid hold go at any time, even inside 24h', () => {
+    expect(cancellationEligibility({ start_time: '2026-09-17T14:00:00Z', status: 'pending', hold_expires_at: '2026-09-17T12:15:00Z' }, now).eligible).toBe(true)
+  })
+  it('keeps the 24h rule for a pending series occurrence (no hold deadline)', () => {
+    expect(cancellationEligibility({ start_time: '2026-09-17T14:00:00Z', status: 'pending', hold_expires_at: null }, now).eligible).toBe(false)
+  })
+  it('has nothing to cancel on expired or paid-unfulfilled rows', () => {
+    expect(cancellationEligibility({ start_time: '2026-09-25T14:00:00Z', status: 'expired' }, now).eligible).toBe(false)
+    expect(cancellationEligibility({ start_time: '2026-09-25T14:00:00Z', status: 'paid_unfulfilled' }, now).eligible).toBe(false)
+  })
+  it('labels every status in Portuguese', () => {
+    expect(STATUS_LABELS.expired).toBe('Expirada')
+    expect(STATUS_LABELS.paid_unfulfilled).toMatch(/Paga/)
+    expect(STATUS_COLORS.expired).toBeTruthy()
+    expect(STATUS_COLORS.paid_unfulfilled).toBeTruthy()
+  })
+})

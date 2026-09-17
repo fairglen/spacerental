@@ -35,11 +35,16 @@ export type Booking = {
   end_time: string
   duration_hours: number
   total_amount: number
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed'
+  // C03: `expired` = an unpaid hold whose deadline passed (holds no slot,
+  // can be retried); `paid_unfulfilled` = money arrived late for a slot that
+  // was taken meanwhile (kept visible; refunds are O02).
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'expired' | 'paid_unfulfilled'
   payment_method: 'hourly' | 'package'
   notes?: string
   // Set when this booking is one occurrence of a recurring series.
   recurrence_rule_id?: string | null
+  // C03: deadline of an unpaid checkout hold; null/absent when it never expires.
+  hold_expires_at?: string | null
   // Door code for a confirmed booking; null until the lock gateway issues
   // one (or when it could not). Never present for pending/cancelled rows.
   access_code?: string | null

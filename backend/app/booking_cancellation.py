@@ -17,6 +17,20 @@ def validate_cancellation(booking: Booking, now: datetime) -> None:
             detail=f"Booking is already {booking.status.value}",
         )
 
+    if booking.status in (BookingStatus.expired, BookingStatus.paid_unfulfilled):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Booking is {booking.status.value} and holds no slot to cancel",
+        )
+
+    # An unpaid checkout hold (`pending` with a hold deadline) may always be
+    # let go: nothing was paid, no hours were debited, and the slot is what
+    # the customer wants to release (C03). Series occurrences are pending
+    # without a deadline — the operator has reserved them — and keep the
+    # 24h rule like every paid reservation.
+    if booking.status is BookingStatus.pending and booking.hold_expires_at is not None:
+        return
+
     # booking.start_time is TIMESTAMPTZ — SQLAlchemy returns an aware UTC datetime.
     if booking.start_time - now < timedelta(hours=24):
         raise HTTPException(

@@ -9,9 +9,10 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import clock
 from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
-from app.booking_validity import is_lost_slot_race
+from app.booking_validity import expire_stale_holds, holds_slot, is_lost_slot_race
 from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
@@ -147,9 +148,19 @@ async def _find_conflicts(
             for occ_start, occ_end in occurrences
         ]
     )
+    # An expired unpaid hold is not a conflict (C03); flip any that overlap
+    # first so the EXCLUDE constraint agrees with this answer on insert.
+    now = clock.utcnow()
+    await expire_stale_holds(
+        db,
+        room_id,
+        min(occ[0] for occ in occurrences),
+        max(occ[1] for occ in occurrences),
+        now,
+    )
     stmt = select(Booking.start_time, Booking.end_time).where(
         Booking.room_id == room_id,
-        Booking.status.in_(ACTIVE_STATUSES),
+        holds_slot(now),
         overlaps_any,
     )
     if ignore_booking_ids:

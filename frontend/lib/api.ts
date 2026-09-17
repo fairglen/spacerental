@@ -131,6 +131,14 @@ export const bookingsApi = {
 
   cancel: (id: string, api: Api) =>
     api.delete(`/bookings/${id}`),
+
+  // "Pagar agora" (C03): a fresh Checkout URL for an unpaid or expired hold.
+  // Same wrapped shape as create; the backend never creates a second booking.
+  checkout: (id: string, api: Api) =>
+    api.post<BookingCheckout>(`/bookings/${id}/checkout`).then(r => ({
+      booking: normBooking(r.data.booking),
+      checkout_url: r.data.checkout_url ?? null,
+    })),
 }
 
 export const recurrencesApi = {

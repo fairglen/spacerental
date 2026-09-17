@@ -176,6 +176,11 @@ class PaymentGateway(ABC):
         """
 
     @abstractmethod
+    async def expire_checkout_session(self, session_id: str) -> None:
+        """Make `session_id` unpayable (C03 retry). Unknown ids are ignored,
+        so a session the provider already expired is not an error."""
+
+    @abstractmethod
     def _verify_signature(self, payload: bytes, signature_header: str) -> None:
         """Raise InvalidWebhookSignatureError unless the payload is authentic."""
 
@@ -241,6 +246,15 @@ class StripeGateway(PaymentGateway):
             raise PaymentProviderError("Stripe returned a Checkout Session without a URL")
         return CheckoutSession(id=session.id, url=session.url)
 
+    async def expire_checkout_session(self, session_id: str) -> None:
+        try:
+            await self._client.v1.checkout.sessions.expire_async(session_id)
+        except stripe.InvalidRequestError:
+            # Already expired or completed: nothing left to close.
+            return
+        except stripe.StripeError as exc:
+            raise PaymentProviderError(str(exc)) from exc
+
     def _verify_signature(self, payload: bytes, signature_header: str) -> None:
         try:
             stripe.Webhook.construct_event(payload, signature_header, self._webhook_secret)
@@ -302,6 +316,9 @@ class StubPaymentGateway(PaymentGateway):
             id=session_id,
             url=f"{self._checkout_base_url}/checkout/stub/{session_id}",
         )
+
+    async def expire_checkout_session(self, session_id: str) -> None:
+        self.sessions.pop(session_id, None)
 
     def sign_payload(self, payload: bytes, timestamp: int | None = None) -> str:
         """Build a `Stripe-Signature` header for `payload`."""

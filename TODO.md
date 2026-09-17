@@ -608,26 +608,31 @@ confirmed and abandon → slot bookable again.
    and `paid_unfulfilled → confirmed` before recreating the enum, and is
    exercised by the CI round trip). Neither holds a slot (the EXCLUDE
    predicate is unchanged: `confirmed`/`pending` only).
-4. *Owner cancellation of an unpaid hold* (`pending`) is always allowed: the
-   24h rule applies to paid (`confirmed`) bookings only. Nothing was paid, no
-   hours are credited (pending rows never carry `package_purchase_id`), the
-   lock revoke is a no-op. The cancellation email is still sent (existing
-   behaviour for pending series occurrences; unchanged).
+4. *Owner cancellation of an unpaid checkout hold* (`pending` **with** a
+   `hold_expires_at`) is always allowed: the 24h rule applies to paid
+   (`confirmed`) bookings and to pending series occurrences (no deadline;
+   the operator has reserved them — `test_bulk_changes_cannot_bypass_24_hour_window`
+   pins that). Nothing was paid, no hours are credited (holds never carry
+   `package_purchase_id`), the lock revoke is a no-op. The cancellation email
+   is still sent (existing behaviour; unchanged). *Refined during
+   implementation from "any pending row".*
 5. *Stub checkout "Cancelar"* fast-forwards the hold: `hold_expires_at := now`
    and `status := expired`, releasing the slot immediately while keeping the
    same state machine as live Stripe, where the cancel URL is a plain
    redirect and the hold lapses at (1). Live therefore relies on (1) + (4).
-6. *Resume/retry* — `POST /bookings/{id}/checkout` (owner only). A valid
-   pending hold returns its existing Checkout URL
-   (`PaymentGateway.get_checkout_url`; the stub recreates its in-memory
-   session after a restart, live retrieves the session). An `expired` booking
-   whose slot is free becomes `pending` again with a fresh
-   `hold_expires_at`, a new session, and the old session expired at the
-   gateway (`expire_checkout_session`, so it can no longer be paid); if the
-   slot is taken → 409 and it stays `expired`. No second booking row is ever
-   created. Dashboard: `pending` hourly rows show "A aguardar pagamento" +
-   "Pagar agora" + the deadline; `expired` shows "Expirada" + "Tentar pagar
-   de novo".
+6. *Resume/retry* — `POST /bookings/{id}/checkout` (owner only). Both a live
+   `pending` hold and an `expired` one get a **fresh** Checkout Session for
+   the same row after the previous session is expired at the gateway
+   (`PaymentGateway.expire_checkout_session`: Stripe `sessions.expire`, stub
+   drops it), so a superseded session can never be paid late. A live hold
+   also gets a fresh `hold_expires_at`. An `expired` booking whose slot is
+   free becomes `pending` again; if the slot is taken → 409 and it stays
+   `expired`. No second booking row is ever created. *Simplified during
+   implementation from "return the existing URL": one path, no
+   `get_checkout_url`, and the stub survives a backend restart because its
+   session id derives from the booking id.* Dashboard: `pending` hourly rows
+   show "A aguardar pagamento" + "Pagar agora" + the deadline; `expired`
+   shows "Expirada" + "Tentar pagar de novo".
 7. *Late or duplicate `checkout.session.completed`.* Matched by
    `stripe_checkout_session_id`. `pending` → `confirmed` (unchanged).
    `expired`/`cancelled` with the slot still free → `confirmed` (the money
@@ -646,6 +651,30 @@ cancelled`; `pending —deadline (lazy)→ expired`; `pending —stub cancel→
 expired`; `expired —retry, slot free→ pending`; `expired —retry, slot
 taken→ 409`; `expired|cancelled —late pay, slot free→ confirmed`;
 `expired|cancelled —late pay, slot taken→ paid_unfulfilled`.
+
+**Slice state: DONE on `fix/smoke-findings` (pending PR), 2026-09-18 —
+(a)–(e) all delivered.** Evidence: migration `0003_booking_holds`
+(`hold_expires_at`, enum values) passed upgrade → check → downgrade → upgrade
+→ check → downgrade base → upgrade → seed on a throwaway database; full
+backend suite 270 passed (`tests/test_checkout_holds.py`: cancel-pending-
+inside-24h, paid-inside-24h still refused, expiry with a pinned clock
+releasing the slot to another customer and flipping the row past the
+EXCLUDE constraint, `/bookings/me` lazy expiry, series/package rows never
+expire, pay-now resume/retry/conflict/403/404/409, late payment confirming a
+free slot, late payment for a taken slot → `paid_unfulfilled`, duplicate
+completion no-op, stub cancel → `expired` + retry). The stub-cancel test in
+`test_checkout_stub.py` that asserted the old "stays pending" was updated.
+Frontend: `bookingsApi.checkout` shape test, eligibility/label unit tests,
+4 dashboard component tests (Pagar agora → checkout URL, Expirada + retry,
+paid_unfulfilled note, series occurrence not payable, failed retry message);
+Vitest 203 passed. Playwright booking spec 11 passed including "an abandoned
+checkout can be paid later from the dashboard" and "cancelling on the
+checkout page frees the slot immediately". `BOOKING_HOLD_MINUTES` documented
+in `.env.example`, Compose and README. Remaining C03 scope: sweeper, Stripe
+`checkout.session.expired` webhook, live cancel-URL handling, refunds (O02).
+Note for the suite: the booking spec now sits close to the public rate
+limit (120/min); the C03 journeys avoid re-opening the calendar for that
+reason.
 
 ### C04 — Patch dependencies and validate a production build
 

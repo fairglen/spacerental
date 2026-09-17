@@ -10,8 +10,8 @@ import { Calendar, Clock, Building2, KeyRound, X, Package } from 'lucide-react'
 import type { Booking } from '@/types'
 import { bookingsApi, packagesApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
-import { formatCurrency, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS } from '@/lib/utils'
-import { cancellationErrorMessage } from '@/lib/httpError'
+import { formatCurrency, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS, isUnpaidHold } from '@/lib/utils'
+import { cancellationErrorMessage, bookingErrorMessage } from '@/lib/httpError'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { Card, CardContent } from '@/components/ui/card'
@@ -79,6 +79,16 @@ export default function DashboardPage() {
     setCancelId(null)
     cancelMutation.reset()
   }
+
+  // "Pagar agora" / "Tentar pagar de novo" (C03): resume or retry the hold's
+  // Checkout on the same booking row, then leave for the payment page.
+  const payMutation = useMutation({
+    mutationFn: (id: string) => bookingsApi.checkout(id, api),
+    onSuccess: ({ checkout_url }) => {
+      if (checkout_url) window.location.assign(checkout_url)
+    },
+    onError: () => queryClient.invalidateQueries({ queryKey: ['bookings'] }),
+  })
 
   const upcoming = (bookings ?? []).filter((b) => !isPast(parseISO(b.end_time)) && b.status !== 'cancelled')
   const past = (bookings ?? []).filter((b) => isPast(parseISO(b.end_time)) || b.status === 'cancelled')
@@ -157,6 +167,11 @@ export default function DashboardPage() {
             )}
           </section>
           <h2 className="text-lg font-semibold text-foreground mb-4">Próximas Reservas</h2>
+          {payMutation.isError && (
+            <p role="alert" className="mb-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              {bookingErrorMessage(payMutation.error, 'hourly')}
+            </p>
+          )}
           {isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
@@ -184,6 +199,21 @@ export default function DashboardPage() {
                           <Clock className="h-3 w-3" />
                           {format(parseISO(b.start_time), "d MMM yyyy, HH:mm", { locale: pt })} – {format(parseISO(b.end_time), 'HH:mm')}
                         </p>
+                        {isUnpaidHold(b) && b.hold_expires_at && (
+                          <p className="text-xs text-amber-800 mt-1">
+                            Horário reservado até às {format(parseISO(b.hold_expires_at), 'HH:mm', { locale: pt })}. Paga para confirmar.
+                          </p>
+                        )}
+                        {b.status === 'expired' && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            O tempo para pagar terminou e o horário ficou livre. Podes tentar de novo se ainda estiver disponível.
+                          </p>
+                        )}
+                        {b.status === 'paid_unfulfilled' && (
+                          <p className="text-xs text-orange-800 mt-1">
+                            Pagamento recebido, mas o horário já não está disponível. O espaço vai contactar-te.
+                          </p>
+                        )}
                         {b.status === 'confirmed' && (
                           b.access_code ? (
                             <p className="text-xs text-foreground flex items-center gap-1 mt-1">
@@ -201,7 +231,18 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-semibold text-primary">{bookingCost(b)}</span>
-                      <Badge className={STATUS_COLORS[b.status]}>{STATUS_LABELS[b.status]}</Badge>
+                      <Badge className={STATUS_COLORS[b.status]}>
+                        {isUnpaidHold(b) ? 'A aguardar pagamento' : STATUS_LABELS[b.status]}
+                      </Badge>
+                      {(isUnpaidHold(b) || b.status === 'expired') && (
+                        <Button
+                          size="sm"
+                          onClick={() => payMutation.mutate(b.id)}
+                          disabled={payMutation.isPending}
+                        >
+                          {b.status === 'expired' ? 'Tentar pagar de novo' : 'Pagar agora'}
+                        </Button>
+                      )}
                       {(() => {
                         const eligibility = cancellationEligibility(b)
                         return (

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '@/app/dashboard/page'
@@ -31,7 +31,7 @@ vi.mock('@/components/layout/Navbar', () => ({ Navbar: () => null }))
 vi.mock('@/components/layout/Footer', () => ({ Footer: () => null }))
 
 vi.mock('@/lib/api', () => ({
-  bookingsApi: { listMine: vi.fn(), cancel: vi.fn() },
+  bookingsApi: { listMine: vi.fn(), cancel: vi.fn(), checkout: vi.fn() },
   packagesApi: { listMine: vi.fn().mockResolvedValue([]) },
   createAuthenticatedApi: vi.fn(() => ({})),
 }))
@@ -247,5 +247,64 @@ describe('Dashboard — history is not capped silently (B33e)', () => {
     fireEvent.click(screen.getByRole('button', { name: /ver mais/i }))
     expect(screen.getAllByText(/^Sala \d$/)).toHaveLength(7)
     expect(screen.queryByRole('button', { name: /ver mais/i })).toBeNull()
+  })
+})
+
+describe('Dashboard — unpaid holds (C03)', () => {
+  const assign = vi.fn()
+  beforeEach(() => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([])
+    vi.stubGlobal('location', { ...window.location, assign, href: 'http://localhost:3000/dashboard' })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const deadline = new Date(Date.now() + 10 * 60_000).toISOString()
+
+  it('shows a pending hourly hold as awaiting payment with a "Pagar agora" action', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-hold', status: 'pending', hold_expires_at: deadline }),
+    ])
+    vi.mocked(bookingsApi.checkout).mockResolvedValue({
+      booking: booking({ id: 'b-hold', status: 'pending', hold_expires_at: deadline }),
+      checkout_url: 'http://localhost:8000/checkout/stub/cs_stub_bhold',
+    })
+    renderPage()
+    expect(await screen.findByText('A aguardar pagamento')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /Pagar agora/i }))
+    await waitFor(() => expect(bookingsApi.checkout).toHaveBeenCalledWith('b-hold', expect.anything()))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('http://localhost:8000/checkout/stub/cs_stub_bhold'))
+    // An unpaid hold can be let go at any time.
+    expect(screen.getByRole('button', { name: /^Cancelar$/ })).toBeEnabled()
+  })
+
+  it('offers a retry on an expired hold and explains a paid-but-unfulfilled one', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-exp', status: 'expired', hold_expires_at: new Date(Date.now() - 60_000).toISOString() }),
+      booking({ id: 'b-paid', status: 'paid_unfulfilled', start_time: new Date(Date.now() + 4 * 86_400_000).toISOString() }),
+    ])
+    renderPage()
+    expect(await screen.findByText('Expirada')).toBeVisible()
+    expect(screen.getByRole('button', { name: /Tentar pagar de novo/i })).toBeVisible()
+    expect(screen.getByText(/Pagamento recebido/)).toBeVisible()
+    expect(screen.getByText(/horário já não está disponível/)).toBeVisible()
+  })
+
+  it('does not offer payment on a pending series occurrence', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-series', status: 'pending', hold_expires_at: null, recurrence_rule_id: 'rule-1' }),
+    ])
+    renderPage()
+    expect(await screen.findByText('Pendente')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Pagar agora/i })).toBeNull()
+  })
+
+  it('explains a failed "Pagar agora" instead of staying silent', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-gone', status: 'expired', hold_expires_at: new Date(Date.now() - 60_000).toISOString() }),
+    ])
+    vi.mocked(bookingsApi.checkout).mockRejectedValue({ response: { status: 409, data: { detail: 'This time slot is already booked' } } })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Tentar pagar de novo/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/já está reservado/)
   })
 })

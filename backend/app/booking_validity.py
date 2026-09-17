@@ -20,10 +20,11 @@ from datetime import UTC, datetime, timedelta
 from datetime import date as date_
 from itertools import pairwise
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import clock
 from app.models.booking import Booking, BookingStatus
 from app.models.space import AvailabilityRule
 
@@ -66,22 +67,72 @@ def is_lost_slot_race(exc: DBAPIError) -> bool:
     )
 
 
+def holds_slot(now: datetime):
+    """SQL predicate: this row currently blocks its slot (C03).
+
+    `confirmed` always does; `pending` does only while its hold is alive
+    (`hold_expires_at` NULL = never expires, e.g. series occurrences). The
+    `bookings_no_overlap` EXCLUDE constraint cannot evaluate `now()`, so it
+    still counts every pending row — `expire_stale_holds` reconciles the two
+    before a write can trip it.
+    """
+    return or_(
+        Booking.status == BookingStatus.confirmed,
+        and_(
+            Booking.status == BookingStatus.pending,
+            or_(Booking.hold_expires_at.is_(None), Booking.hold_expires_at > now),
+        ),
+    )
+
+
+async def expire_stale_holds(
+    db: AsyncSession,
+    room_id: uuid.UUID,
+    start_time: datetime,
+    end_time: datetime,
+    now: datetime,
+) -> int:
+    """Flip pending rows whose hold lapsed, overlapping `[start, end)`, to `expired`.
+
+    Called by every path that is about to insert or reinstate a slot-holding
+    row, so an abandoned hold cannot keep tripping the EXCLUDE constraint.
+    The UPDATE takes the row locks, which serialises two customers racing for
+    the released slot; the constraint then decides between them as before.
+    """
+    result = await db.execute(
+        update(Booking)
+        .where(
+            Booking.room_id == room_id,
+            Booking.status == BookingStatus.pending,
+            Booking.hold_expires_at.is_not(None),
+            Booking.hold_expires_at <= now,
+            Booking.start_time < end_time,
+            Booking.end_time > start_time,
+        )
+        .values(status=BookingStatus.expired)
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount or 0
+
+
 async def has_conflicting_booking(
     db: AsyncSession,
     room_id: uuid.UUID,
     start_time: datetime,
     end_time: datetime,
     exclude_booking_id: uuid.UUID | None = None,
+    now: datetime | None = None,
 ) -> bool:
-    """True if an active (confirmed/pending) booking overlaps this interval.
+    """True if a slot-holding booking overlaps this interval.
 
     Existence-only: the caller never needs the row, only the boolean, so this
     never risks `MultipleResultsFound` the way `scalar_one_or_none()` on a
     multi-row `select(Booking)` did (the bug this ticket was opened for).
+    An expired unpaid hold does not count (C03).
     """
     conditions = [
         Booking.room_id == room_id,
-        Booking.status.in_([BookingStatus.confirmed, BookingStatus.pending]),
+        holds_slot(now or clock.utcnow()),
         Booking.start_time < end_time,
         Booking.end_time > start_time,
     ]

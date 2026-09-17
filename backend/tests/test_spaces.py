@@ -111,12 +111,12 @@ class TestRoomAvailability:
         """B24: a slot whose start is already behind the clock cannot be booked
         (POST /bookings rejects past starts), so it must not be advertised as
         available either. Controlled clock: 12:30 UTC on the requested day."""
-        from app.routers import spaces as spaces_router
+        from app import clock
 
         date_str = self._pick_weekday()
         target_date = datetime.fromisoformat(date_str).date()
         fixed_now = datetime.combine(target_date, time(12, 30), tzinfo=UTC)
-        monkeypatch.setattr(spaces_router, "utcnow", lambda: fixed_now)
+        monkeypatch.setattr(clock, "utcnow", lambda: fixed_now)
 
         resp = await client.get(
             f"/api/v1/rooms/{test_room.id}/availability",
@@ -131,13 +131,13 @@ class TestRoomAvailability:
         assert all(by_hour[h] is True for h in range(13, 20)), by_hour
 
     async def test_future_day_is_unaffected_by_the_clock(self, client, test_room, monkeypatch):
-        from app.routers import spaces as spaces_router
+        from app import clock
 
         date_str = self._pick_weekday()
         target_date = datetime.fromisoformat(date_str).date()
         # Clock is the evening of the previous day: every slot still lies ahead.
         fixed_now = datetime.combine(target_date - timedelta(days=1), time(22, 11), tzinfo=UTC)
-        monkeypatch.setattr(spaces_router, "utcnow", lambda: fixed_now)
+        monkeypatch.setattr(clock, "utcnow", lambda: fixed_now)
 
         resp = await client.get(
             f"/api/v1/rooms/{test_room.id}/availability",

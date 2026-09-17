@@ -26,6 +26,13 @@ class BookingStatus(StrEnum):
     confirmed = "confirmed"
     cancelled = "cancelled"
     completed = "completed"
+    # C03: an unpaid hold whose deadline passed. Holds no slot; the owner can
+    # retry payment if the slot is still free.
+    expired = "expired"
+    # C03: money arrived for an expired/cancelled hold after another booking
+    # took the slot. Holds no slot; kept visible so the payment is never lost
+    # (refund handling is O02).
+    paid_unfulfilled = "paid_unfulfilled"
 
 
 class PaymentMethod(StrEnum):
@@ -102,6 +109,10 @@ class Booking(Base):
     stripe_checkout_session_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, unique=True
     )
+    # C03: while `pending`, the instant this unpaid hold stops blocking the
+    # slot. NULL means "never" — package bookings (confirmed at once) and
+    # series occurrences awaiting the operator (R02) do not expire.
+    hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

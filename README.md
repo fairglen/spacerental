@@ -190,6 +190,24 @@ docker compose exec -T backend python -m app.seed
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 ```
 
+Unpaid hourly bookings hold their slot for `BOOKING_HOLD_MINUTES` (default
+15) while the customer is on Checkout (C03). After that the row reads as
+`expired`, the hour is bookable again, and the customer can retry from the
+dashboard ("Pagar agora" / "Tentar pagar de novo") if it is still free.
+Pressing **Cancelar** on the stub checkout page expires the hold at once.
+Expiry is evaluated when availability, conflicts or the customer's bookings
+are read; there is no background sweeper yet. A payment that arrives after
+the slot was taken by someone else is kept as `paid_unfulfilled` (visible to
+the customer and in the admin table) until refunds exist (O02).
+
+```bash
+# Walk it locally: book, leave the stub page without paying, then
+# open http://localhost:3000/dashboard -> "Pagar agora" -> "Pagar".
+# Or press "Cancelar" on the stub page and watch the hour turn green again.
+# Shorten the hold to see expiry quickly:
+BOOKING_HOLD_MINUTES=1 docker compose up -d backend
+```
+
 ---
 
 ## Testing
