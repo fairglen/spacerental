@@ -949,7 +949,15 @@ and `'closed'` branches use. **Validation:** component tests per state.
 
 ### B27 — "Reservar Esta Sala" appears to do nothing
 
-**Priority: P1. State: QUEUED.** The calendar mounts below the fold (top at
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): selecting a room scrolls the calendar section into view
+(`behavior: 'auto'` under `prefers-reduced-motion: reduce`, `smooth`
+otherwise) and focuses its heading (`tabIndex={-1}`); `RoomCard` takes a
+`selected` prop that adds a ring, a "Sala selecionada" badge and
+`aria-pressed`. New `tests/components/SpacePage.test.tsx` (3 tests, all
+failing before). Booking E2E 9/9 still passes through the same button.
+
+Original report: **Priority: P1.** The calendar mounts below the fold (top at
 851px in a 900px viewport) with no scroll, and no card shows as selected.
 **Dependencies:** none. **Acceptance:** selecting a room scrolls the calendar
 section into view and moves focus to its heading, respecting

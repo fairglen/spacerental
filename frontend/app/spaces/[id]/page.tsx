@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { MapPin } from 'lucide-react'
 import { spacesApi } from '@/lib/api'
@@ -24,6 +24,20 @@ export default function SpacePage({ params }: { params: { id: string } }) {
   })
 
   const handleBook = (room: Room) => setCalendarRoom(room)
+
+  // The calendar mounts below the fold, so without this "Reservar Esta Sala"
+  // looked like it did nothing (B27). Bring the section on screen and move
+  // focus to its heading so keyboard/screen-reader users land there too.
+  const calendarSectionRef = useRef<HTMLDivElement>(null)
+  const calendarHeadingRef = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    if (!calendarRoom) return
+    const reducedMotion =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    calendarSectionRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
+    calendarHeadingRef.current?.focus({ preventScroll: true })
+  }, [calendarRoom])
   const handleSlotSelect = (start: Date, end: Date) => {
     setSelectedRoom(calendarRoom)
     setBookingStart(start)
@@ -66,12 +80,12 @@ export default function SpacePage({ params }: { params: { id: string } }) {
           <h2 className="text-xl font-semibold text-foreground mb-6">Salas Disponíveis</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
             {rooms.filter((r) => r.is_active).map((room) => (
-              <RoomCard key={room.id} room={room} onBook={handleBook} />
+              <RoomCard key={room.id} room={room} onBook={handleBook} selected={calendarRoom?.id === room.id} />
             ))}
           </div>
           {calendarRoom && (
-            <div className="bg-white rounded-xl border border-border p-6">
-              <h3 className="text-lg font-semibold text-foreground mb-2">
+            <div ref={calendarSectionRef} className="bg-white rounded-xl border border-border p-6 scroll-mt-20">
+              <h3 ref={calendarHeadingRef} tabIndex={-1} className="text-lg font-semibold text-foreground mb-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
                 Disponibilidade — {calendarRoom.name}
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
