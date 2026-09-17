@@ -829,7 +829,18 @@ stated; they are delivered on `fix/smoke-findings`, one commit per item.
 
 ### B22 — Admin refresh or deep link bounces operators to /dashboard
 
-**Priority: P1. State: QUEUED.** Reproduction (100%): sign in as
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): `OrgContext` now derives `currentOrgId` with `useMemo` from the
+memberships plus the stored selection instead of a later `useEffect`. New
+`tests/components/OrgContext.test.tsx` (4 tests) fails on the old code with a
+render of 2 memberships and `currentOrgId: null`; new Playwright cases in
+`admin.spec.ts` (reload on `/admin`, cold `/admin/bookings`, member redirect)
+failed 2/3 before the fix (URL ended on `/dashboard`) and pass 3/3 after.
+Vitest 131 passed, tsc clean. This also removes the Radix Select
+uncontrolled→controlled warning (B33c) because the switcher's value is never
+undefined once memberships exist.
+
+Original report: **Priority: P1.** Reproduction (100%): sign in as
 `admin@demo.com`, click Admin (works), press reload, or open `/admin/bookings`
 directly → lands on `/dashboard`. Cause (code-confirmed in
 `frontend/app/admin/layout.tsx` + `contexts/OrgContext.tsx`): the redirect

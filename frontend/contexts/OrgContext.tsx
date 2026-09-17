@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import { authApi } from '@/lib/api'
@@ -54,22 +54,23 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
 
   const memberships: Membership[] = fetched ?? sessionMemberships
 
-  const [currentOrgId, setOrgIdState] = useState<string | null>(null)
+  // The user's explicit choice. Read synchronously so the very first render
+  // that knows the memberships also knows the current org: the admin layout
+  // redirects on any render where memberships are loaded but no current
+  // membership resolves, and a `useEffect` that set this one render later was
+  // exactly that render (B22).
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null,
+  )
 
-  // Initialize from localStorage when memberships become known.
-  useEffect(() => {
-    if (!isAuthed || memberships.length === 0) {
-      setOrgIdState(null)
-      return
-    }
-    const stored =
-      typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null
-    const validStored = stored && memberships.some((m) => m.org_id === stored) ? stored : null
-    setOrgIdState(validStored ?? pickDefaultOrg(memberships))
-  }, [isAuthed, memberships])
+  const currentOrgId = useMemo(() => {
+    if (!isAuthed || memberships.length === 0) return null
+    if (selectedOrgId && memberships.some((m) => m.org_id === selectedOrgId)) return selectedOrgId
+    return pickDefaultOrg(memberships)
+  }, [isAuthed, memberships, selectedOrgId])
 
   const setCurrentOrgId = useCallback((orgId: string) => {
-    setOrgIdState(orgId)
+    setSelectedOrgId(orgId)
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_KEY, orgId)
     }
