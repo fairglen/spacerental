@@ -1,6 +1,6 @@
 {
   "hero": {
-    "badge": "Available hourly, by package, or recurring",
+    "badge": "Available hourly or with an hour package",
     "headline_start": "Your space,",
     "headline_highlight": "on your time",
     "description": "Private rooms for psychologists, therapists, and health professionals. Book online in seconds, no long contracts.",
@@ -28,7 +28,6 @@
     "pack_10_feature_1": "10h prepaid",
     "pack_10_feature_2": "Valid 12 months",
     "pack_10_feature_3": "€10 savings",
-    "pack_10_feature_4": "Priority booking",
     "pack_10_badge": "Most Popular",
     "pack_20_name": "20-Hour Pack",
     "pack_20_price": "€190",
@@ -37,14 +36,13 @@
     "pack_20_feature_1": "20h prepaid",
     "pack_20_feature_2": "Valid 12 months",
     "pack_20_feature_3": "€30 savings",
-    "pack_20_feature_4": "Priority booking",
     "unavailable_cta": "Unavailable"
   },
   "howItWorks": {
     "section_title": "How It Works",
     "section_description": "From zero to a booked room in under 2 minutes.",
     "step_1_title": "Sign up",
-    "step_1_desc": "Create your account in seconds with Google or email.",
+    "step_1_desc": "Create your account in seconds with your email.",
     "step_2_title": "Choose a space",
     "step_2_desc": "Check available rooms and their amenities.",
     "step_3_title": "Book the time",
@@ -58,7 +56,7 @@
     "booking_title": "Online Booking",
     "booking_desc": "Book your room in seconds, any time, with no phone calls.",
     "flexibility_title": "Maximum Flexibility",
-    "flexibility_desc": "By the hour, in a 10h package, or monthly. You choose."
+    "flexibility_desc": "By the hour or with a prepaid hour package. You choose."
   },
   "spaceCards": {
     "section_title": "Available Spaces",

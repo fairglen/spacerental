@@ -1045,7 +1045,17 @@ tests for the 401 sign-in offer.
 
 ### B32 — Landing copy promises features that do not exist
 
-**Priority: P1. State: QUEUED.** In both `pt.json` and `en.json`: "com o
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): in both catalogs the hero badge no longer says
+"recorrente/recurring", step 1 no longer mentions Google, the flexibility
+value prop no longer offers "mensalmente/monthly", and the "Reserva
+prioritária / Priority booking" feature lines were removed from both pack
+cards (`pack_*_feature_4` keys deleted, `Pricing.tsx` no longer reads them).
+"Sem mensalidade / No monthly fee" stays: it is a true negation. New
+`tests/lib/i18nCatalogs.test.ts` checks key parity between pt/en and that
+none of the removed claims reappear (4/5 failed before the change).
+
+Original report: **Priority: P1.** In both `pt.json` and `en.json`: "com o
 Google" (no Google sign-in), "mensalmente"/monthly, "Reserva prioritária" (no
 such feature), and the hero badge's "recorrente" while
 `RECURRING_BOOKINGS_ENABLED` defaults to false. **Dependencies:** none.
