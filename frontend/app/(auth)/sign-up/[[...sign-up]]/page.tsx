@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authApi } from '@/lib/api'
+import { safeInternalPath } from '@/lib/navigation'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obrigatório'),
@@ -32,6 +33,7 @@ export default function SignUpPage() {
   // choice must survive sign-up, so it resumes straight into the purchase
   // instead of a generic dashboard.
   const packageId = searchParams.get('packageId')
+  const callbackUrl = safeInternalPath(searchParams.get('callbackUrl'))
   const [error, setError] = useState('')
   const [accountCreated, setAccountCreated] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -48,7 +50,7 @@ export default function SignUpPage() {
         setError('A conta foi criada, mas não foi possível iniciar sessão. Usa o link Entrar abaixo.')
         return
       }
-      router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : '/dashboard')
+      router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : callbackUrl ?? '/dashboard')
       router.refresh()
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -107,7 +109,13 @@ export default function SignUpPage() {
             <p className="text-center text-sm text-muted-foreground mt-4">
               Já tens conta?{' '}
               <Link
-                href={packageId ? `/sign-in?packageId=${packageId}` : '/sign-in'}
+                href={
+                  packageId
+                    ? `/sign-in?packageId=${packageId}`
+                    : callbackUrl
+                      ? `/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`
+                      : '/sign-in'
+                }
                 className="text-primary font-medium hover:underline"
               >
                 Entrar

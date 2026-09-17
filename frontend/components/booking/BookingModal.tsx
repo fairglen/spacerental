@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -8,6 +9,7 @@ import { pt } from 'date-fns/locale'
 import { bookingsApi, recurrencesApi, packagesApi, createAuthenticatedApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
 import { statusOf, conflictsOf, detailOf } from '@/lib/httpError'
+import { signInHref } from '@/lib/navigation'
 import { expandWeeklyOccurrences } from '@/lib/recurrence'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,6 +62,7 @@ function errorMessage(error: unknown, method: PaymentMethod): string {
 
 export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   const { data: session, status } = useSession()
+  const pathname = usePathname()
   const queryClient = useQueryClient()
   // null until the user picks — the default depends on data that arrives later.
   const [method, setMethod] = useState<PaymentMethod | null>(null)
@@ -289,7 +292,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
           {isUnauthenticated && (
             <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
               Precisas de estar autenticado para reservar.{' '}
-              <Link href="/sign-in" className="font-medium underline" onClick={onClose}>
+              <Link href={signInHref(pathname)} className="font-medium underline" onClick={onClose}>
                 Entrar na conta
               </Link>
             </p>

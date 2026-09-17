@@ -64,3 +64,39 @@ describe('Sign-in resumes an interrupted package purchase (B12)', () => {
     )
   })
 })
+
+describe('Sign-in returns to where the customer was (B28)', () => {
+  async function submit() {
+    vi.mocked(signIn).mockResolvedValue({ ok: true, error: undefined } as any)
+    const user = userEvent.setup()
+    render(<SignInPage />)
+    await user.type(screen.getByLabelText(/Email/i), 'me@test.com')
+    await user.type(screen.getByLabelText('Password'), 'password123')
+    await user.click(screen.getByRole('button', { name: /Entrar/i }))
+    await vi.waitFor(() => expect(push).toHaveBeenCalled())
+  }
+
+  it('follows a same-origin relative callbackUrl', async () => {
+    searchParams = new URLSearchParams('callbackUrl=%2Fspaces%2Fspace-1')
+    await submit()
+    expect(push).toHaveBeenCalledWith('/spaces/space-1')
+  })
+
+  it('ignores an external callbackUrl and lands on the dashboard', async () => {
+    searchParams = new URLSearchParams('callbackUrl=https%3A%2F%2Fevil.example%2F')
+    await submit()
+    expect(push).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('keeps the package resume ahead of a callbackUrl', async () => {
+    searchParams = new URLSearchParams('callbackUrl=%2Fspaces%2Fspace-1&packageId=pkg-10h')
+    await submit()
+    expect(push).toHaveBeenCalledWith('/dashboard/packages?packageId=pkg-10h')
+  })
+
+  it('carries the callbackUrl over to the sign-up link', () => {
+    searchParams = new URLSearchParams('callbackUrl=%2Fspaces%2Fspace-1')
+    render(<SignInPage />)
+    expect(screen.getByRole('link', { name: /Registar/i })).toHaveAttribute('href', '/sign-up?callbackUrl=%2Fspaces%2Fspace-1')
+  })
+})

@@ -966,7 +966,17 @@ section into view and moves focus to its heading, respecting
 
 ### B28 — Booking modal sign-in link loses the customer's place
 
-**Priority: P1. State: QUEUED.** The modal links to bare `/sign-in`, so after
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): new `lib/navigation.ts` (`safeInternalPath`, `signInHref`)
+accepts only same-origin relative paths (rejects absolute, `//host`, schemes,
+`/\`). The modal links to `/sign-in?callbackUrl=<space page>`; sign-in and
+sign-up follow a safe `callbackUrl` after success (package resume still
+wins) and carry it to each other's links. Before this, sign-in ignored
+`callbackUrl` entirely (it only read `packageId`). Tests: 3 unit tests for
+the helper, 4 sign-in tests, 1 modal link test; 37 pass across the touched
+files. Restoring the exact slot is not attempted.
+
+Original report: **Priority: P1.** The modal links to bare `/sign-in`, so after
 login the customer lands on `/dashboard` and must start over.
 **Dependencies:** none. **Acceptance:** link to `/sign-in` with a `callbackUrl`
 back to the space page; the sign-in page honours only same-origin relative
