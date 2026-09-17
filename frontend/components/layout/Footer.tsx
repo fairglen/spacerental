@@ -1,10 +1,12 @@
 'use client'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { Building2, MapPin, Mail } from 'lucide-react'
 import { useT } from '@/lib/i18n'
 
 export function Footer() {
   const t = useT()
+  const { status } = useSession()
   return (
     <footer className="bg-foreground text-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -37,9 +39,15 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/sign-in" className="hover:text-white transition-colors">
-                  {t('footer.sign_in')}
-                </Link>
+                {status === 'authenticated' ? (
+                  <Link href="/dashboard" className="hover:text-white transition-colors">
+                    {t('footer.my_bookings')}
+                  </Link>
+                ) : (
+                  <Link href="/sign-in" className="hover:text-white transition-colors">
+                    {t('footer.sign_in')}
+                  </Link>
+                )}
               </li>
             </ul>
           </div>

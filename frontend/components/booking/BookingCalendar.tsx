@@ -198,6 +198,13 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
           step={60}
           timeslots={1}
           culture="pt"
+          formats={{
+            // Default rbc labels come out as "sexta-feira set 18" (B33d).
+            dayHeaderFormat: (date, culture, loc) => loc!.format(date, "EEEE, d 'de' MMMM", culture),
+            dayRangeHeaderFormat: ({ start, end }, culture, loc) =>
+              `${loc!.format(start, "d 'de' MMM", culture)} – ${loc!.format(end, "d 'de' MMM", culture)}`,
+            monthHeaderFormat: (date, culture, loc) => loc!.format(date, "MMMM 'de' yyyy", culture),
+          }}
           messages={{
             today: 'Hoje',
             previous: '‹',

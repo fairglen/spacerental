@@ -8,10 +8,9 @@ without a database or a clock race; the route-level 400 is covered by
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi import HTTPException
-
 from app.booking_cancellation import validate_cancellation
 from app.models.booking import Booking, BookingStatus
+from fastapi import HTTPException
 
 
 def _booking(start: datetime, status: BookingStatus = BookingStatus.confirmed) -> Booking:

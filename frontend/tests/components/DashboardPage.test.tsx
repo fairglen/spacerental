@@ -232,3 +232,20 @@ describe('Dashboard — packs summary (B30)', () => {
     expect(summary.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
   })
 })
+
+describe('Dashboard — history is not capped silently (B33e)', () => {
+  it('shows five entries with a "Ver mais" control that reveals the rest', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([])
+    const past = Array.from({ length: 7 }, (_, i) => {
+      const start = new Date(Date.now() - (i + 2) * 86_400_000).toISOString()
+      return booking({ id: `past-${i}`, start_time: start, end_time: start, room: { ...booking({}).room!, name: `Sala ${i}` } })
+    })
+    vi.mocked(bookingsApi.listMine).mockResolvedValue(past)
+    renderPage()
+    await screen.findByText('Sala 0')
+    expect(screen.getAllByText(/^Sala \d$/)).toHaveLength(5)
+    fireEvent.click(screen.getByRole('button', { name: /ver mais/i }))
+    expect(screen.getAllByText(/^Sala \d$/)).toHaveLength(7)
+    expect(screen.queryByRole('button', { name: /ver mais/i })).toBeNull()
+  })
+})

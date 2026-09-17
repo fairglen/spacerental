@@ -32,6 +32,8 @@ export default function DashboardPage() {
   const api = useApi()
   const queryClient = useQueryClient()
   const [cancelId, setCancelId] = useState<string | null>(null)
+  const HISTORY_PREVIEW = 5
+  const [showAllHistory, setShowAllHistory] = useState(false)
 
   // Stripe/stub checkout returns to /dashboard?pagamento=sucesso|cancelado
   // (STRIPE_SUCCESS_URL / STRIPE_CANCEL_URL). Show it once, then drop the
@@ -229,7 +231,7 @@ export default function DashboardPage() {
             <>
               <h2 className="text-lg font-semibold text-foreground mt-8 mb-4">Histórico</h2>
               <div className="space-y-2">
-                {past.slice(0, 5).map((b) => (
+                {(showAllHistory ? past : past.slice(0, HISTORY_PREVIEW)).map((b) => (
                   <Card key={b.id} className="opacity-70">
                     <CardContent className="p-4 flex items-center justify-between gap-4">
                       <div>
@@ -244,6 +246,11 @@ export default function DashboardPage() {
                   </Card>
                 ))}
               </div>
+              {!showAllHistory && past.length > HISTORY_PREVIEW && (
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => setShowAllHistory(true)}>
+                  Ver mais ({past.length - HISTORY_PREVIEW})
+                </Button>
+              )}
             </>
           )}
         </div>

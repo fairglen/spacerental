@@ -94,3 +94,42 @@ describe('Navbar packs entry (B30)', () => {
     expect(screen.queryByRole('link', { name: /packs/i })).toBeNull()
   })
 })
+
+describe('Navbar org switcher visibility (B33b/B33c)', () => {
+  const membership = (org_id: string, role: 'owner' | 'member' = 'member') =>
+    ({ org_id, org_name: `Org ${org_id}`, org_slug: org_id, role })
+
+  function signedInWith(memberships: ReturnType<typeof membership>[]) {
+    vi.mocked(useSession).mockReturnValue({
+      data: { accessToken: 'jwt-token', user: { name: 'Demo' } } as never,
+      status: 'authenticated',
+      update: vi.fn(),
+    })
+    vi.mocked(useOrg).mockReturnValue({
+      memberships,
+      currentOrgId: memberships[0]?.org_id ?? null,
+      currentMembership: memberships[0] ?? null,
+      setCurrentOrgId: vi.fn(),
+      isLoading: false,
+    })
+  }
+
+  it('hides the switcher for a customer with a single membership', () => {
+    signedInWith([membership('org-1')])
+    render(<Navbar />)
+    expect(screen.queryByRole('combobox')).toBeNull()
+  })
+
+  it('keeps the switcher for multi-org users, controlled from the first render', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      signedInWith([membership('org-1', 'owner'), membership('org-2')])
+      render(<Navbar />)
+      expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0)
+      const uncontrolled = error.mock.calls.filter((call) => String(call[0]).includes('uncontrolled'))
+      expect(uncontrolled).toEqual([])
+    } finally {
+      error.mockRestore()
+    }
+  })
+})

@@ -1065,7 +1065,21 @@ removed claims absent); existing component tests still assert behaviour only.
 
 ### B33 — Small correctness and polish findings
 
-**Priority: P2. State: QUEUED.** Grouped for one polish commit, or one commit
+**Priority: P2. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): a) footer shows "As minhas reservas" → `/dashboard` when signed
+in (`footer.my_bookings` in pt/en; 2 tests); b) the org switcher renders only
+with ≥2 memberships (test); c) fixed by B22 — a test now asserts no Radix
+"uncontrolled" console error for a multi-org user; d) calendar `formats`
+give "sexta-feira, 18 de setembro" day headers plus Portuguese week/month
+headers (test); e) history shows 5 with "Ver mais (N)" revealing all (test);
+f) `app/not-found.tsx` in Portuguese with links home and to spaces (test);
+g) `seed.py` descriptions, city and amenities translated — verified by
+`alembic upgrade head && python -m app.seed && alembic check` on a fresh
+throwaway database (no test pinned the English strings; existing databases
+keep their rows because the seeder is insert-only); h) docs-only, recorded
+below. Full Vitest 194 passed; locale + booking E2E 10 passed.
+
+Grouped for one polish commit, or one commit
 each where a change is not trivial:
 
 - a) Footer shows "Entrar" while signed in.

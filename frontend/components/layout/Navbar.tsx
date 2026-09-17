@@ -18,7 +18,8 @@ import { LocaleSwitcher } from '@/components/layout/LocaleSwitcher'
 function OrgSwitcher({ className }: { className?: string }) {
   const t = useT()
   const { memberships, currentOrgId, setCurrentOrgId } = useOrg()
-  if (memberships.length === 0) return null
+  // A customer with one membership has nothing to switch between (B33b).
+  if (memberships.length < 2) return null
 
   return (
     <div className={className}>

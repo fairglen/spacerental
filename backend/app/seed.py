@@ -109,11 +109,11 @@ async def seed() -> None:
             space = Space(
                 org_id=org.id,
                 name="Espaço Calmo",
-                description="A peaceful coworking space in the heart of Lisbon.",
+                description="Um espaço tranquilo para consultas e trabalho no coração de Lisboa.",
                 address="Rua do Calmo, 42",
-                city="Lisbon",
+                city="Lisboa",
                 images=[],
-                amenities=["WiFi", "Coffee", "Printer", "Air Conditioning"],
+                amenities=["WiFi", "Café", "Impressora", "Ar condicionado"],
             )
             session.add(space)
             await session.flush()
@@ -139,11 +139,11 @@ async def seed() -> None:
                     space_id=space.id,
                     org_id=org.id,
                     name=room_data["name"],
-                    description=f"Comfortable private room — {room_data['name']}.",
+                    description=f"Sala privada e confortável — {room_data['name']}.",
                     capacity=6,
                     hourly_rate=room_data["hourly_rate"],
                     color=room_data["color"],
-                    amenities=["WiFi", "Whiteboard", "TV Screen"],
+                    amenities=["WiFi", "Quadro branco", "Ecrã"],
                     images=[],
                 )
                 session.add(room)

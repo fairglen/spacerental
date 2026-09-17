@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
+import { pt } from 'date-fns/locale'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { spacesApi } from '@/lib/api'
 import type { AvailabilitySlot, Room } from '@/types'
@@ -284,5 +285,16 @@ describe('BookingCalendar visible states (B26)', () => {
     select('2030-08-12T06:00:00Z', '2030-08-12T07:00:00Z')
     expect(onSlotSelect).not.toHaveBeenCalled()
     expect(await screen.findByRole('alert')).toHaveTextContent(/horário de funcionamento/i)
+  })
+})
+
+describe('BookingCalendar toolbar label (B33d)', () => {
+  it('formats the day header as a full Portuguese date', async () => {
+    await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
+    const props = calendar as unknown as {
+      formats?: { dayHeaderFormat?: (date: Date, culture: string, localizer: { format: (d: Date, f: string, c?: string) => string }) => string }
+    }
+    const ptLocalizer = { format: (d: Date, f: string) => format(d, f, { locale: pt }) }
+    expect(props.formats?.dayHeaderFormat?.(new Date(2026, 8, 18), 'pt', ptLocalizer)).toBe('sexta-feira, 18 de setembro')
   })
 })
