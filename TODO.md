@@ -1214,6 +1214,19 @@ operator configures. No timezone column, wall-clock rules or DST recurrence
 here — that evidence is recorded on R01. **Validation:** component test with
 slots outside the old fixed range.
 
+**B34 decision (recorded 2026-09-18 before implementation):** `BookingCalendar`
+derives `min`/`max` from the slots the API returned for the days in view:
+`min` = the earliest slot start rounded down to the hour minus one hour of
+padding (never before 00:00), `max` = the latest slot end rounded up plus one
+hour (never past 24:00), both in the browser's zone because that is the zone
+react-big-calendar lays the grid out in. With no slots yet (loading, error,
+closed day) the previous 08:00–20:00 window is the fallback so the grid does
+not jump. Alternatives rejected: keeping the fixed window (hides the
+20:00–21:00 Lisbon slot today and any future operator change); showing the
+full 00:00–24:00 day (600px grid becomes unreadable); asking the API for the
+room's opening window (R01 owns the timezone-correct version of that).
+Reversal: delete `visibleRange()` and restore the two constants.
+
 ### B35 — BookingCalendar fights touch scrolling on mobile
 
 **Priority: P3. State: QUEUED (not yet verified in a browser).** The calendar is
