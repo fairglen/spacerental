@@ -30,6 +30,17 @@ describe('bookingsApi.listMine', () => {
     const result = await bookingsApi.listMine(mockApi)
     expect(result).toEqual([])
   })
+
+  it('carries access_code through unchanged, including null (B23)', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({
+        data: { bookings: [{ id: '1', access_code: '482913' }, { id: '2', access_code: null }] },
+      }),
+    } as any
+    const result = await bookingsApi.listMine(mockApi)
+    expect(result[0].access_code).toBe('482913')
+    expect(result[1].access_code).toBeNull()
+  })
 })
 
 describe('createAuthenticatedApi', () => {

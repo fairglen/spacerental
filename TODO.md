@@ -855,7 +855,16 @@ no current membership; reload on `/admin` and a cold deep link to
 
 ### B23 — Customers cannot see their door code
 
-**Priority: P1. State: QUEUED.** `GET /bookings/me` returns `access_code` for
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): `Booking.access_code` added to `types/index.ts`; the dashboard
+renders "Código de acesso: <code>" on confirmed upcoming cards, a calm "ainda
+não disponível" line when confirmed without a code, and nothing for
+pending/cancelled. `tests/components/DashboardPage.test.tsx` (3 states, 2/3
+failed before the change), `api.test.ts` shape test for `access_code`, and the
+booking E2E now asserts the code is on the dashboard card after stub payment
+(passes). Durability of the code across restarts remains O04.
+
+Original report: **Priority: P1.** `GET /bookings/me` returns `access_code` for
 confirmed bookings but nothing under `frontend/` renders it (code-confirmed by
 grep). **Dependencies:** none (O04 owns durability; stub codes vanish on
 restart and that is out of scope here). **Acceptance:** confirmed upcoming

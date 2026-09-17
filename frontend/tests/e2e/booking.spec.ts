@@ -304,6 +304,11 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(card).toHaveCount(1, { timeout: 10000 })
     await expect(card).toContainText('33,00')
     await expect(card).toContainText('Confirmado')
+    // B23: the door code the stub lock issued on payment is shown to the customer.
+    const paid = (await myBookings(api, token)).find((b) => b.id === booking.id)
+    expect(paid?.access_code).toMatch(/^\d{6}$/)
+    await expect(card).toContainText('Código de acesso')
+    await expect(card).toContainText(paid!.access_code!)
   })
 
   test('a single click still books exactly one hour, same as before B1 (B1)', async () => {

@@ -40,6 +40,9 @@ export type Booking = {
   notes?: string
   // Set when this booking is one occurrence of a recurring series.
   recurrence_rule_id?: string | null
+  // Door code for a confirmed booking; null until the lock gateway issues
+  // one (or when it could not). Never present for pending/cancelled rows.
+  access_code?: string | null
   room?: Room
   user?: User
   created_at: string

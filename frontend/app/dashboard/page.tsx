@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, isPast } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { Calendar, Clock, Building2 } from 'lucide-react'
+import { Calendar, Clock, Building2, KeyRound } from 'lucide-react'
 import { bookingsApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { formatCurrency, STATUS_LABELS, STATUS_COLORS } from '@/lib/utils'
@@ -80,6 +80,19 @@ export default function DashboardPage() {
                           <Clock className="h-3 w-3" />
                           {format(parseISO(b.start_time), "d MMM yyyy, HH:mm", { locale: pt })} – {format(parseISO(b.end_time), 'HH:mm')}
                         </p>
+                        {b.status === 'confirmed' && (
+                          b.access_code ? (
+                            <p className="text-xs text-foreground flex items-center gap-1 mt-1">
+                              <KeyRound className="h-3 w-3 text-primary" />
+                              Código de acesso: <span className="font-mono font-semibold tracking-wider">{b.access_code}</span>
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                              <KeyRound className="h-3 w-3" />
+                              Código de acesso ainda não disponível. Contacta o espaço se não o tiveres antes da reserva.
+                            </p>
+                          )
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
