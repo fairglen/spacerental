@@ -28,6 +28,11 @@ C06–C08/C99 (P1, QUEUED in order), B16/B17/B19 (P2, IN PROGRESS), R/O tasks
 its agreed position. Reassess priority if new evidence establishes an immediate
 blocker.
 
+**Smoke-test findings (2026-09-17):** a browser smoke test of main `cced0f4`
+(fresh customer + seeded admin, stub mode, production build) found the gaps
+recorded as B22–B36 below and as evidence on C03/C04/C06/C07/R01/O03. They
+are being fixed on `fix/smoke-findings`; see each item for state.
+
 States used below:
 
 - **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
@@ -547,6 +552,34 @@ transitions. Dashboard distinguishes awaiting payment, expired, and confirmed.
 resumption and late payment; E2E abandon → recover and expire → slot available.
 Use controllable clocks/failure injection rather than long wall-clock sleeps.
 
+
+**Smoke-test evidence (2026-09-17, main `cced0f4`) — abandoned checkout
+deadlock:** book a slot for tomorrow, press Cancelar on the stub checkout. The
+booking stays `pending` forever and blocks the slot; the dashboard has no way
+to pay; and the customer cannot cancel it because `validate_cancellation()` in
+`backend/app/booking_cancellation.py` applies the 24h rule to unpaid pending
+bookings too. Only an admin can clear it.
+
+**Slice delivered on `fix/smoke-findings` (decision recorded before code, see
+"C03 decision" below when present):**
+
+- a) An unpaid `pending` booking can always be cancelled by its owner regardless
+  of the 24h window (nothing was paid; no code/credit side effects may fire).
+- b) Cancelling on the stub/Stripe checkout page releases the hold immediately.
+- c) Dashboard shows pending bookings as "A aguardar pagamento" with a "Pagar
+  agora" action that resumes or recreates the checkout session without a second
+  booking.
+- d) Hold expiry (default 15 minutes, configurable) evaluated at read/conflict
+  time so an expired hold stops blocking availability even without a sweeper.
+- e) A late `checkout.session.completed` for an expired/cancelled booking must
+  not confirm it if the slot is taken; the payment is persisted in a visible
+  "paid but unfulfilled" state, refund handling left to O02.
+
+If (d)/(e) grow beyond a contained change, (a)–(c) ship and (d)/(e) stay here
+with design notes. Tests: real-PG cancel-pending-inside-24h, expiry with a
+controlled clock, late/duplicate webhook; Playwright abandon → pay now →
+confirmed and abandon → slot bookable again.
+
 ### C04 — Patch dependencies and validate a production build
 
 **Intake evidence (2026-09-10):** C01's pinned `npm ci` reported 24 audit findings
@@ -566,6 +599,13 @@ build/start and auth, public browsing, checkout, and admin protection work.
 
 **Validation:** full required suites, dependency audit with assessed findings,
 production build and smoke checks against a production-mode server.
+
+
+**Smoke-test evidence (2026-09-17):** `next@14.2.5` is flagged by `npm audit`.
+Slice on `fix/smoke-findings` (last in its tier, own commit): upgrade to the
+latest patched 14.2.x (no major bump), align `eslint-config-next`, run
+`npm audit` and record what remains and why; verify build, Vitest, and the auth
++ booking E2E.
 
 ### C05 — Enforce booking validity at the API boundary — DONE (2026-09-10)
 
@@ -728,6 +768,15 @@ format money consistently and avoid unsupported benefit claims.
 **Validation:** component tests vary price/validity and simulate failure; exercise
 admin update → public price → checkout amount in the local flow.
 
+
+**Smoke-test evidence (2026-09-17):** `Pricing.tsx` takes price/validity/savings
+from the i18n JSON keyed by hours (10, 20), so an admin price edit makes the
+landing page contradict checkout, and a pack of any other size never appears.
+Slice on `fix/smoke-findings`: render the cards from the packages API (name,
+hours, price, validity_days) and the room hourly rate; compute savings from
+real numbers and omit the line when not positive; keep translated labels for
+static wording only; distinguish loading, error and "no packs".
+
 ### C07 — Explain cancellation eligibility and failures
 
 **Depends on:** C06. **Scope:** dashboard, booking cancellation responses, shared
@@ -742,6 +791,14 @@ updates bookings and package balances. Explicitly resolve/test the exact
 **Validation:** before/at/after-boundary tests, denied/failed/successful UI
 interactions, and cancellation E2E. Backend remains authoritative if time or
 status changes after rendering.
+
+
+**Smoke-test evidence (2026-09-17):** cancelling a booking <24h away returns 400
+and the dashboard dialog just stays open with no message. Slice on
+`fix/smoke-findings`: `onError` handling with a Portuguese explanation mapped
+from the response; the 24h rule stated in the dialog up front; Cancel disabled
+or hidden for ineligible bookings with a visible reason. Backend stays
+authoritative; no refund promise (O02).
 
 ### C08 — Reliable diagnostics and current setup documentation
 
@@ -760,6 +817,193 @@ check behavior for workflows skipped by path filters.
 **Validation:** verify artifacts on a controlled failing local/CI exercise when
 assigned, auth failure tests, full E2E on a fresh stack, and a walkthrough of the
 README commands. Do not disable tests or globally weaken throttling for a pass.
+
+### Smoke-test findings — 2026-09-17
+
+Observed in a real browser against main `cced0f4` (Postgres, migrated and seeded
+backend in stub mode, production Next build, Playwright as a fresh customer and
+as `admin@demo.com`). Backend (251) and frontend (127) suites were green, so
+every item is a coverage gap, not a regression. Items marked *code-confirmed*
+were verified by reading the code rather than in the browser. All are P1 unless
+stated; they are delivered on `fix/smoke-findings`, one commit per item.
+
+### B22 — Admin refresh or deep link bounces operators to /dashboard
+
+**Priority: P1. State: QUEUED.** Reproduction (100%): sign in as
+`admin@demo.com`, click Admin (works), press reload, or open `/admin/bookings`
+directly → lands on `/dashboard`. Cause (code-confirmed in
+`frontend/app/admin/layout.tsx` + `contexts/OrgContext.tsx`): the redirect
+effect runs on a render where memberships are already known from the session
+but `currentOrgId` is still `null` (it is set in a later `useEffect`), so
+`isAdmin` is false and `router.replace('/dashboard')` fires.
+**Dependencies:** none. **Acceptance:** derive the current org synchronously
+(memberships + stored selection) so a loaded membership set never renders with
+no current membership; reload on `/admin` and a cold deep link to
+`/admin/bookings` stay in admin; a plain member is still redirected.
+**Validation:** Playwright reload + deep link as admin; member redirect.
+
+### B23 — Customers cannot see their door code
+
+**Priority: P1. State: QUEUED.** `GET /bookings/me` returns `access_code` for
+confirmed bookings but nothing under `frontend/` renders it (code-confirmed by
+grep). **Dependencies:** none (O04 owns durability; stub codes vanish on
+restart and that is out of scope here). **Acceptance:** confirmed upcoming
+bookings on the dashboard show the code, clearly labelled; pending/cancelled
+never show one; "confirmed but no code yet" shows a calm Portuguese message
+rather than an empty gap. `Booking` type and `lib/api.ts` carry the field.
+**Validation:** component test for the three states; booking E2E asserts the
+code is visible after stub payment.
+
+### B24 — Past hours are offered as bookable
+
+**Priority: P1. State: QUEUED.** At 22:11 UTC the availability endpoint
+returned every same-day slot as `available: true`; the calendar paints them
+green; clicking one ends in a generic error because `POST /bookings` correctly
+rejects past start times. **Dependencies:** none. **Acceptance:** in
+`backend/app/routers/spaces.py` a slot whose start is in the past is not
+available; response shape unchanged. The calendar does not present
+unavailable-because-past as "Ocupado" — past is styled as disabled with no
+event chip. **Validation:** real-PG pytest with a controlled clock; component
+test for the past state.
+
+### B25 — Payment return is silent
+
+**Priority: P1. State: QUEUED.** Stub/Stripe return to
+`/dashboard?pagamento=sucesso` or `?pagamento=cancelado` and the page ignores
+the parameter. **Dependencies:** none. **Acceptance:** dismissible success or
+"pagamento não concluído" notice; the parameter is stripped from the URL so a
+reload does not repeat it; pack purchases return to the same URL, so the
+success notice links to `/dashboard/packages`. **Validation:** component tests
+for both values and for absence.
+
+### B26 — Closed days, loading and API failure all render as a blank grid
+
+**Priority: P1. State: QUEUED.** A Sunday renders a blank white calendar with no
+label and clicks do nothing (`resolveSelection` returns `kind: 'none'` and
+`handleSelectSlot` ignores it). Loading and an availability API failure look
+identical. **Dependencies:** none. **Acceptance:** `BookingCalendar` has three
+distinct, visible states — loading, error (with retry), and closed ("Fechado
+neste dia"); a `'none'` selection shows the same inline notice the `'taken'`
+and `'closed'` branches use. **Validation:** component tests per state.
+
+### B27 — "Reservar Esta Sala" appears to do nothing
+
+**Priority: P1. State: QUEUED.** The calendar mounts below the fold (top at
+851px in a 900px viewport) with no scroll, and no card shows as selected.
+**Dependencies:** none. **Acceptance:** selecting a room scrolls the calendar
+section into view and moves focus to its heading, respecting
+`prefers-reduced-motion`; the selected room card is visibly marked.
+**Validation:** component test for selection state and focus/scroll call.
+
+### B28 — Booking modal sign-in link loses the customer's place
+
+**Priority: P1. State: QUEUED.** The modal links to bare `/sign-in`, so after
+login the customer lands on `/dashboard` and must start over.
+**Dependencies:** none. **Acceptance:** link to `/sign-in` with a `callbackUrl`
+back to the space page; the sign-in page honours only same-origin relative
+paths (no open redirect); returning to the space page is required, restoring
+the exact slot is optional. **Validation:** sign-in component tests for a
+relative, an absolute/external, and a missing `callbackUrl`; modal link test.
+
+### B29 — Pack bookings give no confirmation and show the wrong price
+
+**Priority: P1. State: QUEUED.** Paying with pack hours closes the modal
+silently; the dashboard then shows "33,00 €" on a booking that cost no money.
+**Dependencies:** none. **Acceptance:** after a pack booking the modal shows a
+clear success state (what was booked, hours used, hours left, link to Minhas
+reservas). In the dashboard and history, bookings with `payment_method:
+'package'` show hours used ("3h do pack"), not a euro amount. **Validation:**
+modal component test for the success state; dashboard test for the label.
+
+### B30 — Packs are undiscoverable
+
+**Priority: P1. State: QUEUED.** Nothing links to `/dashboard/packages` — not
+the navbar, not the dashboard whose subtitle promises "reservas e pacotes".
+"10.0h restantes" is also shown instead of "10h". **Dependencies:** none.
+**Acceptance:** a nav entry for signed-in users and a compact packs summary on
+the dashboard (hours left, expiry, link); hours format as "10h" and keep real
+fractions with a Portuguese comma ("7,5h"). **Validation:** navbar and
+dashboard component tests; unit test for the hours formatter.
+
+### B31 — Booking errors are all the same sentence
+
+**Priority: P1. State: QUEUED.** `errorMessage()` in `BookingModal.tsx` maps
+everything that is not 409 to "Erro ao criar reserva". **Dependencies:** none.
+**Acceptance:** map at least past start time, outside opening hours, 401
+expired session (offer sign-in with `callbackUrl`), 403 not a member, 429 rate
+limited, and network failure; the mapping lives next to the existing helpers
+in `lib/httpError.ts` for reuse. **Validation:** unit tests per mapping; modal
+tests for the 401 sign-in offer.
+
+### B32 — Landing copy promises features that do not exist
+
+**Priority: P1. State: QUEUED.** In both `pt.json` and `en.json`: "com o
+Google" (no Google sign-in), "mensalmente"/monthly, "Reserva prioritária" (no
+such feature), and the hero badge's "recorrente" while
+`RECURRING_BOOKINGS_ENABLED` defaults to false. **Dependencies:** none.
+**Acceptance:** remove or reword without adding new unverifiable claims; both
+catalogs stay key-aligned. **Validation:** i18n catalog test (keys aligned, the
+removed claims absent); existing component tests still assert behaviour only.
+
+### B33 — Small correctness and polish findings
+
+**Priority: P2. State: QUEUED.** Grouped for one polish commit, or one commit
+each where a change is not trivial:
+
+- a) Footer shows "Entrar" while signed in.
+- b) Org switcher is shown to customers; hide it for a single membership (keep
+  it for multi-org users).
+- c) Radix Select "uncontrolled to controlled" console warning on every
+  authenticated page (the org switcher's value starts undefined).
+- d) Calendar toolbar label reads "sexta-feira set 18"; use proper Portuguese
+  ("sexta-feira, 18 de setembro") via the localizer formats.
+- e) Dashboard history is hard-capped at 5 with no way to see more.
+- f) Add a styled Portuguese `app/not-found.tsx` (currently the English default).
+- g) Seed content is English on a Portuguese site (space/room descriptions,
+  "Lisbon"); translate in `backend/app/seed.py` after checking no test pins
+  the strings.
+- h) Two Alembic revisions share the `0002_` prefix
+  (`0002_booking_pkg_purchase.py`, `0002_recurring_bookings.py`). Applied
+  revision IDs are never renamed. Convention going forward: the next revision
+  takes the next unused numeric prefix on the branch it is created from
+  (`0003_…`), and a merge revision is generated with `alembic merge` when two
+  branches collide instead of sharing a prefix. Recorded here because no
+  migrations README exists.
+
+**Validation:** component/unit tests per changed behaviour; seed run on a fresh
+database; full suites.
+
+### B34 — An hour of Lisbon inventory is invisible in the calendar (R01 slice)
+
+**Priority: P1. State: QUEUED.** Opening hours are stored as naive times and
+evaluated as UTC (seed 08:00–20:00 = 09:00–21:00 Lisbon during DST) while
+`BookingCalendar` hard-codes `min`/`max` 08:00–20:00 in the browser's zone.
+Today the 20:00–21:00 Lisbon slot can never be booked and 08:00 looks closed.
+**Dependencies:** none for the slice; the full fix is R01. **Acceptance
+(slice):** derive the calendar's visible range from the slots the API returned
+(with padding and a fallback) so nothing bookable is hidden whatever the
+operator configures. No timezone column, wall-clock rules or DST recurrence
+here — that evidence is recorded on R01. **Validation:** component test with
+slots outside the old fixed range.
+
+### B35 — BookingCalendar fights touch scrolling on mobile
+
+**Priority: P3. State: QUEUED (not yet verified in a browser).** The calendar is
+a 600px react-big-calendar with drag-to-select, which competes with touch
+scrolling. Proposal: a tap-friendly slot list below the `md` breakpoint that
+reuses the same availability data and `resolveSelection`. Verify on a mobile
+viewport before implementing; do not restyle the desktop calendar.
+
+### B36 — Surfaces not yet smoke-tested
+
+**Priority: P2. State: QUEUED.** Follow-up test task, not a bug report. Not yet
+exercised in a browser: admin actions (confirm/cancel booking, edit
+room/availability, create space/package), recurring series UI, locale
+switcher, mobile viewports, wrong-password message on sign-in, and
+`flowspace-site`. The admin bookings table's ACTIONS column looked empty for a
+pending booking — unverified whether that is icon-only buttons or a gap.
+**Acceptance:** each surface has a Playwright or component test asserting
+behaviour, and any defect found is recorded as its own item first.
 
 ### C99 — Outcome 1 acceptance
 
@@ -791,6 +1035,15 @@ paid appointments. Preserve the existing occurrence cap and reject invalid range
 
 **Validation:** unit expansion tests around both transitions and ambiguous/gap
 cases; real-PG API/migration tests; browser preview matches stored dates.
+
+
+**Smoke-test evidence (2026-09-17, main `cced0f4`):** `AvailabilityRule`
+open/close times are naive and `spaces.py`/`booking_validity.py` evaluate them
+as UTC, so the seeded 08:00–20:00 is really 09:00–21:00 Lisbon during DST.
+`BookingCalendar` hard-codes `min`/`max` 08:00–20:00 in the browser's zone, so
+the 20:00–21:00 Lisbon slot can never be selected and 08:00 looks closed. The
+calendar-range slice is B34; the timezone column, wall-clock rules and
+DST-stable recurrence remain here and are not started by `fix/smoke-findings`.
 
 ### R02 — Make recurring reservations payable
 
@@ -901,6 +1154,11 @@ records with Decimal arithmetic and no cross-org leakage.
 **Validation:** a known fixture ledger including hourly and package sales,
 redemption, restoration, partial refund and unpaid admin-confirmed bookings;
 real-route totals/denial tests, wrapper shape tests, and operator walkthrough.
+
+
+**Smoke-test evidence (2026-09-17, main `cced0f4`):** admin "Receita Total"
+showed 22,00 € when 122,00 € had been collected — a 100 € pack sale is not
+counted. State unchanged (HOLD); recorded only.
 
 ### O04 — Durable and recoverable room access
 
