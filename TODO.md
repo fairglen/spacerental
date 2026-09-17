@@ -873,6 +873,23 @@ hours, price, validity_days) and the room hourly rate; compute savings from
 real numbers and omit the line when not positive; keep translated labels for
 static wording only; distinguish loading, error and "no packs".
 
+**C06 decision (recorded 2026-09-18 before implementation):** `Pricing.tsx`
+renders one card per active package returned by `GET /packages?org_id`
+(sorted by hours), taking name, hours, price and `validity_days` from the
+API; the hourly card takes the lowest active room rate of the first public
+space (`GET /spaces/{id}`), shown as "desde" when rooms differ. Savings =
+`hours × rate − price`, rendered only when positive. The "Mais Popular"
+badge is dropped (not derivable); the best value (lowest price per hour) is
+highlighted with a computed "Melhor valor" badge instead. Static wording
+stays in the catalogs; every number comes from the API. States: skeleton
+cards while loading; an error notice with retry when the packages request
+fails; "no packs" copy pointing to hourly booking when the list is empty; a
+missing rate degrades to a hourly card without a number and no savings
+line. Alternatives rejected: keeping copy keyed by hours (the smoke test's
+contradiction), or a backend "marketing" endpoint (a second source of
+truth). Reversal: restore the `pack_10_*`/`pack_20_*` catalog keys and the
+previous `packageCopyByHours` map.
+
 ### C07 — Explain cancellation eligibility and failures
 
 **Depends on:** C06. **Scope:** dashboard, booking cancellation responses, shared
