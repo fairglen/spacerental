@@ -930,7 +930,16 @@ for both values and for absence.
 
 ### B26 — Closed days, loading and API failure all render as a blank grid
 
-**Priority: P1. State: QUEUED.** A Sunday renders a blank white calendar with no
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): `BookingCalendar` now shows "A carregar disponibilidade…"
+(`role=status`) while fetching, "Não foi possível carregar…" with a "Tentar
+novamente" button (`role=alert`, refetches the failed queries) on error, and
+"Fechado neste dia." / "Fechado nesta semana." when the day has no opening
+hours; the grid stays mounted so navigation still works. A selection that
+touches no slot at all now shows an inline notice instead of being ignored.
+Four component tests, all failing before the change; 14 pass in the file.
+
+Original report: **Priority: P1.** A Sunday renders a blank white calendar with no
 label and clicks do nothing (`resolveSelection` returns `kind: 'none'` and
 `handleSelectSlot` ignores it). Loading and an availability API failure look
 identical. **Dependencies:** none. **Acceptance:** `BookingCalendar` has three

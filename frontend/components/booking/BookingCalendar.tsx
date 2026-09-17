@@ -105,6 +105,15 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
 
   const allSlots: AvailabilitySlot[] = slotQueries.flatMap((q) => q.data ?? [])
 
+  // Three states a blank grid used to hide (B26): still fetching, the fetch
+  // failed, or the day simply has no opening hours. The grid stays mounted
+  // underneath so the customer can still navigate away from a closed day.
+  const isLoadingSlots = slotQueries.some((q) => q.isLoading)
+  const failedQueries = slotQueries.filter((q) => q.isError)
+  const isClosed =
+    view !== 'month' && !isLoadingSlots && failedQueries.length === 0 && allSlots.length === 0
+  const retryFailed = () => failedQueries.forEach((q) => q.refetch())
+
   const events: Event[] = allSlots
     .filter((s) => !s.available && !isPastSlot(s, new Date()))
     .map((s) => ({
@@ -133,7 +142,11 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       }
       if (resolution.kind === 'closed') {
         setSelectionError('O intervalo escolhido inclui horas fora do horário de funcionamento.')
+        return
       }
+      // 'none': nothing bookable under the selection at all (closed day or
+      // hours outside every open window).
+      setSelectionError('Esse período está fora do horário de funcionamento. Escolhe uma hora a verde.')
     },
     [allSlots, onSlotSelect]
   )
@@ -148,6 +161,24 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       {selectionError && (
         <p role="alert" className="mb-3 text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
           {selectionError}
+        </p>
+      )}
+      {isLoadingSlots && (
+        <p role="status" className="mb-3 text-sm text-muted-foreground bg-background rounded-lg px-3 py-2">
+          A carregar disponibilidade…
+        </p>
+      )}
+      {failedQueries.length > 0 && (
+        <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
+          <span>Não foi possível carregar a disponibilidade desta sala.</span>
+          <button type="button" onClick={retryFailed} className="font-medium underline">
+            Tentar novamente
+          </button>
+        </div>
+      )}
+      {isClosed && (
+        <p role="status" className="mb-3 text-sm text-foreground bg-accent rounded-lg px-3 py-2">
+          {view === 'week' ? 'Fechado nesta semana.' : 'Fechado neste dia.'} Usa as setas para ver outro dia.
         </p>
       )}
       <div className="h-[600px] [&_.rbc-today]:bg-accent [&_.rbc-selected]:bg-primary/20 [&_.rbc-event]:bg-muted-foreground [&_.rbc-toolbar-label]:font-semibold [&_.rbc-toolbar-label]:text-foreground">

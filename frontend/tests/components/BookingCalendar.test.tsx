@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act, waitFor } from '@testing-library/react'
+import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
@@ -236,5 +236,53 @@ describe('BookingCalendar past hours (B24)', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/já passou/)
     expect(alert).not.toHaveTextContent(/reservada/)
+  })
+})
+
+describe('BookingCalendar visible states (B26)', () => {
+  function renderRaw() {
+    const onSlotSelect = vi.fn()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BookingCalendar room={room} onSlotSelect={onSlotSelect} />
+      </QueryClientProvider>,
+    )
+    return { onSlotSelect }
+  }
+
+  it('says it is loading while availability is in flight', async () => {
+    vi.mocked(spacesApi.getAvailability).mockReturnValue(new Promise(() => {}))
+    renderRaw()
+    expect(await screen.findByRole('status')).toHaveTextContent(/a carregar/i)
+  })
+
+  it('shows an error with a retry that refetches', async () => {
+    vi.mocked(spacesApi.getAvailability).mockRejectedValueOnce(new Error('boom'))
+    renderRaw()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/não foi possível/i)
+    vi.mocked(spacesApi.getAvailability).mockResolvedValue([
+      slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z'),
+    ])
+    fireEvent.click(screen.getByRole('button', { name: /tentar novamente/i }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(spacesApi.getAvailability).toHaveBeenCalledTimes(2)
+  })
+
+  it('labels a day with no opening hours as closed', async () => {
+    vi.mocked(spacesApi.getAvailability).mockResolvedValue([])
+    renderRaw()
+    expect(await screen.findByText(/fechado neste dia/i)).toBeVisible()
+    expect(screen.queryByText(/a carregar/i)).toBeNull()
+  })
+
+  it('tells the customer when a selection falls outside opening hours', async () => {
+    const { onSlotSelect } = await renderCalendar([
+      slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z'),
+    ])
+    select('2030-08-12T06:00:00Z', '2030-08-12T07:00:00Z')
+    expect(onSlotSelect).not.toHaveBeenCalled()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/horário de funcionamento/i)
   })
 })
