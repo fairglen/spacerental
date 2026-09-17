@@ -172,3 +172,26 @@ describe('Dashboard — cancellation eligibility and failures (C07)', () => {
     expect(alert).not.toHaveTextContent(/reembols/i)
   })
 })
+
+describe('Dashboard — package bookings show hours, not money (B29)', () => {
+  it('labels an upcoming pack booking with the hours used and no euro amount', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-pack', payment_method: 'package', duration_hours: 3, total_amount: 33 }),
+    ])
+    renderPage()
+    expect(await screen.findByText('3h do pack')).toBeVisible()
+    expect(screen.queryByText(/33,00/)).toBeNull()
+  })
+
+  it('does the same in the history', async () => {
+    const past = new Date(Date.now() - 5 * 86_400_000).toISOString()
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-past-pack', payment_method: 'package', duration_hours: 2, total_amount: 22, start_time: past, end_time: past }),
+      booking({ id: 'b-past-hourly', payment_method: 'hourly', duration_hours: 1, total_amount: 11, start_time: past, end_time: past }),
+    ])
+    renderPage()
+    expect(await screen.findByText('2h do pack')).toBeVisible()
+    expect(screen.getByText(/11,00/)).toBeVisible()
+    expect(screen.queryByText(/22,00/)).toBeNull()
+  })
+})

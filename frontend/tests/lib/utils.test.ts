@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cn, formatCurrency, STATUS_LABELS, STATUS_COLORS, cancellationEligibility } from '@/lib/utils'
+import { cn, formatCurrency, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, formatHours } from '@/lib/utils'
 
 describe('cn', () => {
   it('merges class names', () => {
@@ -55,5 +55,14 @@ describe('cancellationEligibility (C07)', () => {
   it('refuses cancelled and completed bookings', () => {
     expect(cancellationEligibility(at('2026-09-25T12:00:00Z', 'cancelled'), now).eligible).toBe(false)
     expect(cancellationEligibility(at('2026-09-25T12:00:00Z', 'completed'), now).eligible).toBe(false)
+  })
+})
+
+describe('formatHours (B29/B30)', () => {
+  it('drops a zero fraction and keeps real ones with a Portuguese comma', () => {
+    expect(formatHours(10)).toBe('10h')
+    expect(formatHours(3)).toBe('3h')
+    expect(formatHours(7.5)).toBe('7,5h')
+    expect(formatHours(0.25)).toBe('0,25h')
   })
 })

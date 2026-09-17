@@ -58,3 +58,9 @@ export function cancellationEligibility(
   }
   return { eligible: true }
 }
+
+/** "10h", "7,5h" — a whole number of hours has no fraction, a real fraction
+ * keeps the Portuguese decimal comma (B29/B30). */
+export function formatHours(hours: number): string {
+  return `${new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 2 }).format(hours)}h`
+}

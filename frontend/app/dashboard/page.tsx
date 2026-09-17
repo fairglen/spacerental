@@ -7,9 +7,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, isPast } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { Calendar, Clock, Building2, KeyRound, X } from 'lucide-react'
+import type { Booking } from '@/types'
 import { bookingsApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
-import { formatCurrency, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS } from '@/lib/utils'
+import { formatCurrency, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS } from '@/lib/utils'
 import { cancellationErrorMessage } from '@/lib/httpError'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
@@ -20,6 +21,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
+
+/** What the booking cost the customer: prepaid hours, or money (B29). */
+function bookingCost(b: Booking): string {
+  return b.payment_method === 'package' ? `${formatHours(b.duration_hours)} do pack` : formatCurrency(b.total_amount)
+}
 
 export default function DashboardPage() {
   const { data: session } = useSession()
@@ -154,7 +160,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold text-primary">{formatCurrency(b.total_amount)}</span>
+                      <span className="font-semibold text-primary">{bookingCost(b)}</span>
                       <Badge className={STATUS_COLORS[b.status]}>{STATUS_LABELS[b.status]}</Badge>
                       {(() => {
                         const eligibility = cancellationEligibility(b)
@@ -193,7 +199,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-muted-foreground">{format(parseISO(b.start_time), "d MMM yyyy, HH:mm", { locale: pt })}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-muted-foreground">{formatCurrency(b.total_amount)}</span>
+                        <span className="text-sm font-medium text-muted-foreground">{bookingCost(b)}</span>
                         <Badge className={STATUS_COLORS[b.status]} variant="secondary">{STATUS_LABELS[b.status]}</Badge>
                       </div>
                     </CardContent>

@@ -986,7 +986,17 @@ relative, an absolute/external, and a missing `callbackUrl`; modal link test.
 
 ### B29 — Pack bookings give no confirmation and show the wrong price
 
-**Priority: P1. State: QUEUED.** Paying with pack hours closes the modal
+**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+(2026-09-17): a package booking now keeps the modal open on a "Reserva
+confirmada" state (room, date, time, "3h do teu pack", hours remaining from
+the refetched balance, link to Minhas reservas, Fechar); the previous modal
+test that encoded the silent close was rewritten to assert this. The
+dashboard's upcoming and history cards show `formatHours(duration) + " do
+pack"` for `payment_method: 'package'` and the euro amount only for hourly
+bookings (2 new dashboard tests). `formatHours` in `lib/utils.ts` renders
+"10h" / "7,5h" (unit test). 41 tests pass across the touched files.
+
+Original report: **Priority: P1.** Paying with pack hours closes the modal
 silently; the dashboard then shows "33,00 €" on a booking that cost no money.
 **Dependencies:** none. **Acceptance:** after a pack booking the modal shows a
 clear success state (what was booked, hours used, hours left, link to Minhas
