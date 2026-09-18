@@ -2063,7 +2063,7 @@ user schema, and an unhandled error answers without internals. A mutation
 check proved the cases can fail: with a password hash on the user schema, an
 extra slot field, the owner filter removed from "my bookings" and debug mode
 on, five tests failed for those reasons, and the code was restored. Full
-backend suite: 388 passed. The audit's one finding is B41 below.
+backend suite: 388 passed. The audit's findings are S20 and B41 below.
 **Scope:** `backend/tests/test_data_exposure.py`; no application change.
 **Why:** response schemas are the only thing between a new model column and a
 public response, and nothing pins what each audience may see.
@@ -2074,6 +2074,18 @@ never nest another person's data; that a door code reaches only its owner and
 that org's operators; and that an unhandled error answers without internals.
 A case that fails on main becomes its own item. **Validation:** pytest through
 the `client` fixture, plus a mutation check.
+
+### S20 — The public space detail shows rooms an operator deactivated
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Finding (2026-09-18, raised by the review of the S19 tests and confirmed),
+severity Low: `GET /spaces/{id}` filters its room list to active rooms, but
+the same response nests the space's full room relation, so a deactivated
+room's name, description and rate stay public. **Scope:**
+`backend/app/routers/spaces.py`, tests. **Acceptance:** no public response
+carries an inactive room, nested or not; failing-first test; the nested list
+is either filtered or left out of the public detail, without breaking
+`frontend/lib/api.ts`.
 
 ### B41 — Availability is still served for a room whose space is deactivated
 

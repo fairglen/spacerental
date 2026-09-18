@@ -18,6 +18,7 @@ from app.main import app
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.package import Package
+from app.models.space import Room
 from app.models.user import User
 from httpx import ASGITransport, AsyncClient
 
@@ -88,6 +89,20 @@ class TestPublicResponses:
         self, client, db_session, test_org, test_space, test_room
     ):
         db_session.add(Package(org_id=test_org.id, name="Pack", hours=10, price=Decimal("99.00")))
+        db_session.add(
+            Room(
+                space_id=test_space.id,
+                org_id=test_org.id,
+                name="Sala desativada",
+                description="d",
+                capacity=2,
+                hourly_rate=Decimal("99.00"),
+                color="#000000",
+                images=[],
+                amenities=[],
+                is_active=False,
+            )
+        )
         await db_session.commit()
         listed = (await client.get(f"{API}/spaces")).json()["spaces"]
         detail = (await client.get(f"{API}/spaces/{test_space.id}")).json()
@@ -96,6 +111,8 @@ class TestPublicResponses:
         assert set(detail) == {"space", "rooms"}
         assert set(detail["space"]) == SPACE_FIELDS
         assert [set(room) for room in detail["rooms"]] == [ROOM_FIELDS]
+        # The room list a visitor browses holds active rooms only.
+        assert [room["name"] for room in detail["rooms"]] == [test_room.name]
         assert [set(package) for package in packages["packages"]] == [PACKAGE_FIELDS]
 
     async def test_availability_says_nothing_about_who_booked(
@@ -170,6 +187,11 @@ class TestWhatACustomerSees:
         booking = await _confirmed_booking(
             db_session, org_id=test_org.id, room=test_room, user=test_user, hour=10, notes="x"
         )
+        # The neighbour holds a confirmed booking too, with no code issued for
+        # it, so their list is not empty and its row must carry no code.
+        await _confirmed_booking(
+            db_session, org_id=test_org.id, room=test_room, user=neighbour, hour=12, notes="y"
+        )
         issued = await locks.issue_access_code(
             booking_id=booking.id,
             room_id=test_room.id,
@@ -184,7 +206,10 @@ class TestWhatACustomerSees:
             f"{API}/admin/bookings", params=org, headers=_headers(admin_user, "owner")
         )
         assert [b["access_code"] for b in owner.json()["bookings"]] == [issued.code]
-        assert [b["access_code"] for b in operator.json()["bookings"]] == [issued.code]
+        # The operator sees both bookings of the org, each with its own code or none.
+        seen = {b["id"]: b["access_code"] for b in operator.json()["bookings"]}
+        assert seen.pop(str(booking.id)) == issued.code
+        assert list(seen.values()) == [None]
 
         same_org_customer = await client.get(f"{API}/bookings/me", headers=_headers(neighbour))
         other_operator_here = await client.get(
@@ -196,6 +221,10 @@ class TestWhatACustomerSees:
             headers=_headers(outsider, "owner"),
         )
         assert other_operator_here.status_code == 403
+        # Both of these must succeed, or "the code is absent" would prove nothing.
+        assert (same_org_customer.status_code, other_operator_home.status_code) == (200, 200)
+        assert [b["access_code"] for b in same_org_customer.json()["bookings"]] == [None]
+        assert other_operator_home.json()["bookings"] == []
         for resp in (same_org_customer, other_operator_here, other_operator_home):
             assert issued.code not in resp.text
 
