@@ -1737,9 +1737,9 @@ from the `Authorization` header. A mutation check proved the cases can fail:
 with a second algorithm allowed and expiry verification off, a distinct
 answer for unknown emails and the login password bound removed, five tests
 failed for those reasons, and the code was restored. Full backend suite with
-the S01 follow-ups: 369 passed. The audit's confirmed findings are S03, S04
-and B37 below; each has a
-failing test held locally until its fix ships in the same PR.
+the S01 follow-ups and the review rounds: 370 passed. The audit's confirmed
+findings are S03, S04 and B37 below; each has a failing test held locally
+until its fix ships in the same PR.
 **Scope:** `backend/tests/test_auth_tokens.py`; no application change.
 **Why:** every customer and operator route trusts one dependency,
 `get_current_user`, to turn a Bearer header into a user, and nothing pins what
