@@ -1,4 +1,4 @@
-# CLAUDE.md — Guidance for AI agents (and humans) working on this codebase
+# Guidance for AI agents (and humans) working on this codebase
 
 This document captures the *why* behind the architecture, the non-obvious gotchas, and the conventions every contributor should follow. If you read only one file before changing code, read this one.
 
@@ -225,7 +225,7 @@ spacerental/
 ├── .github/workflows/                # backend-tests, frontend-tests, e2e, lint
 ├── .env.example                      # Template; copy to .env (gitignored)
 ├── README.md                         # User-facing setup
-├── CLAUDE.md                         # ← you are here
+├── CLAUDE.md                         # ← you are here (AGENTS.md is a byte-identical copy)
 └── API_SPEC.md                       # Endpoint reference
 ```
 
