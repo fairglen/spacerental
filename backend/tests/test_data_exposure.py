@@ -111,6 +111,10 @@ class TestPublicResponses:
         assert set(detail) == {"space", "rooms"}
         assert set(detail["space"]) == SPACE_FIELDS
         assert [set(room) for room in detail["rooms"]] == [ROOM_FIELDS]
+        # The detail also nests the space's room relation. Which rooms belong
+        # there is S20's business; whatever it holds, every entry carries the
+        # published room fields and nothing more.
+        assert {frozenset(room) for room in detail["space"]["rooms"]} == {frozenset(ROOM_FIELDS)}
         # The room list a visitor browses holds active rooms only.
         assert [room["name"] for room in detail["rooms"]] == [test_room.name]
         assert [set(package) for package in packages["packages"]] == [PACKAGE_FIELDS]
