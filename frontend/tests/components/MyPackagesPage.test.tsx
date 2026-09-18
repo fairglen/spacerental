@@ -68,7 +68,7 @@ describe('Dashboard packages page — buy section (B12)', () => {
     vi.mocked(packagesApi.list).mockResolvedValue([pack10, pack20])
     renderPage()
 
-    expect(await screen.findByText(/7\.0h restantes de 10h/)).toBeInTheDocument()
+    expect(await screen.findByText(/7h restantes de 10h/)).toBeInTheDocument()
     const buyButtons = await screen.findAllByRole('button', { name: /Comprar Pack/i })
     expect(buyButtons).toHaveLength(2)
   })
@@ -81,5 +81,19 @@ describe('Dashboard packages page — buy section (B12)', () => {
 
     const highlighted = (await screen.findByText('Pack 20h')).closest('.border-primary')
     expect(highlighted).not.toBeNull()
+  })
+})
+
+describe('Packages page hours formatting (B30)', () => {
+  it('renders whole hours without a decimal and fractions with a comma', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([
+      { ...activePurchase, id: 'whole', hours_remaining: 10, hours_used: 0 },
+      { ...activePurchase, id: 'frac', hours_remaining: 7.5, hours_used: 2.5 },
+    ])
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    renderPage()
+    expect(await screen.findByText(/10h restantes de 10h/)).toBeVisible()
+    expect(screen.getByText(/7,5h restantes de 10h/)).toBeVisible()
+    expect(screen.queryByText(/10\.0h/)).toBeNull()
   })
 })

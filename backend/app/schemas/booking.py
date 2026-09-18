@@ -25,6 +25,8 @@ class BookingOut(BaseModel):
     notes: str | None
     # Non-null when this booking is one occurrence of a recurring series.
     recurrence_rule_id: uuid.UUID | None = None
+    # C03: deadline of an unpaid hold (see the model); None when it never expires.
+    hold_expires_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     room: RoomOut | None = None

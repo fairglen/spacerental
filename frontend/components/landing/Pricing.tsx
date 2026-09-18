@@ -8,7 +8,9 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
 import { spacesApi, packagesApi } from '@/lib/api'
+import { formatCurrency } from '@/lib/utils'
 import { useT } from '@/lib/i18n'
+import type { Package } from '@/types'
 
 type PlanCopy = {
   name: string
@@ -51,13 +53,80 @@ function PlanCard({ plan, children }: { plan: PlanCopy; children: React.ReactNod
   )
 }
 
+function SkeletonCard() {
+  return (
+    <Card>
+      <CardHeader className="text-center pb-2">
+        <Skeleton className="h-6 w-32 mx-auto" />
+        <Skeleton className="h-10 w-24 mx-auto mt-3" />
+        <Skeleton className="h-3 w-40 mx-auto mt-2" />
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-10 w-full mt-4" />
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Every number on these cards comes from the API (C06): packages from
+ * `GET /packages?org_id`, the hourly rate from the rooms of the first public
+ * space. Only the wording is translated copy. Savings are computed from the
+ * real rate and only shown when positive; "best value" is the lowest price
+ * per hour rather than a marketing claim.
+ */
 export function Pricing() {
   const t = useT()
 
+  // Packages are org-scoped (§4) and this is a public landing page with no
+  // org context of its own, so resolve the one seeded org through the public
+  // spaces list — consistent with the single-main-space scoping decision.
+  // Same key and fetcher as SpaceCards on the landing page, so React Query
+  // serves one /spaces response to both instead of spending a second
+  // public-tier request.
+  const spaceQuery = useQuery({
+    queryKey: ['spaces'],
+    queryFn: () => spacesApi.list(),
+    staleTime: 5 * 60 * 1000,
+  })
+  const firstSpace = spaceQuery.data?.[0]
+  const orgId = firstSpace?.org_id
+  const spaceId = firstSpace?.id
+
+  const packagesQuery = useQuery({
+    queryKey: ['pricing', 'packages', orgId],
+    queryFn: () => packagesApi.list(orgId as string),
+    enabled: !!orgId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const roomsQuery = useQuery({
+    queryKey: ['pricing', 'rooms', spaceId],
+    queryFn: async () => (await spacesApi.get(spaceId as string)).rooms,
+    enabled: !!spaceId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const rates = (roomsQuery.data ?? []).filter((r) => r.is_active).map((r) => r.hourly_rate)
+  const hourlyRate = rates.length > 0 ? Math.min(...rates) : null
+  const ratesDiffer = rates.length > 1 && Math.max(...rates) !== hourlyRate
+
+  const isLoading = spaceQuery.isLoading || packagesQuery.isLoading || (!!spaceId && roomsQuery.isLoading)
+  // The rooms request is the source of the hourly rate and of every saving,
+  // so its failure is a pricing failure too.
+  const packagesFailed = spaceQuery.isError || packagesQuery.isError || roomsQuery.isError
+  const packages: Package[] = [...(packagesQuery.data ?? [])].sort((a, b) => a.hours - b.hours)
+  const bestValueId =
+    packages.length > 1
+      ? packages.reduce((best, p) => (p.price / p.hours < best.price / best.hours ? p : best)).id
+      : null
+
   const hourlyPlan: PlanCopy = {
     name: t('pricing.hourly_plan_name'),
-    price: t('pricing.hourly_plan_price'),
-    unit: t('pricing.hourly_plan_unit'),
+    price: hourlyRate === null ? t('pricing.hourly_plan_price_unknown') : formatCurrency(hourlyRate),
+    unit: hourlyRate === null ? '' : t('pricing.hourly_plan_unit'),
     desc: t('pricing.hourly_plan_desc'),
     features: [
       t('pricing.hourly_plan_feature_1'),
@@ -66,56 +135,27 @@ export function Pricing() {
     ],
     highlighted: false,
   }
-
-  // Marketing copy per seeded package (backend/app/seed.py), keyed by `hours` so
-  // it can be paired with the real Package the CTA needs to purchase.
-  const packageCopyByHours: Record<number, PlanCopy> = {
-    10: {
-      name: t('pricing.pack_10_name'),
-      price: t('pricing.pack_10_price'),
-      unit: t('pricing.pack_10_unit'),
-      desc: t('pricing.pack_10_desc'),
-      features: [
-        t('pricing.pack_10_feature_1'),
-        t('pricing.pack_10_feature_2'),
-        t('pricing.pack_10_feature_3'),
-        t('pricing.pack_10_feature_4'),
-      ],
-      highlighted: true,
-      badge: t('pricing.pack_10_badge'),
-    },
-    20: {
-      name: t('pricing.pack_20_name'),
-      price: t('pricing.pack_20_price'),
-      unit: t('pricing.pack_20_unit'),
-      desc: t('pricing.pack_20_desc'),
-      features: [
-        t('pricing.pack_20_feature_1'),
-        t('pricing.pack_20_feature_2'),
-        t('pricing.pack_20_feature_3'),
-        t('pricing.pack_20_feature_4'),
-      ],
-      highlighted: false,
-    },
+  if (hourlyRate !== null && ratesDiffer) {
+    hourlyPlan.price = `${t('pricing.hourly_plan_from')} ${hourlyPlan.price}`
   }
 
-  // Packages are org-scoped (§4) and this is a public landing page with no
-  // org context of its own, so resolve the one seeded org through the public
-  // spaces list — consistent with the single-main-space scoping decision.
-  const { data: orgId } = useQuery({
-    queryKey: ['pricing', 'org'],
-    queryFn: async () => (await spacesApi.list())[0]?.org_id ?? null,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const { data: packages, isLoading: loadingPackages } = useQuery({
-    queryKey: ['pricing', 'packages', orgId],
-    queryFn: () => packagesApi.list(orgId as string),
-    enabled: !!orgId,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const packageByHours = new Map((packages ?? []).map((p) => [p.hours, p]))
+  const packagePlan = (pkg: Package): PlanCopy => {
+    const savings = hourlyRate === null ? 0 : pkg.hours * hourlyRate - pkg.price
+    const features = [
+      t('pricing.pack_prepaid_feature', { hours: pkg.hours }),
+      t('pricing.pack_validity', { days: pkg.validity_days }),
+    ]
+    if (savings > 0) features.push(t('pricing.pack_savings', { amount: formatCurrency(savings) }))
+    return {
+      name: pkg.name,
+      price: formatCurrency(pkg.price),
+      unit: t('pricing.pack_hours_unit', { hours: pkg.hours }),
+      desc: t('pricing.pack_validity', { days: pkg.validity_days }),
+      features,
+      highlighted: pkg.id === bestValueId,
+      badge: pkg.id === bestValueId ? t('pricing.best_value_badge') : undefined,
+    }
+  }
 
   return (
     <section id="precos" className="py-20 bg-white">
@@ -124,27 +164,51 @@ export function Pricing() {
           <h2 className="text-3xl font-bold text-foreground mb-4">{t('pricing.section_title')}</h2>
           <p className="text-muted-foreground">{t('pricing.section_description')}</p>
         </div>
+        {isLoading && (
+          <p role="status" className="sr-only">{t('pricing.loading')}</p>
+        )}
+        {packagesFailed && !isLoading && (
+          <div role="alert" className="mx-auto mb-6 flex max-w-4xl flex-wrap items-center justify-between gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{t('pricing.error')}</span>
+            <button
+              type="button"
+              className="font-medium underline"
+              onClick={() => {
+                if (spaceQuery.isError) spaceQuery.refetch()
+                if (packagesQuery.isError) packagesQuery.refetch()
+                if (roomsQuery.isError) roomsQuery.refetch()
+              }}
+            >
+              {t('pricing.retry')}
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-          <PlanCard plan={hourlyPlan}>
-            <Button asChild variant="outline" className="w-full">
-              <Link href="/spaces">{t('pricing.hourly_plan_cta')}</Link>
-            </Button>
-          </PlanCard>
-
-          {Object.entries(packageCopyByHours).map(([hoursKey, copy]) => {
-            const pkg = packageByHours.get(Number(hoursKey))
-            return (
-              <PlanCard key={hoursKey} plan={copy}>
-                {(loadingPackages || orgId === undefined) ? (
-                  <Skeleton className="h-10 w-full rounded-md" />
-                ) : pkg ? (
-                  <PackageBuyButton pkg={pkg} variant={copy.highlighted ? 'default' : 'outline'} />
-                ) : (
-                  <Button variant="outline" className="w-full" disabled>{t('pricing.unavailable_cta')}</Button>
-                )}
+          {isLoading ? (
+            <>
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
+            </>
+          ) : (
+            <>
+              <PlanCard plan={hourlyPlan}>
+                <Button asChild variant="outline" className="w-full">
+                  <Link href="/spaces">{t('pricing.hourly_plan_cta')}</Link>
+                </Button>
               </PlanCard>
-            )
-          })}
+              {packages.map((pkg) => (
+                <PlanCard key={pkg.id} plan={packagePlan(pkg)}>
+                  <PackageBuyButton pkg={pkg} variant={pkg.id === bestValueId ? 'default' : 'outline'} />
+                </PlanCard>
+              ))}
+              {!packagesFailed && packages.length === 0 && (
+                <Card className="md:col-span-2">
+                  <CardContent className="p-8 text-center text-muted-foreground">{t('pricing.no_packs')}</CardContent>
+                </Card>
+              )}
+            </>
+          )}
         </div>
       </div>
     </section>

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { safeInternalPath } from '@/lib/navigation'
 
 const schema = z.object({
   email: z.string().email('Email inválido'),
@@ -24,6 +25,9 @@ export default function SignInPage() {
   // Carried over from Pricing/sign-up when a signed-out visitor picked a
   // package before proving they already have an account (B12).
   const packageId = searchParams.get('packageId')
+  // Where to return after signing in (B28) — set by the booking modal and by
+  // the NextAuth middleware. Only a same-origin path is ever followed.
+  const callbackUrl = safeInternalPath(searchParams.get('callbackUrl'))
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
@@ -40,7 +44,7 @@ export default function SignInPage() {
     if (result?.error) {
       setError('Email ou password incorretos.')
     } else {
-      router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : '/dashboard')
+      router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : callbackUrl ?? '/dashboard')
       router.refresh()
     }
   }
@@ -79,7 +83,13 @@ export default function SignInPage() {
             <p className="text-center text-sm text-muted-foreground mt-4">
               Não tens conta?{' '}
               <Link
-                href={packageId ? `/sign-up?packageId=${packageId}` : '/sign-up'}
+                href={
+                  packageId
+                    ? `/sign-up?packageId=${packageId}`
+                    : callbackUrl
+                      ? `/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}`
+                      : '/sign-up'
+                }
                 className="text-primary font-medium hover:underline"
               >
                 Registar

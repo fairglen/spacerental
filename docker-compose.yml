@@ -52,6 +52,8 @@ services:
       # STRIPE_SUCCESS_URL/CANCEL_URL above — handed to the browser, so
       # localhost is correct here even inside docker-compose.
       STRIPE_STUB_CHECKOUT_BASE_URL: ${STRIPE_STUB_CHECKOUT_BASE_URL:-http://localhost:8000}
+      # Minutes an unpaid hourly booking holds its slot while on Checkout (C03).
+      BOOKING_HOLD_MINUTES: ${BOOKING_HOLD_MINUTES:-15}
       # Same stub/live shape as Stripe above: stub (default) just logs the
       # email and requires nothing; live calls Resend and RESEND_API_KEY
       # becomes mandatory — app.email.validate_email_settings() dies at boot

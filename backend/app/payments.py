@@ -57,6 +57,11 @@ class PaymentProviderError(RuntimeError):
     """The payment provider rejected or could not serve the request."""
 
 
+class CheckoutSessionCompletedError(RuntimeError):
+    """The session to expire was already paid (C03 retry): the caller must
+    keep its id so the completion webhook still matches, not replace it."""
+
+
 class CheckoutKind(StrEnum):
     """What a Checkout Session is paying for; travels in the session metadata."""
 
@@ -176,6 +181,20 @@ class PaymentGateway(ABC):
         """
 
     @abstractmethod
+    async def get_checkout_url(self, session_id: str) -> str | None:
+        """URL of `session_id` if it is still open to pay (C03 resume): a
+        double-submitted "Pagar agora" gets the same page instead of
+        invalidating what the other tab was just sent to. `None` when the
+        session is expired or unknown; `CheckoutSessionCompletedError` when
+        it was already paid."""
+
+    @abstractmethod
+    async def expire_checkout_session(self, session_id: str) -> None:
+        """Make `session_id` unpayable (C03 retry). An unknown or already
+        expired session is not an error; a session the customer already paid
+        raises `CheckoutSessionCompletedError` so the caller keeps its id."""
+
+    @abstractmethod
     def _verify_signature(self, payload: bytes, signature_header: str) -> None:
         """Raise InvalidWebhookSignatureError unless the payload is authentic."""
 
@@ -241,6 +260,43 @@ class StripeGateway(PaymentGateway):
             raise PaymentProviderError("Stripe returned a Checkout Session without a URL")
         return CheckoutSession(id=session.id, url=session.url)
 
+    async def get_checkout_url(self, session_id: str) -> str | None:
+        try:
+            session = await self._client.v1.checkout.sessions.retrieve_async(session_id)
+        except stripe.InvalidRequestError as exc:
+            if getattr(exc, "code", None) == "resource_missing":
+                return None
+            raise PaymentProviderError(str(exc)) from exc
+        except stripe.StripeError as exc:
+            raise PaymentProviderError(str(exc)) from exc
+        if session.status == "complete" or session.payment_status == "paid":
+            raise CheckoutSessionCompletedError(session_id)
+        if session.status == "open" and session.url:
+            return session.url
+        return None
+
+    async def expire_checkout_session(self, session_id: str) -> None:
+        # Look before expiring: Stripe answers `InvalidRequestError` both for
+        # an already-expired session and for a completed one, and the two must
+        # not be treated alike — replacing a paid session's id would orphan
+        # its `checkout.session.completed` webhook.
+        try:
+            session = await self._client.v1.checkout.sessions.retrieve_async(session_id)
+        except stripe.InvalidRequestError as exc:
+            if getattr(exc, "code", None) == "resource_missing":
+                return
+            raise PaymentProviderError(str(exc)) from exc
+        except stripe.StripeError as exc:
+            raise PaymentProviderError(str(exc)) from exc
+        if session.status == "complete" or session.payment_status == "paid":
+            raise CheckoutSessionCompletedError(session_id)
+        if session.status == "expired":
+            return
+        try:
+            await self._client.v1.checkout.sessions.expire_async(session_id)
+        except stripe.StripeError as exc:
+            raise PaymentProviderError(str(exc)) from exc
+
     def _verify_signature(self, payload: bytes, signature_header: str) -> None:
         try:
             stripe.Webhook.construct_event(payload, signature_header, self._webhook_secret)
@@ -302,6 +358,20 @@ class StubPaymentGateway(PaymentGateway):
             id=session_id,
             url=f"{self._checkout_base_url}/checkout/stub/{session_id}",
         )
+
+    async def get_checkout_url(self, session_id: str) -> str | None:
+        if session_id not in self.sessions:
+            return None
+        return f"{self._checkout_base_url}/checkout/stub/{session_id}"
+
+    async def expire_checkout_session(self, session_id: str) -> None:
+        # Known limitation, recorded in TODO.md C03: the stub derives every
+        # session id from the booking id (so it survives a restart), so a
+        # retry recreates the same id and a stale stub page can still "pay"
+        # it. Both attempts are the same booking row and amount, and the stub
+        # never charges, so the outcome is the intended one; live Stripe ids
+        # are unique and the superseded session really is expired.
+        self.sessions.pop(session_id, None)
 
     def sign_payload(self, payload: bytes, timestamp: int | None = None) -> str:
         """Build a `Stripe-Signature` header for `payload`."""

@@ -15,8 +15,8 @@ import { pt } from 'date-fns/locale'
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
 const CREDENTIALS = { email: 'admin@demo.com', password: 'admin123' }
 
-// The calendar day view starts at 08:00 with one 1-hour slot per group.
-const FIRST_HOUR = 8
+// The calendar's first visible hour follows the returned slots (B34), so
+// rows are located by their gutter label rather than by a fixed offset.
 const AVAILABLE_BG = 'rgb(240, 250, 245)'
 const BUSY_BG = 'rgb(243, 244, 246)'
 
@@ -145,12 +145,17 @@ async function goToDay(page: Page, offset: number) {
     .toMatch(new RegExp(`${AVAILABLE_BG}|${BUSY_BG}`.replace(/[()]/g, '\\$&')))
 }
 
-function slotAt(page: Page, hour: number) {
-  return page
-    .locator('.rbc-day-slot .rbc-timeslot-group')
-    .nth(hour - FIRST_HOUR)
-    .locator('.rbc-time-slot')
-    .first()
+async function rowIndexOf(page: Page, hour: number): Promise<number> {
+  const label = `${String(hour).padStart(2, '0')}:00`
+  const labels = await page.locator('.rbc-time-gutter .rbc-timeslot-group .rbc-label').allTextContents()
+  return labels.findIndex((text) => text.trim() === label)
+}
+
+/** The first selectable cell of the hour row, located by its gutter label (B34). */
+async function slotAt(page: Page, hour: number) {
+  const index = await rowIndexOf(page, hour)
+  expect(index, `hour ${hour}:00 is not on the calendar grid`).toBeGreaterThanOrEqual(0)
+  return page.locator('.rbc-day-slot .rbc-timeslot-group').nth(index).locator('.rbc-time-slot').first()
 }
 
 /**
@@ -176,7 +181,16 @@ function bookingCard(page: Page, roomName: string, start: Date, end: Date) {
 }
 
 async function backgroundOf(page: Page, hour: number): Promise<string> {
-  return slotAt(page, hour).evaluate((el) => window.getComputedStyle(el).backgroundColor)
+  // Empty while the grid has not laid out that hour yet, so goToDay's poll
+  // keeps waiting instead of failing on a transient render.
+  const index = await rowIndexOf(page, hour)
+  if (index < 0) return ''
+  return page
+    .locator('.rbc-day-slot .rbc-timeslot-group')
+    .nth(index)
+    .locator('.rbc-time-slot')
+    .first()
+    .evaluate((el) => window.getComputedStyle(el).backgroundColor)
 }
 
 /**
@@ -185,10 +199,22 @@ async function backgroundOf(page: Page, hour: number): Promise<string> {
  * before they are measured.
  */
 async function dragHours(page: Page, fromHour: number, toHour: number) {
-  await slotAt(page, toHour - 1).scrollIntoViewIfNeeded()
-  await slotAt(page, fromHour).scrollIntoViewIfNeeded()
-  const from = await slotAt(page, fromHour).boundingBox()
-  const to = await slotAt(page, toHour - 1).boundingBox()
+  const last = await slotAt(page, toHour - 1)
+  const first = await slotAt(page, fromHour)
+  await last.scrollIntoViewIfNeeded()
+  await first.scrollIntoViewIfNeeded()
+  // The calendar section scrolls into view with a smooth animation when a
+  // room is selected (B27); measure only once the grid has stopped moving.
+  await expect
+    .poll(async () => {
+      const a = await first.boundingBox()
+      await new Promise((r) => setTimeout(r, 120))
+      const b = await first.boundingBox()
+      return !!a && !!b && a.y === b.y
+    }, { timeout: 10000 })
+    .toBe(true)
+  const from = await first.boundingBox()
+  const to = await last.boundingBox()
   expect(from && to, 'calendar slots are not laid out').toBeTruthy()
   const viewport = page.viewportSize()
   expect(
@@ -260,7 +286,14 @@ test.describe('Reservas — fluxos reais', () => {
       utcHour(offset, 0).toISOString().slice(0, 10),
     )
     for (const booking of await myBookings(api, token)) {
-      if (booking.status !== 'cancelled' && testDays.includes(booking.start_time.slice(0, 10))) {
+      if (!testDays.includes(booking.start_time.slice(0, 10))) continue
+      if (booking.status === 'expired' || booking.status === 'paid_unfulfilled') {
+        // Holds no slot and the member API refuses to cancel it (C03); clear
+        // it as the operator so dashboard card locators stay unique.
+        await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
+          headers: auth(token), params: { org_id: booking.org_id }, data: { status: 'cancelled' },
+        })
+      } else if (booking.status !== 'cancelled') {
         await cancelViaApi(api, token, booking.id)
       }
     }
@@ -304,6 +337,11 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(card).toHaveCount(1, { timeout: 10000 })
     await expect(card).toContainText('33,00')
     await expect(card).toContainText('Confirmado')
+    // B23: the door code the stub lock issued on payment is shown to the customer.
+    const paid = (await myBookings(api, token)).find((b) => b.id === booking.id)
+    expect(paid?.access_code).toMatch(/^\d{6}$/)
+    await expect(card).toContainText('Código de acesso')
+    await expect(card).toContainText(paid!.access_code!)
   })
 
   test('a single click still books exactly one hour, same as before B1 (B1)', async () => {
@@ -316,8 +354,9 @@ test.describe('Reservas — fluxos reais', () => {
     // that single-click behaviour is unchanged, and until now nothing drove an
     // actual click through the full stack; only a synthetic onSelectSlot call
     // in the component test and API-created bookings in the E2E suite.
-    await slotAt(page, 15).scrollIntoViewIfNeeded()
-    const target = await slotAt(page, 15).boundingBox()
+    const fifteen = await slotAt(page, 15)
+    await fifteen.scrollIntoViewIfNeeded()
+    const target = await fifteen.boundingBox()
     expect(target, 'slot 15:00 is not laid out').toBeTruthy()
     await page.mouse.click(target!.x + target!.width / 2, target!.y + target!.height / 2)
 
@@ -425,7 +464,7 @@ test.describe('Reservas — fluxos reais', () => {
       expect(await backgroundOf(visitor, 10)).toBe(BUSY_BG)
       expect(await backgroundOf(visitor, 12)).toBe(AVAILABLE_BG)
 
-      const busy = await slotAt(visitor, 9).boundingBox()
+      const busy = await (await slotAt(visitor, 9)).boundingBox()
       await visitor.mouse.click(busy!.x + busy!.width / 2, busy!.y + busy!.height / 2)
       await expect(visitor.getByRole('heading', { name: /Confirmar Reserva/i })).toBeHidden()
 
@@ -469,6 +508,122 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Duração', { exact: true }).locator('..')).toContainText('2h')
     await page.getByRole('button', { name: /^Cancelar$/ }).click()
+  })
+
+  test('a booking inside the 24h window cannot be cancelled and says why (C07)', async () => {
+    // First open hour that starts less than 24h from now, today or tomorrow.
+    // Only Sunday 00:00-08:00 UTC has none (Monday 08:00 is >24h away).
+    const roomId = await roomIdByName(api, 'Sala Calma')
+    const now = Date.now()
+    let start: Date | null = null
+    for (const dayOffset of [0, 1]) {
+      const day = utcHour(dayOffset, 0).toISOString().slice(0, 10)
+      const { slots } = await (await api.get(apiUrl(`/rooms/${roomId}/availability`), { params: { date: day } })).json()
+      const free = (slots as { start: string; available: boolean }[]).find(
+        (s) => s.available && new Date(s.start).getTime() - now < 24 * 3_600_000,
+      )
+      if (free) { start = new Date(free.start); break }
+    }
+    test.skip(start === null, 'no open hour within the next 24h (Sunday before 08:00 UTC)')
+    const end = new Date(start!.getTime() + 3_600_000)
+
+    // Book and pay it through the stub, so it is a confirmed reservation the
+    // customer would genuinely want to cancel, not an unpaid hold.
+    const res = await api.post(apiUrl('/bookings'), {
+      headers: auth(token),
+      data: { room_id: roomId, start_time: start!.toISOString(), end_time: end.toISOString() },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    const { booking, checkout_url } = await res.json()
+    const paid = await api.post(`${checkout_url}/pay`, { maxRedirects: 0 })
+    expect([303, 200]).toContain(paid.status())
+    try {
+      await page.goto('/dashboard')
+      const card = bookingCard(page, 'Sala Calma', start!, end)
+      await expect(card).toHaveCount(1, { timeout: 10000 })
+      await expect(card).toContainText('Confirmado')
+      await expect(card.getByRole('button', { name: /^Cancelar$/ })).toBeDisabled()
+      await expect(card).toContainText(/24 horas/)
+    } finally {
+      // The member API refuses this cancellation by design; clear it as the
+      // operator so reruns do not accumulate near-term bookings.
+      const admin = await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
+        headers: auth(token),
+        params: { org_id: booking.org_id },
+        data: { status: 'cancelled' },
+      })
+      expect(admin.ok(), await admin.text()).toBeTruthy()
+    }
+  })
+
+  test('an abandoned checkout can be paid later from the dashboard (C03)', async () => {
+    // Sala Calma 17:00 on day+4: no other test books it on any offset, even
+    // when a skipped Sunday makes offsets 3 and 4 the same Monday. The hold
+    // is created through the authenticated API rather than the calendar UI
+    // (covered by the tests above) to keep the public rate-limit budget for
+    // the specs that run after this one.
+    const offset = bookableDayOffset(4)
+    const roomId = await roomIdByName(api, 'Sala Calma')
+    const res = await api.post(apiUrl('/bookings'), {
+      headers: auth(token),
+      data: { room_id: roomId, start_time: utcHour(offset, 17).toISOString(), end_time: utcHour(offset, 18).toISOString() },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    const { booking, checkout_url } = await res.json()
+    created.push(booking.id)
+    expect(checkout_url).toMatch(/\/checkout\/stub\/cs_stub_/)
+
+    // Abandon: never visit the payment page.
+    await page.goto('/dashboard')
+    const card = bookingCard(page, 'Sala Calma', utcHour(offset, 17), utcHour(offset, 18))
+    await expect(card).toHaveCount(1, { timeout: 10000 })
+    await expect(card).toContainText('A aguardar pagamento')
+    await expect(card).toContainText(/reservado até às/)
+
+    await card.getByRole('button', { name: /Pagar agora/i }).click()
+    await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
+    await page.getByRole('button', { name: /^Pagar$/ }).click()
+    await page.waitForURL(/\/dashboard/, { timeout: 20000 })
+    await expect(page.getByRole('status')).toContainText(/Pagamento concluído/)
+    await expect(card).toContainText('Confirmado', { timeout: 10000 })
+
+    const mine = (await myBookings(api, token)).filter(
+      (b) => b.start_time === utcHour(offset, 17).toISOString().replace('.000Z', 'Z') && b.status !== 'cancelled',
+    )
+    expect(mine, 'paying later must not create a second booking').toHaveLength(1)
+  })
+
+  test('cancelling on the checkout page frees the slot immediately (C03)', async () => {
+    const offset = bookableDayOffset(4)
+    const roomId = await roomIdByName(api, 'Sala Calma')
+    const res = await api.post(apiUrl('/bookings'), {
+      headers: auth(token),
+      data: { room_id: roomId, start_time: utcHour(offset, 18).toISOString(), end_time: utcHour(offset, 19).toISOString() },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    const { booking, checkout_url } = await res.json()
+
+    await page.goto(checkout_url)
+    await page.getByRole('button', { name: /^Cancelar$/ }).click()
+    await page.waitForURL(/\/dashboard/, { timeout: 20000 })
+    await expect(page.getByRole('status')).toContainText(/Pagamento não concluído/)
+    const card = bookingCard(page, 'Sala Calma', utcHour(offset, 18), utcHour(offset, 19))
+    await expect(card).toContainText('Expirada', { timeout: 10000 })
+    await expect(card.getByRole('button', { name: /Tentar pagar de novo/i })).toBeVisible()
+
+    // The hour is available again. The calendar paints straight from this
+    // endpoint (B24/B26) and the visitor test above proves the tint follows it.
+    const day = utcHour(offset, 0).toISOString().slice(0, 10)
+    const { slots } = await (await api.get(apiUrl(`/rooms/${roomId}/availability`), { params: { date: day } })).json()
+    const freed = slots.find((s: { start: string }) => new Date(s.start).getTime() === utcHour(offset, 18).getTime())
+    expect(freed?.available).toBe(true)
+
+    // An expired hold holds nothing, so the member API refuses to cancel it;
+    // clear it as the operator so reruns do not accumulate cards.
+    const admin = await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
+      headers: auth(token), params: { org_id: booking.org_id }, data: { status: 'cancelled' },
+    })
+    expect(admin.ok(), await admin.text()).toBeTruthy()
   })
 
   test('weekly series: preview, pending acknowledgement, isolated cancellation and conflict', async () => {

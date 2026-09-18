@@ -18,7 +18,8 @@ import { LocaleSwitcher } from '@/components/layout/LocaleSwitcher'
 function OrgSwitcher({ className }: { className?: string }) {
   const t = useT()
   const { memberships, currentOrgId, setCurrentOrgId } = useOrg()
-  if (memberships.length === 0) return null
+  // A customer with one membership has nothing to switch between (B33b).
+  if (memberships.length < 2) return null
 
   return (
     <div className={className}>
@@ -82,6 +83,9 @@ export function Navbar() {
             {isSignedIn ? (
               <>
                 <OrgSwitcher />
+                <Link href="/dashboard/packages" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                  {t('navbar.my_packages')}
+                </Link>
                 <Link href="/dashboard">
                   <Button variant="outline" size="sm">{t('navbar.my_bookings')}</Button>
                 </Link>
@@ -141,6 +145,13 @@ export function Navbar() {
             {isSignedIn ? (
               <>
                 <OrgSwitcher className="w-full" />
+                <Link
+                  href="/dashboard/packages"
+                  onClick={() => setMobileOpen(false)}
+                  className="block py-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  {t('navbar.my_packages')}
+                </Link>
                 <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
                   <Button variant="outline" size="sm" className="w-full">{t('navbar.my_bookings')}</Button>
                 </Link>

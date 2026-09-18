@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -11,6 +12,11 @@ class Settings(BaseSettings):
     CUSTOMER_ENROLLMENT_ENABLED: bool = True
     # Experimental UTC series have no customer payment path yet.
     RECURRING_BOOKINGS_ENABLED: bool = False
+    # How long an unpaid hourly booking holds its slot while the customer is
+    # on Checkout (C03). Evaluated lazily at read/conflict time; no sweeper.
+    # Positive by construction: zero or negative would expire every hold at
+    # once and make hourly Checkout unusable; there is no "disable" value.
+    BOOKING_HOLD_MINUTES: int = Field(default=15, gt=0)
 
     # ── Rate limiting ────────────────────────────────────────────────────
     RATE_LIMIT_ENABLED: bool = True

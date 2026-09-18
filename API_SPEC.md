@@ -91,10 +91,26 @@ Errors: `403` not a member of the room's org, `404` unknown room, `409` slot
 already booked *or* insufficient package hours.
 
 ### DELETE /bookings/:id
-Cancel a booking (own only, if > 24h before). This is also how you cancel **one
-occurrence** of a recurring series: the occurrence is marked `cancelled` and the
-`RecurrenceRule` stays active. Package-paid bookings credit hours back to the
-exact purchase they were taken from.
+Cancel a booking (own only, if > 24h before; an unpaid checkout hold — `pending`
+with a `hold_expires_at` — can be cancelled at any time). This is also how you
+cancel **one occurrence** of a recurring series: the occurrence is marked
+`cancelled` and the `RecurrenceRule` stays active. Package-paid bookings credit
+hours back to the exact purchase they were taken from. `400` for `expired` and
+`paid_unfulfilled` rows: they hold no slot to cancel.
+
+### POST /bookings/:id/checkout
+"Pagar agora" for an unpaid hold (own only). An hourly booking holds its slot
+until `hold_expires_at` (`BOOKING_HOLD_MINUTES`, default 15); after that it reads
+as `expired` and the hour is bookable again. This endpoint expires the previous
+Checkout Session at the provider and mints a fresh one for the **same** booking:
+a live `pending` hold gets a new deadline; an `expired` one becomes `pending`
+again if its slot is still free. No second booking is ever created.
+Response: `{ booking: Booking, checkout_url: string }` — same shape as `POST /bookings`.
+`409` when the slot was taken meanwhile (the row stays `expired`), when the
+booking is not an unpaid hourly hold (confirmed, package-paid, series
+occurrence), or when the provider reports the previous session already paid
+(`Payment already received…`: keep waiting for the webhook). `502` when the
+provider cannot start or close a session.
 
 ### POST /recurrences
 Experimental; returns 404 unless `RECURRING_BOOKINGS_ENABLED=true`.
@@ -228,9 +244,18 @@ type Booking = {
   end_time: string
   duration_hours: number
   total_amount: number
-  status: "pending" | "confirmed" | "cancelled" | "completed"
+  // `expired`: an unpaid hold whose deadline passed (holds no slot; retry via
+  // POST /bookings/:id/checkout). `paid_unfulfilled`: a payment arrived after
+  // another booking took the slot; kept visible, refund handling is O02.
+  status: "pending" | "confirmed" | "cancelled" | "completed" | "expired" | "paid_unfulfilled"
   payment_method: "hourly" | "package"
   notes?: string
+  // Deadline of an unpaid checkout hold (C03). `null` for package bookings,
+  // series occurrences and any booking once it is confirmed. It is kept on
+  // `expired` rows and on a hold the customer cancelled while still unpaid:
+  // that marker is how a late `checkout.session.completed` is recognised as
+  // paying an unpaid hold (never a cancelled paid booking).
+  hold_expires_at: string | null
   room?: Room
   user?: User
   created_at: string

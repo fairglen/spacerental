@@ -30,6 +30,29 @@ describe('bookingsApi.listMine', () => {
     const result = await bookingsApi.listMine(mockApi)
     expect(result).toEqual([])
   })
+
+  it('bookingsApi.checkout posts to /bookings/{id}/checkout and unwraps booking + url (C03)', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({
+        data: { booking: { id: 'b1', total_amount: '11.00', duration_hours: '1', status: 'pending' }, checkout_url: 'http://x/checkout/stub/cs_stub_1' },
+      }),
+    } as any
+    const result = await bookingsApi.checkout('b1', mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/bookings/b1/checkout')
+    expect(result.booking.total_amount).toBe(11)
+    expect(result.checkout_url).toBe('http://x/checkout/stub/cs_stub_1')
+  })
+
+  it('carries access_code through unchanged, including null (B23)', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({
+        data: { bookings: [{ id: '1', access_code: '482913' }, { id: '2', access_code: null }] },
+      }),
+    } as any
+    const result = await bookingsApi.listMine(mockApi)
+    expect(result[0].access_code).toBe('482913')
+    expect(result[1].access_code).toBeNull()
+  })
 })
 
 describe('createAuthenticatedApi', () => {

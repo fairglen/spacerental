@@ -1,22 +1,24 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import email, package_hours
+from app import clock, email, package_hours
 from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
+    expire_stale_holds,
     has_conflicting_booking,
     is_lost_slot_race,
     is_within_open_hours,
 )
+from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_issue_access_code
@@ -26,6 +28,7 @@ from app.models.space import Room
 from app.models.user import User
 from app.payments import (
     CheckoutKind,
+    CheckoutSessionCompletedError,
     PaymentGateway,
     PaymentProviderError,
     get_payment_gateway,
@@ -42,6 +45,20 @@ async def my_bookings(
     lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """List current user's bookings."""
+    # Expiry is lazy (no sweeper): reconcile the caller's own lapsed holds so
+    # the dashboard shows `expired` rather than a pending row that no longer
+    # blocks anything (C03).
+    await db.execute(
+        update(Booking)
+        .where(
+            Booking.user_id == user.id,
+            Booking.status == BookingStatus.pending,
+            Booking.hold_expires_at.is_not(None),
+            Booking.hold_expires_at <= clock.utcnow(),
+        )
+        .values(status=BookingStatus.expired)
+        .execution_options(synchronize_session=False)
+    )
     result = await db.execute(
         select(Booking)
         .options(selectinload(Booking.room))
@@ -115,7 +132,8 @@ async def create_booking(
             detail="end_time must be after start_time",
         )
 
-    if body.start_time < datetime.now(tz=UTC):
+    now = clock.utcnow()
+    if body.start_time < now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="start_time cannot be in the past",
@@ -141,11 +159,15 @@ async def create_booking(
             detail="Requested time is outside the room's opening hours",
         )
 
+    # An abandoned hold whose deadline passed must not keep the slot (or trip
+    # the EXCLUDE constraint below); flip it before checking for conflicts.
+    await expire_stale_holds(db, body.room_id, body.start_time, body.end_time, now)
+
     # Overlap check — existence only. A prior version used
     # `scalar_one_or_none()` on the matching rows themselves, which raised an
     # unhandled `MultipleResultsFound` (500) whenever a request overlapped two
     # or more existing bookings instead of the intended 409.
-    if await has_conflicting_booking(db, body.room_id, body.start_time, body.end_time):
+    if await has_conflicting_booking(db, body.room_id, body.start_time, body.end_time, now=now):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This time slot is already booked",
@@ -164,7 +186,7 @@ async def create_booking(
             user_id=user.id,
             org_id=room.org_id,
             hours=duration_hours,
-            now=datetime.now(tz=UTC),
+            now=now,
         )
         if purchase is None:
             # Nothing was deducted and no booking exists yet — the request is
@@ -189,6 +211,7 @@ async def create_booking(
         payment_method=body.payment_method,
         package_purchase_id=purchase_id,
         notes=body.notes,
+        hold_expires_at=None if pays_with_package else now + _hold_lifetime(),
     )
     db.add(booking)
     try:
@@ -292,5 +315,149 @@ async def cancel_booking(
             detail="You can only cancel your own bookings",
         )
 
-    validate_cancellation(booking, datetime.now(tz=UTC))
+    validate_cancellation(booking, clock.utcnow())
     await apply_cancellation(db, booking, user, background_tasks, email_gateway, lock_gateway)
+
+
+def _hold_lifetime() -> timedelta:
+    return timedelta(minutes=settings.BOOKING_HOLD_MINUTES)
+
+
+@router.post("/{booking_id}/checkout")
+async def resume_checkout(
+    booking_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    gateway: PaymentGateway = Depends(get_payment_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
+):
+    """Pay for an unpaid hold ("Pagar agora"), resuming or retrying it (C03).
+
+    A live `pending` hold gets a fresh Checkout Session for the same row. An
+    `expired` hold is retried: if its slot is still free it becomes `pending`
+    again with a new deadline; if not, 409 and it stays `expired`. Either way
+    the previous session is expired at the gateway first so a late completion
+    of it cannot arrive, and no second booking row is ever created.
+    """
+    result = await db.execute(
+        select(Booking)
+        .options(selectinload(Booking.room))
+        .where(Booking.id == booking_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    booking = result.scalar_one_or_none()
+    if booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    if booking.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only pay for your own bookings",
+        )
+
+    now = clock.utcnow()
+    live_hold = booking.status is BookingStatus.pending and (
+        booking.hold_expires_at is None or booking.hold_expires_at > now
+    )
+    lapsed = booking.status is BookingStatus.expired or (
+        booking.status is BookingStatus.pending and not live_hold
+    )
+    if booking.payment_method is not PaymentMethod.hourly or not (live_hold or lapsed):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Booking is {booking.status.value} and has nothing to pay",
+        )
+    if booking.recurrence_rule_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Series occurrences are paid with the operator, not through Checkout",
+        )
+    if booking.start_time < now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_time cannot be in the past",
+        )
+
+    if lapsed:
+        await expire_stale_holds(db, booking.room_id, booking.start_time, booking.end_time, now)
+        if await has_conflicting_booking(
+            db,
+            booking.room_id,
+            booking.start_time,
+            booking.end_time,
+            exclude_booking_id=booking.id,
+            now=now,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This time slot is already booked",
+            )
+
+    if live_hold and booking.stripe_checkout_session_id:
+        # Idempotent for a double submit: while the hold is live, hand back
+        # the session that is already open instead of replacing it.
+        try:
+            open_url = await gateway.get_checkout_url(booking.stripe_checkout_session_id)
+        except CheckoutSessionCompletedError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payment already received for this booking; waiting for confirmation",
+            ) from None
+        except PaymentProviderError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not restart the payment session",
+            ) from exc
+        if open_url:
+            attach_access_codes(lock_gateway, booking)
+            return BookingCheckoutOut(
+                booking=BookingOut.model_validate(booking), checkout_url=open_url
+            )
+
+    if booking.stripe_checkout_session_id:
+        try:
+            await gateway.expire_checkout_session(booking.stripe_checkout_session_id)
+        except CheckoutSessionCompletedError:
+            # Paid at the provider, webhook not yet delivered: keep the
+            # session id so that webhook still confirms this row.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payment already received for this booking; waiting for confirmation",
+            ) from None
+        except PaymentProviderError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not restart the payment session",
+            ) from exc
+
+    booking.status = BookingStatus.pending
+    booking.hold_expires_at = now + _hold_lifetime()
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        if not is_lost_slot_race(exc):
+            raise
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This time slot is already booked",
+        ) from None
+
+    try:
+        session = await gateway.create_checkout_session(
+            amount=booking.total_amount,
+            description=f"{booking.room.name} — {booking.duration_hours}h",
+            kind=CheckoutKind.booking,
+            reference_id=booking.id,
+            org_id=booking.org_id,
+        )
+    except PaymentProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not start the payment session",
+        ) from exc
+    booking.stripe_checkout_session_id = session.id
+    await db.flush()
+    await db.refresh(booking)
+    attach_access_codes(lock_gateway, booking)
+    return BookingCheckoutOut(booking=BookingOut.model_validate(booking), checkout_url=session.url)

@@ -1,13 +1,15 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { bookingsApi, recurrencesApi, packagesApi, createAuthenticatedApi } from '@/lib/api'
-import { formatCurrency } from '@/lib/utils'
-import { statusOf, conflictsOf, detailOf } from '@/lib/httpError'
+import { formatCurrency, formatHours } from '@/lib/utils'
+import { statusOf, conflictsOf, bookingErrorMessage } from '@/lib/httpError'
+import { signInHref } from '@/lib/navigation'
 import { expandWeeklyOccurrences } from '@/lib/recurrence'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,20 +48,9 @@ function spendablePurchases(
   )
 }
 
-function errorMessage(error: unknown, method: PaymentMethod): string {
-  const status = statusOf(error)
-  if (status === 409) {
-    const detail = detailOf(error)?.toLowerCase() ?? ''
-    const slotTaken = detail.includes('time slot') || detail.includes('horário') || detail.includes('reservado')
-    return method === 'package' && !slotTaken
-      ? 'O teu pack já não tem horas suficientes para esta reserva.'
-      : 'Este horário já está reservado. Escolhe outro intervalo no calendário.'
-  }
-  return 'Erro ao criar reserva. Tenta novamente.'
-}
-
 export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   const { data: session, status } = useSession()
+  const pathname = usePathname()
   const queryClient = useQueryClient()
   // null until the user picks — the default depends on data that arrives later.
   const [method, setMethod] = useState<PaymentMethod | null>(null)
@@ -125,9 +116,10 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['availability'] })
       queryClient.invalidateQueries({ queryKey: ['packages', 'me'] })
-      if ('checkout_url' in result) {
-        if (result.checkout_url) window.location.assign(result.checkout_url)
-        else onClose()
+      // A package booking has nothing left to pay and stays open on a success
+      // state (B29); an hourly one continues to Checkout.
+      if ('checkout_url' in result && result.checkout_url) {
+        window.location.assign(result.checkout_url)
       }
     },
   })
@@ -160,6 +152,56 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
           </DialogHeader>
           <p role="status">{mutation.data.bookings.length} reservas pendentes. O espaço precisa de confirmar a série e combinar o pagamento contigo. Ainda não tens acesso confirmado.</p>
           <DialogFooter><Button onClick={onClose}>Fechar</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  if (mutation.isSuccess && 'checkout_url' in mutation.data && !mutation.data.checkout_url) {
+    const booked = mutation.data.booking
+    // `purchases` is refetched after success, so this is the balance after
+    // the debit once the refetch lands (spendablePurchases would hide packs
+    // that can no longer cover another block of the same length).
+    const remaining = purchases
+      .filter((p) => p.org_id === room.org_id && p.status === 'active' && new Date(p.expires_at).getTime() > Date.now())
+      .reduce((sum, p) => sum + p.hours_remaining, 0)
+    return (
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reserva confirmada</DialogTitle>
+            <DialogDescription>
+              As horas foram descontadas do teu pack. Não há nada a pagar agora.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg bg-accent p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Sala</span>
+              <span className="font-medium text-foreground">{room.name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Data</span>
+              <span className="font-medium text-foreground">{format(new Date(booked.start_time), "d 'de' MMMM 'de' yyyy", { locale: pt })}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Horário</span>
+              <span className="font-medium text-foreground">{format(new Date(booked.start_time), 'HH:mm')} – {format(new Date(booked.end_time), 'HH:mm')}</span>
+            </div>
+            <div className="flex justify-between border-t border-primary-light pt-2">
+              <span className="text-muted-foreground">Horas usadas</span>
+              <span className="font-semibold text-foreground">{formatHours(booked.duration_hours)} do teu pack</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Horas restantes</span>
+              <span className="font-semibold text-primary">{formatHours(remaining)}</span>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/dashboard">Ver as minhas reservas</Link>
+            </Button>
+            <Button onClick={onClose}>Fechar</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     )
@@ -289,7 +331,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
           {isUnauthenticated && (
             <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
               Precisas de estar autenticado para reservar.{' '}
-              <Link href="/sign-in" className="font-medium underline" onClick={onClose}>
+              <Link href={signInHref(pathname)} className="font-medium underline" onClick={onClose}>
                 Entrar na conta
               </Link>
             </p>
@@ -307,7 +349,15 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
               </div>
             ) : (
               <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
-                {errorMessage(mutation.error, effectiveMethod)}
+                {bookingErrorMessage(mutation.error, effectiveMethod)}
+                {statusOf(mutation.error) === 401 && (
+                  <>
+                    {' '}
+                    <Link href={signInHref(pathname)} className="font-medium underline" onClick={onClose}>
+                      Entrar na conta
+                    </Link>
+                  </>
+                )}
               </p>
             )
           )}

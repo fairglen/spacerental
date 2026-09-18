@@ -204,8 +204,11 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
     expect(screen.queryByRole('radio', { name: /pack/i })).not.toBeInTheDocument()
   })
 
-  it('books with payment_method package and closes without a redirect', async () => {
-    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(5)])
+  it('books with payment_method package and shows a success state instead of closing (B29)', async () => {
+    // 5h before, 2h after the 3h block is debited (the refetch after success).
+    vi.mocked(packagesApi.listMine)
+      .mockResolvedValueOnce([purchase(5)])
+      .mockResolvedValue([purchase(2)])
     vi.mocked(bookingsApi.create).mockResolvedValue({
       booking: confirmedBooking,
       checkout_url: null,
@@ -230,9 +233,19 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
         expect.anything(),
       ),
     )
-    // Nothing left to pay, so the user is not sent to Checkout.
+    // Nothing left to pay, so the user is not sent to Checkout - and the modal
+    // does not vanish silently either: it says what happened.
     expect(assign).not.toHaveBeenCalled()
-    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    const done = await screen.findByRole('heading', { name: /Reserva confirmada/i })
+    expect(done).toBeVisible()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('Sala Calma')
+    expect(dialog).toHaveTextContent(/3h do (teu )?pack/)
+    await waitFor(() => expect(dialog).toHaveTextContent(/2h/))
+    expect(screen.getByRole('link', { name: /minhas reservas/i })).toHaveAttribute('href', '/dashboard')
+    expect(onClose).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /Fechar/i }))
+    expect(onClose).toHaveBeenCalled()
   })
 
   it('still goes to Checkout when the user picks hourly despite having a pack', async () => {
@@ -395,4 +408,36 @@ describe('BookingModal recurring series (Epic 1.4)', () => {
 it('hides experimental recurrence by default', () => {
   renderModal()
   expect(screen.queryByLabelText(/Repetir semanalmente/i)).not.toBeInTheDocument()
+})
+
+describe('BookingModal error mapping (B31)', () => {
+  it('explains a past start time instead of the generic error', async () => {
+    vi.mocked(bookingsApi.create).mockRejectedValue({
+      response: { status: 400, data: { detail: 'start_time cannot be in the past' } },
+    })
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/já passou/)
+    expect(alert).not.toHaveTextContent(/Erro ao criar reserva/)
+  })
+
+  it('offers sign-in with a callbackUrl when the session has expired (401)', async () => {
+    vi.mocked(bookingsApi.create).mockRejectedValue({ response: { status: 401, data: {} } })
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/sessão/i)
+    expect(alert.querySelector('a')).toHaveAttribute('href', expect.stringMatching(/^\/sign-in\?callbackUrl=/))
+  })
+
+  it('names a network failure', async () => {
+    vi.mocked(bookingsApi.create).mockRejectedValue(new Error('Network Error'))
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/ligação/i)
+  })
 })

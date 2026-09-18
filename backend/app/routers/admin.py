@@ -1,14 +1,15 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import and_, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import email, package_hours
+from app import clock, email, package_hours
 from app.auth import require_admin
-from app.booking_validity import has_conflicting_booking
+from app.booking_validity import expire_stale_holds, has_conflicting_booking
+from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import (
@@ -372,14 +373,20 @@ async def admin_update_booking(
     start_time = booking.start_time
     end_time = booking.end_time
 
-    holds_slot = (BookingStatus.confirmed, BookingStatus.pending)
-    if (
+    now = clock.utcnow()
+    slot_holding = (BookingStatus.confirmed, BookingStatus.pending)
+    entering_slot = (
         body.status != previous_status
-        and body.status in holds_slot
-        and previous_status not in holds_slot
-        and await has_conflicting_booking(
-            db, booking.room_id, start_time, end_time, exclude_booking_id=booking.id
-        )
+        and body.status in slot_holding
+        and previous_status not in slot_holding
+    )
+    if entering_slot:
+        # Same reconciliation every slot-acquiring write does (C03): a lapsed
+        # unpaid hold is free to us but still counted by the EXCLUDE
+        # constraint until it is flipped to `expired`.
+        await expire_stale_holds(db, booking.room_id, start_time, end_time, now)
+    if entering_slot and await has_conflicting_booking(
+        db, booking.room_id, start_time, end_time, exclude_booking_id=booking.id, now=now
     ):
         # A cancelled/completed booking's slot may have been sold again since
         # it let go of it. Reinstating (or admin-confirming a stale row) into
@@ -419,6 +426,22 @@ async def admin_update_booking(
                 )
 
     booking.status = body.status
+    # Keep the hold marker consistent with the new status (C03): a one-off
+    # revived as `pending` is an unpaid hold again and needs a fresh deadline
+    # (a series occurrence stays deadline-less for the operator); any other
+    # status holds no checkout hold.
+    if body.status is BookingStatus.pending:
+        payable_hold = (
+            booking.payment_method is PaymentMethod.hourly and booking.recurrence_rule_id is None
+        )
+        if payable_hold and previous_status is not BookingStatus.pending:
+            booking.hold_expires_at = now + timedelta(minutes=settings.BOOKING_HOLD_MINUTES)
+        elif not payable_hold:
+            booking.hold_expires_at = None
+        # An already-pending hold keeps its deadline: re-asserting `pending`
+        # must not let an operator keep an abandoned hold alive indefinitely.
+    else:
+        booking.hold_expires_at = None
     await db.flush()
     await db.refresh(booking)
 

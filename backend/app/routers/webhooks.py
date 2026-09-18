@@ -2,10 +2,12 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import email
+from app import clock, email
+from app.booking_validity import expire_stale_holds, has_conflicting_booking, is_lost_slot_race
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, get_lock_gateway, try_issue_access_code
@@ -54,11 +56,69 @@ async def _confirm_booking(
             Booking.org_id == org_id,
             Booking.stripe_checkout_session_id == session_id,
         )
+        # Serialises concurrent deliveries of the same event: the second one
+        # waits here, then re-reads the row as `confirmed` and is a no-op
+        # instead of a second email and access code.
+        .with_for_update(of=Booking)
+        .execution_options(populate_existing=True)
     )
     booking = result.scalar_one_or_none()
-    if booking is None or booking.status is not BookingStatus.pending:
+    if booking is None:
         return False
-    booking.status = BookingStatus.confirmed
+    now = clock.utcnow()
+    # Only an unpaid checkout hold can still be paid: `pending` with a
+    # deadline, `expired` (always a lapsed hold), or a hold the customer let
+    # go while it was still unpaid (`cancelled` with its deadline intact). A
+    # paid booking has its deadline cleared on confirmation, so a duplicate
+    # completion after a cancellation can never resurrect it.
+    unpaid_hold = booking.hold_expires_at is not None or booking.status is BookingStatus.expired
+    if not unpaid_hold or booking.status not in (
+        BookingStatus.pending,
+        BookingStatus.expired,
+        BookingStatus.cancelled,
+    ):
+        # Already confirmed (duplicate delivery) or already resolved.
+        return False
+
+    # Money arrived for a hold that lapsed or was let go (C03 decision 7).
+    # Re-entering the `confirmed` state makes the row count again for the
+    # EXCLUDE constraint, which is what proves the slot is still free. If it
+    # is not, keep the payment visible instead of dropping it: refunds are O02.
+    # Expiry is lazy, so a hold can still read `pending` after its deadline
+    # when nothing touched the slot since; treat that as late too.
+    late = booking.status is not BookingStatus.pending or (
+        booking.hold_expires_at is not None and booking.hold_expires_at <= now
+    )
+    if late:
+        await expire_stale_holds(db, booking.room_id, booking.start_time, booking.end_time, now)
+        taken = await has_conflicting_booking(
+            db,
+            booking.room_id,
+            booking.start_time,
+            booking.end_time,
+            exclude_booking_id=booking.id,
+            now=now,
+        )
+        if not taken:
+            # The EXCLUDE constraint is the last line against a concurrent
+            # insert between the check above and this flush.
+            booking.status = BookingStatus.confirmed
+            booking.hold_expires_at = None
+            try:
+                async with db.begin_nested():
+                    await db.flush()
+            except DBAPIError as exc:
+                if not is_lost_slot_race(exc):
+                    raise
+                taken = True
+        if taken:
+            booking.status = BookingStatus.paid_unfulfilled
+            booking.hold_expires_at = None
+            await db.flush()
+            return True
+    else:
+        booking.status = BookingStatus.confirmed
+        booking.hold_expires_at = None
 
     email.enqueue_email(
         background_tasks,

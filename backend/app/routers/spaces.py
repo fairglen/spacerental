@@ -6,8 +6,10 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import clock
+from app.booking_validity import holds_slot
 from app.database import get_db
-from app.models.booking import Booking, BookingStatus
+from app.models.booking import Booking
 from app.models.space import AvailabilityRule, Room, Space
 from app.ratelimit import PUBLIC_TIER, rate_limit
 from app.schemas.space import AvailabilitySlot, RoomOut, SpaceOut
@@ -100,12 +102,17 @@ async def get_room_availability(
     day_start = min(w[0] for w in windows)
     day_end = max(w[1] for w in windows)
 
-    # Fetch confirmed bookings for this room on this date
+    # A slot that has already started cannot be booked (POST /bookings rejects
+    # a past start_time), so it must not be advertised as available either;
+    # the calendar used to paint every same-day hour green late at night (B24).
+    now = clock.utcnow()
+
+    # Bookings holding a slot on this date; an expired unpaid hold is free (C03).
     result = await db.execute(
         select(Booking).where(
             and_(
                 Booking.room_id == room_id,
-                Booking.status.in_([BookingStatus.confirmed, BookingStatus.pending]),
+                holds_slot(now),
                 Booking.start_time < day_end,
                 Booking.end_time > day_start,
             )
@@ -123,7 +130,7 @@ async def get_room_availability(
     slots: list[AvailabilitySlot] = []
     for slot_start in sorted(slot_starts):
         slot_end = slot_start + timedelta(hours=1)
-        available = not is_slot_taken(slot_start, slot_end)
+        available = slot_start >= now and not is_slot_taken(slot_start, slot_end)
         slots.append(AvailabilitySlot(start=slot_start, end=slot_end, available=available))
 
     return {"slots": [s.model_dump() for s in slots]}

@@ -59,6 +59,12 @@ class _NotAStubGateway(PaymentGateway):
     async def create_checkout_session(self, **kwargs):
         raise NotImplementedError
 
+    async def get_checkout_url(self, session_id: str) -> str | None:
+        raise NotImplementedError
+
+    async def expire_checkout_session(self, session_id: str) -> None:
+        raise NotImplementedError
+
     def _verify_signature(self, payload: bytes, signature_header: str) -> None:
         raise NotImplementedError
 
@@ -144,7 +150,10 @@ class TestCancelCheckout:
         resp = await client.post(f"/checkout/stub/{session_id}/cancel", follow_redirects=False)
         assert resp.status_code == 303, resp.text
         assert resp.headers["location"] == "http://test/cancel"
-        assert await _booking_status(client, auth_headers, booking["id"]) == "pending"
+        # C03: backing out of checkout releases the hold at once (the hold is
+        # fast-forwarded to expired); before this the row stayed pending and
+        # blocked the slot until an admin cleared it.
+        assert await _booking_status(client, auth_headers, booking["id"]) == "expired"
         assert emails.sent == []
 
     async def test_unknown_session_id_is_404(self, client, payments):
