@@ -2053,7 +2053,7 @@ named for a deployment stage.
 
 ### S19 — Data-exposure regression tests
 
-**Priority: P2. State: DONE on `test/sec-exposure-regressions` (pending PR).**
+**Priority: P2. State: MERGED (PR #51, `8441817`).**
 Evidence (2026-09-18): `backend/tests/test_data_exposure.py` adds 6
 real-PostgreSQL cases and all pass on the code as audited: public responses
 carry exactly their published fields, availability is start, end and a
@@ -2097,6 +2097,97 @@ advertises slots that `POST /bookings` then refuses. **Scope:**
 `backend/app/routers/spaces.py`, tests. **Acceptance:** availability answers
 404 for a room whose space is inactive, exactly as for an inactive room;
 failing-first test.
+
+### S21 — Frontend dependency patch and minor bumps
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Recorded by the frontend audit (2026-09-18): `npm audit` reports 21 advisories.
+Non-major fixes exist for `next-auth`, `axios` and eight transitive packages.
+The `next-auth` advisory that applies here lets a malformed bearer header make
+the route middleware throw, which fails that one request; its critical-rated
+one is in a provider this app does not use. **Scope:**
+`frontend/package.json`, `package-lock.json`. **Acceptance:** `npm audit`
+before and after, `tsc`, Vitest, the production build and the full Playwright
+run against a rebuilt container (`docker compose up -d --build -V frontend`).
+The majors (`next`, `vitest`, `eslint-config-next`) stay the owner's decision
+under C04.
+
+### S22 — The image optimizer still trusts two remote hosts nobody uses
+
+**Priority: P2. State: TODO (hardening phase).** Recorded by the frontend audit
+(2026-09-18), severity Low: the app renders no image, yet `next.config.js`
+whitelists two remote hosts for the image optimizer, which keeps that endpoint
+able to fetch and transcode remote files. Several unpatched advisories on the
+Next 14 line need exactly that, so this is a real mitigation available without
+the major upgrade. **Acceptance:** the hosts are removed (or optimisation is
+switched off) and a test proves the optimizer refuses a remote URL.
+
+### S23 — Backend dependency patch and minor bumps
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Recorded by the supply-chain audit (2026-09-18): `pip-audit` reports 19 unique
+advisories in five packages. Almost all sit in form or multipart parsing, JWE
+or asymmetric-key verification, none of which this app uses (JSON bodies,
+HS256 with a pinned algorithm). Non-major fixes exist for `python-jose` and
+`python-multipart`; most `starlette` fixes mean moving FastAPI; `ecdsa`, pulled
+in by `python-jose`, has no fix. **Scope:** `backend/requirements*.txt`.
+**Acceptance:** `pip-audit` before and after, the full backend suite and the
+migration round trip. Replacing `python-jose`, a hashed lock file and the
+`pytest` major are the owner's decisions and are recorded in the loop's report.
+
+### S24 — Workflows without a `permissions:` block
+
+**Priority: P3. State: TODO (hardening phase).** Recorded by the supply-chain
+audit (2026-09-18), severity Low: six of seven workflows leave the token's
+scope to the repository default. The Pages deploy already declares least
+privilege. No workflow uses `pull_request_target`, a secret, or event data in
+a shell. **Acceptance:** every workflow declares `contents: read` unless it
+needs more.
+
+### S25 — Compose publishes the development database on every interface
+
+**Priority: P3. State: TODO (hardening phase).** Recorded by the container
+audit (2026-09-18), severity Low, development stacks only: the database port
+is published without a host address, so it is reachable from the local network
+with the default credentials. **Acceptance:** the database port is bound to
+127.0.0.1; every documented journey and CI keep working unchanged. Binding
+the web ports too would stop testing from another device, so that is left to
+the owner.
+
+### S26 — Container hardening
+
+**Priority: P3. State: TODO (hardening phase).** Recorded by the container audit
+(2026-09-18), severity Low: both images run as root and carry only development
+commands, the backend has no `.dockerignore`, the frontend image installs with
+`npm install` rather than `npm ci`, and base images are pinned by tag.
+**Acceptance:** non-root users, `npm ci`, a backend `.dockerignore` that
+excludes environment files, a documented production command, and a
+fresh-clone bring-up that still works in one step. Production Compose files,
+proxies and TLS are the owner's decisions.
+
+### S27 — Regression tests for the contact form's Apps Script
+
+**Priority: P1. State: IN PROGRESS on `test/sec-flowspace-appsscript`.**
+**Scope:** `flowspace-site/tests/code-gs.test.mjs`; no change to `Code.gs` or
+to the deployed site. **Why:** `apps-script/Code.gs` is the only enforcement
+point of the public contact form, and it carries the header-injection fix from
+PR #45, yet nothing executes it: the smoke spec covers the browser side with
+the endpoint mocked. A regression there would be pasted into the live script
+by hand, unnoticed. **Dependencies:** none; Node's built-in test runner, no
+package. **Acceptance:** the file is loaded into a sandbox with fake Google
+services, never the network, and tests prove that the recipient is constant,
+that no free text reaches a header, that control characters in any field are
+refused before a send slot is spent, that oversized and malformed bodies are
+refused, that the honeypot sends nothing, and that the per-address and global
+limits hold. **Validation:** `node --test`, plus a mutation check.
+
+### B42 — A control character in the contact form gets the neutral message
+
+**Priority: P3. State: TODO (queued).** Bug (2026-09-18, flowspace-site audit),
+severity Low: `Code.gs` answers `invalid_characters`, which the page has no
+message for, so the visitor is told the send could not be confirmed and may
+retry in vain. `Code.gs` already carries a TODO for it. **Acceptance:** a
+Portuguese message for that code and a smoke-spec case.
 
 ## Non-roadmap deliverable — flowspace-site marketing page
 
