@@ -1797,6 +1797,123 @@ rather than merge accounts. **Acceptance:** login and the duplicate check
 ignore case; new accounts store the normalised address; an existing
 mixed-case account keeps working; both behaviours have a failing-first test.
 
+### S05 — Payment, webhook and hold regression tests
+
+**Priority: P1. State: IN PROGRESS on `test/sec-payment-regressions`.**
+**Scope:** `backend/tests/test_payment_integrity.py`; no application change.
+**Why:** a booking may become `confirmed`, and a package `active`, only through
+a verified payment of its own checkout session, a package debit or an operator
+of its org. The existing webhook tests cover a missing or invalid signature, a
+replay, another org's booking event, an unpaid session and an unknown session;
+the bindings below are not pinned anywhere. **Dependencies:** none.
+
+**Acceptance:** real-PostgreSQL tests prove that a correctly signed event
+cannot act on a booking through another booking's session, nor across the
+booking and purchase kinds; that a valid digest with a stale timestamp is
+refused; that a duplicate or foreign purchase event changes no balance; that
+the amount sent to the gateway is always the server's price, whatever the
+client sends, and a hostile purchase body is ignored; that a pending purchase
+cannot be spent; that in live mode every stub checkout route answers 404 and a
+payload signed with the public stub secret does not verify; and that an access
+code exists only for a confirmed booking and never travels by email. A case
+that fails on main becomes its own item; the passing cases stay as regression
+tests.
+
+**Validation:** pytest through the `client` fixture, plus a mutation check
+proving the cases can fail.
+
+### S06 — A door code must follow its booking out of `confirmed`
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Finding (2026-09-18, payments audit), severity Low today because live locks are
+gated behind O04, Medium once they ship: not every operator status change away
+from `confirmed` withdraws the booking's access code. API responses already
+hide the code unless the booking is confirmed. **Scope:**
+`backend/app/routers/admin.py`, tests. **Acceptance:** whenever a booking
+leaves `confirmed`, by any route and to any status, its code is revoked; one
+test per status, asserting against the stub lock gateway.
+
+### S07 — No cap on unpaid checkout holds per customer
+
+**Priority: P2. State: HOLD: needs decision (limits that change what a customer
+can do are the owner's call).** Finding (2026-09-18, payments audit), severity
+Medium: `POST /bookings` places a time-limited hold without payment, pay-now
+renews a lapsed one, and nothing bounds how many holds, how many held hours or
+how many renewals one customer may have. Signup is open. **Options:** (a) cap
+concurrent unpaid holds per customer and organization; (b) cap total held
+hours; (c) cap renewals per booking; (d) a rate tier on `POST /bookings`; (e) a
+shorter hold. **Recommendation:** (a) at 3 and (c) at 2. Neither changes a
+documented journey, and both are one query each under the row locks the
+handlers already take. **Reversal:** both caps would be settings; raising them
+restores today's behaviour. **Exposure while held:** inventory can be denied
+at no cost. **Validation when decided:** a failing-first test per cap, plus the
+existing hold and pay-now suites.
+
+### S08 — Session and account model decisions
+
+**Priority: P2. State: HOLD: needs decision (the auth and session model is the
+owner's call).** Recorded by the authentication audit (2026-09-18); none is a
+defect in the code as designed.
+
+1. **Registration tells a caller whether an email is registered.** Options:
+   keep / a neutral answer plus an email verification flow. Recommendation:
+   keep for the POC and revisit with verification, which needs O01's durable
+   email first. Exposure: account enumeration at the auth rate tier.
+2. **The NextAuth session outlives the API token inside it** (30 days against
+   24 hours). Options: align `session.maxAge` with
+   `ACCESS_TOKEN_EXPIRE_MINUTES` / add a refresh flow / keep. Recommendation:
+   align `maxAge`; it ends no working session, because after 24 hours every
+   API call already fails. Reversal: one line.
+3. **No revocation, lockout or MFA, and the bearer token is readable by client
+   JavaScript.** Options: shorter token plus refresh / a server-side denylist
+   or session store / keep the token server-side behind a Next.js proxy.
+   Recommendation: ship CSP and security headers in the hardening phase now,
+   which changes no model; the proxy is the long-term direction. Exposure: any
+   script injection is a full account for up to 24 hours, and the only kill
+   switches are deleting the user or rotating `SECRET_KEY`.
+4. **No email verification and no password reset.** Options: build both /
+   reset only / neither. Recommendation: reset first, on top of O01. Exposure:
+   an address can be registered by someone who does not own it, and a
+   forgotten password is a permanent lockout (see also B37).
+
+### B38 — A payment that succeeds later is never confirmed
+
+**Priority: P1. State: TODO (first in the fix phase's bug queue).** Bug
+(2026-09-18, payments audit): delayed payment methods complete the checkout
+session unpaid and report the money afterwards with
+`checkout.session.async_payment_succeeded`, which the webhook ignores. The
+live gateway does not restrict payment methods, so the Stripe account decides
+whether this path exists. When it does, the customer pays, the booking or
+purchase is never confirmed and the hold lapses. Which methods to offer is a
+product decision and is not part of this item. **Scope:**
+`backend/app/routers/webhooks.py`, tests; API_SPEC.md if it lists event types.
+**Acceptance:** a paid async-success event confirms a booking or activates a
+purchase exactly like a paid completion, idempotently and with the same
+late-payment rules; an async failure changes nothing. Failing-first test
+through the signed stub webhook. Live Stripe cannot be exercised locally.
+
+### B39 — The webhook answers 500 to some malformed input
+
+**Priority: P3. State: TODO (queued for the fix phase of the security loop).**
+Bug (2026-09-18, payments audit), severity Low: a correctly signed event with
+an unexpected shape, and in stub mode a malformed signature header, produce a
+server error where 400 is meant. Nothing is written either way. **Scope:**
+`backend/app/payments.py`, tests. **Acceptance:** both answer 400 with no state
+change; failing-first tests for each shape.
+
+### B40 — Pay-now can leave a renewed hold expired
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Bug (2026-09-18, payments audit): "Pagar agora" on a hold whose deadline has
+passed but whose row was not yet reconciled (expiry is lazy, so a dashboard
+left open past the deadline is enough) answers with a checkout link while the
+booking stays `expired`. Nothing holds the slot while the customer pays, so a
+lost race ends in `paid_unfulfilled`, and refunds are O02. Listing bookings
+first reconciles the row, which is why the common path works. **Scope:**
+`backend/app/routers/bookings.py`, tests. **Acceptance:** after pay-now the row
+is `pending` with a live deadline and blocks the slot for everyone else;
+failing-first test with the clock pinned past the deadline.
+
 ## Non-roadmap deliverable — flowspace-site marketing page
 
 ### F01 — Build and deploy the flowspace-site static marketing page
