@@ -164,6 +164,32 @@ class TestLoginGivesNothingAway:
         lifetime = datetime.fromtimestamp(claims["exp"], tz=UTC) - datetime.now(tz=UTC)
         assert timedelta(0) < lifetime <= timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
+    async def test_registration_tokens_carry_the_same_bounded_claims(
+        self, client, test_org, monkeypatch
+    ):
+        # Registration builds its token on its own path, customer and operator
+        # alike, so the allowlist has to hold there too.
+        monkeypatch.setattr(settings, "CUSTOMER_ENROLLMENT_ORG_SLUG", test_org.slug)
+        for path, email, role in (
+            (REGISTER, "claims-customer@test.com", "member"),
+            (f"{REGISTER}/operator", "claims-operator@test.com", "owner"),
+        ):
+            resp = await client.post(
+                path, json={"email": email, "password": "password123", "name": "Claims"}
+            )
+            assert resp.status_code == 201, resp.text
+            claims = jwt.decode(
+                resp.json()["access_token"], settings.SECRET_KEY, algorithms=[ALGORITHM]
+            )
+            assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp"}
+            assert claims["sub"] == resp.json()["user"]["id"]
+            assert [set(m) for m in claims["memberships"]] == [{"org_id", "role"}]
+            assert claims["memberships"][0]["role"] == role
+            if role == "member":
+                assert claims["memberships"][0]["org_id"] == str(test_org.id)
+            else:
+                assert claims["memberships"][0]["org_id"] != str(test_org.id)
+
     async def test_no_auth_response_contains_the_password_or_its_hash(
         self, client, db_session, test_org, monkeypatch
     ):
