@@ -1675,7 +1675,17 @@ described here only in general terms until its fix merges.
 
 ### S01 — Authorization and tenant-isolation regression matrix
 
-**Priority: P1. State: DONE on `test/sec-authz-matrix` (pending PR).** Evidence
+**Priority: P1. State: MERGED (PR #48, `ad4bc12`); follow-ups DONE on
+`test/sec-authn-regressions` (pending PR).** Follow-up evidence
+(2026-09-18): the matrix is at 68 cases; with the webhook digest never
+compared, the org filter dropped from two dashboard metrics and enrolment
+granting owner, four tests failed for those reasons and the code was
+restored. The last review pass on #48 named four
+coverage gaps that ship with S02's PR: the dashboard isolation check asserts
+only the booking count; a new customer route needs nothing beyond the
+anonymous sweep; the hostile-field registration case skips the operator
+registration path; and the forged webhook signature is refused for its old
+timestamp before its digest is looked at. Evidence
 (2026-09-18): `backend/tests/test_authz_matrix.py` classifies all 39 API routes
 and adds real-PostgreSQL cases (51 at first); all pass on main `c096e0c`, so the audit of
 authorization and tenant isolation found no flaw: every operator handler
@@ -1715,6 +1725,77 @@ token grants nothing.
 **Validation:** real-PostgreSQL pytest through the `client` fixture. A case
 that fails on main becomes its own S item with a fix; the cases that pass stay
 as regression tests.
+
+### S02 — Authentication and token-handling regression tests
+
+**Priority: P1. State: DONE on `test/sec-authn-regressions` (pending PR).**
+Evidence (2026-09-18): `backend/tests/test_auth_tokens.py` adds 22
+real-PostgreSQL cases and all pass on the code as audited, so token
+validation is sound: the algorithm is pinned, expiry and signature are
+enforced, the user is re-loaded on every request, and a token is read only
+from the `Authorization` header. A mutation check proved the cases can fail:
+with a second algorithm allowed and expiry verification off, a distinct
+answer for unknown emails and the login password bound removed, five tests
+failed for those reasons, and the code was restored. Full backend suite with
+the S01 follow-ups: 369 passed. The audit's confirmed findings are S03, S04
+and B37 below; each has a
+failing test held locally until its fix ships in the same PR.
+**Scope:** `backend/tests/test_auth_tokens.py`; no application change.
+**Why:** every customer and operator route trusts one dependency,
+`get_current_user`, to turn a Bearer header into a user, and nothing pins what
+it must refuse. S01 covers what a known user may do; this covers how a user
+becomes known. **Dependencies:** none.
+
+**Acceptance:** real-PostgreSQL tests prove that a token is refused when it is
+expired, signed with another key, unsigned (`alg: none`), signed with another
+algorithm, altered after signing, missing its subject, or issued to a user who
+no longer exists; that a token is read only from the `Authorization` header;
+that login answers identically for an unknown email and a wrong password; that
+issued claims and the auth responses carry no secret; and that over-long
+passwords are refused before any hashing. A case that fails on main becomes
+its own item (S or B) with a fix; the passing cases stay as regression tests.
+
+**Validation:** pytest through the `client` fixture, plus a mutation check
+proving the cases can fail.
+
+### S03 — Login does uneven work for known and unknown emails
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Finding (2026-09-18, authentication audit), severity Low: login answers an
+unknown email and a wrong password with the same status and body, but it does
+not do the same work for both. Registration already tells a caller whether an
+address is registered, by design, and both routes share the auth rate tier, so
+this is a quieter channel for the same fact rather than new information.
+**Scope:** `backend/app/routers/auth.py`, `backend/app/auth.py`, tests.
+**Acceptance:** login performs exactly one password verification whether or
+not the account exists or has a password, proven by a test that counts
+verifications for both cases. Responses, rate limits and the password policy
+do not change.
+
+### S04 — Token validation: malformed subject and missing expiry
+
+**Priority: P3. State: TODO (queued for the fix phase of the security loop).**
+Finding (2026-09-18, authentication audit), severity Low, defence in depth:
+two correctly signed but abnormal tokens are not answered with 401. Neither
+can be produced without the signing key, and the application itself never
+issues them. **Scope:** `backend/app/auth.py`, tests. **Acceptance:** any
+signed token that is not a well-formed, expiring token for an existing user
+is answered with 401, never a server error and never success; the S02 control
+token still passes.
+
+### B37 — Email addresses are case-sensitive at login and registration
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Bug (2026-09-18, authentication audit): the local part of an email is compared
+exactly, so a customer who registered as `Ana@…` cannot sign in as `ana@…`,
+and one mailbox can hold two accounts that differ only by case. There is no
+account recovery flow, so the first case is a lockout from the customer's
+point of view. **Scope:** `backend/app/routers/auth.py`,
+`backend/app/schemas/user.py`, tests; a unique index on the lowercased address
+is a separate migration step and must fail loudly on existing collisions
+rather than merge accounts. **Acceptance:** login and the duplicate check
+ignore case; new accounts store the normalised address; an existing
+mixed-case account keeps working; both behaviours have a failing-first test.
 
 ## Non-roadmap deliverable — flowspace-site marketing page
 

@@ -9,6 +9,7 @@ customer, reading the rows back to prove nothing moved.
 """
 
 import re
+import time as clock_time
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -25,7 +26,7 @@ from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.recurrence import RecurrenceFrequency, RecurrenceRule
 from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
-from app.payments import CheckoutKind
+from app.payments import CheckoutKind, StubPaymentGateway
 from app.routers import recurrences
 from fastapi.routing import APIRoute
 from sqlalchemy import func, select
@@ -104,6 +105,39 @@ def _password_hash() -> str:
     if _PASSWORD_HASH is None:
         _PASSWORD_HASH = hash_password("password123")
     return _PASSWORD_HASH
+
+
+# The anonymous sweep says nothing about WHOSE rows a customer route touches.
+# Each one names the TestCustomerIsolation case that does, so a new CUSTOMER
+# entry cannot ship with only the sweep behind it.
+CUSTOMER_ISOLATION: dict[tuple[str, str], str] = {
+    ("POST", f"{API}/auth/enroll"): "test_enrolling_joins_only_the_configured_org_as_a_member",
+    ("GET", f"{API}/auth/me"): "test_my_lists_contain_only_my_rows",
+    ("GET", f"{API}/auth/memberships"): "test_my_lists_contain_only_my_rows",
+    ("GET", f"{API}/bookings/me"): "test_my_lists_contain_only_my_rows",
+    ("POST", f"{API}/bookings"): (
+        "test_a_customer_cannot_book_a_room_of_an_org_they_do_not_belong_to"
+    ),
+    ("DELETE", f"{API}/bookings/{{booking_id}}"): (
+        "test_nobody_else_can_cancel_or_pay_a_customers_booking"
+    ),
+    ("POST", f"{API}/bookings/{{booking_id}}/checkout"): (
+        "test_nobody_else_can_cancel_or_pay_a_customers_booking"
+    ),
+    ("POST", f"{API}/recurrences"): (
+        "test_a_customer_cannot_start_a_series_in_an_org_they_do_not_belong_to"
+    ),
+    ("PUT", f"{API}/recurrences/{{recurrence_id}}"): (
+        "test_another_customers_series_cannot_be_edited_or_cancelled"
+    ),
+    ("DELETE", f"{API}/recurrences/{{recurrence_id}}"): (
+        "test_another_customers_series_cannot_be_edited_or_cancelled"
+    ),
+    ("POST", f"{API}/packages/{{package_id}}/purchase"): (
+        "test_a_purchase_is_bound_to_the_packages_org_and_to_membership"
+    ),
+    ("GET", f"{API}/packages/me"): "test_my_lists_contain_only_my_rows",
+}
 
 
 def _routes(kind: str) -> list[tuple[str, str]]:
@@ -278,6 +312,15 @@ class TestClassification:
         )
         assert not stale, f"ROUTES lists routes that no longer exist: {stale}"
 
+    def test_every_customer_route_names_its_isolation_test(self):
+        assert set(CUSTOMER_ISOLATION) == set(_routes(CUSTOMER))
+        missing = sorted(
+            name
+            for name in set(CUSTOMER_ISOLATION.values())
+            if not callable(getattr(TestCustomerIsolation, name, None))
+        )
+        assert not missing, f"CUSTOMER_ISOLATION names tests that do not exist: {missing}"
+
     def test_classification_matches_the_authentication_dependency(self):
         def dependency_names(dependant, acc=None) -> set[str]:
             acc = set() if acc is None else acc
@@ -343,7 +386,21 @@ class TestAnonymous:
             reference_id=booking.id,
             org_id=booking.org_id,
         )
-        for forged in ({}, {"Stripe-Signature": "t=1,v1=" + "0" * 64}):
+        # Current timestamps, so the digest is what refuses them and not their
+        # age: one digest is made up, the other is real but keyed with another
+        # secret.
+        other_secret = StubPaymentGateway(
+            webhook_secret="whsec_not_the_configured_secret",
+            currency="eur",
+            success_url="http://test/success",
+            cancel_url="http://test/cancel",
+            checkout_base_url="http://test",
+        )
+        for forged in (
+            {},
+            {"Stripe-Signature": f"t={int(clock_time.time())},v1={'0' * 64}"},
+            {"Stripe-Signature": other_secret.sign_payload(payload)},
+        ):
             resp = await client.request(method, path, content=payload, headers=forged)
             assert resp.status_code == 400, resp.text
             booking = await _fresh(db_session, Booking, booking_id)
@@ -474,8 +531,25 @@ class TestOperatorCannotTouchAnotherOrgsResources:
 
 
 class TestOperatorListsAreScoped:
-    async def test_every_list_returns_only_the_orgs_rows(self, client, world):
+    async def test_every_list_returns_only_the_orgs_rows(self, client, world, db_session):
         headers, params = _as(world.op_a, "owner"), {"org_id": str(world.org_a.id)}
+        # A second, cancelled booking in B makes every dashboard metric differ
+        # between A alone and both orgs together, occupancy included.
+        start, end = _slot(16)
+        db_session.add(
+            Booking(
+                org_id=world.org_b.id,
+                room_id=world.room_b.id,
+                user_id=world.cust_b.id,
+                start_time=start,
+                end_time=end,
+                duration_hours=Decimal("1.00"),
+                total_amount=Decimal("22.00"),
+                status=BookingStatus.cancelled,
+                payment_method=PaymentMethod.hourly,
+            )
+        )
+        await db_session.commit()
 
         async def get(path: str) -> dict:
             resp = await client.get(f"{API}/admin/{path}", params=params, headers=headers)
@@ -487,7 +561,12 @@ class TestOperatorListsAreScoped:
         assert [b["id"] for b in bookings] == [str(world.booking_a.id)]
         assert [p["id"] for p in (await get("packages"))["packages"]] == [str(world.package_a.id)]
         assert [u["id"] for u in (await get("users"))["users"]] == [str(world.cust_a.id)]
-        assert (await get("dashboard"))["total_bookings"] == 1
+        assert await get("dashboard") == {
+            "total_bookings": 1,
+            "total_revenue": 11.0,
+            "occupancy_rate": 100.0,
+            "active_users": 1,
+        }
 
 
 class TestCustomerIsolation:
@@ -519,15 +598,53 @@ class TestCustomerIsolation:
         assert booking.stripe_checkout_session_id is None
 
     async def test_my_lists_contain_only_my_rows(self, client, world):
-        for user, bookings, purchases in (
-            (world.cust_a, [world.booking_a.id], [world.purchase_a.id]),
-            (world.cust_a2, [], []),
-            (world.cust_b, [world.booking_b.id], [world.purchase_b.id]),
+        for user, org, bookings, purchases in (
+            (world.cust_a, world.org_a, [world.booking_a.id], [world.purchase_a.id]),
+            (world.cust_a2, world.org_a, [], []),
+            (world.cust_b, world.org_b, [world.booking_b.id], [world.purchase_b.id]),
         ):
+            me = await client.get(f"{API}/auth/me", headers=_as(user))
+            orgs = await client.get(f"{API}/auth/memberships", headers=_as(user))
+            assert me.json()["id"] == str(user.id)
+            assert [(m["org_id"], m["role"]) for m in orgs.json()["memberships"]] == [
+                (str(org.id), "member")
+            ]
             mine = await client.get(f"{API}/bookings/me", headers=_as(user))
             packs = await client.get(f"{API}/packages/me", headers=_as(user))
             assert [b["id"] for b in mine.json()["bookings"]] == [str(i) for i in bookings]
             assert [p["id"] for p in packs.json()["purchases"]] == [str(i) for i in purchases]
+
+    async def test_enrolling_joins_only_the_configured_org_as_a_member(
+        self, client, world, db_session, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "CUSTOMER_ENROLLMENT_ORG_SLUG", world.org_a.slug)
+        monkeypatch.setattr(settings, "CUSTOMER_ENROLLMENT_ENABLED", True)
+        hostile = {
+            "org_id": str(world.org_b.id),
+            "user_id": str(world.cust_a2.id),
+            "role": "owner",
+        }
+
+        async def memberships(user: User) -> list[tuple[uuid.UUID, MemberRole]]:
+            rows = await db_session.execute(
+                select(OrganizationMember.org_id, OrganizationMember.role)
+                .where(OrganizationMember.user_id == user.id)
+                .order_by(OrganizationMember.role)
+            )
+            return sorted(rows.all(), key=lambda row: str(row[0]))
+
+        before_a2 = await memberships(world.cust_a2)
+        resp = await client.post(f"{API}/auth/enroll", json=hostile, headers=_as(world.cust_b))
+        assert resp.status_code == 200, resp.text
+        assert await memberships(world.cust_b) == sorted(
+            [(world.org_a.id, MemberRole.member), (world.org_b.id, MemberRole.member)],
+            key=lambda row: str(row[0]),
+        )
+        assert await memberships(world.cust_a2) == before_a2
+        # Enrolling again never downgrades the org's own operator.
+        resp = await client.post(f"{API}/auth/enroll", json=hostile, headers=_as(world.op_a))
+        assert resp.status_code == 200, resp.text
+        assert await memberships(world.op_a) == [(world.org_a.id, MemberRole.owner)]
 
     async def test_a_customer_cannot_book_a_room_of_an_org_they_do_not_belong_to(
         self, client, world, db_session, payments
@@ -716,3 +833,30 @@ class TestClientSuppliedFieldsAreIgnored:
             )
         )
         assert rows.all() == [(world.org_a.id, MemberRole.member)]
+
+    async def test_operator_registration_cannot_choose_a_role_or_an_org(
+        self, client, world, db_session
+    ):
+        resp = await client.post(
+            f"{API}/auth/register/operator",
+            json={
+                "email": "new-operator@test.com",
+                "password": "password123",
+                "name": "New Operator",
+                "role": "member",
+                "org_id": str(world.org_a.id),
+                "org_slug": world.org_a.slug,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        user_id = uuid.UUID(resp.json()["user"]["id"])
+        rows = (
+            await db_session.execute(
+                select(OrganizationMember.org_id, OrganizationMember.role).where(
+                    OrganizationMember.user_id == user_id
+                )
+            )
+        ).all()
+        # Owner of a brand-new org, and nothing in anyone else's.
+        assert [role for _, role in rows] == [MemberRole.owner]
+        assert rows[0][0] not in (world.org_a.id, world.org_b.id)
