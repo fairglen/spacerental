@@ -1675,8 +1675,8 @@ described here only in general terms until its fix merges.
 
 ### S01 — Authorization and tenant-isolation regression matrix
 
-**Priority: P1. State: MERGED (PR #48, `ad4bc12`); follow-ups DONE on
-`test/sec-authn-regressions` (pending PR).** Follow-up evidence
+**Priority: P1. State: MERGED (PR #48, `ad4bc12`; follow-ups in PR #49,
+`344913a`).** Follow-up evidence
 (2026-09-18): the matrix is at 68 cases; with the webhook digest never
 compared, the org filter dropped from two dashboard metrics and enrolment
 granting owner, four tests failed for those reasons and the code was
@@ -1728,7 +1728,7 @@ as regression tests.
 
 ### S02 — Authentication and token-handling regression tests
 
-**Priority: P1. State: DONE on `test/sec-authn-regressions` (pending PR).**
+**Priority: P1. State: MERGED (PR #49, `344913a`).**
 Evidence (2026-09-18): `backend/tests/test_auth_tokens.py` adds 22
 real-PostgreSQL cases and all pass on the code as audited, so token
 validation is sound: the algorithm is pinned, expiry and signature are
