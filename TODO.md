@@ -1713,6 +1713,27 @@ token grants nothing.
 that fails on main becomes its own S item with a fix; the cases that pass stay
 as regression tests.
 
+### S02 — Authentication and token-handling regression tests
+
+**Priority: P1. State: IN PROGRESS on `test/sec-authn-regressions`.**
+**Scope:** `backend/tests/test_auth_tokens.py`; no application change.
+**Why:** every customer and operator route trusts one dependency,
+`get_current_user`, to turn a Bearer header into a user, and nothing pins what
+it must refuse. S01 covers what a known user may do; this covers how a user
+becomes known. **Dependencies:** none.
+
+**Acceptance:** real-PostgreSQL tests prove that a token is refused when it is
+expired, signed with another key, unsigned (`alg: none`), signed with another
+algorithm, altered after signing, missing its subject, or issued to a user who
+no longer exists; that a token is read only from the `Authorization` header;
+that login answers identically for an unknown email and a wrong password; that
+issued claims and the auth responses carry no secret; and that over-long
+passwords are refused before any hashing. A case that fails on main becomes
+its own item (S or B) with a fix; the passing cases stay as regression tests.
+
+**Validation:** pytest through the `client` fixture, plus a mutation check
+proving the cases can fail.
+
 ## Non-roadmap deliverable — flowspace-site marketing page
 
 ### F01 — Build and deploy the flowspace-site static marketing page
