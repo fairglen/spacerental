@@ -1675,7 +1675,13 @@ described here only in general terms until its fix merges.
 
 ### S01 — Authorization and tenant-isolation regression matrix
 
-**Priority: P1. State: DONE on `test/sec-authz-matrix` (pending PR).** Evidence
+**Priority: P1. State: MERGED (PR #48, `ad4bc12`); follow-ups IN PROGRESS on
+`test/sec-authn-regressions`.** The last review pass on #48 named four
+coverage gaps that ship with S02's PR: the dashboard isolation check asserts
+only the booking count; a new customer route needs nothing beyond the
+anonymous sweep; the hostile-field registration case skips the operator
+registration path; and the forged webhook signature is refused for its old
+timestamp before its digest is looked at. Evidence
 (2026-09-18): `backend/tests/test_authz_matrix.py` classifies all 39 API routes
 and adds real-PostgreSQL cases (51 at first); all pass on main `c096e0c`, so the audit of
 authorization and tenant isolation found no flaw: every operator handler
