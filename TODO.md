@@ -421,16 +421,15 @@ repeating registration. Validate failed/throwing sign-in component behavior.
 
 ### B16 — Test database health probe logs a missing database repeatedly
 
-**Priority: P2. State: IN PROGRESS.** Branch: `fix/test-db-health-probe`.
-Confirmed still open on 2026-09-10 by reading `docker-compose.test.yml`: the
-healthcheck still runs `pg_isready -U spacerental` against the default database
-rather than the actual test database. Observed during C01
-backend validation on 2026-09-10. `docker-compose.test.yml` runs `pg_isready -U
-spacerental` while the test database is `spacerental_test`; PostgreSQL logs
-`FATAL: database "spacerental" does not exist` every three seconds even though
-the suite connects correctly and proceeds. Set the explicit test database in
-the probe; verify healthy startup and the absence of these messages without
-weakening readiness detection. It does not block C01.
+**Priority: P2. State: DONE — merged as `c7d810a` in [PR #36](https://github.com/fairglen/spacerental/pull/36)
+from branch `fix/test-db-health-probe`.** Observed during C01 backend
+validation on 2026-09-10: `docker-compose.test.yml` ran `pg_isready -U
+spacerental` while the test database was `spacerental_test`, so PostgreSQL
+logged `FATAL: database "spacerental" does not exist` every three seconds even
+though the suite connected correctly and proceeded. Fixed by probing the
+explicit test database (`pg_isready -U spacerental -d $$POSTGRES_DB`); healthy
+startup is unchanged and the messages are gone. The same mismatch in the two
+CI workflows was not part of that fix and is tracked as B20 below.
 
 ### B17 — Dialog descriptions and noisy component test diagnostics
 
@@ -485,6 +484,45 @@ Reproduce with real PostgreSQL before implementing. Acceptance: duplicate email
 has a clear client response, distinct operator accounts with equal names get
 unique slugs, and failure creates no partial account/org/membership. Preserve
 normal duplicate-email and shared rate-limit behavior.
+
+### B20 — CI health-probe database-name mismatch persists after B16's local fix
+
+**Priority: P2. State: QUEUED.** Discovered 2026-09-10 via automated review on
+[PR #36](https://github.com/fairglen/spacerental/pull/36): B16 fixed the
+`pg_isready` healthcheck in `docker-compose.test.yml` to target the actual test
+database, but `.github/workflows/backend-tests.yml` and
+`.github/workflows/migrations.yml` both still run the same unqualified
+`pg_isready -U spacerental` against Postgres services configured with
+`POSTGRES_DB: spacerental_test` and `POSTGRES_DB: spacerental_migrations`
+respectively — the identical mismatch B16 was opened for, still live in CI.
+Fix by qualifying each workflow's healthcheck with its own `POSTGRES_DB` value
+(mirroring B16's `-d $$POSTGRES_DB` approach). Acceptance: neither workflow's
+Postgres service logs a missing-database FATAL during a run; both workflows
+still pass. Not implemented now — recorded for a future pass rather than
+reopening B16, since B16's own local-stack fix and evidence are correct as far
+as they go.
+
+This entry was originally recorded on the `docs/reconcile-todo-status-2026-09-10`
+branch as `ccb3189`, but that commit was pushed after
+[PR #35](https://github.com/fairglen/spacerental/pull/35) had already merged and
+closed, so it never reached main. Restored here on 2026-09-14.
+
+### B21 — Lint workflow has no path filter, so every branch inherits main's lint state
+
+**Priority: P2. State: DONE — this PR.** Discovered 2026-09-14 while reviewing
+why [PR #40](https://github.com/fairglen/spacerental/pull/40) (a static-HTML-only
+change under `flowspace-site/`) showed a failing `Lint / python` check.
+`.github/workflows/lint.yml` was declared as bare `on: [push, pull_request]`
+with no `paths:` filter (`e2e.yml` is also unfiltered, but it does not run
+`ruff check backend`), so the lint job ran against every branch regardless of
+what it touched, and reported main's pre-existing `E501` failure as that PR's
+red X. Fixed by giving the workflow the same push/pull_request path filters the
+backend-tests, frontend-tests and migrations workflows use. The filter includes
+root `ruff.toml` and `.pre-commit-config.yaml` as well as `backend/**`: the Ruff
+configuration lives at the repository root and the hook pins the same Ruff
+version as the workflow, so a change to either must still trigger the job.
+Verified against Q00's finding that main carries no required-status-check
+configuration, so a skipped run cannot leave a pull request stuck pending.
 
 ### C02 — Complete the package-holder journey
 
