@@ -183,6 +183,12 @@ class TestLoginGivesNothingAway:
             )
             assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp"}
             assert claims["sub"] == resp.json()["user"]["id"]
+            # `exp` must be present and bounded here too: a subset check alone
+            # would accept a registration token that never expires.
+            lifetime = datetime.fromtimestamp(claims["exp"], tz=UTC) - datetime.now(tz=UTC)
+            assert (
+                timedelta(0) < lifetime <= timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            )
             assert [set(m) for m in claims["memberships"]] == [{"org_id", "role"}]
             assert claims["memberships"][0]["role"] == role
             if role == "member":
