@@ -136,3 +136,20 @@ describe('Pricing renders what the API says (C06)', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/a carregar/i)
   })
 })
+
+describe('Pricing treats the rooms request as part of the load (review)', () => {
+  it('shows the error state with a retry that refetches rooms when the rate fails to load', async () => {
+    vi.mocked(useSession).mockReturnValue({ data: null, status: 'unauthenticated' } as any)
+    vi.mocked(spacesApi.list).mockResolvedValue([space])
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    vi.mocked(spacesApi.get).mockClear()
+    vi.mocked(spacesApi.get).mockRejectedValueOnce(new Error('boom')).mockResolvedValue({ space, rooms: [room('a', 11)] })
+    renderPricing()
+    const alert = await screen.findByRole('alert')
+    fireEvent.click(within(alert).getByRole('button', { name: /tentar novamente/i }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(spacesApi.get).toHaveBeenCalledTimes(2)
+    const hourly = (await screen.findByRole('heading', { name: /Hora a Hora/i })).closest('.rounded-xl') as HTMLElement
+    await waitFor(() => expect(hourly).toHaveTextContent('11,00'))
+  })
+})

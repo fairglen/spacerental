@@ -35,6 +35,20 @@ def upgrade() -> None:
     op.add_column(
         "bookings", sa.Column("hold_expires_at", sa.DateTime(timezone=True), nullable=True)
     )
+    # Pre-existing unpaid one-off holds would otherwise be deadline-less and
+    # block their slots forever (NULL means "never expires", reserved for
+    # series occurrences). Give them the deadline they would have had, so they
+    # read as expired on the next access and can be retried or released.
+    op.execute(
+        """
+        UPDATE bookings
+        SET hold_expires_at = created_at + INTERVAL '15 minutes'
+        WHERE status = 'pending'
+          AND payment_method = 'hourly'
+          AND recurrence_rule_id IS NULL
+          AND hold_expires_at IS NULL
+        """
+    )
 
 
 def downgrade() -> None:

@@ -19,3 +19,16 @@ describe('safeInternalPath', () => {
     expect(safeInternalPath('spaces/abc')).toBeNull()
   })
 })
+
+// NextAuth's middleware sends an absolute same-origin callbackUrl
+// (http://localhost:3000/admin); that must be honoured as a path.
+describe('safeInternalPath with absolute URLs', () => {
+  it('normalises a same-origin absolute URL to its path, query and hash', () => {
+    expect(safeInternalPath(`${window.location.origin}/admin/bookings?page=2#x`)).toBe('/admin/bookings?page=2#x')
+  })
+  it('still rejects another origin, even with the same host on another scheme or port', () => {
+    expect(safeInternalPath('https://localhost:3000/admin')).toBeNull()
+    expect(safeInternalPath('http://localhost:4000/admin')).toBeNull()
+    expect(safeInternalPath('http://evil.example/')).toBeNull()
+  })
+})

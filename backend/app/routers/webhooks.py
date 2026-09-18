@@ -65,7 +65,14 @@ async def _confirm_booking(
     booking = result.scalar_one_or_none()
     if booking is None:
         return False
-    if booking.status not in (
+    now = clock.utcnow()
+    # Only an unpaid checkout hold can still be paid: `pending` with a
+    # deadline, `expired` (always a lapsed hold), or a hold the customer let
+    # go while it was still unpaid (`cancelled` with its deadline intact). A
+    # paid booking has its deadline cleared on confirmation, so a duplicate
+    # completion after a cancellation can never resurrect it.
+    unpaid_hold = booking.hold_expires_at is not None or booking.status is BookingStatus.expired
+    if not unpaid_hold or booking.status not in (
         BookingStatus.pending,
         BookingStatus.expired,
         BookingStatus.cancelled,
@@ -77,9 +84,12 @@ async def _confirm_booking(
     # Re-entering the `confirmed` state makes the row count again for the
     # EXCLUDE constraint, which is what proves the slot is still free. If it
     # is not, keep the payment visible instead of dropping it: refunds are O02.
-    late = booking.status is not BookingStatus.pending
+    # Expiry is lazy, so a hold can still read `pending` after its deadline
+    # when nothing touched the slot since; treat that as late too.
+    late = booking.status is not BookingStatus.pending or (
+        booking.hold_expires_at is not None and booking.hold_expires_at <= now
+    )
     if late:
-        now = clock.utcnow()
         await expire_stale_holds(db, booking.room_id, booking.start_time, booking.end_time, now)
         taken = await has_conflicting_booking(
             db,

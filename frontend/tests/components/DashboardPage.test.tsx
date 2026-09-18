@@ -129,6 +129,10 @@ describe('Dashboard — payment return notice (B25)', () => {
     renderPage()
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent(/pagamento não concluído/i)
+    // Pack purchases return here too, and a stub-cancelled hold reads as
+    // expired below, so the copy must not promise a reservation is waiting
+    // to be paid or cancelled.
+    expect(notice).not.toHaveTextContent(/a aguardar pagamento|cancelá-la/i)
     expect(replace).toHaveBeenCalledWith('/dashboard', expect.anything())
   })
 
@@ -310,5 +314,34 @@ describe('Dashboard — unpaid holds (C03)', () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: /Tentar pagar de novo/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/já está reservado/)
+  })
+})
+
+describe('Dashboard — packs summary counts only spendable packs (review)', () => {
+  const purchase = (id: string, overrides: Record<string, unknown>) => ({
+    id, user_id: 'user-1', package_id: 'pkg', org_id: 'org-1', hours_total: 10, hours_used: 0, hours_remaining: 10,
+    status: 'active' as const, purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
+    package: { id: 'pkg', org_id: 'org-1', name: 'Pack 10h', hours: 10, price: 100, validity_days: 365, is_active: true },
+    ...overrides,
+  })
+
+  it('ignores expired and exhausted purchases even when their status is active', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([])
+    vi.mocked(packagesApi.listMine).mockResolvedValue([
+      purchase('p-expired', { expires_at: '2020-01-01T00:00:00Z' }),
+      purchase('p-empty', { hours_remaining: 0, hours_used: 10 }),
+    ])
+    renderPage()
+    await screen.findByText(/ainda não tens/i)
+    expect(screen.queryByText('Pack 10h')).toBeNull()
+  })
+
+  it('shows a fallback instead of a skeleton when the packs request fails', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([])
+    vi.mocked(packagesApi.listMine).mockRejectedValue(new Error('boom'))
+    renderPage()
+    const summary = await screen.findByRole('region', { name: /packs/i })
+    await waitFor(() => expect(summary).toHaveTextContent(/não foi possível/i))
+    expect(summary.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
   })
 })

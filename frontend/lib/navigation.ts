@@ -5,9 +5,22 @@
  * — is refused and the caller falls back to its default destination.
  */
 export function safeInternalPath(raw: string | null | undefined): string | null {
-  if (!raw || !raw.startsWith('/')) return null
-  if (raw.startsWith('//') || raw.startsWith('/\\')) return null
-  return raw
+  if (!raw) return null
+  if (raw.startsWith('/')) {
+    if (raw.startsWith('//') || raw.startsWith('/\\')) return null
+    return raw
+  }
+  // NextAuth's middleware hands over an absolute URL for the page it
+  // protected; keep it only when the origin is exactly ours.
+  if (typeof window === 'undefined') return null
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return null
+  }
+  if (url.origin !== window.location.origin) return null
+  return `${url.pathname}${url.search}${url.hash}`
 }
 
 /** `/sign-in?callbackUrl=…` for the page the customer is on right now. */

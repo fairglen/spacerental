@@ -392,3 +392,151 @@ class TestReviewFindings:
         assert (await _mine(client, auth_headers, booking["id"]))["status"] == "pending"
         # And the original session can still be completed by its webhook.
         assert (await _post_webhook(client, payments, booking, test_room.org_id))["handled"] is True
+
+
+async def _admin_headers(db_session, test_org):
+    u = User(email="op@test.com", name="Operator", password_hash=hash_password("password123"))
+    db_session.add(u)
+    await db_session.flush()
+    db_session.add(OrganizationMember(org_id=test_org.id, user_id=u.id, role=MemberRole.owner))
+    await db_session.commit()
+    token = create_access_token(
+        {"sub": str(u.id), "email": u.email, "name": u.name, "role": "owner"}
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+class TestSecondReview:
+    """Copilot's second pass on PR #46: every slot-acquiring path agrees on holds."""
+
+    async def test_admin_write_reconciles_a_stale_hold_it_overlaps(
+        self,
+        client,
+        auth_headers,
+        test_room,
+        test_member,
+        payments,
+        monkeypatch,
+        db_session,
+        test_org,
+        test_user,
+    ):
+        start = _monday()
+        t0 = start - timedelta(days=3)
+        _pin(monkeypatch, t0)
+        hold = (await _book(client, auth_headers, test_room, start)).json()["booking"]
+        # A cancelled one-off of the same customer the operator reinstates.
+        other = Booking(
+            org_id=test_org.id,
+            room_id=test_room.id,
+            user_id=test_user.id,
+            start_time=start,
+            end_time=start + timedelta(hours=1),
+            duration_hours=Decimal("1.00"),
+            total_amount=Decimal("11.00"),
+            status=BookingStatus.cancelled,
+            payment_method=PaymentMethod.hourly,
+        )
+        db_session.add(other)
+        await db_session.commit()
+        await db_session.refresh(other)
+        admin = await _admin_headers(db_session, test_org)
+
+        _pin(monkeypatch, t0 + timedelta(minutes=30))
+        resp = await client.put(
+            f"/api/v1/admin/bookings/{other.id}",
+            params={"org_id": str(test_org.id)},
+            json={"status": "confirmed"},
+            headers=admin,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["booking"]["hold_expires_at"] is None
+        # The lapsed hold was flipped before the write, so the EXCLUDE
+        # constraint (present in real databases) cannot trip on it.
+        assert (await _db_booking(db_session, hold["id"])).status is BookingStatus.expired
+
+    async def test_admin_reviving_a_one_off_as_pending_gets_a_fresh_deadline(
+        self, client, test_room, monkeypatch, db_session, test_org, test_user
+    ):
+        start = _monday()
+        now = start - timedelta(days=3)
+        _pin(monkeypatch, now)
+        row = Booking(
+            org_id=test_org.id,
+            room_id=test_room.id,
+            user_id=test_user.id,
+            start_time=start,
+            end_time=start + timedelta(hours=1),
+            duration_hours=Decimal("1.00"),
+            total_amount=Decimal("11.00"),
+            status=BookingStatus.cancelled,
+            payment_method=PaymentMethod.hourly,
+        )
+        db_session.add(row)
+        await db_session.commit()
+        await db_session.refresh(row)
+        admin = await _admin_headers(db_session, test_org)
+        resp = await client.put(
+            f"/api/v1/admin/bookings/{row.id}",
+            params={"org_id": str(test_org.id)},
+            json={"status": "pending"},
+            headers=admin,
+        )
+        assert resp.status_code == 200, resp.text
+        assert datetime.fromisoformat(resp.json()["booking"]["hold_expires_at"]) == now + timedelta(
+            minutes=15
+        )
+
+    async def test_late_webhook_is_detected_by_deadline_not_only_by_status(
+        self,
+        client,
+        auth_headers,
+        test_room,
+        test_member,
+        payments,
+        monkeypatch,
+        db_session,
+        test_org,
+        test_user,
+    ):
+        start = _monday()
+        t0 = start - timedelta(days=3)
+        _pin(monkeypatch, t0)
+        hold = (await _book(client, auth_headers, test_room, start)).json()["booking"]
+        # Nobody read or wrote the slot after the deadline, so the row is still
+        # `pending`; another confirmed booking now owns the hour (inserted
+        # directly, as a series or admin write could).
+        winner = Booking(
+            org_id=test_org.id,
+            room_id=test_room.id,
+            user_id=test_user.id,
+            start_time=start,
+            end_time=start + timedelta(hours=1),
+            duration_hours=Decimal("1.00"),
+            total_amount=Decimal("11.00"),
+            status=BookingStatus.confirmed,
+            payment_method=PaymentMethod.hourly,
+        )
+        db_session.add(winner)
+        await db_session.commit()
+        _pin(monkeypatch, t0 + timedelta(minutes=30))
+        assert (await _post_webhook(client, payments, hold, test_room.org_id))["handled"] is True
+        assert (await _mine(client, auth_headers, hold["id"]))["status"] == "paid_unfulfilled"
+
+    async def test_duplicate_completion_cannot_resurrect_a_cancelled_paid_booking(
+        self, client, auth_headers, test_room, test_member, payments, monkeypatch, emails
+    ):
+        start = _monday()
+        _pin(monkeypatch, start - timedelta(days=3))
+        booking = (await _book(client, auth_headers, test_room, start)).json()["booking"]
+        assert (await _post_webhook(client, payments, booking, test_room.org_id))["handled"] is True
+        assert (
+            await client.delete(f"/api/v1/bookings/{booking['id']}", headers=auth_headers)
+        ).status_code == 204
+        # Stripe retries the same completion after the customer cancelled.
+        assert (await _post_webhook(client, payments, booking, test_room.org_id))[
+            "handled"
+        ] is False
+        assert (await _mine(client, auth_headers, booking["id"]))["status"] == "cancelled"
+        assert (await _availability(client, test_room, start))[10] is True
+        assert len(emails.sent) == 2  # the confirmation and the cancellation, nothing more

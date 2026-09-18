@@ -728,6 +728,27 @@ derives session ids from the booking id so a retry reuses the same id and a
 stale stub page can still pay it — same row, same amount, no charge; live
 Stripe ids are unique and the superseded session is really expired.
 
+**Second review batch (2026-09-18, Copilot on PR #46):** the admin
+status-transition path now runs `expire_stale_holds` before its conflict
+check and keeps the hold marker consistent (a one-off revived as `pending`
+gets a fresh deadline, a series occurrence stays deadline-less, any other
+status clears it); the webhook's late-payment branch is deadline-aware
+(`pending` past its deadline takes the conflict-checked path) and limited
+to unpaid holds, so a duplicate completion cannot resurrect a cancelled
+paid booking (confirmation clears the deadline); migration 0003 backfills
+pre-existing pending one-off hourly rows with `created_at + 15 min`
+(evidence on the throwaway DB: legacy one-off → 08:15 deadline, series
+occurrence → NULL, `alembic check` clean); `safeInternalPath` accepts a
+same-origin absolute URL (NextAuth's middleware callback) and still rejects
+other origins; the dashboard packs summary counts only active, unexpired
+purchases with hours left and shows a fallback when `/packages/me` fails;
+the "não concluído" notice no longer promises a reservation is waiting to be
+paid; `Pricing` treats a rooms-request failure as a pricing failure with a
+retry that refetches it; `API_SPEC.md` documents the two statuses,
+`hold_expires_at` and `POST /bookings/:id/checkout`. Tests: four real-PG
+cases in `TestSecondReview`, five frontend cases; all failed before the
+changes.
+
 Note for the suite: the full Playwright run sits close to the public rate
 limit (120/min); the two C03 journeys therefore create their holds through
 the authenticated `POST /bookings` (the calendar UI path is covered by the

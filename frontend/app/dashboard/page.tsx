@@ -57,12 +57,16 @@ export default function DashboardPage() {
 
   // Compact balance so packs are reachable from the page that promises
   // "reservas e pacotes" (B30). Only spendable (active) purchases count.
-  const { data: purchases } = useQuery({
+  const { data: purchases, isError: purchasesFailed } = useQuery({
     queryKey: ['packages', 'me'],
     queryFn: () => packagesApi.listMine(api),
     enabled: !!session?.accessToken,
   })
-  const activePacks = (purchases ?? []).filter((p) => p.status === 'active')
+  // Spendable means what the backend's redemption rule means: active,
+  // unexpired and with hours left — `/packages/me` still lists the others.
+  const activePacks = (purchases ?? []).filter(
+    (p) => p.status === 'active' && new Date(p.expires_at).getTime() > Date.now() && p.hours_remaining > 0,
+  )
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) => bookingsApi.cancel(id, api),
@@ -124,7 +128,8 @@ export default function DashboardPage() {
                 ) : (
                   <>
                     <span className="font-semibold">Pagamento não concluído.</span> Não foi cobrado nada.
-                    A reserva fica a aguardar pagamento; podes pagá-la abaixo ou cancelá-la.
+                    Se era uma reserva, o seu estado atual aparece abaixo; se era um pack, podes voltar a comprá-lo em{' '}
+                    <Link href="/dashboard/packages" className="font-medium underline">Os meus packs</Link>.
                   </>
                 )}
               </p>
@@ -147,7 +152,11 @@ export default function DashboardPage() {
                 {activePacks.length > 0 ? 'Ver e comprar packs' : 'Ver packs'}
               </Link>
             </div>
-            {purchases === undefined ? (
+            {purchasesFailed ? (
+              <p className="mt-2 text-sm text-red-700">
+                Não foi possível carregar os teus packs. Tenta de novo mais tarde ou abre a página dos packs.
+              </p>
+            ) : purchases === undefined ? (
               <Skeleton className="mt-3 h-5 w-48" />
             ) : activePacks.length === 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">

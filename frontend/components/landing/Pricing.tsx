@@ -110,7 +110,9 @@ export function Pricing() {
   const ratesDiffer = rates.length > 1 && Math.max(...rates) !== hourlyRate
 
   const isLoading = spaceQuery.isLoading || packagesQuery.isLoading || (!!spaceId && roomsQuery.isLoading)
-  const packagesFailed = spaceQuery.isError || packagesQuery.isError
+  // The rooms request is the source of the hourly rate and of every saving,
+  // so its failure is a pricing failure too.
+  const packagesFailed = spaceQuery.isError || packagesQuery.isError || roomsQuery.isError
   const packages: Package[] = [...(packagesQuery.data ?? [])].sort((a, b) => a.hours - b.hours)
   const bestValueId =
     packages.length > 1
@@ -169,7 +171,8 @@ export function Pricing() {
               className="font-medium underline"
               onClick={() => {
                 if (spaceQuery.isError) spaceQuery.refetch()
-                else packagesQuery.refetch()
+                if (packagesQuery.isError) packagesQuery.refetch()
+                if (roomsQuery.isError) roomsQuery.refetch()
               }}
             >
               {t('pricing.retry')}
