@@ -716,6 +716,41 @@ either). Full suite:
 — 244 passed (`down -v` after). `ruff check backend/` clean. No frontend file
 touched.
 
+**Second follow-up (2026-09-11):** a further automated review of
+`is_within_open_hours` raised 2 findings, both confirmed by reading the code
+and fixed. Note this round landed *after* PR #39 had already been squash-merged
+to `main`, so it ships on its own branch rather than as more commits on #39.
+- Real bug — duplicate/overlapping `AvailabilityRule` rows for the same
+  room/weekday made `_hourly_slots` emit the same hour more than once. After
+  sorting, the duplicates sat adjacent, so the contiguity check compared a
+  slot's end (09:00) against the repeated slot's start (08:00), returned
+  `False`, and rejected a perfectly open slot with a 400. Nothing in the schema
+  or admin UI prevents an operator creating such rules, so this was reachable
+  with real data. Slots are now collected into a `set` before sorting; genuine
+  adjacency and genuine gaps are unaffected (both are covered by tests).
+- Latent — the function only checked that the *duration* was a whole multiple
+  of `SLOT_DURATION`, not that the endpoints landed on clock hours. A rule
+  configured at `open_time = 08:30` therefore let the API accept an 08:30 start
+  that the calendar (`step={60}`) can never produce — confirmed by running the
+  new test against the pre-fix code, which created the 08:30 booking. Now
+  rejects explicitly when UTC `minute`/`second`/`microsecond` are non-zero; the
+  duration-multiple check is kept.
+- Also fixed a pre-existing `E501` in `bookings.py` (the `MAX_BOOKING_DURATION`
+  message f-string, 107 chars) that was making CI's `ruff check backend` job
+  red on `main`.
+
+**Second follow-up evidence:** 4 new cases in
+`test_bookings.py::TestBookingValidityBoundary` (overlapping rules still allow
+a booking; adjacent windows still merge across the boundary; a real closure
+between two windows still rejects; a half-hour rule does not permit a
+half-hour start), bringing the class to 16. Verified failing-before /
+passing-after: against the pre-fix module the overlapping-rules case failed
+400≠201 and the half-hour case failed 201≠400, while the adjacency and gap
+guard cases passed both before and after. Full suite:
+`docker compose -p spacerental-c05-dedupe-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests`
+— 250 passed (`down -v` after). `ruff check backend/` clean with the pinned
+0.16.5. No schema change and no frontend file touched.
+
 ### C06 — Show authoritative pricing and validity
 
 **Depends on:** C05. **Scope:** `Pricing.tsx`, package/room API data, purchase CTA
@@ -950,6 +985,20 @@ provider failures; recover without duplicate financial effects or lost revoke
 capability. Demonstrate accurate operator statuses, revenue reconciliation and
 audit history. Record unavoidable external-delivery limits and manual recovery
 procedures. Required suites and migration checks pass without external credentials.
+
+## Non-roadmap deliverable — flowspace-site marketing page
+
+### F01 — Build and deploy the flowspace-site static marketing page
+Priority: P2 (independent of the active C-series queue). State: QUEUED.
+Scope: flowspace-site/**, .github/workflows/deploy-flowspace-site.yml. No
+changes to frontend/ or backend/.
+Acceptance: all real flowspace.pt content present verbatim; contact form
+sends to geral@flowspace.pt via a deployed Apps Script Web App with
+honeypot + timestamp + enum validation + CacheService rate-limiting;
+palette matches frontend/tailwind.config.ts; manual checklist in
+flowspace-site/README.md passes; GitHub Pages deploy workflow succeeds.
+Explicitly out of scope now: Google Sheets submission logging (future
+follow-up, not half-built).
 
 ## Deferred scope
 
