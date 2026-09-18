@@ -1677,16 +1677,21 @@ described here only in general terms until its fix merges.
 
 **Priority: P1. State: DONE on `test/sec-authz-matrix` (pending PR).** Evidence
 (2026-09-18): `backend/tests/test_authz_matrix.py` classifies all 39 API routes
-and adds 51 real-PostgreSQL cases; all pass on main `c096e0c`, so the audit of
+and adds real-PostgreSQL cases (51 at first); all pass on main `c096e0c`, so the audit of
 authorization and tenant isolation found no flaw: every operator handler
 filters its target by the caller's `org_id`, the update schemas expose no
 owner or organization field, and customer routes check ownership. A mutation
 check proved the suite can fail: with the room org filter, the booking
 ownership check and the operator role filter removed and one unclassified
 route added, seven tests failed for the expected reasons, and the code was
-restored. Full backend suite: 331 passed. Convention going forward: a new
-route fails `test_every_route_is_classified` until it is added to `ROUTES`
-and covered.
+restored. Review follow-up (same day): the org's own operator is now an
+intruder on customer-owned booking and series endpoints, cross-org series
+creation is covered, a misspelt classification is rejected, every public,
+webhook and stub route is swept anonymously, and the hold deadline follows
+`BOOKING_HOLD_MINUTES`; 64 cases, and a second mutation check failed four
+tests for the expected reasons. Full backend suite: 344 passed. Convention
+going forward: a new route fails `test_every_route_is_classified` until it
+is added to `ROUTES` and covered.
 **Scope:** `backend/tests/test_authz_matrix.py`; no application change is
 expected. **Why:** tenant isolation is enforced by hand in every handler
 (CLAUDE.md §4; PostgreSQL RLS is deferred as D01) and nothing fails today when
