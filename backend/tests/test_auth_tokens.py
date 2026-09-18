@@ -158,7 +158,14 @@ class TestLoginGivesNothingAway:
             resp.json()["access_token"], settings.SECRET_KEY, algorithms=[ALGORITHM]
         )
         assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp"}
-        assert claims["sub"] == str(test_user.id)
+        # Values, not only names: an allowed claim is base64 inside the token, so
+        # the plain-text scans elsewhere would not see a secret parked in one.
+        assert {k: claims[k] for k in ("sub", "email", "name", "role")} == {
+            "sub": str(test_user.id),
+            "email": test_user.email,
+            "name": test_user.name,
+            "role": "member",
+        }
         # Exact, so nothing can ride along inside a membership either.
         assert claims["memberships"] == [{"org_id": str(test_member.org_id), "role": "member"}]
         lifetime = datetime.fromtimestamp(claims["exp"], tz=UTC) - datetime.now(tz=UTC)
@@ -182,7 +189,12 @@ class TestLoginGivesNothingAway:
                 resp.json()["access_token"], settings.SECRET_KEY, algorithms=[ALGORITHM]
             )
             assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp"}
-            assert claims["sub"] == resp.json()["user"]["id"]
+            assert {k: claims[k] for k in ("sub", "email", "name", "role")} == {
+                "sub": resp.json()["user"]["id"],
+                "email": email,
+                "name": "Claims",
+                "role": role,
+            }
             # `exp` must be present and bounded here too: a subset check alone
             # would accept a registration token that never expires.
             lifetime = datetime.fromtimestamp(claims["exp"], tz=UTC) - datetime.now(tz=UTC)
