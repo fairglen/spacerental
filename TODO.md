@@ -31,7 +31,10 @@ blocker.
 **Smoke-test findings (2026-09-17):** a browser smoke test of main `cced0f4`
 (fresh customer + seeded admin, stub mode, production build) found the gaps
 recorded as B22–B36 below and as evidence on C03/C04/C06/C07/R01/O03. They
-are being fixed on `fix/smoke-findings`; see each item for state.
+were fixed on `fix/smoke-findings` and merged as `84e9b12`
+([PR #46](https://github.com/fairglen/spacerental/pull/46)) on 2026-09-18;
+see each item for evidence. The Next 15 major upgrade recorded under C04
+remains an open decision.
 
 States used below:
 
@@ -693,7 +696,7 @@ expired`; `expired —retry, slot free→ pending`; `expired —retry, slot
 taken→ 409`; `expired|cancelled —late pay, slot free→ confirmed`;
 `expired|cancelled —late pay, slot taken→ paid_unfulfilled`.
 
-**Slice state: DONE on `fix/smoke-findings` (pending PR), 2026-09-18 —
+**Slice state: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46), 2026-09-18 —
 (a)–(e) all delivered.** Evidence: migration `0003_booking_holds`
 (`hold_expires_at`, enum values) passed upgrade → check → downgrade → upgrade
 → check → downgrade base → upgrade → seed on a throwaway database; full
@@ -796,8 +799,8 @@ latest patched 14.2.x (no major bump), align `eslint-config-next`, run
 `npm audit` and record what remains and why; verify build, Vitest, and the auth
 + booking E2E.
 
-**Slice delivered 2026-09-18 on `fix/smoke-findings` (own commit; state:
-PARTIAL — the residual needs a decision).** `next` and `eslint-config-next`
+**Slice merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46)
+on 2026-09-18 (state: PARTIAL — the residual needs a decision).** `next` and `eslint-config-next`
 pinned to 14.2.35, the last 14.2.x release. `npm audit`: 24 → 21 findings
 (1 low, 5 moderate, 11 high, 4 critical). Resolved by the bump (15
 advisories): 12 in `next` — GHSA-3h52-269p-cp9r dev-server origin,
@@ -1041,7 +1044,7 @@ contradiction), or a backend "marketing" endpoint (a second source of
 truth). Reversal: restore the `pack_10_*`/`pack_20_*` catalog keys and the
 previous `packageCopyByHours` map.
 
-**State: DONE on `fix/smoke-findings` (pending PR), 2026-09-18.** Evidence:
+**State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46), 2026-09-18.** Evidence:
 `Pricing.tsx` now renders one card per active package from the API (name,
 price, "{hours} horas", "Válido {days} dias", computed savings only when
 positive, "Melhor valor" on the lowest price per hour) and the hourly card
@@ -1085,7 +1088,7 @@ from the response; the 24h rule stated in the dialog up front; Cancel disabled
 or hidden for ineligible bookings with a visible reason. Backend stays
 authoritative; no refund promise (O02).
 
-**State: DONE on `fix/smoke-findings` (pending PR), 2026-09-17.** Delivered:
+**State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46), 2026-09-17.** Delivered:
 `cancellationEligibility()` in `lib/utils.ts` mirrors `validate_cancellation`
 (eligible iff start − now ≥ 24h and not cancelled/completed); the dashboard
 disables Cancel with the visible reason, states the rule in the dialog, and on
@@ -1128,7 +1131,7 @@ stated; they are delivered on `fix/smoke-findings`, one commit per item.
 
 ### B22 — Admin refresh or deep link bounces operators to /dashboard
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): `OrgContext` now derives `currentOrgId` with `useMemo` from the
 memberships plus the stored selection instead of a later `useEffect`. New
 `tests/components/OrgContext.test.tsx` (4 tests) fails on the old code with a
@@ -1154,7 +1157,7 @@ no current membership; reload on `/admin` and a cold deep link to
 
 ### B23 — Customers cannot see their door code
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): `Booking.access_code` added to `types/index.ts`; the dashboard
 renders "Código de acesso: <code>" on confirmed upcoming cards, a calm "ainda
 não disponível" line when confirmed without a code, and nothing for
@@ -1175,7 +1178,7 @@ code is visible after stub payment.
 
 ### B24 — Past hours are offered as bookable
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): `GET /rooms/{id}/availability` now reads the clock through
 `app/clock.py::utcnow()` and marks any slot whose start is behind it as
 `available: false` (shape unchanged). Real-PG tests with a pinned clock
@@ -1198,7 +1201,7 @@ test for the past state.
 
 ### B25 — Payment return is silent
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): the dashboard reads `?pagamento=sucesso|cancelado`, shows a
 dismissible `role="status"` notice (success links to `/dashboard/packages`;
 cancelled says "Pagamento não concluído. Não foi cobrado nada.") and calls
@@ -1215,7 +1218,7 @@ for both values and for absence.
 
 ### B26 — Closed days, loading and API failure all render as a blank grid
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): `BookingCalendar` now shows "A carregar disponibilidade…"
 (`role=status`) while fetching, "Não foi possível carregar…" with a "Tentar
 novamente" button (`role=alert`, refetches the failed queries) on error, and
@@ -1234,7 +1237,7 @@ and `'closed'` branches use. **Validation:** component tests per state.
 
 ### B27 — "Reservar Esta Sala" appears to do nothing
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): selecting a room scrolls the calendar section into view
 (`behavior: 'auto'` under `prefers-reduced-motion: reduce`, `smooth`
 otherwise) and focuses its heading (`tabIndex={-1}`); `RoomCard` takes a
@@ -1251,7 +1254,7 @@ section into view and moves focus to its heading, respecting
 
 ### B28 — Booking modal sign-in link loses the customer's place
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): new `lib/navigation.ts` (`safeInternalPath`, `signInHref`)
 accepts only same-origin relative paths (rejects absolute, `//host`, schemes,
 `/\`). The modal links to `/sign-in?callbackUrl=<space page>`; sign-in and
@@ -1271,7 +1274,7 @@ relative, an absolute/external, and a missing `callbackUrl`; modal link test.
 
 ### B29 — Pack bookings give no confirmation and show the wrong price
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): a package booking now keeps the modal open on a "Reserva
 confirmada" state (room, date, time, "3h do teu pack", hours remaining from
 the refetched balance, link to Minhas reservas, Fechar); the previous modal
@@ -1291,7 +1294,7 @@ modal component test for the success state; dashboard test for the label.
 
 ### B30 — Packs are undiscoverable
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): navbar (desktop + mobile) shows "Os meus packs" →
 `/dashboard/packages` for signed-in users (`navbar.my_packages` in pt/en);
 the dashboard has an "Os teus packs" region listing active purchases with
@@ -1311,7 +1314,7 @@ dashboard component tests; unit test for the hours formatter.
 
 ### B31 — Booking errors are all the same sentence
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): `bookingErrorMessage(error, method)` in `lib/httpError.ts` maps
 409 (slot taken vs insufficient pack hours, unchanged), 400 past start, 400
 outside opening hours, other 400, 401 (modal adds an "Entrar na conta" link
@@ -1330,7 +1333,7 @@ tests for the 401 sign-in offer.
 
 ### B32 — Landing copy promises features that do not exist
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): in both catalogs the hero badge no longer says
 "recorrente/recurring", step 1 no longer mentions Google, the flexibility
 value prop no longer offers "mensalmente/monthly", and the "Reserva
@@ -1350,7 +1353,7 @@ removed claims absent); existing component tests still assert behaviour only.
 
 ### B33 — Small correctness and polish findings
 
-**Priority: P2. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P2. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-17): a) footer shows "As minhas reservas" → `/dashboard` when signed
 in (`footer.my_bookings` in pt/en; 2 tests); b) the org switcher renders only
 with ≥2 memberships (test); c) fixed by B22 — a test now asserts no Radix
@@ -1392,7 +1395,7 @@ database; full suites.
 
 ### B34 — An hour of Lisbon inventory is invisible in the calendar (R01 slice)
 
-**Priority: P1. State: DONE on `fix/smoke-findings` (pending PR).** Evidence
+**Priority: P1. State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46).** Evidence
 (2026-09-18): `visibleRange()` in `BookingCalendar.tsx` derives `min`/`max`
 from the returned slots with one hour of padding, clamped to the day, and
 keeps the last known window while the next day loads (fallback 08:00–20:00
