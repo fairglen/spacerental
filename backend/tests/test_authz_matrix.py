@@ -25,9 +25,12 @@ from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.recurrence import RecurrenceFrequency, RecurrenceRule
 from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
+from app.payments import CheckoutKind
 from app.routers import recurrences
 from fastapi.routing import APIRoute
 from sqlalchemy import func, select
+
+from tests.conftest import checkout_completed_event
 
 PUBLIC = "public"  # no authentication by design
 CUSTOMER = "customer"  # get_current_user; ownership or membership decides inside
@@ -314,6 +317,43 @@ class TestAnonymous:
         resp = await _send(client, method, path, org_id=uuid.uuid4())
         assert resp.status_code not in (401, 403), f"{method} {path} -> {resp.status_code}"
 
+    @pytest.mark.parametrize(("method", "path"), _routes(WEBHOOK))
+    async def test_a_webhook_acts_only_on_a_valid_provider_signature(
+        self, client, world, db_session, payments, method, path
+    ):
+        # The provider signature is this class's credential, so not asking for a
+        # token proves nothing. The same bytes that confirm a pending booking
+        # once signed must change nothing unsigned or with a made-up signature.
+        start, end = _slot(14)
+        created = await client.post(
+            f"{API}/bookings",
+            json={
+                "room_id": str(world.room_a.id),
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+            },
+            headers=_as(world.cust_a),
+        )
+        assert created.status_code == 201, created.text
+        booking_id = uuid.UUID(created.json()["booking"]["id"])
+        booking = await _fresh(db_session, Booking, booking_id)
+        payload = checkout_completed_event(
+            session_id=booking.stripe_checkout_session_id,
+            kind=CheckoutKind.booking,
+            reference_id=booking.id,
+            org_id=booking.org_id,
+        )
+        for forged in ({}, {"Stripe-Signature": "t=1,v1=" + "0" * 64}):
+            resp = await client.request(method, path, content=payload, headers=forged)
+            assert resp.status_code == 400, resp.text
+            booking = await _fresh(db_session, Booking, booking_id)
+            assert booking.status is BookingStatus.pending
+        signed = {"Stripe-Signature": payments.sign_payload(payload)}
+        resp = await client.request(method, path, content=payload, headers=signed)
+        assert resp.status_code == 200, resp.text
+        booking = await _fresh(db_session, Booking, booking_id)
+        assert booking.status is BookingStatus.confirmed
+
     async def test_series_routes_do_not_exist_while_the_flag_is_off(
         self, client, world, monkeypatch
     ):
@@ -588,6 +628,8 @@ class TestClientSuppliedFieldsAreIgnored:
         self, client, world, db_session, payments
     ):
         start, end = _slot(12)
+        hold = timedelta(minutes=settings.BOOKING_HOLD_MINUTES)
+        before = datetime.now(tz=UTC)
         resp = await client.post(
             f"{API}/bookings",
             json={
@@ -615,9 +657,7 @@ class TestClientSuppliedFieldsAreIgnored:
         assert booking.package_purchase_id is None
         assert booking.stripe_checkout_session_id != "cs_forged"
         assert booking.hold_expires_at is not None
-        assert booking.hold_expires_at <= datetime.now(tz=UTC) + timedelta(
-            minutes=settings.BOOKING_HOLD_MINUTES
-        )
+        assert before + hold <= booking.hold_expires_at <= datetime.now(tz=UTC) + hold
 
     async def test_an_operator_update_cannot_move_a_row_to_another_org(
         self, client, world, db_session

@@ -1687,9 +1687,12 @@ route added, seven tests failed for the expected reasons, and the code was
 restored. Review follow-up (same day): the org's own operator is now an
 intruder on customer-owned booking and series endpoints, cross-org series
 creation is covered, a misspelt classification is rejected, every public,
-webhook and stub route is swept anonymously, and the hold deadline follows
-`BOOKING_HOLD_MINUTES`; 64 cases, and a second mutation check failed four
-tests for the expected reasons. Full backend suite: 344 passed. Convention
+webhook and stub route is swept anonymously, the webhook acts only on a
+valid provider signature (unsigned and forged events leave a pending
+booking pending, the signed one confirms it), and the hold deadline is
+bounded on both sides by `BOOKING_HOLD_MINUTES`; 65 cases, and two further
+mutation checks failed six tests for the expected reasons. Full backend
+suite: 345 passed. Convention
 going forward: a new route fails `test_every_route_is_classified` until it
 is added to `ROUTES` and covered.
 **Scope:** `backend/tests/test_authz_matrix.py`; no application change is
