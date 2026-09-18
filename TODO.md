@@ -1933,7 +1933,14 @@ failing-first test with the clock pinned past the deadline.
 
 ### S09 — Request schemas are unbounded
 
-**Priority: P1. State: IN PROGRESS on `fix/sec-request-bounds`.**
+**Priority: P1. State: DONE on `fix/sec-request-bounds` (pending PR).** Evidence
+(2026-09-18): `backend/tests/test_request_bounds.py` sends 56 hostile requests
+in three sweeps (anonymous, customer, operator). On main the sweeps fail, with
+31 requests answered 500 and the rest accepted where they should be refused;
+with `backend/app/schemas/bounds.py` applied to every request schema all are
+answered 4xx, and a control proves ordinary operator input, including the
+largest values the limits allow, is still accepted. Full backend suite: 392
+passed. `API_SPEC.md` documents the bounds.
 **Decision recorded (2026-09-18), generous technical limits that change no
 documented journey:** names 1 to 255 characters (the column size); city 100;
 address 500; descriptions 5000; booking and series notes 2000; at most 50
