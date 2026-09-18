@@ -1729,7 +1729,7 @@ as regression tests.
 ### S02 — Authentication and token-handling regression tests
 
 **Priority: P1. State: DONE on `test/sec-authn-regressions` (pending PR).**
-Evidence (2026-09-18): `backend/tests/test_auth_tokens.py` adds 21
+Evidence (2026-09-18): `backend/tests/test_auth_tokens.py` adds 22
 real-PostgreSQL cases and all pass on the code as audited, so token
 validation is sound: the algorithm is pinned, expiry and signature are
 enforced, the user is re-loaded on every request, and a token is read only
