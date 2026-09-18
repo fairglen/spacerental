@@ -149,7 +149,9 @@ class TestLoginGivesNothingAway:
             resp = await client.post(LOGIN, json={"email": "nopass@test.com", "password": password})
             assert resp.status_code == 401, resp.text
 
-    async def test_issued_claims_are_bounded_and_carry_no_secret(self, client, test_user):
+    async def test_issued_claims_are_bounded_and_carry_no_secret(
+        self, client, test_user, test_member
+    ):
         resp = await client.post(LOGIN, json={"email": test_user.email, "password": "password123"})
         assert resp.status_code == 200, resp.text
         claims = jwt.decode(
@@ -157,6 +159,8 @@ class TestLoginGivesNothingAway:
         )
         assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp"}
         assert claims["sub"] == str(test_user.id)
+        # Exact, so nothing can ride along inside a membership either.
+        assert claims["memberships"] == [{"org_id": str(test_member.org_id), "role": "member"}]
         lifetime = datetime.fromtimestamp(claims["exp"], tz=UTC) - datetime.now(tz=UTC)
         assert timedelta(0) < lifetime <= timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
@@ -170,13 +174,23 @@ class TestLoginGivesNothingAway:
         assert registered.status_code == 201, registered.text
         logged_in = await client.post(LOGIN, json={"email": body["email"], "password": password})
         me = await client.get(ME, headers=_bearer(logged_in.json()["access_token"]))
+        # The operator path is a separate branch of registration.
+        operator = await client.post(
+            f"{REGISTER}/operator",
+            json={"email": "secret-operator@test.com", "password": password, "name": "Secret Op"},
+        )
+        assert operator.status_code == 201, operator.text
         stored = await db_session.scalar(
             select(User.password_hash).where(User.email == body["email"])
         )
         assert stored.startswith("$argon2id$")
-        for resp in (registered, logged_in, me):
+        operator_stored = await db_session.scalar(
+            select(User.password_hash).where(User.email == "secret-operator@test.com")
+        )
+        for resp in (registered, logged_in, me, operator):
             assert password not in resp.text
             assert stored not in resp.text
+            assert operator_stored not in resp.text
             assert "password_hash" not in resp.text
 
     @pytest.mark.parametrize("length", [129, 100_000])
