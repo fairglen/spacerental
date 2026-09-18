@@ -56,6 +56,11 @@ async def _confirm_booking(
             Booking.org_id == org_id,
             Booking.stripe_checkout_session_id == session_id,
         )
+        # Serialises concurrent deliveries of the same event: the second one
+        # waits here, then re-reads the row as `confirmed` and is a no-op
+        # instead of a second email and access code.
+        .with_for_update(of=Booking)
+        .execution_options(populate_existing=True)
     )
     booking = result.scalar_one_or_none()
     if booking is None:

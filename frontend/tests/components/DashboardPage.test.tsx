@@ -113,6 +113,10 @@ describe('Dashboard — payment return notice (B25)', () => {
     renderPage()
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent(/pagamento concluído/i)
+    // Bookings and pack purchases return to the same URL, so the notice must
+    // not assert a reservation was confirmed (a pack buyer has none, and a live
+    // webhook may still be in flight).
+    expect(notice).not.toHaveTextContent(/reserva está confirmada/i)
     expect(notice.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
     expect(replace).toHaveBeenCalledWith('/dashboard', expect.anything())
     fireEvent.click(screen.getByRole('button', { name: /fechar/i }))

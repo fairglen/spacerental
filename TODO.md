@@ -710,6 +710,24 @@ checkout can be paid later from the dashboard" and "cancelling on the
 checkout page frees the slot immediately". `BOOKING_HOLD_MINUTES` documented
 in `.env.example`, Compose and README. Remaining C03 scope: sweeper, Stripe
 `checkout.session.expired` webhook, live cancel-URL handling, refunds (O02).
+**Review fixes (2026-09-18, Copilot on PR #46):** the webhook confirm and
+the stub cancel now lock the booking row (`SELECT … FOR UPDATE`), so
+concurrent duplicate deliveries confirm once (new real-PG test fires three
+at once: one handled, one email) and a stale stub tab cannot expire a paid
+row; `StripeGateway.expire_checkout_session` retrieves the session first
+and raises `CheckoutSessionCompletedError` for a paid one, which the resume
+route turns into 409 "Payment already received" while keeping the session
+id so the webhook still matches (test with a fake gateway); the downgrade
+folds `paid_unfulfilled` into `cancelled` instead of `confirmed`, proven on
+the throwaway DB with an overlapping paid_unfulfilled row next to a
+confirmed one (downgrade → both statuses valid, constraint recreated →
+upgrade → check clean); the dashboard success notice no longer asserts a
+reservation is confirmed (pack purchases return to the same URL and a live
+webhook may still be in flight). Known stub limitation left as is: the stub
+derives session ids from the booking id so a retry reuses the same id and a
+stale stub page can still pay it — same row, same amount, no charge; live
+Stripe ids are unique and the superseded session is really expired.
+
 Note for the suite: the full Playwright run sits close to the public rate
 limit (120/min); the two C03 journeys therefore create their holds through
 the authenticated `POST /bookings` (the calendar UI path is covered by the

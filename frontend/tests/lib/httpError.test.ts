@@ -38,6 +38,10 @@ describe('bookingErrorMessage (B31)', () => {
     expect(bookingErrorMessage(httpError(409, 'This time slot is already booked'), 'package')).toMatch(/já está reservado/)
     expect(bookingErrorMessage(httpError(409, 'No active package with 3 hours remaining'), 'package')).toMatch(/horas suficientes/)
   })
+  it('tells a customer whose retry hit an already-paid session to wait for confirmation', () => {
+    expect(bookingErrorMessage(httpError(409, 'Payment already received for this booking; waiting for confirmation'), 'hourly'))
+      .toMatch(/já foi recebido/)
+  })
   it('explains a past start and hours outside opening time', () => {
     expect(bookingErrorMessage(httpError(400, 'start_time cannot be in the past'), 'hourly')).toMatch(/já passou/)
     expect(bookingErrorMessage(httpError(400, "Requested time is outside the room's opening hours"), 'hourly')).toMatch(/horário de funcionamento/)

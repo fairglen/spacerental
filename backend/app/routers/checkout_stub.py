@@ -224,11 +224,15 @@ async def cancel_checkout(
         # is free. Live Stripe's cancel URL is a plain redirect, so there the
         # hold simply lapses at BOOKING_HOLD_MINUTES.
         result = await db.execute(
-            select(Booking).where(
+            select(Booking)
+            .where(
                 Booking.stripe_checkout_session_id == session_id,
                 Booking.status == BookingStatus.pending,
                 Booking.hold_expires_at.is_not(None),
             )
+            # Serialised with the stub `pay` route: after waiting on its lock
+            # the row is re-read and, once confirmed, no longer matches.
+            .with_for_update()
         )
         booking = result.scalar_one_or_none()
         if booking is not None:

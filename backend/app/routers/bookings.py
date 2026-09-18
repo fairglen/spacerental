@@ -28,6 +28,7 @@ from app.models.space import Room
 from app.models.user import User
 from app.payments import (
     CheckoutKind,
+    CheckoutSessionCompletedError,
     PaymentGateway,
     PaymentProviderError,
     get_payment_gateway,
@@ -395,6 +396,13 @@ async def resume_checkout(
     if booking.stripe_checkout_session_id:
         try:
             await gateway.expire_checkout_session(booking.stripe_checkout_session_id)
+        except CheckoutSessionCompletedError:
+            # Paid at the provider, webhook not yet delivered: keep the
+            # session id so that webhook still confirms this row.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payment already received for this booking; waiting for confirmation",
+            ) from None
         except PaymentProviderError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,

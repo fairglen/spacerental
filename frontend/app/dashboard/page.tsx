@@ -116,8 +116,9 @@ export default function DashboardPage() {
               <p>
                 {paymentNotice === 'sucesso' ? (
                   <>
-                    <span className="font-semibold">Pagamento concluído.</span> A tua reserva está confirmada.
-                    Se compraste um pack, as horas já estão disponíveis em{' '}
+                    <span className="font-semibold">Pagamento concluído.</span> Obrigado! Uma reserva aparece
+                    abaixo como confirmada assim que o pagamento for processado (normalmente de imediato); um pack
+                    fica disponível em{' '}
                     <Link href="/dashboard/packages" className="font-medium underline">Os meus packs</Link>.
                   </>
                 ) : (

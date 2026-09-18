@@ -324,3 +324,71 @@ class TestStubCancel:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["booking"]["status"] == "pending"
+
+
+class TestReviewFindings:
+    """Copilot review on PR #46: the C03 paths must be race-safe."""
+
+    async def test_concurrent_duplicate_completions_confirm_once(
+        self, client, auth_headers, test_room, test_member, payments, monkeypatch, emails, locks
+    ):
+        import asyncio
+
+        start = _monday()
+        _pin(monkeypatch, start - timedelta(days=3))
+        booking = (await _book(client, auth_headers, test_room, start)).json()["booking"]
+        payload = checkout_completed_event(
+            session_id=f"cs_stub_{uuid.UUID(booking['id']).hex}",
+            kind=CheckoutKind.booking,
+            reference_id=booking["id"],
+            org_id=test_room.org_id,
+        )
+        headers = {"Stripe-Signature": payments.sign_payload(payload)}
+        responses = await asyncio.gather(
+            *[client.post(WEBHOOK_URL, content=payload, headers=headers) for _ in range(3)]
+        )
+        assert [r.status_code for r in responses] == [200, 200, 200]
+        assert sorted(r.json()["handled"] for r in responses) == [False, False, True]
+        assert (await _mine(client, auth_headers, booking["id"]))["status"] == "confirmed"
+        assert len(emails.sent) == 1
+
+    async def test_stub_cancel_after_payment_does_not_expire_a_paid_booking(
+        self, client, auth_headers, test_room, test_member, payments, monkeypatch
+    ):
+        start = _monday()
+        _pin(monkeypatch, start - timedelta(days=3))
+        created = (await _book(client, auth_headers, test_room, start)).json()
+        session_id = created["checkout_url"].rsplit("/", 1)[-1]
+        assert (
+            await client.post(f"/checkout/stub/{session_id}/pay", follow_redirects=False)
+        ).status_code == 303
+        # A stale checkout tab pressing Cancelar after paying must be a no-op.
+        assert (
+            await client.post(f"/checkout/stub/{session_id}/cancel", follow_redirects=False)
+        ).status_code == 303
+        assert (await _mine(client, auth_headers, created["booking"]["id"]))[
+            "status"
+        ] == "confirmed"
+
+    async def test_resume_refuses_to_replace_a_session_the_provider_reports_completed(
+        self, client, auth_headers, test_room, test_member, payments, monkeypatch
+    ):
+        from app.payments import CheckoutSessionCompletedError
+
+        start = _monday()
+        _pin(monkeypatch, start - timedelta(days=3))
+        booking = (await _book(client, auth_headers, test_room, start)).json()["booking"]
+
+        async def completed(session_id: str) -> None:
+            raise CheckoutSessionCompletedError(session_id)
+
+        # Live Stripe reports the old session as complete (paid, webhook not
+        # yet delivered): the booking must keep its session id so that
+        # webhook still matches, instead of minting a replacement.
+        monkeypatch.setattr(payments, "expire_checkout_session", completed)
+        resp = await client.post(f"/api/v1/bookings/{booking['id']}/checkout", headers=auth_headers)
+        assert resp.status_code == 409, resp.text
+        assert "already" in resp.json()["detail"].lower()
+        assert (await _mine(client, auth_headers, booking["id"]))["status"] == "pending"
+        # And the original session can still be completed by its webhook.
+        assert (await _post_webhook(client, payments, booking, test_room.org_id))["handled"] is True

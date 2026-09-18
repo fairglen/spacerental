@@ -78,6 +78,9 @@ export function bookingErrorMessage(error: unknown, method: BookingPaymentMethod
   const detail = detailOf(error)?.toLowerCase() ?? ''
   switch (status) {
     case 409: {
+      if (detail.includes('already received')) {
+        return 'O pagamento desta reserva já foi recebido. A confirmação aparece em instantes.'
+      }
       const slotTaken = detail.includes('time slot') || detail.includes('horário') || detail.includes('reservado')
       return method === 'package' && !slotTaken
         ? 'O teu pack já não tem horas suficientes para esta reserva.'

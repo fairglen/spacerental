@@ -6,8 +6,8 @@ Create Date: 2026-09-18
 
 `ALTER TYPE ... ADD VALUE` runs inside Alembic's transaction (PostgreSQL 12+
 allows it as long as the new value is not used in the same transaction, and
-this migration does not). The downgrade folds the new statuses back into the
-old ones before recreating the enum, and drops/recreates the
+this migration does not). The downgrade folds both new statuses into `cancelled`
+(neither may hold a slot) before recreating the enum, and drops/recreates the
 `bookings_no_overlap` EXCLUDE constraint around the column retype because its
 predicate references the enum. Applied revision IDs are never renamed; the
 0002_ prefix collision is documented in TODO.md B33h.
@@ -40,9 +40,12 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("bookings", "hold_expires_at")
     # Lossy by nature: an expired hold never held a paid slot, and a
-    # paid-but-unfulfilled row did receive money.
+    # paid-but-unfulfilled row did receive money but, by definition, overlaps
+    # the booking that took its slot — so it cannot become `confirmed` under
+    # `bookings_no_overlap` and folds into `cancelled` (the payment record
+    # is the thing this downgrade loses; O02 owns the refund).
     op.execute("UPDATE bookings SET status = 'cancelled' WHERE status = 'expired'")
-    op.execute("UPDATE bookings SET status = 'confirmed' WHERE status = 'paid_unfulfilled'")
+    op.execute("UPDATE bookings SET status = 'cancelled' WHERE status = 'paid_unfulfilled'")
     op.execute("ALTER TABLE bookings DROP CONSTRAINT bookings_no_overlap")
     op.execute("ALTER TYPE booking_status RENAME TO booking_status_old")
     op.execute(
