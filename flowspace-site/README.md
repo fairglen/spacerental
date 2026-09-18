@@ -482,8 +482,9 @@ returning `send_failed`, check the quota first
 
 Run this before the first deploy, and again after any content/JS change. The
 optional Playwright smoke test below covers a slice of it automatically, but
-this checklist is the actual gate — it is the only thing that covers
-`Code.gs`, which cannot run locally at all.
+this checklist is the actual gate — it is the only thing that covers the
+deployed `Code.gs`, which cannot run locally as a Web App (its logic is
+covered by `tests/code-gs.test.mjs`, see Testing).
 
 **Content and navigation**
 - [ ] Every section's content matches `index.html` verbatim against the spec
@@ -742,3 +743,20 @@ remain the actual gate.
 No pytest/Vitest suite applies here — there's no Python and no framework
 components, just static HTML/CSS/JS. The manual checklist above is the
 actual verification gate, proportionate to what this deliverable is.
+
+One exception: `Code.gs` has its own regression tests (S27). The script
+cannot run locally as a Web App, but its logic can: the tests load the file
+into a Node VM sandbox with in-memory fakes of `MailApp`, `CacheService`,
+`PropertiesService`, `LockService`, `ContentService` and `Utilities`, and call
+`doPost()` directly. They pin the mail-security invariants above (constant
+recipient, no free text in a header, control characters refused before a send
+slot is spent), the payload and length checks, the honeypot and both rate
+limits. No package, no network, nothing sent to the deployed script:
+
+```bash
+node --test flowspace-site/tests/code-gs.test.mjs
+```
+
+Run it after every edit to `Code.gs`, before pasting the file into the Apps
+Script editor. It proves the logic, not the deployment: the checklist above
+still applies.
