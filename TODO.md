@@ -37,6 +37,11 @@ on 2026-09-18; see each item for evidence. Still open: B35 and B36 (QUEUED),
 the C04 residual (Next 15 major upgrade, a decision), and the R01/O03
 evidence, which changed no state.
 
+**Security hardening loop (2026-09-18):** active by user assignment. It audits
+the repository unit by unit and records its work as the S-series near the end
+of this file; ordinary bugs it finds continue the B-series. Each branch starts
+with a docs commit for its item and ends with the evidence.
+
 States used below:
 
 - **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
@@ -1652,6 +1657,45 @@ provider failures; recover without duplicate financial effects or lost revoke
 capability. Demonstrate accurate operator statuses, revenue reconciliation and
 audit history. Record unavoidable external-delivery limits and manual recovery
 procedures. Required suites and migration checks pass without external credentials.
+
+## Security hardening (S-series)
+
+**State: ACTIVE (user assignment 2026-09-18).** A recurring audit-and-harden
+loop works through the repository unit by unit: authorization and tenant
+isolation, authentication, payments, input validation, rate limits,
+configuration, data exposure, frontend, supply chain, containers,
+`flowspace-site/`, then a bug hunt and a hardening backlog. Every finding is
+proven with a failing test before it is fixed. Every hardening change names the
+threat it mitigates and ships a test for the property. Security items use `S`
+IDs; ordinary bugs continue the `B` series. Decisions that are the user's
+(auth and session model, limits that change what a customer can do, dependency
+majors, production infrastructure) are recorded with options and a
+recommendation and held. This repository is public, so an unfixed finding is
+described here only in general terms until its fix merges.
+
+### S01 — Authorization and tenant-isolation regression matrix
+
+**Priority: P1. State: IN PROGRESS.** Branch: `test/sec-authz-matrix`.
+**Scope:** `backend/tests/test_authz_matrix.py`; no application change is
+expected. **Why:** tenant isolation is enforced by hand in every handler
+(CLAUDE.md §4; PostgreSQL RLS is deferred as D01) and nothing fails today when
+a new route forgets its check. **Dependencies:** none.
+
+**Acceptance:** every API route carries a classification (public, customer,
+operator, webhook, stub checkout) and a test fails when a route is added
+without one or when its authentication dependency does not match it. For six
+personas (anonymous, customer of org A, customer of org B, operator of A,
+operator of B, a user who operates A and is a customer of B): every operator
+route refuses the wrong organization, and refuses another organization's
+space, room, availability, booking or package without changing it; customer
+routes refuse another customer's booking, purchase and series; lists return
+only the caller's or the organization's rows; client-supplied `org_id`,
+`user_id`, `status`, amounts and roles are ignored; a stale role claim in a
+token grants nothing.
+
+**Validation:** real-PostgreSQL pytest through the `client` fixture. A case
+that fails on main becomes its own S item with a fix; the cases that pass stay
+as regression tests.
 
 ## Non-roadmap deliverable — flowspace-site marketing page
 
