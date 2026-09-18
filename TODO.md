@@ -2167,7 +2167,13 @@ proxies and TLS are the owner's decisions.
 
 ### S27 — Regression tests for the contact form's Apps Script
 
-**Priority: P1. State: IN PROGRESS on `test/sec-flowspace-appsscript`.**
+**Priority: P1. State: DONE on `test/sec-flowspace-appsscript` (pending PR).**
+Evidence (2026-09-18): `flowspace-site/tests/code-gs.test.mjs` adds 38 cases
+with Node's built-in runner and all pass on the script as committed. A
+mutation check proved they can fail: with the visitor's name put back in
+the subject, the control-character check skipped, the recipient read from
+the request and the honeypot dropped, 26 of 38 failed, and the script was
+restored. `Code.gs` itself is unchanged, and so is every published file.
 **Scope:** `flowspace-site/tests/code-gs.test.mjs`; no change to `Code.gs` or
 to the deployed site. **Why:** `apps-script/Code.gs` is the only enforcement
 point of the public contact form, and it carries the header-injection fix from
