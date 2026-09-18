@@ -672,9 +672,12 @@ checkout can be paid later from the dashboard" and "cancelling on the
 checkout page frees the slot immediately". `BOOKING_HOLD_MINUTES` documented
 in `.env.example`, Compose and README. Remaining C03 scope: sweeper, Stripe
 `checkout.session.expired` webhook, live cancel-URL handling, refunds (O02).
-Note for the suite: the booking spec now sits close to the public rate
-limit (120/min); the C03 journeys avoid re-opening the calendar for that
-reason.
+Note for the suite: the full Playwright run sits close to the public rate
+limit (120/min); the two C03 journeys therefore create their holds through
+the authenticated `POST /bookings` (the calendar UI path is covered by the
+earlier booking tests) and assert the dashboard, stub checkout and
+availability outcomes. A fresh-stack full run (27 tests) passes with no
+429s; with the calendar-driven versions the last spec was throttled.
 
 ### C04 — Patch dependencies and validate a production build
 

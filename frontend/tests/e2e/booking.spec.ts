@@ -558,17 +558,22 @@ test.describe('Reservas — fluxos reais', () => {
 
   test('an abandoned checkout can be paid later from the dashboard (C03)', async () => {
     // Sala Calma 17:00 on day+4: no other test books it on any offset, even
-    // when a skipped Sunday makes offsets 3 and 4 the same Monday.
+    // when a skipped Sunday makes offsets 3 and 4 the same Monday. The hold
+    // is created through the authenticated API rather than the calendar UI
+    // (covered by the tests above) to keep the public rate-limit budget for
+    // the specs that run after this one.
     const offset = bookableDayOffset(4)
-    await openRoomCalendar(page, 'Sala Calma')
-    await goToDay(page, offset)
-    await dragHours(page, 17, 18)
-    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
-    await chooseHourly(page)
-    await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
-    await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
+    const roomId = await roomIdByName(api, 'Sala Calma')
+    const res = await api.post(apiUrl('/bookings'), {
+      headers: auth(token),
+      data: { room_id: roomId, start_time: utcHour(offset, 17).toISOString(), end_time: utcHour(offset, 18).toISOString() },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    const { booking, checkout_url } = await res.json()
+    created.push(booking.id)
+    expect(checkout_url).toMatch(/\/checkout\/stub\/cs_stub_/)
 
-    // Abandon: leave the payment page without paying or cancelling.
+    // Abandon: never visit the payment page.
     await page.goto('/dashboard')
     const card = bookingCard(page, 'Sala Calma', utcHour(offset, 17), utcHour(offset, 18))
     await expect(card).toHaveCount(1, { timeout: 10000 })
@@ -586,20 +591,19 @@ test.describe('Reservas — fluxos reais', () => {
       (b) => b.start_time === utcHour(offset, 17).toISOString().replace('.000Z', 'Z') && b.status !== 'cancelled',
     )
     expect(mine, 'paying later must not create a second booking').toHaveLength(1)
-    created.push(mine[0].id)
   })
 
   test('cancelling on the checkout page frees the slot immediately (C03)', async () => {
     const offset = bookableDayOffset(4)
     const roomId = await roomIdByName(api, 'Sala Calma')
-    await openRoomCalendar(page, 'Sala Calma')
-    await goToDay(page, offset)
-    await dragHours(page, 18, 19)
-    await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
-    await chooseHourly(page)
-    await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
-    await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
+    const res = await api.post(apiUrl('/bookings'), {
+      headers: auth(token),
+      data: { room_id: roomId, start_time: utcHour(offset, 18).toISOString(), end_time: utcHour(offset, 19).toISOString() },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+    const { booking, checkout_url } = await res.json()
 
+    await page.goto(checkout_url)
     await page.getByRole('button', { name: /^Cancelar$/ }).click()
     await page.waitForURL(/\/dashboard/, { timeout: 20000 })
     await expect(page.getByRole('status')).toContainText(/Pagamento não concluído/)
@@ -607,26 +611,17 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(card).toContainText('Expirada', { timeout: 10000 })
     await expect(card.getByRole('button', { name: /Tentar pagar de novo/i })).toBeVisible()
 
-    // The hour is available again, both to the API and on the calendar.
+    // The hour is available again. The calendar paints straight from this
+    // endpoint (B24/B26) and the visitor test above proves the tint follows it.
     const day = utcHour(offset, 0).toISOString().slice(0, 10)
     const { slots } = await (await api.get(apiUrl(`/rooms/${roomId}/availability`), { params: { date: day } })).json()
-    // Availability serialises instants with an explicit offset, so compare
-    // timestamps rather than strings.
     const freed = slots.find((s: { start: string }) => new Date(s.start).getTime() === utcHour(offset, 18).getTime())
     expect(freed?.available).toBe(true)
-    // The calendar paints straight from this endpoint (B24/B26), and the
-    // visitor test above already proves the tint follows it; re-opening the
-    // calendar here would only spend public rate-limit budget the series
-    // test after this one needs.
 
     // An expired hold holds nothing, so the member API refuses to cancel it;
     // clear it as the operator so reruns do not accumulate cards.
-    const expired = (await myBookings(api, token)).find(
-      (b) => b.start_time === utcHour(offset, 18).toISOString().replace('.000Z', 'Z') && b.status === 'expired',
-    )
-    expect(expired).toBeTruthy()
-    const admin = await api.put(apiUrl(`/admin/bookings/${expired!.id}`), {
-      headers: auth(token), params: { org_id: expired!.org_id }, data: { status: 'cancelled' },
+    const admin = await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
+      headers: auth(token), params: { org_id: booking.org_id }, data: { status: 'cancelled' },
     })
     expect(admin.ok(), await admin.text()).toBeTruthy()
   })
