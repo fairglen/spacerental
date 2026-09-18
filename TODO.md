@@ -1675,7 +1675,18 @@ described here only in general terms until its fix merges.
 
 ### S01 — Authorization and tenant-isolation regression matrix
 
-**Priority: P1. State: IN PROGRESS.** Branch: `test/sec-authz-matrix`.
+**Priority: P1. State: DONE on `test/sec-authz-matrix` (pending PR).** Evidence
+(2026-09-18): `backend/tests/test_authz_matrix.py` classifies all 39 API routes
+and adds 51 real-PostgreSQL cases; all pass on main `c096e0c`, so the audit of
+authorization and tenant isolation found no flaw: every operator handler
+filters its target by the caller's `org_id`, the update schemas expose no
+owner or organization field, and customer routes check ownership. A mutation
+check proved the suite can fail: with the room org filter, the booking
+ownership check and the operator role filter removed and one unclassified
+route added, seven tests failed for the expected reasons, and the code was
+restored. Full backend suite: 331 passed. Convention going forward: a new
+route fails `test_every_route_is_classified` until it is added to `ROUTES`
+and covered.
 **Scope:** `backend/tests/test_authz_matrix.py`; no application change is
 expected. **Why:** tenant isolation is enforced by hand in every handler
 (CLAUDE.md §4; PostgreSQL RLS is deferred as D01) and nothing fails today when
