@@ -183,10 +183,17 @@ class TestWhatACustomerSees:
         outsider = User(
             email="outsider@test.com", name="Outsider", password_hash=hash_password("password123")
         )
-        db_session.add_all([other_org, outsider])
+        # "That org's operators" means both operator roles, not only the owner.
+        manager = User(
+            email="manager@test.com", name="Manager", password_hash=hash_password("password123")
+        )
+        db_session.add_all([other_org, outsider, manager])
         await db_session.flush()
-        db_session.add(
-            OrganizationMember(org_id=other_org.id, user_id=outsider.id, role=MemberRole.owner)
+        db_session.add_all(
+            [
+                OrganizationMember(org_id=other_org.id, user_id=outsider.id, role=MemberRole.owner),
+                OrganizationMember(org_id=test_org.id, user_id=manager.id, role=MemberRole.admin),
+            ]
         )
         booking = await _confirmed_booking(
             db_session, org_id=test_org.id, room=test_room, user=test_user, hour=10, notes="x"
@@ -214,6 +221,11 @@ class TestWhatACustomerSees:
         seen = {b["id"]: b["access_code"] for b in operator.json()["bookings"]}
         assert seen.pop(str(booking.id)) == issued.code
         assert list(seen.values()) == [None]
+        as_admin = await client.get(
+            f"{API}/admin/bookings", params=org, headers=_headers(manager, "admin")
+        )
+        assert as_admin.status_code == 200, as_admin.text
+        assert issued.code in {b["access_code"] for b in as_admin.json()["bookings"]}
 
         same_org_customer = await client.get(f"{API}/bookings/me", headers=_headers(neighbour))
         other_operator_here = await client.get(
