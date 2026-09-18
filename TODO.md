@@ -2053,7 +2053,17 @@ named for a deployment stage.
 
 ### S19 — Data-exposure regression tests
 
-**Priority: P2. State: IN PROGRESS on `test/sec-exposure-regressions`.**
+**Priority: P2. State: DONE on `test/sec-exposure-regressions` (pending PR).**
+Evidence (2026-09-18): `backend/tests/test_data_exposure.py` adds 6
+real-PostgreSQL cases and all pass on the code as audited: public responses
+carry exactly their published fields, availability is start, end and a
+boolean, a customer's list nests nobody else's data, a door code reaches its
+owner and that org's operators only, operators see customers through the
+user schema, and an unhandled error answers without internals. A mutation
+check proved the cases can fail: with a password hash on the user schema, an
+extra slot field, the owner filter removed from "my bookings" and debug mode
+on, five tests failed for those reasons, and the code was restored. Full
+backend suite: 388 passed. The audit's one finding is B41 below.
 **Scope:** `backend/tests/test_data_exposure.py`; no application change.
 **Why:** response schemas are the only thing between a new model column and a
 public response, and nothing pins what each audience may see.
@@ -2064,6 +2074,17 @@ never nest another person's data; that a door code reaches only its owner and
 that org's operators; and that an unhandled error answers without internals.
 A case that fails on main becomes its own item. **Validation:** pytest through
 the `client` fixture, plus a mutation check.
+
+### B41 — Availability is still served for a room whose space is deactivated
+
+**Priority: P3. State: TODO (queued for the fix phase of the security loop).**
+Bug (2026-09-18, data-exposure audit), severity Low: deactivating a space hides
+its detail page and makes its rooms unbookable, but the public availability
+route checks only the room, so the calendar stays readable by room id and
+advertises slots that `POST /bookings` then refuses. **Scope:**
+`backend/app/routers/spaces.py`, tests. **Acceptance:** availability answers
+404 for a room whose space is inactive, exactly as for an inactive room;
+failing-first test.
 
 ## Non-roadmap deliverable — flowspace-site marketing page
 
