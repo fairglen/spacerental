@@ -30,11 +30,12 @@ blocker.
 
 **Smoke-test findings (2026-09-17):** a browser smoke test of main `cced0f4`
 (fresh customer + seeded admin, stub mode, production build) found the gaps
-recorded as B22–B36 below and as evidence on C03/C04/C06/C07/R01/O03. They
-were fixed on `fix/smoke-findings` and merged as `84e9b12`
-([PR #46](https://github.com/fairglen/spacerental/pull/46)) on 2026-09-18;
-see each item for evidence. The Next 15 major upgrade recorded under C04
-remains an open decision.
+recorded as B22–B36 below and as evidence on C03/C04/C06/C07/R01/O03.
+B22–B34, the C03 hold slice, C06 and C07 were fixed on `fix/smoke-findings`
+and merged as `84e9b12` ([PR #46](https://github.com/fairglen/spacerental/pull/46))
+on 2026-09-18; see each item for evidence. Still open: B35 and B36 (QUEUED),
+the C04 residual (Next 15 major upgrade, a decision), and the R01/O03
+evidence, which changed no state.
 
 States used below:
 
@@ -1088,7 +1089,7 @@ from the response; the 24h rule stated in the dialog up front; Cancel disabled
 or hidden for ineligible bookings with a visible reason. Backend stays
 authoritative; no refund promise (O02).
 
-**State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46), 2026-09-17.** Delivered:
+**State: DONE — merged as `84e9b12` in [PR #46](https://github.com/fairglen/spacerental/pull/46) on 2026-09-18 (delivered 2026-09-17).** Delivered:
 `cancellationEligibility()` in `lib/utils.ts` mirrors `validate_cancellation`
 (eligible iff start − now ≥ 24h and not cancelled/completed); the dashboard
 disables Cancel with the visible reason, states the rule in the dialog, and on
