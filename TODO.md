@@ -1799,7 +1799,7 @@ mixed-case account keeps working; both behaviours have a failing-first test.
 
 ### S05 — Payment, webhook and hold regression tests
 
-**Priority: P1. State: DONE on `test/sec-payment-regressions` (pending PR).**
+**Priority: P1. State: MERGED (PR #50, `4ea1b4f`).**
 Evidence (2026-09-18): `backend/tests/test_payment_integrity.py` adds 12
 real-PostgreSQL cases and all pass on the code as audited: events are bound
 to booking, org and session together, amounts are computed server-side, live
@@ -1924,6 +1924,146 @@ first reconciles the row, which is why the common path works. **Scope:**
 `backend/app/routers/bookings.py`, tests. **Acceptance:** after pay-now the row
 is `pending` with a live deadline and blocks the slot for everyone else;
 failing-first test with the clock pinned past the deadline.
+
+### S09 — Request schemas are unbounded
+
+**Priority: P1. State: TODO (first Medium of the security loop's fix phase).**
+Finding (2026-09-18, input-validation audit), severity Medium: almost no request
+field carries a bound, so over-long, out-of-range or otherwise unstorable input
+reaches the database or date arithmetic and is answered with a server error
+instead of 422. Some of it is reachable without an account, through the
+rate-limited registration routes; most needs a customer or operator account.
+Every failing transaction rolls back, so nothing is corrupted. A few accepted
+operator values also break a later customer request. **Scope:**
+`backend/app/schemas/*.py`, paging parameters in `backend/app/routers/admin.py`,
+tests. **Acceptance:** every string has a length bound matching its column,
+every number a range that fits its column and makes sense, NUL bytes and
+explicit nulls for required columns are refused, dates have a generous upper
+bound, and a sweep of hostile requests across anonymous, customer and operator
+routes answers nothing at or above 500. The bounds are generous technical
+limits that change no documented journey; the numbers are recorded here when
+the fix lands. `extra="forbid"` belongs to the hardening phase.
+**Validation:** a failing-first sweep test per audience, plus the full backend
+suite.
+
+### S10 — The cancellation email does not escape operator-controlled names
+
+**Priority: P3. State: TODO (queued for the fix phase of the security loop).**
+Finding (2026-09-18, input-validation audit), severity Low: one of the two
+transactional emails builds its HTML body without escaping text that an
+operator typed, while the other escapes it. Mail clients run no script, so the
+effect is limited to injected markup in a message sent from the platform's own
+address. **Scope:** `backend/app/email.py`, unit tests. **Acceptance:** both
+builders escape every interpolated value; a failing-first unit test with
+hostile markup, and the existing builder stays covered as the control.
+
+### S11 — The `callbackUrl` check can be bypassed
+
+**Priority: P1. State: TODO (queued for the fix phase of the security loop).**
+Finding (2026-09-18, input-validation audit), severity Medium: the same-origin
+check added for B28 can be bypassed, so a crafted sign-in or sign-up link can
+send a customer to another site after they authenticate. No token travels with
+the redirect. **Scope:** `frontend/lib/navigation.ts`, Vitest, one Playwright
+case. **Acceptance:** every candidate is resolved against the current origin
+and refused unless the origin is ours; values carrying characters that URL
+parsers remove or reinterpret are refused outright; failing-first unit tests,
+and a browser case proving the customer stays on the site.
+
+### S12 — The forwarded-address option trusts the wrong entry
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Finding (2026-09-18, rate-limit audit), severity Medium, only with the
+non-default `RATE_LIMIT_TRUST_FORWARDED_FOR=true`: the limiter's choice of
+address is safe behind a proxy that overwrites the header and unsafe behind one
+that appends to it, which is the common default. **Scope:**
+`backend/app/ratelimit.py`, `backend/app/config.py`, tests, README.
+**Acceptance:** the address is taken a configurable number of trusted hops from
+the right (default 1); a failing-first test with a two-entry header; the
+documentation says which proxy configurations are safe.
+
+### S13 — Password hashing runs on the event loop
+
+**Priority: P1. State: TODO (queued for the fix phase of the security loop).**
+Finding (2026-09-18, rate-limit audit), severity Medium: Argon2 is deliberately
+expensive, and it runs inline in the async login and registration handlers, so
+every other request waits while one password is hashed. The auth rate tier
+bounds this per address only. **Scope:** `backend/app/routers/auth.py`,
+`backend/app/auth.py`, tests. **Acceptance:** hashing runs off the event loop
+behind a small concurrency cap (each hash holds 64 MB), proven by a
+failing-first test in which another request completes while a login is
+verifying. Parameters, limits and responses do not change.
+
+### S14 — Every sign-in through the UI shares one rate-limit budget
+
+**Priority: P2. State: HOLD: needs a small design decision (links to C08).**
+Finding (2026-09-18, rate-limit audit), severity Medium for availability:
+NextAuth signs customers in from the Next.js server, so the API sees one
+address for all of them and they share the auth tier's budget. **Options:** (a)
+`authorize()` forwards the caller's address and the API trusts it only together
+with a shared internal secret; (b) throttle sign-in per caller in the Next.js
+layer and exempt the Next.js server at the API; (c) throttle per account, which
+is lockout and therefore the owner's call. **Recommendation:** (a), the
+smallest change that keeps one limiter; it adds a setting whose development
+default the production interlock must refuse. **Exposure while held:** a few
+failed sign-ins by anyone can lock every customer out of signing in, and C08
+notes that the form then reports a wrong password.
+
+### S15 — No request body limit
+
+**Priority: P3. State: TODO (hardening phase, request bounds).** Finding
+(2026-09-18, rate-limit audit), severity Low: nothing bounds the size of a
+request body, including on anonymous routes and the webhook. The limiter
+rejects throttled callers before the body is read, so the cost applies to
+allowed requests only. **Acceptance:** an ASGI-level limit refuses an oversized
+body by declared and by streamed size with 413, with a failing-first test;
+production proxies should cap too.
+
+### S16 — The rate limiter never forgets an address
+
+**Priority: P3. State: TODO (hardening phase).** Finding (2026-09-18, rate-limit
+audit), severity Low: hits age out of the limiter's table but its keys do not,
+so memory grows with every address ever seen. **Acceptance:** a key is dropped
+when its window empties; failing-first unit test.
+
+### S17 — Nothing distinguishes production from a laptop
+
+**Priority: P1 before any deployment. State: TODO (hardening phase, production
+interlock).** Recorded by the configuration audit (2026-09-18): the development
+defaults all work silently. They include a published signing key and NextAuth
+secret, stub payment, email and lock gateways (the stub checkout confirms
+without payment and its webhook secret is public), development database
+credentials, localhost CORS and return URLs, a seed script that creates an
+owner with a published password, and frontend API URLs that fall back to
+localhost. The repository and its history contain no real secret. The
+application has no deployment today. **Acceptance:** an explicit `ENVIRONMENT`
+setting, `development` by default; in `production` the backend refuses to start
+on any of the defaults above and `seed.py` refuses to run, and the frontend
+refuses a missing API URL and the development NextAuth secret; one test per
+refusal; development and CI behaviour unchanged.
+
+### S18 — Settings that fail open are accepted at startup
+
+**Priority: P3. State: TODO (hardening phase).** Finding (2026-09-18,
+configuration audit), severity Low: several numeric settings accept values
+that silently switch a protection off or break the application, where
+`BOOKING_HOLD_MINUTES` already refuses them. **Acceptance:** positive bounds on
+the rate-limit numbers, the token lifetime and the lock timeout, with a
+failing-first test per setting; `.gitignore` also covers environment files
+named for a deployment stage.
+
+### S19 — Data-exposure regression tests
+
+**Priority: P2. State: IN PROGRESS on `test/sec-exposure-regressions`.**
+**Scope:** `backend/tests/test_data_exposure.py`; no application change.
+**Why:** response schemas are the only thing between a new model column and a
+public response, and nothing pins what each audience may see.
+**Dependencies:** none. **Acceptance:** real-PostgreSQL tests pin the exact
+fields of every public response and of the user data an operator sees; prove
+that availability reveals nothing about who booked; that a customer's lists
+never nest another person's data; that a door code reaches only its owner and
+that org's operators; and that an unhandled error answers without internals.
+A case that fails on main becomes its own item. **Validation:** pytest through
+the `client` fixture, plus a mutation check.
 
 ## Non-roadmap deliverable — flowspace-site marketing page
 
