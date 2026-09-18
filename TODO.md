@@ -421,7 +421,9 @@ repeating registration. Validate failed/throwing sign-in component behavior.
 
 ### B16 — Test database health probe logs a missing database repeatedly
 
-**Priority: P2. State: IN PROGRESS.** Branch: `fix/test-db-health-probe`.
+**Priority: P2. State: DONE — merged as `c7d810a` in [PR #36](https://github.com/fairglen/spacerental/pull/36)
+(`docker-compose.test.yml` now probes `-d $$POSTGRES_DB`). The same mismatch
+in the two CI workflows is tracked separately as B20 below.** Branch: `fix/test-db-health-probe`.
 Confirmed still open on 2026-09-10 by reading `docker-compose.test.yml`: the
 healthcheck still runs `pg_isready -U spacerental` against the default database
 rather than the actual test database. Observed during C01
@@ -513,13 +515,15 @@ closed, so it never reached main. Restored here on 2026-09-14.
 **Priority: P2. State: DONE — this PR.** Discovered 2026-09-14 while reviewing
 why [PR #40](https://github.com/fairglen/spacerental/pull/40) (a static-HTML-only
 change under `flowspace-site/`) showed a failing `Lint / python` check.
-`.github/workflows/lint.yml` was the only workflow declared as bare
-`on: [push, pull_request]` with no `paths:` filter, so `ruff check backend` ran
-against every branch regardless of what it touched, and reported main's
-pre-existing `E501` failure as that PR's red X. Fixed by giving the workflow the
-same push/pull_request path filters the other workflows already use. The filter
-includes root `ruff.toml` as well as `backend/**`, since the Ruff configuration
-lives at the repository root and a change to it must still trigger the job.
+`.github/workflows/lint.yml` was declared as bare `on: [push, pull_request]`
+with no `paths:` filter (`e2e.yml` is also unfiltered, but it does not run
+`ruff check backend`), so the lint job ran against every branch regardless of
+what it touched, and reported main's pre-existing `E501` failure as that PR's
+red X. Fixed by giving the workflow the same push/pull_request path filters the
+backend-tests, frontend-tests and migrations workflows use. The filter includes
+root `ruff.toml` and `.pre-commit-config.yaml` as well as `backend/**`: the Ruff
+configuration lives at the repository root and the hook pins the same Ruff
+version as the workflow, so a change to either must still trigger the job.
 Verified against Q00's finding that main carries no required-status-check
 configuration, so a skipped run cannot leave a pull request stuck pending.
 
