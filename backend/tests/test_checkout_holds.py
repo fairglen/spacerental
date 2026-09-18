@@ -384,7 +384,9 @@ class TestReviewFindings:
 
         # Live Stripe reports the old session as complete (paid, webhook not
         # yet delivered): the booking must keep its session id so that
-        # webhook still matches, instead of minting a replacement.
+        # webhook still matches, instead of minting a replacement. Both
+        # provider lookups can report it, whichever the route reaches first.
+        monkeypatch.setattr(payments, "get_checkout_url", completed)
         monkeypatch.setattr(payments, "expire_checkout_session", completed)
         resp = await client.post(f"/api/v1/bookings/{booking['id']}/checkout", headers=auth_headers)
         assert resp.status_code == 409, resp.text
@@ -540,3 +542,106 @@ class TestSecondReview:
         assert (await _mine(client, auth_headers, booking["id"]))["status"] == "cancelled"
         assert (await _availability(client, test_room, start))[10] is True
         assert len(emails.sent) == 2  # the confirmation and the cancellation, nothing more
+
+
+class TestThirdReview:
+    """Copilot's third pass on PR #46."""
+
+    def test_hold_minutes_must_be_positive(self):
+        import pytest
+        from app.config import Settings
+        from pydantic import ValidationError
+
+        for bad in (0, -5):
+            with pytest.raises(ValidationError):
+                Settings(BOOKING_HOLD_MINUTES=bad)
+        assert Settings(BOOKING_HOLD_MINUTES=1).BOOKING_HOLD_MINUTES == 1
+
+    async def test_admin_pending_to_pending_keeps_the_deadline_and_packages_stay_free(
+        self,
+        client,
+        auth_headers,
+        test_room,
+        test_member,
+        payments,
+        monkeypatch,
+        db_session,
+        test_org,
+        test_user,
+    ):
+        start = _monday()
+        t0 = start - timedelta(days=3)
+        _pin(monkeypatch, t0)
+        hold = (await _book(client, auth_headers, test_room, start)).json()["booking"]
+        admin = await _admin_headers(db_session, test_org)
+        _pin(monkeypatch, t0 + timedelta(minutes=10))
+        # Re-asserting `pending` must not extend an abandoned hold's life.
+        resp = await client.put(
+            f"/api/v1/admin/bookings/{hold['id']}",
+            params={"org_id": str(test_org.id)},
+            json={"status": "pending"},
+            headers=admin,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["booking"]["hold_expires_at"] == hold["hold_expires_at"]
+
+        # A package-paid booking is never a checkout hold, whatever its status.
+        pkg_row = Booking(
+            org_id=test_org.id,
+            room_id=test_room.id,
+            user_id=test_user.id,
+            start_time=start + timedelta(hours=2),
+            end_time=start + timedelta(hours=3),
+            duration_hours=Decimal("1.00"),
+            total_amount=Decimal("11.00"),
+            status=BookingStatus.cancelled,
+            payment_method=PaymentMethod.package,
+        )
+        db_session.add(pkg_row)
+        await db_session.commit()
+        await db_session.refresh(pkg_row)
+        resp = await client.put(
+            f"/api/v1/admin/bookings/{pkg_row.id}",
+            params={"org_id": str(test_org.id)},
+            json={"status": "pending"},
+            headers=admin,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["booking"]["hold_expires_at"] is None
+
+    async def test_pay_now_on_a_live_hold_returns_the_open_session_without_expiring_it(
+        self, client, auth_headers, test_room, test_member, payments, monkeypatch
+    ):
+        start = _monday()
+        t0 = start - timedelta(days=3)
+        _pin(monkeypatch, t0)
+        created = (await _book(client, auth_headers, test_room, start)).json()
+        expired_ids: list[str] = []
+        original = payments.expire_checkout_session
+
+        async def recording(session_id: str) -> None:
+            expired_ids.append(session_id)
+            await original(session_id)
+
+        monkeypatch.setattr(payments, "expire_checkout_session", recording)
+        # Two tabs press "Pagar agora" while the hold is live: neither may
+        # invalidate the session the other was just sent to.
+        first = await client.post(
+            f"/api/v1/bookings/{created['booking']['id']}/checkout", headers=auth_headers
+        )
+        second = await client.post(
+            f"/api/v1/bookings/{created['booking']['id']}/checkout", headers=auth_headers
+        )
+        assert first.status_code == second.status_code == 200
+        assert (
+            first.json()["checkout_url"] == second.json()["checkout_url"] == created["checkout_url"]
+        )
+        assert expired_ids == []
+
+        # Once lapsed, the retry really does replace the session.
+        _pin(monkeypatch, t0 + timedelta(minutes=30))
+        retry = await client.post(
+            f"/api/v1/bookings/{created['booking']['id']}/checkout", headers=auth_headers
+        )
+        assert retry.status_code == 200, retry.text
+        assert expired_ids == [created["checkout_url"].rsplit("/", 1)[-1]]

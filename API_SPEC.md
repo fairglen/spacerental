@@ -250,8 +250,11 @@ type Booking = {
   status: "pending" | "confirmed" | "cancelled" | "completed" | "expired" | "paid_unfulfilled"
   payment_method: "hourly" | "package"
   notes?: string
-  // Deadline of an unpaid checkout hold (C03). `null` when the row never
-  // expires: package bookings, series occurrences, and every non-pending row.
+  // Deadline of an unpaid checkout hold (C03). `null` for package bookings,
+  // series occurrences and any booking once it is confirmed. It is kept on
+  // `expired` rows and on a hold the customer cancelled while still unpaid:
+  // that marker is how a late `checkout.session.completed` is recognised as
+  // paying an unpaid hold (never a cancelled paid booking).
   hold_expires_at: string | null
   room?: Room
   user?: User

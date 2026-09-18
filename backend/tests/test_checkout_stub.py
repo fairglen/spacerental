@@ -59,6 +59,9 @@ class _NotAStubGateway(PaymentGateway):
     async def create_checkout_session(self, **kwargs):
         raise NotImplementedError
 
+    async def get_checkout_url(self, session_id: str) -> str | None:
+        raise NotImplementedError
+
     async def expire_checkout_session(self, session_id: str) -> None:
         raise NotImplementedError
 

@@ -153,3 +153,20 @@ describe('Pricing treats the rooms request as part of the load (review)', () => 
     await waitFor(() => expect(hourly).toHaveTextContent('11,00'))
   })
 })
+
+describe('Pricing shares the landing page spaces cache (review)', () => {
+  it('does not request /spaces again when SpaceCards already cached it', async () => {
+    vi.mocked(useSession).mockReturnValue({ data: null, status: 'unauthenticated' } as any)
+    vi.mocked(spacesApi.list).mockClear()
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } })
+    queryClient.setQueryData(['spaces'], [space])
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Pricing />
+      </QueryClientProvider>,
+    )
+    await screen.findByRole('heading', { name: pack10.name })
+    expect(spacesApi.list).not.toHaveBeenCalled()
+  })
+})

@@ -431,8 +431,15 @@ async def admin_update_booking(
     # (a series occurrence stays deadline-less for the operator); any other
     # status holds no checkout hold.
     if body.status is BookingStatus.pending:
-        if booking.recurrence_rule_id is None:
+        payable_hold = (
+            booking.payment_method is PaymentMethod.hourly and booking.recurrence_rule_id is None
+        )
+        if payable_hold and previous_status is not BookingStatus.pending:
             booking.hold_expires_at = now + timedelta(minutes=settings.BOOKING_HOLD_MINUTES)
+        elif not payable_hold:
+            booking.hold_expires_at = None
+        # An already-pending hold keeps its deadline: re-asserting `pending`
+        # must not let an operator keep an abandoned hold alive indefinitely.
     else:
         booking.hold_expires_at = None
     await db.flush()

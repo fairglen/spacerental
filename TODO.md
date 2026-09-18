@@ -658,9 +658,12 @@ confirmed and abandon → slot bookable again.
    and `status := expired`, releasing the slot immediately while keeping the
    same state machine as live Stripe, where the cancel URL is a plain
    redirect and the hold lapses at (1). Live therefore relies on (1) + (4).
-6. *Resume/retry* — `POST /bookings/{id}/checkout` (owner only). Both a live
-   `pending` hold and an `expired` one get a **fresh** Checkout Session for
-   the same row after the previous session is expired at the gateway
+6. *Resume/retry* — `POST /bookings/{id}/checkout` (owner only). A live
+   `pending` hold whose session is still open at the provider gets **that**
+   session back (`PaymentGateway.get_checkout_url`; idempotent for a
+   double submit, refined again after the third review). Otherwise — lapsed
+   hold, or no open session — the row gets a **fresh** Checkout Session
+   after the previous one is expired at the gateway
    (`PaymentGateway.expire_checkout_session`: Stripe `sessions.expire`, stub
    drops it), so a superseded session can never be paid late. A live hold
    also gets a fresh `hold_expires_at`. An `expired` booking whose slot is
@@ -727,6 +730,16 @@ webhook may still be in flight). Known stub limitation left as is: the stub
 derives session ids from the booking id so a retry reuses the same id and a
 stale stub page can still pay it — same row, same amount, no charge; live
 Stripe ids are unique and the superseded session is really expired.
+
+**Third review batch (2026-09-18, Copilot on PR #46):** `BOOKING_HOLD_MINUTES`
+rejects zero/negative at settings load; an admin `PUT status=pending` only
+assigns a deadline when a payable hourly one-off *enters* `pending` (an
+already-pending hold keeps its deadline, package rows stay deadline-free);
+"Pagar agora" on a live hold returns the session that is still open
+(`get_checkout_url`) instead of expiring it, so a double submit cannot send
+one tab to a dead session (lapsed holds still get a fresh session);
+`Pricing` shares the landing page's `['spaces']` query; `API_SPEC.md` states
+where `hold_expires_at` is retained. Four tests, all failing before.
 
 **Second review batch (2026-09-18, Copilot on PR #46):** the admin
 status-transition path now runs `expire_stale_holds` before its conflict

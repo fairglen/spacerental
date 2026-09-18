@@ -83,13 +83,17 @@ export function Pricing() {
   // Packages are org-scoped (§4) and this is a public landing page with no
   // org context of its own, so resolve the one seeded org through the public
   // spaces list — consistent with the single-main-space scoping decision.
+  // Same key and fetcher as SpaceCards on the landing page, so React Query
+  // serves one /spaces response to both instead of spending a second
+  // public-tier request.
   const spaceQuery = useQuery({
-    queryKey: ['pricing', 'space'],
-    queryFn: async () => (await spacesApi.list())[0] ?? null,
+    queryKey: ['spaces'],
+    queryFn: () => spacesApi.list(),
     staleTime: 5 * 60 * 1000,
   })
-  const orgId = spaceQuery.data?.org_id
-  const spaceId = spaceQuery.data?.id
+  const firstSpace = spaceQuery.data?.[0]
+  const orgId = firstSpace?.org_id
+  const spaceId = firstSpace?.id
 
   const packagesQuery = useQuery({
     queryKey: ['pricing', 'packages', orgId],

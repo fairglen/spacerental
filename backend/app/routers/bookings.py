@@ -393,6 +393,27 @@ async def resume_checkout(
                 detail="This time slot is already booked",
             )
 
+    if live_hold and booking.stripe_checkout_session_id:
+        # Idempotent for a double submit: while the hold is live, hand back
+        # the session that is already open instead of replacing it.
+        try:
+            open_url = await gateway.get_checkout_url(booking.stripe_checkout_session_id)
+        except CheckoutSessionCompletedError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payment already received for this booking; waiting for confirmation",
+            ) from None
+        except PaymentProviderError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not restart the payment session",
+            ) from exc
+        if open_url:
+            attach_access_codes(lock_gateway, booking)
+            return BookingCheckoutOut(
+                booking=BookingOut.model_validate(booking), checkout_url=open_url
+            )
+
     if booking.stripe_checkout_session_id:
         try:
             await gateway.expire_checkout_session(booking.stripe_checkout_session_id)
