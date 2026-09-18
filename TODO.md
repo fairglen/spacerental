@@ -963,7 +963,9 @@ Vitest 210 passed. Playwright `packages.spec.ts` gained "an operator price
 change reaches the landing page and the checkout amount": the 20h pack is
 set to 177,50 € through `PUT /admin/packages/{id}`, the landing shows
 177,50 € and a computed 42,50 € saving, the stub checkout page shows
-177,50 €, and the price is restored (5/5 passed). Public `GET /packages`
+177,50 €, and the price is restored. The journey lives in `admin.spec.ts`
+(runs first): on a full-suite run the packages spec, last alphabetically,
+hit the public rate limit (3 × 429) before it could even read `/spaces`. Public `GET /packages`
 already returns active packs only, so a deactivated pack disappears from
 the cards.
 
