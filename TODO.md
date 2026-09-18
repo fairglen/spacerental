@@ -422,17 +422,14 @@ repeating registration. Validate failed/throwing sign-in component behavior.
 ### B16 — Test database health probe logs a missing database repeatedly
 
 **Priority: P2. State: DONE — merged as `c7d810a` in [PR #36](https://github.com/fairglen/spacerental/pull/36)
-(`docker-compose.test.yml` now probes `-d $$POSTGRES_DB`). The same mismatch
-in the two CI workflows is tracked separately as B20 below.** Branch: `fix/test-db-health-probe`.
-Confirmed still open on 2026-09-10 by reading `docker-compose.test.yml`: the
-healthcheck still runs `pg_isready -U spacerental` against the default database
-rather than the actual test database. Observed during C01
-backend validation on 2026-09-10. `docker-compose.test.yml` runs `pg_isready -U
-spacerental` while the test database is `spacerental_test`; PostgreSQL logs
-`FATAL: database "spacerental" does not exist` every three seconds even though
-the suite connects correctly and proceeds. Set the explicit test database in
-the probe; verify healthy startup and the absence of these messages without
-weakening readiness detection. It does not block C01.
+from branch `fix/test-db-health-probe`.** Observed during C01 backend
+validation on 2026-09-10: `docker-compose.test.yml` ran `pg_isready -U
+spacerental` while the test database was `spacerental_test`, so PostgreSQL
+logged `FATAL: database "spacerental" does not exist` every three seconds even
+though the suite connected correctly and proceeded. Fixed by probing the
+explicit test database (`pg_isready -U spacerental -d $$POSTGRES_DB`); healthy
+startup is unchanged and the messages are gone. The same mismatch in the two
+CI workflows was not part of that fix and is tracked as B20 below.
 
 ### B17 — Dialog descriptions and noisy component test diagnostics
 
