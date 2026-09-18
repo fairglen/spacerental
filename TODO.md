@@ -1799,7 +1799,18 @@ mixed-case account keeps working; both behaviours have a failing-first test.
 
 ### S05 — Payment, webhook and hold regression tests
 
-**Priority: P1. State: IN PROGRESS on `test/sec-payment-regressions`.**
+**Priority: P1. State: DONE on `test/sec-payment-regressions` (pending PR).**
+Evidence (2026-09-18): `backend/tests/test_payment_integrity.py` adds 12
+real-PostgreSQL cases and all pass on the code as audited: events are bound
+to booking, org and session together, amounts are computed server-side, live
+mode exposes no stub surface, and door codes exist only for confirmed
+bookings. A mutation check proved the cases can fail: with the session
+binding and the purchase's org binding dropped, the replay window removed and
+the stub routes serving any gateway, five tests failed for those reasons,
+and the code was restored. Full backend suite: 382 passed. A pending
+purchase being unspendable was already covered by `test_package_redemption`
+and is not duplicated. The audit's confirmed findings are S06 and B38 to B40
+below, and S07 is the decision it leaves with the owner.
 **Scope:** `backend/tests/test_payment_integrity.py`; no application change.
 **Why:** a booking may become `confirmed`, and a package `active`, only through
 a verified payment of its own checkout session, a package debit or an operator
