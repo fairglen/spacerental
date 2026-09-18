@@ -703,6 +703,64 @@ latest patched 14.2.x (no major bump), align `eslint-config-next`, run
 `npm audit` and record what remains and why; verify build, Vitest, and the auth
 + booking E2E.
 
+**Slice delivered 2026-09-18 on `fix/smoke-findings` (own commit; state:
+PARTIAL — the residual needs a decision).** `next` and `eslint-config-next`
+pinned to 14.2.35, the last 14.2.x release. `npm audit`: 24 → 21 findings
+(1 low, 5 moderate, 11 high, 4 critical). Resolved by the bump (15
+advisories): 12 in `next` — GHSA-3h52-269p-cp9r dev-server origin,
+GHSA-4342-x723-ch2f middleware SSRF, GHSA-5j59-xgg2-r9c4 and
+GHSA-mwv6-3258-q52c RSC DoS, GHSA-7gfc-8cq8-jh5f and GHSA-f82v-jwr5-mffw
+middleware authorization bypass, GHSA-7m27-7ghc-44w9 Server Actions DoS,
+GHSA-g5qg-72qw-gw5v image cache-key confusion, GHSA-g77x-44xx-532m image
+optimisation DoS, GHSA-gp8f-8m3g-qvj9 and GHSA-qpjv-v59x-3qc4 cache
+poisoning, GHSA-xv57-4mr9-wg8v image content injection — and 3 `minimatch`
+ReDoS advisories pulled in by `eslint-config-next`.
+
+**What remains and why:**
+
+- `next` (critical) — 23 advisories whose patched ranges start at 15.0.8,
+  15.5.10–15.5.24 (e.g. GHSA-p293-qw3h-jr36 and GHSA-2xp9-vwfh-vxw4,
+  unauthenticated RCE on Windows hosts / AVIF image optimisation;
+  GHSA-ggv3-7p47-pfv8 request smuggling in rewrites; several RSC cache
+  poisoning and DoS entries). No 14.x release carries these fixes: the 14
+  line is no longer receiving security patches. **Needs the user's
+  decision: a major bump to Next 15 (or 16) is outside this loop's "stay on
+  14" rule.** Recommendation: schedule the Next 15.5.x upgrade as the next
+  dependency task; the App Router code here uses no removed 15 APIs that
+  `tsc` would not flag, but `next-auth` v4 compatibility and the
+  `useSearchParams` Suspense requirement must be verified on a branch.
+- `next-auth` (critical, 4.24.14 → fix in 4.24.15+): three Auth.js
+  advisories (email normaliser homoglyph bypass, `getToken()` uncaught
+  exception on malformed Bearer headers, OAuth check cookies not bound to
+  the provider). Only the credentials provider is used, so the OAuth entry
+  does not apply; the other two do. A non-major bump — recommended as the
+  first follow-up, kept out of this commit to keep it revertible.
+- `axios` (high, 1.x → fix in 1.18.0): prototype-pollution and form
+  serialiser advisories; the browser client only sends JSON bodies to our
+  own API. Non-major bump recommended alongside `next-auth`.
+- `postcss` (high, 8.5.15 via next/tailwind → fix ≥ 8.5.23) and
+  `postcss-selector-parser` (low): build-time only; the fix path npm offers
+  is `next@16`. Revisit with the Next upgrade.
+- `vitest` / `@vitest/ui` / `vite` / `vite-node` / `esbuild` /
+  `@vitest/mocker` (critical/high/moderate): all fixed only in `vitest@5`
+  (major). Test tooling, never shipped; the "arbitrary file read" entries
+  require the Vitest UI server to be listening, which CI and the local
+  runner never start.
+- `eslint-config-next` / `@next/eslint-plugin-next` / `glob` (high):
+  `glob` CLI command injection via `-c`; the CLI is not invoked. Fix only in
+  `eslint-config-next@16`.
+- `browserslist`, `baseline-browser-mapping`, `brace-expansion`,
+  `form-data`, `js-yaml`, `nanoid`, `uuid`: transitive, non-major fixes
+  available (`npm audit fix` without `--force`); left out of this commit on
+  purpose and recommended as one follow-up dependency PR after review.
+
+**Verification on 14.2.35:** `tsc --noEmit` clean; Vitest 210 passed;
+`next build` compiled; the frontend container was recreated with renewed
+anonymous volumes (`docker compose up -d -V frontend`, otherwise the old
+`node_modules` volume keeps 14.2.5 — noted in README) and reports
+`next@14.2.35`; Playwright auth + booking specs 16 passed against it.
+`package.json` changes only the two version strings; the lockfile is npm's.
+
 ### C05 — Enforce booking validity at the API boundary — DONE (2026-09-10)
 
 **Priority: P1. State: IN PROGRESS.** Branch: `feat/booking-validity-boundary`.

@@ -240,6 +240,11 @@ npm run test:watch # watch mode
 Covers `lib/api.ts` response-shape extraction, utility helpers, and key components (Hero, Pricing, SignInForm).
 
 ### End-to-end tests (Playwright)
+
+> After changing `frontend/package-lock.json`, recreate the frontend container
+> with `docker compose up -d --build -V frontend`: its `node_modules` live in
+> an anonymous volume that a plain `--build` keeps, so the browser would still
+> be testing the old dependencies.
 Requires the full app stack running locally (`docker-compose up`) plus seeded data (`docker-compose exec backend python -m app.seed`).
 ```bash
 cd frontend
