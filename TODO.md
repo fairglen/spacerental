@@ -487,7 +487,13 @@ booking/package flows and the new customer journeys.
 
 ### B19 — Concurrent registration can surface uniqueness errors
 
-**Priority: P2. State: IN PROGRESS.** Branch: `fix/concurrent-registration-race`.
+**Priority: P2. State: DONE (PR #37, `b81500b`).** Reconciled on 2026-09-18: the
+fix is on main. `_register` translates the `IntegrityError` of a lost race into
+the normal duplicate-email answer, `_create_default_org` retries slug collisions
+inside a savepoint, and `test_concurrent_duplicate_email_registration_is_race_safe`
+and `test_concurrent_operator_registration_gets_distinct_slugs` cover both. The
+remote branch `fix/concurrent-registration-race` is a leftover. Original entry,
+kept for history: branch `fix/concurrent-registration-race`.
 Confirmed still open on 2026-09-10: no `IntegrityError` handling exists around
 the register routes in `auth.py`. Reprioritized ahead of C99 since it is small,
 independently scoped, and does not depend on C03–C08. C01 review found
@@ -1927,7 +1933,18 @@ failing-first test with the clock pinned past the deadline.
 
 ### S09 — Request schemas are unbounded
 
-**Priority: P1. State: TODO (first Medium of the security loop's fix phase).**
+**Priority: P1. State: IN PROGRESS on `fix/sec-request-bounds`.**
+**Decision recorded (2026-09-18), generous technical limits that change no
+documented journey:** names 1 to 255 characters (the column size); city 100;
+address 500; descriptions 5000; booking and series notes 2000; at most 50
+amenities or images per row, 100 and 500 characters each, images `http(s)`
+URLs only; room colour `#RRGGBB`; capacity 1 to 10000; `hourly_rate` and
+`price` from 0 to 99999999.99 with two decimals (the column); package hours 1
+to 999 (what a purchase row can hold); validity 1 to 3650 days; weekday 0 to
+6 with opening before closing, at most 50 rules per call; booking and series
+instants before the year 2100; admin list pages up to 1000000. No string may
+carry a NUL byte, and an update may not set a required column to null.
+Raising any of these is a one-line change; none is a product limit.
 Finding (2026-09-18, input-validation audit), severity Medium: almost no request
 field carries a bound, so over-long, out-of-range or otherwise unstorable input
 reaches the database or date arithmetic and is answered with a server error
@@ -2167,7 +2184,7 @@ proxies and TLS are the owner's decisions.
 
 ### S27 — Regression tests for the contact form's Apps Script
 
-**Priority: P1. State: DONE on `test/sec-flowspace-appsscript` (pending PR).**
+**Priority: P1. State: MERGED (PR #52, `87c5211`).**
 Evidence (2026-09-18): `flowspace-site/tests/code-gs.test.mjs` adds 38 cases
 with Node's built-in runner and all pass on the script as committed. A
 mutation check proved they can fail: with the visitor's name put back in
@@ -2194,6 +2211,50 @@ severity Low: `Code.gs` answers `invalid_characters`, which the page has no
 message for, so the visitor is told the send could not be confirmed and may
 retry in vain. `Code.gs` already carries a TODO for it. **Acceptance:** a
 Portuguese message for that code and a smoke-spec case.
+
+### B43 — Operator actions fail silently
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Bug (2026-09-18, bug hunt): no mutation on the operator pages reports a failure.
+A refused booking confirmation or a failed package creation leaves the row or
+the filled form exactly as it was, with no message. **Scope:**
+`frontend/app/admin/**`. **Acceptance:** every operator mutation shows a
+Portuguese error in a `role="alert"` when it is rejected, with a component test
+per page; `dashboard/page.tsx` is the pattern.
+
+### B44 — Pages render blank when a query fails
+
+**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+Bug (2026-09-18, bug hunt): the public spaces list and detail, the landing
+space cards, the customer's packages page, the admin lists and the rooms page
+for an unknown space have no error state, so an API failure looks like "there
+is nothing here". **Acceptance:** each shows an error state distinct from its
+empty state, with a component test; `Pricing.tsx` and `BookingModal.tsx` are
+the pattern.
+
+### B45 — Sign-in failure is not announced; two admin forms have unlabelled inputs
+
+**Priority: P3. State: TODO (queued).** Bug (2026-09-18, bug hunt), accessibility:
+the sign-in error is a plain paragraph rather than an alert, and the labels on
+the admin rooms and packages forms are not associated with their inputs.
+**Acceptance:** `role="alert"` on the message, `htmlFor` and `id` pairs on both
+forms, component tests by accessible name.
+
+### B46 — A confirmed booking has no operator action (question)
+
+**Priority: P3. State: HOLD: needs a product answer.** Recorded 2026-09-18: the
+operator's bookings table offers confirm and cancel for pending rows only. The
+API lets an operator cancel a confirmed booking and credits package hours back;
+a card payment would need a refund, which is O02. Deliberate until refunds
+exist, or a gap? If deliberate, the UI should say so.
+
+### B47 — The admin area never redirects a user who has no membership
+
+**Priority: P3. State: TODO (queued).** Bug (2026-09-18, bug hunt), severity Low:
+the admin layout redirects a non-operator only when at least one membership
+exists, so an account with none sees "A redirecionar…" indefinitely.
+**Acceptance:** such a user is sent to the dashboard; failing-first component
+test.
 
 ## Non-roadmap deliverable — flowspace-site marketing page
 
