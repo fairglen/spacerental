@@ -1675,8 +1675,12 @@ described here only in general terms until its fix merges.
 
 ### S01 — Authorization and tenant-isolation regression matrix
 
-**Priority: P1. State: MERGED (PR #48, `ad4bc12`); follow-ups IN PROGRESS on
-`test/sec-authn-regressions`.** The last review pass on #48 named four
+**Priority: P1. State: MERGED (PR #48, `ad4bc12`); follow-ups DONE on
+`test/sec-authn-regressions` (pending PR).** Follow-up evidence
+(2026-09-18): the matrix is at 68 cases; with the webhook digest never
+compared, the org filter dropped from two dashboard metrics and enrolment
+granting owner, four tests failed for those reasons and the code was
+restored. The last review pass on #48 named four
 coverage gaps that ship with S02's PR: the dashboard isolation check asserts
 only the booking count; a new customer route needs nothing beyond the
 anonymous sweep; the hostile-field registration case skips the operator
@@ -1732,8 +1736,9 @@ enforced, the user is re-loaded on every request, and a token is read only
 from the `Authorization` header. A mutation check proved the cases can fail:
 with a second algorithm allowed and expiry verification off, a distinct
 answer for unknown emails and the login password bound removed, five tests
-failed for those reasons, and the code was restored. Full backend suite: 365
-passed. The audit's confirmed findings are S03, S04 and B37 below; each has a
+failed for those reasons, and the code was restored. Full backend suite with
+the S01 follow-ups: 369 passed. The audit's confirmed findings are S03, S04
+and B37 below; each has a
 failing test held locally until its fix ships in the same PR.
 **Scope:** `backend/tests/test_auth_tokens.py`; no application change.
 **Why:** every customer and operator route trusts one dependency,
