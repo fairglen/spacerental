@@ -1,6 +1,26 @@
 name: Lint
 
-on: [push, pull_request]
+# Path-filtered like the backend-tests, frontend-tests and migrations
+# workflows: `ruff check backend` only has an opinion about backend Python, so
+# an unfiltered run made unrelated branches (e.g. a static-site-only change)
+# inherit and report main's lint state as their own failure. `ruff.toml` lives
+# at the repository root, so it has to be listed alongside `backend/**` or a
+# config change would skip its own check; `.pre-commit-config.yaml` pins the
+# same Ruff version as this file, so a hook bump must run this check too.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'ruff.toml'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/lint.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'ruff.toml'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/lint.yml'
 
 jobs:
   python:
