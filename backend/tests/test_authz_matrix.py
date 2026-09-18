@@ -34,6 +34,7 @@ CUSTOMER = "customer"  # get_current_user; ownership or membership decides insid
 OPERATOR = "operator"  # require_admin: operator membership in the org_id given
 WEBHOOK = "webhook"  # the provider signature is the credential
 STUB = "stub"  # local stub checkout page; 404s outside stub mode
+KINDS = frozenset({PUBLIC, CUSTOMER, OPERATOR, WEBHOOK, STUB})
 
 API = "/api/v1"
 ROUTES: dict[tuple[str, str], str] = {
@@ -263,6 +264,9 @@ class TestClassification:
         return found
 
     def test_every_route_is_classified(self):
+        # A typo would drop the route from every sweep below without a sound.
+        invalid = sorted(f"{key}: {kind!r}" for key, kind in ROUTES.items() if kind not in KINDS)
+        assert not invalid, f"Unknown classification: {invalid}"
         actual = set(self._api_routes())
         unclassified = sorted(actual - set(ROUTES))
         stale = sorted(set(ROUTES) - actual)
@@ -301,6 +305,14 @@ class TestAnonymous:
         monkeypatch.setattr(recurrences.settings, "RECURRING_BOOKINGS_ENABLED", True)
         resp = await _send(client, method, path, org_id=uuid.uuid4())
         assert resp.status_code == 401, f"{method} {path} -> {resp.status_code} {resp.text}"
+
+    @pytest.mark.parametrize(("method", "path"), _routes(PUBLIC) + _routes(WEBHOOK) + _routes(STUB))
+    async def test_no_public_webhook_or_stub_route_asks_for_a_token(self, client, method, path):
+        # The dependency-name check above knows two names. This one does not care
+        # how a route authenticates: a random id or an empty body may earn a 404,
+        # 400 or 422, but never a demand for credentials.
+        resp = await _send(client, method, path, org_id=uuid.uuid4())
+        assert resp.status_code not in (401, 403), f"{method} {path} -> {resp.status_code}"
 
     async def test_series_routes_do_not_exist_while_the_flag_is_off(
         self, client, world, monkeypatch
@@ -442,13 +454,24 @@ class TestCustomerIsolation:
     async def test_nobody_else_can_cancel_or_pay_a_customers_booking(
         self, client, world, db_session, payments
     ):
-        for other in (world.cust_a2, world.cust_b, world.op_b):
+        # `op_a` runs the booking's own org: operators act through /admin, and
+        # that role must never stand in for ownership here.
+        for other, claim in (
+            (world.cust_a2, "member"),
+            (world.cust_b, "member"),
+            (world.op_b, "admin"),
+            (world.op_a, "owner"),
+        ):
             for method, path in (
                 ("DELETE", f"{API}/bookings/{{booking_id}}"),
                 ("POST", f"{API}/bookings/{{booking_id}}/checkout"),
             ):
                 resp = await _send(
-                    client, method, path, headers=_as(other), ids={"booking_id": world.booking_a.id}
+                    client,
+                    method,
+                    path,
+                    headers=_as(other, claim),
+                    ids={"booking_id": world.booking_a.id},
                 )
                 assert resp.status_code == 403, f"{other.email} {method} -> {resp.status_code}"
         booking = await _fresh(db_session, Booking, world.booking_a.id)
@@ -481,6 +504,25 @@ class TestCustomerIsolation:
         )
         assert resp.status_code == 403, resp.text
         assert await _count(db_session, Booking, Booking.user_id == world.cust_a.id) == 1
+
+    async def test_a_customer_cannot_start_a_series_in_an_org_they_do_not_belong_to(
+        self, client, world, db_session, monkeypatch
+    ):
+        monkeypatch.setattr(recurrences.settings, "RECURRING_BOOKINGS_ENABLED", True)
+        start, end = _slot(13)
+        body = {
+            "room_id": str(world.room_b.id),
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "until_date": (start.date() + timedelta(days=14)).isoformat(),
+        }
+        resp = await client.post(f"{API}/recurrences", json=body, headers=_as(world.cust_a))
+        assert resp.status_code == 403, resp.text
+        assert await _count(db_session, RecurrenceRule) == 0
+        assert await _count(db_session, Booking, Booking.user_id == world.cust_a.id) == 1
+        # Control: the same body from a member of that org is a valid series.
+        resp = await client.post(f"{API}/recurrences", json=body, headers=_as(world.cust_b))
+        assert resp.status_code == 201, resp.text
 
     async def test_a_purchase_is_bound_to_the_packages_org_and_to_membership(
         self, client, world, db_session, payments
@@ -519,9 +561,14 @@ class TestCustomerIsolation:
         db_session.add(rule)
         await db_session.commit()
         body = {"start_time": start.isoformat(), "end_time": end.isoformat()}
-        for other in (world.cust_a2, world.cust_b):
-            put = await client.put(f"{API}/recurrences/{rule.id}", json=body, headers=_as(other))
-            delete = await client.delete(f"{API}/recurrences/{rule.id}", headers=_as(other))
+        for other, claim in (
+            (world.cust_a2, "member"),
+            (world.cust_b, "member"),
+            (world.op_a, "owner"),
+        ):
+            headers = _as(other, claim)
+            put = await client.put(f"{API}/recurrences/{rule.id}", json=body, headers=headers)
+            delete = await client.delete(f"{API}/recurrences/{rule.id}", headers=headers)
             assert (put.status_code, delete.status_code) == (403, 403), (put.text, delete.text)
         assert (await _fresh(db_session, RecurrenceRule, rule.id)).is_active is True
 
@@ -567,7 +614,10 @@ class TestClientSuppliedFieldsAreIgnored:
         assert booking.duration_hours == Decimal("1.00")
         assert booking.package_purchase_id is None
         assert booking.stripe_checkout_session_id != "cs_forged"
-        assert booking.hold_expires_at < datetime.now(tz=UTC) + timedelta(hours=1)
+        assert booking.hold_expires_at is not None
+        assert booking.hold_expires_at <= datetime.now(tz=UTC) + timedelta(
+            minutes=settings.BOOKING_HOLD_MINUTES
+        )
 
     async def test_an_operator_update_cannot_move_a_row_to_another_org(
         self, client, world, db_session
