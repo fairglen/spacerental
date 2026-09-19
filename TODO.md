@@ -1480,9 +1480,27 @@ C09 → C10 → C11 → C12. Out of scope for all four: anything recurrence-rela
 new booking endpoints or modes, batch checkout, and the R01 wall-clock rework.
 No pricing, discount or refund policy is decided here.
 
+**Integrated verification (2026-09-19, final branch state, stub mode, no
+credentials):** backend pytest 427 passed (392 on main + 35 new; the 43
+untouched recurrence tests included); `alembic upgrade head` → `check` →
+downgrade → upgrade → `check` clean on an empty PostgreSQL 16; `tsc --noEmit`
+clean; Vitest 338 passed (217 on main); `next build` OK; full Playwright on a
+freshly migrated and seeded stack 33 passed, with no 429 and no 5xx in the
+backend log for the run. An earlier full run failed `packages.spec.ts` on the
+shared public request budget — measured, explained and recorded as B48.
+
 ### C09 — One public contact address, from a single source
 
-**Priority: P1. State: IN PROGRESS** (`feat/location-single-space-simple-booking`).
+**Priority: P1. State: IN PROGRESS** — implemented on `feat/location-single-space-simple-booking` as `b4fc68a`, committed locally; the owner opens the PR (DONE only once merged).
+**Evidence (2026-09-19):** `frontend/lib/contact.ts` exports `CONTACT_EMAIL` and
+`contactMailto()`; the footer renders the address from it as a `mailto:` link
+and the `footer.email` catalog key is gone from both locales. `contact.test.ts`
+refuses any literal address in `pt.json`/`en.json`. Repo grep for
+`@(espacohora|flowspace).pt`: `flowspace-site/` already used
+`geral@flowspace.pt` everywhere (form copy, Apps Script recipient, README), so
+it is unchanged; the only other hits are `EMAIL_FROM_ADDRESS`, left alone on
+purpose. **Open (owner):** the sender domain — mail still goes out as
+`no-reply@espacohora.pt` while customers are told to write to `flowspace.pt`.
 **Scope:** the public contact address is `geral@flowspace.pt`; the footer
 catalogs (`frontend/lib/i18n/pt.json`, `en.json`) still say
 `geral@espacohora.pt`. Align every customer-facing contact address in the
@@ -1499,7 +1517,28 @@ parity test still green; repo grep recorded as evidence.
 
 ### C10 — Give a space a real location
 
-**Priority: P1. State: IN PROGRESS** (same branch). **Scope:** `Space` gains
+**Priority: P1. State: IN PROGRESS** — implemented on `feat/location-single-space-simple-booking` as `56fd6be`, committed locally; the owner opens the PR (DONE only once merged).
+**Evidence (2026-09-19):** migration `0004_space_location`; upgrade → `alembic
+check` ("No new upgrade operations detected") → downgrade to
+`0003_booking_holds` (columns gone) → downgrade base (no tables left) → upgrade
+→ check, on an empty PostgreSQL 16 scratch database. 35 real-PG tests in
+`tests/test_space_location.py` (range, NaN/Infinity, both-or-neither on create
+and on update, clearing, 403/404 for another organization's admin, 403 for a
+member, public list/detail shape, the CHECK constraints refusing a raw UPDATE,
+seed placement and re-seed moving a Lisbon-era row without duplicating it);
+the S09 sweep and the S19 exposure allowlist cover the new fields. Frontend:
+`SpaceLocation`, `lib/location.ts`, admin form and footer tests. Full backend
+suite 427 passed. **Decisions:** (1) on update the two coordinates travel
+together — a body with only one is a 422 — rather than being judged against the
+stored half; reverse by merging with the stored row in `admin_update_space`.
+(2) Coordinates are rounded to six places, not refused, because maps apps hand
+out more digits. (3) CHECK constraints duplicate the API rules for writers that
+skip the API; drop them with a one-line migration if unwanted. (4) The admin
+form validates the Portuguese `0000-000` postcode format; the API only bounds
+the length (20), so a foreign operator is blocked by the form alone — delete the
+regex in `lib/spaceLocationForm.ts` to lift it. (5) "Como chegar" uses Google's
+universal maps URL (it hands off to the phone's maps app); the embedded preview
+is OpenStreetMap and loads only on "Ver mapa". **Original scope:** **Scope:** `Space` gains
 `postal_code` (String, nullable) and `latitude`/`longitude` (Numeric(9,6),
 nullable, real ranges, both or neither) with one reviewed Alembic migration;
 the fields appear in the public space schema and the admin create/update
@@ -1526,7 +1565,21 @@ the iframe being absent until the button is pressed; admin form validation test.
 
 ### C11 — Hide the "space" layer while there is only one
 
-**Priority: P1. State: IN PROGRESS** (same branch). **Scope:** while exactly one
+**Priority: P1. State: IN PROGRESS** — implemented on `feat/location-single-space-simple-booking` as `bcd5691`, committed locally; the owner opens the PR (DONE only once merged).
+**Evidence (2026-09-19):** `useSingleSpace()` is the only place that counts
+spaces (`grep -rn "spaces.length" frontend/app frontend/components` finds
+nothing). Component tests drive 0, 1 and 2 spaces plus loading and error for
+the landing section, `/spaces`, the `?room=` deep link and the navbar/footer/
+hero/how-it-works labels. Playwright `single-space.spec.ts` on the seeded
+stack: landing → room card → that room's calendar open, in view and marked;
+stale `?room=` ignored; back button does not loop; location visible on landing
+and rooms page with no third-party request before "Ver mapa". **Decision:**
+`/spaces` renders the rooms view in place instead of redirecting to
+`/spaces/<id>` (no history entry to loop on, no hop per visit, nothing to undo
+when a second space appears); reverse by replacing the single-mode branch of
+`app/spaces/page.tsx` with `router.replace`. **Cost to know about:** every full
+page load now reads `GET /spaces` once (the navbar label depends on it); it is
+cached for 60 s within a page session. **Original scope:** **Scope:** while exactly one
 active space is publicly visible, customers go straight to rooms; when a second
 space appears the current spaces UI returns with no code change. The mode is
 decided in one hook over the existing public spaces query
@@ -1548,7 +1601,20 @@ not marketing strings.
 
 ### C12 — Hourly booking only, on a day or week view, with a contact note
 
-**Priority: P1. State: IN PROGRESS** (same branch). **Scope:** remove the month
+**Priority: P1. State: IN PROGRESS** — implemented on `feat/location-single-space-simple-booking` as `501db46`, committed locally; the owner opens the PR (DONE only once merged).
+**Evidence (2026-09-19):** `BookingCalendar` passes `views={['day','week']}`,
+no month message/format/drill-down. `RECURRING_BOOKINGS_ENABLED` verified false
+in `backend/app/config.py`, `docker-compose.yml` (backend and
+`NEXT_PUBLIC_`) and `.env.example`; with it off the dialog has no checkbox
+(component test, and the untouched weekly-series E2E asserts the same).
+Component tests: offered views, default per width (1024/1440 week, 1023/390
+day), manual choice surviving a remount, storage unavailable, click and drag in
+both views, contact note placement/mailto/role. Playwright `week-view.spec.ts`:
+week view by default at 1280px, no "Mês", two-hour drag → stub checkout →
+Confirmado; a 390px phone opens on the day and keeps the week once chosen. No
+backend booking change was needed. **Decision:** the manual choice lives in
+`sessionStorage` (per tab session); the default is read once on mount.
+**Original scope:** **Scope:** remove the month
 view from `BookingCalendar` (view list, message, drill-down, the branches it
 leaves dead, and the page help text that mentions it); default to "Semana" at
 ≥1024px and "Dia" below, with the customer's manual choice winning for the rest
@@ -1569,6 +1635,25 @@ views, the note and its `mailto:` on the page and in the dialog, and no
 recurrence checkbox with the flag off; Playwright: in week view drag two hours
 on a day later this week → stub checkout → Confirmado on the dashboard, and the
 toolbar has no "Mês". The untouched recurrence tests keep passing.
+
+### B48 — C11/C12 spend more of the shared public request budget
+
+**Priority: P2. State: QUEUED.** Found while delivering C11/C12, measured on
+2026-09-19. Two costs against the shared 120-a-minute public budget per client
+address (customers on the venue's own Wi-Fi share one): (1) `BookingCalendar`
+asks `GET /rooms/{id}/availability?date=` once per day, so the week view — now
+the desktop default — costs seven reads per mount and per week navigated;
+(2) since C11 every FULL page load reads `GET /spaces` once, because the navbar
+label depends on the mode (in-app navigation reuses the 60 s cache). In the
+browser suite that was ~25 extra reads a minute: the booking → locale →
+packages sequence reached exactly 120 and the packages spec's own `GET /spaces`
+came back 429. No limit was changed; `packages.spec.ts` and the two new spec
+files wait out one window each (the B18 rule). For (2), carrying the last
+answer across full page loads for its 60 s freshness would remove most of it. **Proposal:** a ranged availability read
+(`?from=&to=`, bounded to 7 days, same wrapped `{slots}` shape) with the
+`lib/api.ts` wrapper and shape test. It is a backend change on a public
+endpoint, so it was not made under C12. **Acceptance:** one request per week
+shown; real-PG tests for range bounds and the rate tier; week-view E2E green.
 
 ### C99 — Outcome 1 acceptance
 
@@ -1618,6 +1703,8 @@ DST-stable recurrence remain here and are not started by `fix/smoke-findings`.
 with the rest of this outcome: opening hours are still evaluated as UTC.
 
 ### R02 — Make recurring reservations payable
+
+Noticed 2026-09-19 (C12), not changed: `.github/workflows/e2e.yml` sets `RECURRING_BOOKINGS_ENABLED: 'true'`, so CI's browser run still shows the weekly checkbox while every default is false; decide whether CI should follow the parked state.
 
 **State: DEFERRED** — parked by owner 2026-09-19 to simplify; customers rebook each week; weekly series code stays in the repo, flag off.
 

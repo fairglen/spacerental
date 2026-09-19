@@ -154,8 +154,24 @@ inspect the diff before deciding whether a migration or metadata repair is neede
 - Pack redemption confirms immediately and restores hours on eligible
   cancellation. Customer signup joins the configured location as a member (C01).
   The complete isolated package redemption/cancellation journey remains C02.
-- Weekly series are an explicit opt-in pending UTC foundation. Paid series,
-  Lisbon wall-clock scheduling and full series management remain R01–R03.
+- **Booking is hourly only**: one or more contiguous hours, picked on a day
+  ("Dia") or week ("Semana") calendar view. The week is the default from 1024px
+  up, the day below; the customer's own choice sticks for the browser session.
+  There are no half-day, full-day, monthly or recurring products. Anything else
+  goes through the contact note on the booking page and in the confirm dialog,
+  which mails the public contact address (`frontend/lib/contact.ts`).
+- **One space, no "choose a space" step**: while exactly one active space is
+  public, the landing page lists its rooms, `/spaces` is that space's rooms
+  view, and navigation says "Salas". A room card deep-links to
+  `/spaces/<id>?room=<roomId>`, which opens that room's calendar. Add a second
+  space and the spaces list comes back with no code change
+  (`frontend/lib/hooks/useSingleSpace.ts` is the one place that decides).
+- **A space has a real location**: address, postcode and optional coordinates,
+  edited in the admin space form. Customers get a "Como chegar" link and an
+  OpenStreetMap preview that loads only when they press "Ver mapa".
+- Weekly series are an explicit opt-in pending UTC foundation, parked by the
+  owner on 2026-09-19 (flag off, code left in place; R02/R03/R99 DEFERRED).
+  Lisbon wall-clock opening hours (R01) are not parked.
 - Email confirmation/cancellation uses stub/live gateways and in-process
   background tasks. Durable jobs/retries remain O01.
 - Smart-lock stub lifecycle is Q28; live startup is gated until durable
@@ -252,6 +268,14 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 The E2E suite exercises auth (sign-up, sign-in, protected routes), space browsing, and the admin dashboard. Set `E2E_BASE_URL` if your stack runs on a non-default URL.
+
+The suite assumes the seeded stack: **exactly one public space**, which is what
+puts the app in single-space mode (`single-space.spec.ts` skips itself
+otherwise). Every browser shares one backend rate-limit budget (120 public reads
+a minute), so a few spec files deliberately wait out a 60-second window at their
+boundary; the full run takes several minutes and those pauses are not hangs.
+On a laptop, keep it awake for the run (`caffeinate -i npm run test:e2e` on
+macOS): a machine that sleeps mid-run produces timeouts that look like failures.
 
 ### Pre-commit hooks
 The repo ships with a `.pre-commit-config.yaml` that runs trailing-whitespace fixes, YAML linting, ruff on `backend/`, and frontend `tsc --noEmit` on every commit. Backend pytest and frontend Vitest run on push.
