@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { Building2, MapPin, Mail } from 'lucide-react'
 import { useT } from '@/lib/i18n'
+import { CONTACT_EMAIL, contactMailto } from '@/lib/contact'
 
 export function Footer() {
   const t = useT()
@@ -58,7 +59,10 @@ export function Footer() {
                 <MapPin className="h-4 w-4" /> {t('footer.location')}
               </li>
               <li className="flex items-center gap-2">
-                <Mail className="h-4 w-4" /> {t('footer.email')}
+                <Mail className="h-4 w-4" />
+                <a href={contactMailto()} className="hover:text-white transition-colors">
+                  {CONTACT_EMAIL}
+                </a>
               </li>
             </ul>
           </div>
