@@ -83,7 +83,18 @@
     "pricing": "Pricing",
     "sign_in": "Sign In",
     "contact_heading": "Contact",
-    "location": "Lisbon, Portugal",
+    "location": "Portugal",
+    "location_city": "{city}, Portugal",
     "copyright": "© {year} EspaçoHora. All rights reserved."
+  },
+  "location": {
+    "heading": "Where we are",
+    "address_label": "Address",
+    "directions": "Get directions",
+    "show_map": "Show map",
+    "map_privacy": "The map comes from OpenStreetMap and only loads when you ask for it.",
+    "map_title": "Map of {name}",
+    "map_title_generic": "Location map",
+    "open_full_map": "Open the full map"
   }
 }

@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, type FieldErrors, type UseFormRegister, type UseFormSetValue } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Link from 'next/link'
@@ -17,6 +17,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SpaceLocationFields } from '@/components/admin/SpaceLocationFields'
+import { addressLines } from '@/lib/location'
+import {
+  locationDefaults, locationFormShape, locationPayload, refineCoordinatePair, type LocationFormValues,
+} from '@/lib/spaceLocationForm'
 import type { Space } from '@/types'
 
 const editSpaceSchema = z.object({
@@ -24,7 +29,8 @@ const editSpaceSchema = z.object({
   description: z.string().optional(),
   address: z.string().optional(),
   city: z.string().optional(),
-})
+  ...locationFormShape,
+}).superRefine(refineCoordinatePair)
 type EditSpaceFormData = z.infer<typeof editSpaceSchema>
 
 export default function AdminSpacesPage() {
@@ -33,7 +39,7 @@ export default function AdminSpacesPage() {
   const { currentOrgId } = useOrg()
   const qc = useQueryClient()
   const [editingSpace, setEditingSpace] = useState<Space | null>(null)
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<EditSpaceFormData>({
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<EditSpaceFormData>({
     resolver: zodResolver(editSpaceSchema),
   })
 
@@ -61,6 +67,7 @@ export default function AdminSpacesPage() {
       description: space.description ?? '',
       address: space.address ?? '',
       city: space.city ?? '',
+      ...locationDefaults(space),
     })
   }
 
@@ -86,7 +93,7 @@ export default function AdminSpacesPage() {
                     <Badge variant={space.is_active ? 'default' : 'secondary'}>{space.is_active ? 'Ativo' : 'Inativo'}</Badge>
                   </div>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                    <MapPin className="h-3 w-3" /> {space.city}
+                    <MapPin className="h-3 w-3" /> {addressLines(space).join(', ') || 'Sem morada'}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -120,6 +127,7 @@ export default function AdminSpacesPage() {
                 description: d.description?.trim() ? d.description : undefined,
                 address: d.address?.trim() ? d.address : undefined,
                 city: d.city?.trim() ? d.city : undefined,
+                ...locationPayload(d),
               }
               updateMutation.mutate({ id: editingSpace.id, data })
             })}
@@ -142,6 +150,12 @@ export default function AdminSpacesPage() {
               <Label>Cidade</Label>
               <Input {...register('city')} className="mt-1" />
             </div>
+            <SpaceLocationFields
+              idPrefix="edit-space"
+              register={register as unknown as UseFormRegister<LocationFormValues>}
+              setValue={setValue as unknown as UseFormSetValue<LocationFormValues>}
+              errors={errors as FieldErrors<LocationFormValues>}
+            />
             <DialogFooter>
               <Button type="submit" disabled={updateMutation.isPending}>
                 {updateMutation.isPending ? 'A guardar...' : 'Guardar'}

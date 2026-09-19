@@ -38,7 +38,7 @@ there is no separate migration step to remember.
 ```bash
 docker-compose exec backend python -m app.seed
 ```
-Creates: 1 space (Espaço Calmo, Lisboa), 3 rooms at €11/h, 2 packages, and a demo admin user.
+Creates: 1 space (Espaço Calmo — R. 12 de Julho de 1997 5, Loja 1, 2745-841 Queluz, with map coordinates), 3 rooms at €11/h, 2 packages, and a demo admin user. Re-running it is safe: it never duplicates, and it moves a demo space seeded before it had a real location to the current address.
 
 **Demo login:** `admin@demo.com` / `admin123`
 

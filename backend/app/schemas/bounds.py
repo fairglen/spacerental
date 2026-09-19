@@ -36,6 +36,7 @@ def _text(max_length: int, min_length: int = 0):
 Name = _text(255, min_length=1)  # String(255) columns: spaces, rooms, packages
 PersonName = _text(255)  # users.name, optional and may be empty
 City = _text(100)  # String(100)
+PostalCode = _text(20)  # String(20); the format is the operator's country's business
 Address = _text(500)
 Description = _text(5000)
 Notes = _text(2000)
@@ -55,6 +56,17 @@ ImageUrls = Annotated[list[ImageUrl], Field(max_length=50)]
 # choice, a negative one is not storable money.
 Money = Annotated[Decimal, Field(ge=0, max_digits=10, decimal_places=2)]
 Capacity = Annotated[int, Field(ge=1, le=10_000)]
+
+
+def _six_places(value: Decimal) -> Decimal:
+    # Numeric(9, 6). A maps app hands out more digits than that; a pasted value
+    # is rounded rather than refused. The range is checked first, so rounding
+    # cannot carry a value past it.
+    return value.quantize(Decimal("0.000001"))
+
+
+Latitude = Annotated[Decimal, Field(ge=-90, le=90), AfterValidator(_six_places)]
+Longitude = Annotated[Decimal, Field(ge=-180, le=180), AfterValidator(_six_places)]
 # A purchase copies the hours into a Numeric(5, 2) column, which tops out at 999.99.
 PackageHours = Annotated[int, Field(ge=1, le=999)]
 ValidityDays = Annotated[int, Field(ge=1, le=3650)]

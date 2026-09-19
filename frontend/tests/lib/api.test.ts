@@ -415,3 +415,58 @@ describe('customer enrollment API contract', () => {
     post.mockRestore()
   })
 })
+
+// C10: a space's coordinates arrive as Decimal strings (or null) and leave
+// lib/api.ts as numbers (or null) — never 0 for a missing one, which would put
+// a space without a location on the map at 0°N 0°E.
+describe('space location shape (C10)', () => {
+  const wire = {
+    id: 's1', name: 'Espaço Calmo', address: 'R. 12 de Julho de 1997 5, Loja 1', city: 'Queluz',
+    postal_code: '2745-841', latitude: '38.755723', longitude: '-9.279799',
+  }
+  const bare = { id: 's2', name: 'Sem morada', postal_code: null, latitude: null, longitude: null }
+
+  it('spacesApi.list converts coordinates and keeps null as null', async () => {
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { spaces: [wire, bare] } }) } as any
+    const [located, unlocated] = await spacesApi.list(mockApi)
+    expect(located.postal_code).toBe('2745-841')
+    expect(located.latitude).toBe(38.755723)
+    expect(located.longitude).toBe(-9.279799)
+    expect(unlocated.latitude).toBeNull()
+    expect(unlocated.longitude).toBeNull()
+  })
+
+  it('spacesApi.get converts the space and still normalizes its rooms', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({ data: { space: wire, rooms: [{ id: 'r1', hourly_rate: '11.00' }] } }),
+    } as any
+    const { space, rooms } = await spacesApi.get('s1', mockApi)
+    expect(space.latitude).toBe(38.755723)
+    expect(rooms[0].hourly_rate).toBe(11)
+  })
+
+  it('adminApi.getSpaces converts coordinates and nested room rates', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({ data: { spaces: [{ ...wire, rooms: [{ id: 'r1', hourly_rate: '11.00' }] }] } }),
+    } as any
+    const [space] = await adminApi.getSpaces(mockApi)
+    expect(space.longitude).toBe(-9.279799)
+    expect(space.rooms?.[0].hourly_rate).toBe(11)
+  })
+
+  it('adminApi.createSpace and updateSpace send the location and unwrap { space }', async () => {
+    const mockApi = {
+      post: vi.fn().mockResolvedValue({ data: { space: wire } }),
+      put: vi.fn().mockResolvedValue({ data: { space: bare } }),
+    } as any
+    const body = { name: 'Espaço Calmo', postal_code: '2745-841', latitude: 38.755723, longitude: -9.279799 }
+    const created = await adminApi.createSpace(body, mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/admin/spaces', body)
+    expect(created.latitude).toBe(38.755723)
+
+    const cleared = { postal_code: null, latitude: null, longitude: null }
+    const updated = await adminApi.updateSpace('s2', cleared, mockApi)
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/spaces/s2', cleared)
+    expect(updated.latitude).toBeNull()
+  })
+})

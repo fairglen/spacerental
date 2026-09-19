@@ -134,6 +134,9 @@ async def admin_create_space(
         description=body.description,
         address=body.address,
         city=body.city,
+        postal_code=body.postal_code,
+        latitude=body.latitude,
+        longitude=body.longitude,
         images=body.images,
         amenities=body.amenities,
     )

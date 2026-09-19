@@ -25,6 +25,7 @@ type Api = ReturnType<typeof createAuthenticatedApi>
 // — no deep walker.
 
 export const DECIMAL_FIELDS = {
+  space: ['latitude', 'longitude'],
   room: ['hourly_rate'],
   booking: ['total_amount', 'duration_hours'],
   pkg: ['price'],
@@ -34,6 +35,23 @@ export const DECIMAL_FIELDS = {
 function num(v: unknown): number {
   if (v === null || v === undefined) return 0
   return typeof v === 'number' ? v : Number(v)
+}
+
+// Unlike money, a coordinate has no zero default: a missing one stays null so
+// a space without a location is not drawn in the Gulf of Guinea.
+function numOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function normSpace<T extends { latitude?: unknown; longitude?: unknown; rooms?: Room[] }>(s: T): T {
+  return {
+    ...s,
+    latitude: numOrNull(s.latitude),
+    longitude: numOrNull(s.longitude),
+    ...(s.rooms ? { rooms: s.rooms.map(normRoom) } : {}),
+  } as T
 }
 
 function normRoom<T extends { hourly_rate?: unknown }>(r: T): T {
@@ -91,11 +109,11 @@ export const authApi = {
 
 export const spacesApi = {
   list: (api = apiClient) =>
-    api.get<{ spaces: Space[] }>('/spaces').then(r => r.data.spaces),
+    api.get<{ spaces: Space[] }>('/spaces').then(r => r.data.spaces.map(normSpace)),
 
   get: (id: string, api = apiClient) =>
     api.get<{ space: Space; rooms: Room[] }>(`/spaces/${id}`).then(r => ({
-      space: r.data.space,
+      space: normSpace(r.data.space),
       rooms: (r.data.rooms ?? []).map(normRoom),
     })),
 
@@ -185,14 +203,14 @@ export const adminApi = {
 
   getSpaces: (api: Api) =>
     api.get<{ spaces: Space[] }>('/admin/spaces').then(r =>
-      r.data.spaces.map(s => ({ ...s, rooms: (s.rooms ?? []).map(normRoom) })),
+      r.data.spaces.map(s => normSpace({ ...s, rooms: s.rooms ?? [] })),
     ),
 
   createSpace: (data: Partial<Space>, api: Api) =>
-    api.post<{ space: Space }>('/admin/spaces', data).then(r => r.data.space),
+    api.post<{ space: Space }>('/admin/spaces', data).then(r => normSpace(r.data.space)),
 
   updateSpace: (id: string, data: Partial<Space>, api: Api) =>
-    api.put<{ space: Space }>(`/admin/spaces/${id}`, data).then(r => r.data.space),
+    api.put<{ space: Space }>(`/admin/spaces/${id}`, data).then(r => normSpace(r.data.space)),
 
   createRoom: (spaceId: string, data: Partial<Room>, api: Api) =>
     api.post<{ room: Room }>(`/admin/spaces/${spaceId}/rooms`, data).then(r => normRoom(r.data.room)),

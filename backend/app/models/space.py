@@ -4,6 +4,7 @@ from datetime import datetime, time
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -22,6 +23,15 @@ from app.database import Base
 
 class Space(Base):
     __tablename__ = "spaces"
+    # The API refuses these too (schemas/space.py); the constraints cover the
+    # writers that never pass through it: the seed, psql, a future import.
+    __table_args__ = (
+        CheckConstraint(
+            "(latitude IS NULL) = (longitude IS NULL)", name="ck_spaces_coordinates_together"
+        ),
+        CheckConstraint("latitude BETWEEN -90 AND 90", name="ck_spaces_latitude_range"),
+        CheckConstraint("longitude BETWEEN -180 AND 180", name="ck_spaces_longitude_range"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -35,6 +45,10 @@ class Space(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Six decimal places is about 11 cm, and what a maps app hands out.
+    latitude: Mapped[decimal.Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
+    longitude: Mapped[decimal.Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     images: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list, server_default="{}"
     )

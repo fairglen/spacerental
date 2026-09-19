@@ -40,7 +40,8 @@ which it clears.
 ## Public Endpoints
 
 ### GET /spaces
-List all active spaces (public).
+List all active spaces (public). Each space carries its location: `address`,
+`postal_code`, `city`, `latitude`, `longitude` (any of them may be `null`).
 Response: `{ spaces: Space[] }`
 
 ### GET /spaces/:id
@@ -189,10 +190,18 @@ All spaces for admin's org.
 
 ### POST /admin/spaces
 Create a space.
-Body: `{ name, description, address, city, images?, amenities? }`
+Body: `{ name, description?, address?, city?, postal_code?, latitude?, longitude?, images?, amenities? }`
+
+Location rules (422 otherwise): `postal_code` is at most 20 characters;
+`latitude` is within -90..90 and `longitude` within -180..180, as a number or a
+decimal string, rounded to 6 decimal places; `latitude` and `longitude` are
+given together or not at all.
 
 ### PUT /admin/spaces/:id
-Update a space.
+Update a space. Omitted fields are left as they are. `postal_code`, `latitude`
+and `longitude` may be cleared with an explicit `null`. The two coordinates are
+one value: a body that carries one must carry the other (both numbers, or both
+`null`), so an update can never leave half a point — sending only one is a 422.
 
 ### DELETE /admin/spaces/:id
 Soft-delete a space.
@@ -236,8 +245,13 @@ type Space = {
   org_id: string
   name: string
   description: string
-  address: string
-  city: string
+  address: string | null
+  city: string | null
+  postal_code: string | null
+  // Decimal strings on the wire ("38.755723"), like money; both or neither.
+  // frontend/lib/api.ts converts them to numbers and keeps null as null.
+  latitude: string | null
+  longitude: string | null
   images: string[]
   amenities: string[]
   is_active: boolean

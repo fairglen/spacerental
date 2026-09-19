@@ -57,3 +57,11 @@ vi.mock('next-auth/react', () => ({
   signOut: vi.fn(),
   SessionProvider: ({ children }: { children: React.ReactNode }) => children,
 }))
+
+// Whether customers see a "choose a space" layer is decided in one hook
+// (C11). Default to the multi-space answer — what every screen did before the
+// hook existed — so tests that are not about the mode never hit the network;
+// tests that are about it mock the hook themselves.
+vi.mock('@/lib/hooks/useSingleSpace', () => ({
+  useSingleSpace: vi.fn(() => ({ mode: 'multi', space: null, spaces: [], retry: vi.fn() })),
+}))

@@ -11,8 +11,11 @@ from app.schemas.bounds import (
     Color,
     Description,
     ImageUrls,
+    Latitude,
+    Longitude,
     Money,
     Name,
+    PostalCode,
     RejectExplicitNull,
     Tags,
     Weekday,
@@ -100,6 +103,11 @@ class RoomUpdate(RejectExplicitNull):
     is_active: bool | None = None
 
 
+def _coordinates_come_together(latitude: Decimal | None, longitude: Decimal | None) -> None:
+    if (latitude is None) != (longitude is None):
+        raise ValueError("latitude and longitude must be given together, or both left empty")
+
+
 class SpaceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -109,6 +117,9 @@ class SpaceOut(BaseModel):
     description: str | None
     address: str | None
     city: str | None
+    postal_code: str | None
+    latitude: Decimal | None
+    longitude: Decimal | None
     images: list[str]
     amenities: list[str]
     is_active: bool
@@ -122,17 +133,41 @@ class SpaceCreate(BaseModel):
     description: Description | None = None
     address: Address | None = None
     city: City | None = None
+    postal_code: PostalCode | None = None
+    latitude: Latitude | None = None
+    longitude: Longitude | None = None
     images: ImageUrls = []
     amenities: Tags = []
 
+    @model_validator(mode="after")
+    def _require_both_coordinates(self):
+        _coordinates_come_together(self.latitude, self.longitude)
+        return self
+
 
 class SpaceUpdate(RejectExplicitNull):
-    nullable_fields = frozenset({"description", "address", "city"})
+    nullable_fields = frozenset(
+        {"description", "address", "city", "postal_code", "latitude", "longitude"}
+    )
 
     name: Name | None = None
     description: Description | None = None
     address: Address | None = None
     city: City | None = None
+    postal_code: PostalCode | None = None
+    latitude: Latitude | None = None
+    longitude: Longitude | None = None
     images: ImageUrls | None = None
     amenities: Tags | None = None
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _require_both_coordinates(self):
+        # Omitted means "leave as is", so one coordinate alone would be judged
+        # against a stored value this body cannot see. A point is one value:
+        # it is sent whole, set or cleared, or not at all.
+        sent = self.model_fields_set & {"latitude", "longitude"}
+        if len(sent) == 1:
+            raise ValueError("latitude and longitude must be sent together")
+        _coordinates_come_together(self.latitude, self.longitude)
+        return self

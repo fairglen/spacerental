@@ -83,7 +83,18 @@
     "pricing": "Preços",
     "sign_in": "Entrar",
     "contact_heading": "Contacto",
-    "location": "Lisboa, Portugal",
+    "location": "Portugal",
+    "location_city": "{city}, Portugal",
     "copyright": "© {year} EspaçoHora. Todos os direitos reservados."
+  },
+  "location": {
+    "heading": "Onde estamos",
+    "address_label": "Morada",
+    "directions": "Como chegar",
+    "show_map": "Ver mapa",
+    "map_privacy": "O mapa vem do OpenStreetMap e só é carregado quando o pedires.",
+    "map_title": "Mapa de {name}",
+    "map_title_generic": "Mapa da localização",
+    "open_full_map": "Abrir o mapa completo"
   }
 }

@@ -1,11 +1,11 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { MapPin } from 'lucide-react'
 import { spacesApi } from '@/lib/api'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { RoomCard } from '@/components/spaces/RoomCard'
+import { SpaceLocation } from '@/components/spaces/SpaceLocation'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { BookingModal } from '@/components/booking/BookingModal'
 import { Badge } from '@/components/ui/badge'
@@ -67,9 +67,7 @@ export default function SpacePage({ params }: { params: { id: string } }) {
         <div className="bg-white border-b border-border py-10">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <h1 className="text-3xl font-bold text-foreground">{space?.name}</h1>
-            <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-              <MapPin className="h-4 w-4" /> {space?.address}, {space?.city}
-            </div>
+            {space && <SpaceLocation space={space} variant="compact" className="mt-3 max-w-2xl" />}
             {space?.description && <p className="mt-3 text-muted-foreground max-w-2xl">{space.description}</p>}
             <div className="flex flex-wrap gap-2 mt-3">
               {space?.amenities.map((a) => <Badge key={a} variant="secondary">{a}</Badge>)}
