@@ -42,6 +42,15 @@ the repository unit by unit and records its work as the S-series near the end
 of this file; ordinary bugs it finds continue the B-series. Each branch starts
 with a docs commit for its item and ends with the evidence.
 
+**Single-location simplification (2026-09-19):** by explicit owner assignment
+on `feat/location-single-space-simple-booking`. The only booking product is
+HOURLY booking (one or more contiguous hours) chosen on a day or week view: no
+half-day or full-day products, no monthly booking, no recurring bookings.
+R02, R03 and R99 are DEFERRED (R01 is not); the weekly series code, migration
+and tests stay in the repo, passing, with the flag off. The assignment's four
+steps are recorded as C09–C12 below, and admin handling of requests raised
+through the new contact note is D06. Commits stay local; the owner opens the PR.
+
 States used below:
 
 - **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
@@ -1462,6 +1471,105 @@ pending booking — unverified whether that is icon-only buttons or a gap.
 **Acceptance:** each surface has a Playwright or component test asserting
 behaviour, and any defect found is recorded as its own item first.
 
+### Single-location simplification — 2026-09-19
+
+Owner assignment recorded above. One branch,
+`feat/location-single-space-simple-booking`, one commit per task, in the order
+C09 → C10 → C11 → C12. Out of scope for all four: anything recurrence-related
+(build, extend, fix or delete), half-day/full-day/multi-date/monthly booking,
+new booking endpoints or modes, batch checkout, and the R01 wall-clock rework.
+No pricing, discount or refund policy is decided here.
+
+### C09 — One public contact address, from a single source
+
+**Priority: P1. State: IN PROGRESS** (`feat/location-single-space-simple-booking`).
+**Scope:** the public contact address is `geral@flowspace.pt`; the footer
+catalogs (`frontend/lib/i18n/pt.json`, `en.json`) still say
+`geral@espacohora.pt`. Align every customer-facing contact address in the
+repository, `flowspace-site/` included, and make the frontend read it from one
+constant that C12's contact note reuses. `EMAIL_FROM_ADDRESS`
+(`no-reply@espacohora.pt` in `config.py`, `docker-compose.yml`, `.env.example`)
+is NOT changed: it is a sending domain that needs DNS/Resend verification, a
+separate owner decision. **Dependencies:** none. **Acceptance:** one exported
+constant is the only place the address is written in `frontend/`; the footer
+renders it as a `mailto:` link in both locales; a repo-wide grep finds no other
+customer-facing contact address. **Validation:** component test on the footer
+link (behaviour: href and visible address come from the constant); i18n catalog
+parity test still green; repo grep recorded as evidence.
+
+### C10 — Give a space a real location
+
+**Priority: P1. State: IN PROGRESS** (same branch). **Scope:** `Space` gains
+`postal_code` (String, nullable) and `latitude`/`longitude` (Numeric(9,6),
+nullable, real ranges, both or neither) with one reviewed Alembic migration;
+the fields appear in the public space schema and the admin create/update
+schemas with the wrapped shapes unchanged; `API_SPEC.md` updated. No timezone
+column (R01 owns it). The seeded demo space moves to R. 12 de Julho de 1997 5,
+Loja 1, 2745-841 Queluz (38.755723, -9.279799), updating an already-seeded
+space in place. Frontend: a `SpaceLocation` component (address block from the
+parts that exist, "Como chegar" directions link, OpenStreetMap preview mounted
+only on click, no API key and no new dependency); admin space form (new + edit)
+gets the three fields with inline validation; the footer location comes from
+the space when there is exactly one. **Dependencies:** C09 (order only).
+**Acceptance:** migration upgrade → `alembic check` → downgrade → upgrade is
+clean on an empty PostgreSQL 16; out-of-range or half-given coordinates are a
+422 on create and on update, including an update that would leave one
+coordinate without the other; another organization's admin cannot write the
+fields; nothing customer-facing says Lisbon/Lisboa for the seeded space; no
+third-party request happens before the customer presses "Ver mapa"; with no
+coordinates there is no map section and the directions link falls back to an
+address search. **Validation:** real-PG integration tests for validation and
+tenant scoping on the admin endpoints and for the public shape; seed
+idempotency test (re-seed updates, never duplicates); `api.test.ts` shape test;
+component tests for `SpaceLocation` with full, partial and missing data and for
+the iframe being absent until the button is pressed; admin form validation test.
+
+### C11 — Hide the "space" layer while there is only one
+
+**Priority: P1. State: IN PROGRESS** (same branch). **Scope:** while exactly one
+active space is publicly visible, customers go straight to rooms; when a second
+space appears the current spaces UI returns with no code change. The mode is
+decided in one hook over the existing public spaces query
+(`{ mode: 'single' | 'multi', space }`, with loading and error explicit), and
+everything else asks the hook. Single mode: the landing section lists that
+space's room cards with a CTA that deep-links to the space page with the room
+preselected and the calendar open (`?room=<id>`); "Espaços" navigation labels
+become "Salas" in both catalogs; `/spaces` does not show a one-card list;
+`SpaceLocation` appears as a compact "Onde estamos" section on the landing page
+and in the header of the rooms page. Multi mode is unchanged, and
+`/spaces/[id]` URLs work in both. Admin is out of scope. **Dependencies:** C10.
+**Acceptance:** no multi-space UI flashes before the mode is known (skeletons
+until then); an invalid or inactive `?room=` is ignored quietly; the back
+button does not loop from `/spaces`; zero spaces shows a sane empty state.
+**Validation:** component tests for 0, 1 and 2 spaces from mocked API data,
+plus loading and error; Playwright on the seeded single-space stack: landing →
+room card → the calendar for that room is open. Assertions are on behaviour,
+not marketing strings.
+
+### C12 — Hourly booking only, on a day or week view, with a contact note
+
+**Priority: P1. State: IN PROGRESS** (same branch). **Scope:** remove the month
+view from `BookingCalendar` (view list, message, drill-down, the branches it
+leaves dead, and the page help text that mentions it); default to "Semana" at
+≥1024px and "Dia" below, with the customer's manual choice winning for the rest
+of the session; both views keep click-one-hour and drag-several-hours. A small
+shared contact note ("Somos flexíveis…") reads the C09 constant and links
+`mailto:` with a prefilled subject naming the room; it shows on the booking
+page between the help text and the calendar and as one muted line in the
+confirm dialog. Landing copy in both catalogs stops claiming recurring,
+monthly or day-rate booking. No request form, inbox or admin view (that is
+D06). No backend booking change is expected; needing one is a stop-and-ask.
+**Dependencies:** C09, C11. **Acceptance:** only Dia/Semana are offered;
+`RECURRING_BOOKINGS_ENABLED` defaults to false everywhere it is defined and,
+with it off, the confirm dialog has no "Repetir semanalmente" checkbox; the
+note never looks like an error, blocks nothing and keeps no dismissed state.
+**Validation:** component tests for the offered views, the default per viewport
+width and the manual choice sticking, single-click and drag selection in both
+views, the note and its `mailto:` on the page and in the dialog, and no
+recurrence checkbox with the flag off; Playwright: in week view drag two hours
+on a day later this week → stub checkout → Confirmado on the dashboard, and the
+toolbar has no "Mês". The untouched recurrence tests keep passing.
+
 ### C99 — Outcome 1 acceptance
 
 **Depends on:** C01–C08. **Scope:** integrated validation and evidence only.
@@ -1475,8 +1583,10 @@ outcome remains incomplete unless the user explicitly changes priorities.
 
 ## Outcome 2 — Regular customers can manage their schedule
 
-**All tasks: HOLD.** Entry gate: C99 complete and assigned roadmap work.
-Merged #26/#27 are gated foundations; do not reimplement their accepted behavior.
+**R01: HOLD.** Entry gate: C99 complete and assigned roadmap work. **R02, R03 and
+R99: DEFERRED** — parked by owner 2026-09-19 to simplify; customers rebook each week; weekly series code stays in the repo, flag off.
+Merged #26/#27 are gated foundations; do not reimplement their accepted behavior,
+and do not build on, fix or delete them while the outcome is parked.
 
 ### R01 — Preserve Lisbon wall time for availability and recurrence
 
@@ -1502,7 +1612,14 @@ the 20:00–21:00 Lisbon slot can never be selected and 08:00 looks closed. The
 calendar-range slice is B34; the timezone column, wall-clock rules and
 DST-stable recurrence remain here and are not started by `fix/smoke-findings`.
 
+**Note (2026-09-19, C10):** `Space` gained `postal_code`, `latitude` and
+`longitude` but deliberately no timezone column. `Space` will need one
+(Europe/Lisbon for the pilot) when this task is picked up. R01 is not parked
+with the rest of this outcome: opening hours are still evaluated as UTC.
+
 ### R02 — Make recurring reservations payable
+
+**State: DEFERRED** — parked by owner 2026-09-19 to simplify; customers rebook each week; weekly series code stays in the repo, flag off.
 
 **Depends on:** R01 and C02/C03. **Scope:** recurrence routes/schema, payment/order
 representation and migrations, gateways, webhooks, modal and API wrappers.
@@ -1525,6 +1642,8 @@ series preview → pay/redeem → dashboard E2E.
 
 ### R03 — Manage individual dates and future series
 
+**State: DEFERRED** — parked by owner 2026-09-19 to simplify; customers rebook each week; weekly series code stays in the repo, flag off.
+
 **Depends on:** R02. **Scope:** recurrence edit/cancel endpoints, dashboard series
 controls, accounting and notification integration, tests.
 
@@ -1545,6 +1664,8 @@ component controls, and E2E proving unaffected siblings/history survive.
 
 ### R99 — Outcome 2 acceptance
 
+**State: DEFERRED** — parked by owner 2026-09-19 to simplify; customers rebook each week; weekly series code stays in the repo, flag off.
+
 **Depends on:** R01–R03. **Scope:** integrated customer flow and regression checks.
 
 **Acceptance:** `roadmap.md` outcome-2 criteria pass together: preview, paid series,
@@ -1555,6 +1676,8 @@ record integrated commit and exact stub-mode reproduction steps.
 ## Outcome 3 — The location can operate reliably
 
 **All tasks: HOLD.** Entry gate: R99 complete and assigned roadmap work.
+R99 is DEFERRED as of 2026-09-19, so this gate can no longer be met as written;
+the owner restates it when Outcome 3 is assigned. No task here starts meanwhile.
 Implement in the order below. Reuse payment and transition primitives already
 introduced; avoid separate competing cancellation or accounting implementations.
 
@@ -2284,8 +2407,9 @@ follow-up, not half-built).
 | D01 | Epic 6: RLS | Before onboarding another operator. Design policies for public reads, user-owned multi-org data and worker access; verify with a non-bypass DB role that omission of a route filter cannot leak data. Do not mechanically apply the old single-org setting design to every request. |
 | D02 | Epic 9: further i18n | A product need after the single-location journey is reliable. Q29/Q30 only complete/dispose of existing marketing/layout work; full booking/admin translation is not implicitly authorized. |
 | D03 | Additional multi-operator/multi-space UX | Explicit expansion decision; existing tenant isolation and org-cache correctness remain mandatory now. |
-| D04 | B13: daily booking products/monthly recurrence | Explicit customer/product requirement; these are new products, not regressions of hourly or weekly booking. |
+| D04 | B13: daily booking products/monthly recurrence | Explicit customer/product requirement; these are new products, not regressions of hourly or weekly booking. Owner decision 2026-09-19: hourly booking is the only product (C12); half-day, full-day, multi-date and monthly booking stay deferred, as do R02/R03/R99. |
 | D05 | Epic 5: pagination beyond existing admin bookings | Demonstrated list growth. Q20 owns existing work; add further list coverage only when needed (O05's bounded audit listing is part of that task). |
+| D06 | Admin handling of special requests (recurring arrangements, longer bookings, questions) raised through the booking contact note (C12) | Stub only. **Scope:** somewhere in the admin panel for an operator to see, answer and close requests that today arrive by email at the C09 contact address; tenant-scoped, no customer-facing request form implied. **Acceptance (to be written when reactivated):** an operator can list, read and resolve a request for their own organization only, with real-PG happy/failure tests and a Playwright admin flow. Reactivate on demonstrated request volume or an explicit owner decision; until then the mailbox is the process. |
 
 ## Legacy IDs and verified baseline
 

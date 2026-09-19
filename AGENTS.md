@@ -388,8 +388,10 @@ unchanged. Record and prioritize new discoveries in TODO.md before implementatio
   hourly bookings and pack purchases. Pack redemption and eligible cancellation
   credits are implemented. Abandoned holds/recovery and cash refunds remain C03/O02.
 - **Recurring series:** API and UI require `RECURRING_BOOKINGS_ENABLED=true` in
-  Compose. They create pending weekly UTC occurrences for manual handling;
-  paid series and stable Lisbon local times remain R01–R03.
+  Compose. They create pending weekly UTC occurrences for manual handling.
+  Parked by the owner on 2026-09-19 (R02/R03/R99 DEFERRED): hourly booking is the
+  only product, the flag stays off, and the series code is left in place
+  untouched. Stable Lisbon local times (R01) are not parked.
 - **Smart locks:** the local stub covers confirmation/cancellation transitions.
   Live startup is gated until persistent identifiers and retries ship (O04).
 - **Email:** stub/live gateway and Portuguese confirmation/cancellation messages
