@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { waitOutPublicRateWindow } from './helpers/rooms'
 
 const API_URL = process.env.E2E_API_URL || 'http://localhost:8000/api/v1'
 
@@ -7,6 +8,10 @@ const API_URL = process.env.E2E_API_URL || 'http://localhost:8000/api/v1'
 // is hidden. Assertions are on behaviour (where links go, what opens), not on
 // marketing strings.
 test.describe('single-space mode', () => {
+  // This file and week-view.spec.ts (which runs next) share the one window
+  // bought here; together they stay well under the budget.
+  test.beforeAll(waitOutPublicRateWindow)
+
   test.beforeEach(async ({ request }) => {
     const { spaces } = await (await request.get(`${API_URL}/spaces`)).json()
     test.skip(spaces.length !== 1, `single-space mode needs exactly one public space; this stack has ${spaces.length}`)

@@ -1,7 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
 import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { openSpaceRooms } from './helpers/rooms'
+import { openSpaceRooms, preferDayView, useDayView } from './helpers/rooms'
 
 /**
  * Booking flows people actually perform (TODO.md B1, B2, B4, B5).
@@ -127,7 +127,11 @@ async function openRoomCalendar(page: Page, roomName: string) {
     await bookButtons.nth(i).click()
     const heading = page.getByRole('heading', { name: /^Disponibilidade — / })
     await expect(heading).toBeVisible({ timeout: 10000 })
-    if ((await heading.innerText()).includes(roomName)) return
+    if ((await heading.innerText()).includes(roomName)) {
+      // These flows step day by day; the week view has its own spec.
+      await useDayView(page)
+      return
+    }
   }
   throw new Error(`Room "${roomName}" not found on the space page`)
 }
@@ -297,6 +301,7 @@ test.describe('Reservas — fluxos reais', () => {
     }
 
     const context = await browser.newContext({ timezoneId: 'UTC' })
+    await preferDayView(context)
     page = await context.newPage()
     await signIn(page)
   })
@@ -456,6 +461,7 @@ test.describe('Reservas — fluxos reais', () => {
     await createBookingViaApi(api, token, roomId, utcHour(offset, 9), utcHour(offset, 11))
 
     const visitorContext = await browser.newContext({ timezoneId: 'UTC' })
+    await preferDayView(visitorContext)
     const visitor = await visitorContext.newPage()
     try {
       await openRoomCalendar(visitor, 'Sala Névoa')

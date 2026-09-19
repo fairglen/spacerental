@@ -114,5 +114,11 @@
   },
   "common": {
     "loading": "A carregar…"
+  },
+  "contactNote": {
+    "lead": "Somos flexíveis.",
+    "body": "Precisas de um horário fixo todas as semanas, de um acordo diferente, ou tens dúvidas?",
+    "cta": "Fala connosco:",
+    "subject": "Pedido de reserva — {room}"
   }
 }

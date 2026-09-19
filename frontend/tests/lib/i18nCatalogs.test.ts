@@ -27,6 +27,9 @@ describe('i18n catalogs', () => {
     ['monthly plans', /\bmensalmente\b|\bmonthly\b(?! fee)/i],
     ['priority booking', /priorit/i],
     ['recurring bookings (feature-flagged off by default)', /recorrente|recurring/i],
+    // C12: hourly booking is the only product.
+    ['weekly or fixed-slot booking as a product', /\bsemanal(mente)?\b|\bweekly\b/i],
+    ['day or half-day rates', /dia inteiro|meio[- ]dia|\bdi[áa]ria\b|por dia|half[- ]day|full[- ]day|per day|day rate/i],
   ])('do not promise %s', (_label, pattern) => {
     const offenders = [...Object.entries(ptFlat), ...Object.entries(enFlat)]
       .filter(([, value]) => pattern.test(value))

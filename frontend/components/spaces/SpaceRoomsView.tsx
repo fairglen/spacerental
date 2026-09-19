@@ -7,6 +7,7 @@ import { RoomCard } from '@/components/spaces/RoomCard'
 import { SpaceLocation } from '@/components/spaces/SpaceLocation'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { BookingModal } from '@/components/booking/BookingModal'
+import { ContactNote } from '@/components/booking/ContactNote'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Room } from '@/types'
@@ -104,9 +105,10 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
               <h3 ref={calendarHeadingRef} tabIndex={-1} className="text-lg font-semibold text-foreground mb-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
                 Disponibilidade — {calendarRoom.name}
               </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Clica num slot verde para uma hora ou arrasta para vários. Na vista Mês, clica num dia para ver os horários.
+              <p data-testid="calendar-help" className="text-sm text-muted-foreground mb-3">
+                Clica numa hora livre para reservar 1 hora, ou arrasta para reservar várias seguidas.
               </p>
+              <ContactNote roomName={calendarRoom.name} className="mb-4" />
               <BookingCalendar room={calendarRoom} onSlotSelect={handleSlotSelect} />
             </div>
           )}

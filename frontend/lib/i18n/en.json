@@ -114,5 +114,11 @@
   },
   "common": {
     "loading": "Loading…"
+  },
+  "contactNote": {
+    "lead": "We're flexible.",
+    "body": "Need the same slot every week, a different arrangement, or have a question?",
+    "cta": "Talk to us:",
+    "subject": "Booking request — {room}"
   }
 }
