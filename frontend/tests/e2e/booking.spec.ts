@@ -1,6 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
 import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
+import { openSpaceRooms } from './helpers/rooms'
 
 /**
  * Booking flows people actually perform (TODO.md B1, B2, B4, B5).
@@ -118,12 +119,9 @@ async function signIn(page: Page) {
 
 /** Open the availability calendar of a room by name. */
 async function openRoomCalendar(page: Page, roomName: string) {
-  await page.goto('/spaces')
-  await page.getByRole('button', { name: /Ver Salas e Reservar/i }).first().click()
-  await page.waitForURL('**/spaces/**', { timeout: 10000 })
+  await openSpaceRooms(page)
 
   const bookButtons = page.getByRole('button', { name: /Reservar Esta Sala/i })
-  await expect(bookButtons.first()).toBeVisible({ timeout: 15000 })
   const total = await bookButtons.count()
   for (let i = 0; i < total; i++) {
     await bookButtons.nth(i).click()
@@ -311,9 +309,13 @@ test.describe('Reservas — fluxos reais', () => {
     if (page) await page.context().close()
   })
 
-  test('browse spaces page', async () => {
+  test('browse rooms page', async () => {
+    // One seeded space: /spaces goes straight to its rooms, with no list of
+    // one to click through (C11).
     await page.goto('/spaces')
-    await expect(page.getByText(/Todos os Espaços/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Reservar Esta Sala/i }).first()).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('button', { name: /Ver Salas e Reservar/i })).toHaveCount(0)
+    await expect(page).toHaveURL(/\/spaces$/)
   })
 
   test('a 09:00–12:00 drag books all three hours and reaches confirmed (B1, B4)', async () => {

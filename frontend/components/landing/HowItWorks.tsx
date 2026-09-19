@@ -1,11 +1,16 @@
 'use client'
 import { useT } from '@/lib/i18n'
+import { SpaceModeText } from '@/components/spaces/SpaceModeText'
 
 export function HowItWorks() {
   const t = useT()
   const steps = [
     { n: '01', title: t('howItWorks.step_1_title'), desc: t('howItWorks.step_1_desc') },
-    { n: '02', title: t('howItWorks.step_2_title'), desc: t('howItWorks.step_2_desc') },
+    {
+      n: '02',
+      title: <SpaceModeText single="howItWorks.step_2_title_rooms" multi="howItWorks.step_2_title" skeletonClassName="h-4 w-28" />,
+      desc: t('howItWorks.step_2_desc'),
+    },
     { n: '03', title: t('howItWorks.step_3_title'), desc: t('howItWorks.step_3_desc') },
     { n: '04', title: t('howItWorks.step_4_title'), desc: t('howItWorks.step_4_desc') },
   ]

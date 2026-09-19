@@ -5,6 +5,7 @@ import { Building2, MapPin, Mail } from 'lucide-react'
 import { useT } from '@/lib/i18n'
 import { CONTACT_EMAIL, contactMailto } from '@/lib/contact'
 import { useSingleSpace } from '@/lib/hooks/useSingleSpace'
+import { SpaceModeText } from '@/components/spaces/SpaceModeText'
 
 export function Footer() {
   const t = useT()
@@ -32,7 +33,7 @@ export function Footer() {
             <ul className="space-y-2 text-sm text-gray-400">
               <li>
                 <Link href="/spaces" className="hover:text-white transition-colors">
-                  {t('footer.spaces')}
+                  <SpaceModeText single="footer.rooms" multi="footer.spaces" skeletonClassName="bg-gray-700" />
                 </Link>
               </li>
               <li>

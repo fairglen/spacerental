@@ -5,6 +5,7 @@
     "headline_highlight": "no teu tempo",
     "description": "Salas privadas para psicólogos, terapeutas e profissionais de saúde. Reserva online em segundos, sem contratos longos.",
     "cta_primary": "Ver Espaços",
+    "cta_primary_rooms": "Ver Salas",
     "cta_secondary": "Saber Mais",
     "benefit_1": "Sem caução",
     "benefit_2": "Cancelamento gratuito 24h antes",
@@ -38,6 +39,7 @@
     "step_1_title": "Regista-te",
     "step_1_desc": "Cria a tua conta em segundos com o teu e-mail.",
     "step_2_title": "Escolhe o espaço",
+    "step_2_title_rooms": "Escolhe a sala",
     "step_2_desc": "Consulta as salas disponíveis e as suas comodidades.",
     "step_3_title": "Reserva o horário",
     "step_3_desc": "Seleciona a data e hora no calendário e confirma a reserva.",
@@ -57,10 +59,16 @@
     "section_description": "Salas preparadas para a tua prática profissional.",
     "cta_detail": "Ver Disponibilidade",
     "empty_state": "Ainda não há espaços disponíveis.",
-    "cta_all": "Ver Todos os Espaços"
+    "cta_all": "Ver Todos os Espaços",
+    "rooms_title": "Salas Disponíveis",
+    "rooms_empty": "Ainda não há salas disponíveis.",
+    "rooms_cta_all": "Ver Todas as Salas",
+    "error": "Não foi possível carregar as salas.",
+    "retry": "Tentar novamente"
   },
   "navbar": {
     "spaces_link": "Espaços",
+    "rooms_link": "Salas",
     "how_it_works_link": "Como Funciona",
     "pricing_link": "Preços",
     "admin_link": "Admin",
@@ -79,6 +87,7 @@
     "tagline": "Espaços profissionais por hora para psicólogos, terapeutas e outros profissionais de saúde.",
     "links_heading": "Links",
     "spaces": "Espaços",
+    "rooms": "Salas",
     "how_it_works": "Como Funciona",
     "pricing": "Preços",
     "sign_in": "Entrar",
@@ -96,5 +105,14 @@
     "map_title": "Mapa de {name}",
     "map_title_generic": "Mapa da localização",
     "open_full_map": "Abrir o mapa completo"
+  },
+  "roomCard": {
+    "capacity_one": "Até {count} pessoa",
+    "capacity_many": "Até {count} pessoas",
+    "cta": "Reservar Esta Sala",
+    "selected": "Sala selecionada"
+  },
+  "common": {
+    "loading": "A carregar…"
   }
 }
