@@ -13,6 +13,30 @@ JWT is HS256, signed with the backend `SECRET_KEY`, issued by `POST /auth/login`
 
 ---
 
+## Request bounds
+
+Every request field is bounded, and input outside a bound is answered with
+422, never stored and never a server error. The limits are technical and
+generous; they live in `backend/app/schemas/bounds.py`.
+
+| Field | Bound |
+|---|---|
+| Names (user, space, room, package) | 1 to 255 characters; a user's name may be empty |
+| `city`, `address`, `description` | 100, 500, 5000 characters |
+| `notes` (booking, series) | 2000 characters |
+| `amenities`, `images` | at most 50 entries; 100 and 500 characters each; images are `http(s)` URLs |
+| `color` | `#RRGGBB` |
+| `capacity` | 1 to 10000 |
+| `hourly_rate`, `price` | 0 to 99999999.99, two decimals |
+| Package `hours`, `validity_days` | 1 to 999, 1 to 3650 |
+| Availability rules | weekday 0 to 6, opening before closing, at most 50 per call |
+| Booking and series instants, `until_date` | before the year 2100 |
+| Admin list `page` | 1 to 1000000 |
+
+No string may contain a NUL byte. On `PUT`, an omitted field is left as it is;
+an explicit `null` is accepted only for `description`, `address` and `city`,
+which it clears.
+
 ## Public Endpoints
 
 ### GET /spaces

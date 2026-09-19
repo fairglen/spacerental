@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.booking import BookingStatus, PaymentMethod
+from app.schemas.bounds import Notes, before_latest_instant
 from app.schemas.space import RoomOut
 from app.schemas.user import UserOut
 
@@ -43,7 +44,7 @@ class BookingCreate(BaseModel):
     room_id: uuid.UUID
     start_time: datetime
     end_time: datetime
-    notes: str | None = None
+    notes: Notes | None = None
     payment_method: PaymentMethod = PaymentMethod.hourly
 
     @field_validator("start_time", "end_time")
@@ -67,7 +68,7 @@ class BookingCreate(BaseModel):
         # `ValueError` inside `astimezone`.
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("must include timezone information (e.g. a UTC offset)")
-        return value.astimezone(UTC)
+        return before_latest_instant(value.astimezone(UTC))
 
 
 class BookingCheckoutOut(BaseModel):

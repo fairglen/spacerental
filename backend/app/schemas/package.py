@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 
 from app.models.package import PurchaseStatus
+from app.schemas.bounds import Money, Name, PackageHours, RejectExplicitNull, ValidityDays
 
 
 class PackageOut(BaseModel):
@@ -22,17 +23,17 @@ class PackageOut(BaseModel):
 
 
 class PackageCreate(BaseModel):
-    name: str
-    hours: int
-    price: Decimal
-    validity_days: int = 365
+    name: Name
+    hours: PackageHours
+    price: Money
+    validity_days: ValidityDays = 365
 
 
-class PackageUpdate(BaseModel):
-    name: str | None = None
-    hours: int | None = None
-    price: Decimal | None = None
-    validity_days: int | None = None
+class PackageUpdate(RejectExplicitNull):
+    name: Name | None = None
+    hours: PackageHours | None = None
+    price: Money | None = None
+    validity_days: ValidityDays | None = None
     is_active: bool | None = None
 
 

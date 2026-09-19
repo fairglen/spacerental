@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.schemas.bounds import PersonName
+
 
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -18,7 +20,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     # NIST SP 800-63B: min 8, accept up to at least 64 (we allow 128)
     password: str = Field(min_length=8, max_length=128)
-    name: str | None = None
+    name: PersonName | None = None
 
 
 class UserLogin(BaseModel):

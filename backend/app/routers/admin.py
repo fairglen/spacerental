@@ -305,7 +305,7 @@ async def admin_list_bookings(
     booking_status: BookingStatus | None = Query(None, alias="status"),
     from_date: datetime | None = Query(None, alias="from"),
     to_date: datetime | None = Query(None, alias="to"),
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=1_000_000),
     page_size: int = Query(20, ge=1, le=100),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),

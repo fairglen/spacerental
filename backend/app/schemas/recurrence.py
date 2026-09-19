@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.recurrence import RecurrenceFrequency
 from app.schemas.booking import BookingOut
+from app.schemas.bounds import Notes, before_latest_date, before_latest_instant
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -16,8 +17,8 @@ def _as_utc(value: datetime) -> datetime:
     rather than silently producing a series in the server's local time.
     """
     if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+        return before_latest_instant(value.replace(tzinfo=UTC))
+    return before_latest_instant(value.astimezone(UTC))
 
 
 class RecurrenceOut(BaseModel):
@@ -43,9 +44,10 @@ class RecurrenceCreate(BaseModel):
     end_time: datetime
     until_date: date
     frequency: RecurrenceFrequency = RecurrenceFrequency.weekly
-    notes: str | None = None
+    notes: Notes | None = None
 
     _normalize = field_validator("start_time", "end_time")(_as_utc)
+    _bounded_until = field_validator("until_date")(before_latest_date)
 
 
 class RecurrenceUpdate(BaseModel):
@@ -56,6 +58,7 @@ class RecurrenceUpdate(BaseModel):
     until_date: date | None = None
 
     _normalize = field_validator("start_time", "end_time")(_as_utc)
+    _bounded_until = field_validator("until_date")(before_latest_date)
 
 
 class RecurrenceWithBookingsOut(BaseModel):

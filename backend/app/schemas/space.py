@@ -2,7 +2,21 @@ import uuid
 from datetime import datetime, time
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.schemas.bounds import (
+    Address,
+    Capacity,
+    City,
+    Color,
+    Description,
+    ImageUrls,
+    Money,
+    Name,
+    RejectExplicitNull,
+    Tags,
+    Weekday,
+)
 
 
 class AvailabilityRuleOut(BaseModel):
@@ -17,7 +31,7 @@ class AvailabilityRuleOut(BaseModel):
 
 
 class AvailabilityRuleIn(BaseModel):
-    day_of_week: int
+    day_of_week: Weekday
     open_time: time
     close_time: time
 
@@ -28,9 +42,15 @@ class AvailabilityRuleIn(BaseModel):
             raise ValueError("must be on the hour")
         return value
 
+    @model_validator(mode="after")
+    def _require_opening_before_closing(self):
+        if self.open_time >= self.close_time:
+            raise ValueError("open_time must be before close_time")
+        return self
+
 
 class AvailabilityRulesSetBody(BaseModel):
-    rules: list[AvailabilityRuleIn]
+    rules: list[AvailabilityRuleIn] = Field(max_length=50)
 
 
 class AvailabilitySlot(BaseModel):
@@ -58,23 +78,25 @@ class RoomOut(BaseModel):
 
 
 class RoomCreate(BaseModel):
-    name: str
-    description: str | None = None
-    capacity: int = 1
-    hourly_rate: Decimal
-    color: str = "#6366f1"
-    amenities: list[str] = []
-    images: list[str] = []
+    name: Name
+    description: Description | None = None
+    capacity: Capacity = 1
+    hourly_rate: Money
+    color: Color = "#6366f1"
+    amenities: Tags = []
+    images: ImageUrls = []
 
 
-class RoomUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    capacity: int | None = None
-    hourly_rate: Decimal | None = None
-    color: str | None = None
-    amenities: list[str] | None = None
-    images: list[str] | None = None
+class RoomUpdate(RejectExplicitNull):
+    nullable_fields = frozenset({"description"})
+
+    name: Name | None = None
+    description: Description | None = None
+    capacity: Capacity | None = None
+    hourly_rate: Money | None = None
+    color: Color | None = None
+    amenities: Tags | None = None
+    images: ImageUrls | None = None
     is_active: bool | None = None
 
 
@@ -96,19 +118,21 @@ class SpaceOut(BaseModel):
 
 
 class SpaceCreate(BaseModel):
-    name: str
-    description: str | None = None
-    address: str | None = None
-    city: str | None = None
-    images: list[str] = []
-    amenities: list[str] = []
+    name: Name
+    description: Description | None = None
+    address: Address | None = None
+    city: City | None = None
+    images: ImageUrls = []
+    amenities: Tags = []
 
 
-class SpaceUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    address: str | None = None
-    city: str | None = None
-    images: list[str] | None = None
-    amenities: list[str] | None = None
+class SpaceUpdate(RejectExplicitNull):
+    nullable_fields = frozenset({"description", "address", "city"})
+
+    name: Name | None = None
+    description: Description | None = None
+    address: Address | None = None
+    city: City | None = None
+    images: ImageUrls | None = None
+    amenities: Tags | None = None
     is_active: bool | None = None
