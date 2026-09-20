@@ -33,6 +33,10 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white shadow-xl mx-4 p-6',
+        // Never taller than the screen: a dialog whose content outgrows it
+        // scrolls inside, so its footer buttons stay reachable on a short
+        // phone instead of sitting below a fold nobody can scroll to.
+        'max-h-[calc(100dvh-2rem)] overflow-y-auto',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',

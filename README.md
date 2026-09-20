@@ -274,6 +274,9 @@ puts the app in single-space mode (`single-space.spec.ts` skips itself
 otherwise). Every browser shares one backend rate-limit budget (120 public reads
 a minute), so a few spec files deliberately wait out a 60-second window at their
 boundary; the full run takes several minutes and those pauses are not hangs.
+CI runs this suite with `RECURRING_BOOKINGS_ENABLED=true` (the weekly-series
+spec only runs its full body then), so before opening a PR run it that way too:
+start the stack with that variable set and pass it to `npm run test:e2e`.
 On a laptop, keep it awake for the run (`caffeinate -i npm run test:e2e` on
 macOS): a machine that sleeps mid-run produces timeouts that look like failures.
 

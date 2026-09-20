@@ -1648,8 +1648,28 @@ label depends on the mode (in-app navigation reuses the 60 s cache). In the
 browser suite that was ~25 extra reads a minute: the booking → locale →
 packages sequence reached exactly 120 and the packages spec's own `GET /spaces`
 came back 429. No limit was changed; `packages.spec.ts` and the two new spec
-files wait out one window each (the B18 rule). For (2), carrying the last
-answer across full page loads for its 60 s freshness would remove most of it. **Proposal:** a ranged availability read
+files wait out one window each (the B18 rule).
+
+**(2) fixed on the same branch, 2026-09-20.** `useSingleSpace()` now carries its
+answer across full page loads in `sessionStorage` for the 60 s it is fresh
+anyway (read after mount, so server and first client render still match;
+ignored when stale, malformed, future-dated or storage is unavailable; a
+failure is never remembered). Measured on the full browser suite in CI's
+configuration (recurrence flag on): worst 60 s window of public reads 116 → 89
+of 120, total 251 → 208, no 429. The E2E room-picking helper also stopped
+mounting every room's calendar to find one. **(1) remains open** — the ranged
+availability read below.
+
+**Found by CI on PR #54, fixed 2026-09-20:** the contact note (C12) made the
+confirm dialog taller, and `DialogContent` could not scroll, so with the weekly
+options and a conflict list showing, the footer buttons sat outside a 720 px
+viewport (`element is outside of the viewport` in the untouched weekly-series
+spec, which only runs its full body when CI enables the flag). A short phone
+with the pack choice and an error showing could hit the same. `DialogContent`
+is now capped to the viewport and scrolls inside; `week-view.spec.ts` opens the
+dialog on a 390×520 screen and requires the buttons to be reachable. Lesson
+recorded: run the browser suite with `RECURRING_BOOKINGS_ENABLED=true` too,
+because CI does. **Proposal:** a ranged availability read
 (`?from=&to=`, bounded to 7 days, same wrapped `{slots}` shape) with the
 `lib/api.ts` wrapper and shape test. It is a backend change on a public
 endpoint, so it was not made under C12. **Acceptance:** one request per week

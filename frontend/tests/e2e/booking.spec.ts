@@ -117,23 +117,21 @@ async function signIn(page: Page) {
   await page.waitForURL('**/dashboard', { timeout: 30000 })
 }
 
-/** Open the availability calendar of a room by name. */
+/**
+ * Open the availability calendar of a room by name: the same click a customer
+ * makes, on that room's own card. Trying each card in turn until the heading
+ * matched mounted up to three calendars, and every mount is a public read
+ * against the budget all specs share (TODO.md B18, B48).
+ */
 async function openRoomCalendar(page: Page, roomName: string) {
   await openSpaceRooms(page)
 
-  const bookButtons = page.getByRole('button', { name: /Reservar Esta Sala/i })
-  const total = await bookButtons.count()
-  for (let i = 0; i < total; i++) {
-    await bookButtons.nth(i).click()
-    const heading = page.getByRole('heading', { name: /^Disponibilidade — / })
-    await expect(heading).toBeVisible({ timeout: 10000 })
-    if ((await heading.innerText()).includes(roomName)) {
-      // These flows step day by day; the week view has its own spec.
-      await useDayView(page)
-      return
-    }
-  }
-  throw new Error(`Room "${roomName}" not found on the space page`)
+  const card = page.getByTestId('room-card').filter({ hasText: roomName })
+  await expect(card, `Room "${roomName}" not found on the space page`).toHaveCount(1)
+  await card.getByRole('button', { name: /Reservar Esta Sala/i }).click()
+  await expect(page.getByRole('heading', { name: `Disponibilidade — ${roomName}` })).toBeVisible({ timeout: 10000 })
+  // These flows step day by day; the week view has its own spec.
+  await useDayView(page)
 }
 
 /** Step the day view forward `offset` days from today. */

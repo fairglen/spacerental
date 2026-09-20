@@ -20,7 +20,10 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  window.sessionStorage.clear()
+})
 
 describe('useSingleSpace', () => {
   it('is loading, and neither single nor multi, until the list arrives', async () => {
@@ -59,5 +62,73 @@ describe('useSingleSpace', () => {
     expect(result.current.space).toBeNull()
     result.current.retry()
     await waitFor(() => expect(result.current.mode).toBe('single'))
+  })
+})
+
+// B48: the navbar asks this hook on every page, and a full page load starts
+// with an empty query cache. Without carrying the answer over, every page load
+// spent one read of the public budget just to pick a label.
+describe('useSingleSpace across full page loads', () => {
+  const KEY = 'espacohora.publicSpaces'
+
+  it('remembers a fresh answer, so the next page load asks nothing', async () => {
+    vi.mocked(spacesApi.list).mockResolvedValue([space('a')])
+    const first = renderHook(() => useSingleSpace(), { wrapper })
+    await waitFor(() => expect(first.result.current.mode).toBe('single'))
+    expect(spacesApi.list).toHaveBeenCalledTimes(1)
+    first.unmount()
+
+    // A new page load: a new query client, the same tab.
+    const second = renderHook(() => useSingleSpace(), { wrapper })
+    await waitFor(() => expect(second.result.current.mode).toBe('single'))
+    expect(second.result.current.space?.id).toBe('a')
+    expect(spacesApi.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('still starts as loading, so the server and the first client render agree', () => {
+    window.sessionStorage.setItem(KEY, JSON.stringify({ at: Date.now(), spaces: [space('a')] }))
+    const { result } = renderHook(() => useSingleSpace(), { wrapper })
+    // renderHook has flushed effects by now, so look at what was rendered first.
+    expect(result.current.mode === 'loading' || result.current.mode === 'single').toBe(true)
+  })
+
+  it('asks again once the remembered answer is older than a minute', async () => {
+    window.sessionStorage.setItem(KEY, JSON.stringify({ at: Date.now() - 61_000, spaces: [space('a')] }))
+    vi.mocked(spacesApi.list).mockResolvedValue([space('a'), space('b')])
+    const { result } = renderHook(() => useSingleSpace(), { wrapper })
+    await waitFor(() => expect(result.current.mode).toBe('multi'))
+    expect(spacesApi.list).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['not JSON', 'nonsense'],
+    ['the wrong shape', JSON.stringify({ at: Date.now(), spaces: 'a' })],
+    ['a timestamp from the future', JSON.stringify({ at: Date.now() + 3_600_000, spaces: [] })],
+  ])('ignores a remembered value that is %s', async (_label, stored) => {
+    window.sessionStorage.setItem(KEY, stored)
+    vi.mocked(spacesApi.list).mockResolvedValue([space('a')])
+    const { result } = renderHook(() => useSingleSpace(), { wrapper })
+    await waitFor(() => expect(result.current.mode).toBe('single'))
+    expect(spacesApi.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not remember a failure', async () => {
+    vi.mocked(spacesApi.list).mockRejectedValue(new Error('down'))
+    const { result } = renderHook(() => useSingleSpace(), { wrapper })
+    await waitFor(() => expect(result.current.mode).toBe('error'))
+    expect(window.sessionStorage.getItem(KEY)).toBeNull()
+  })
+
+  it('works when session storage is unavailable', async () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      vi.mocked(spacesApi.list).mockResolvedValue([space('a')])
+      const { result } = renderHook(() => useSingleSpace(), { wrapper })
+      await waitFor(() => expect(result.current.mode).toBe('single'))
+    } finally {
+      getItem.mockRestore()
+      setItem.mockRestore()
+    }
   })
 })

@@ -166,3 +166,54 @@ test('a phone opens on the day view, and keeps the week once asked for it', asyn
     await context.close()
   }
 })
+
+// The confirm dialog grew a line with the contact note (C12). On a short
+// screen — and with the pack choice, a sign-in prompt, an error or the weekly
+// options showing — its buttons were pushed below the fold of a dialog that
+// could not scroll, so the booking could be neither confirmed nor cancelled.
+test('the confirm dialog keeps its buttons reachable on a short screen', async ({ browser }) => {
+  const context = await browser.newContext({ storageState: ADMIN_STORAGE_STATE, timezoneId: 'UTC', viewport: { width: 390, height: 520 } })
+  const page = await context.newPage()
+  try {
+    const { spaces } = await (await api.get(`${API_URL}/spaces`)).json()
+    const { rooms } = await (await api.get(`${API_URL}/spaces/${spaces[0].id}`)).json()
+    const room = rooms[rooms.length - 1]
+    const { day, hour } = await pickTwoFreeHours(api, room.id)
+    const daysAhead = Math.round((day.getTime() - Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())) / 86_400_000)
+
+    await page.goto(`/spaces/${spaces[0].id}?room=${room.id}`)
+    await expect(page.locator('.rbc-time-content .rbc-day-slot')).toHaveCount(1, { timeout: 15000 })
+    for (let i = 0; i < daysAhead; i++) await page.locator('.rbc-toolbar').getByRole('button', { name: '›' }).click()
+    await expect
+      .poll(async () => (await cell(page, 0, hour)).evaluate((el) => window.getComputedStyle(el).backgroundColor), { timeout: 15000 })
+      .toBe(AVAILABLE_BG)
+    const target = await cell(page, 0, hour)
+    await target.scrollIntoViewIfNeeded()
+    await expect
+      .poll(async () => {
+        const a = await target.boundingBox()
+        await new Promise((r) => setTimeout(r, 120))
+        const b = await target.boundingBox()
+        return !!a && !!b && a.y === b.y
+      }, { timeout: 10000 })
+      .toBe(true)
+    const box = (await target.boundingBox())!
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
+    // The dialog never outgrows the screen…
+    const size = (await dialog.boundingBox())!
+    expect(size.y).toBeGreaterThanOrEqual(0)
+    expect(size.y + size.height).toBeLessThanOrEqual(520)
+    // …and everything in it, down to the buttons, can be brought on screen and used.
+    const cancel = dialog.getByRole('button', { name: /^Cancelar$/ })
+    await cancel.scrollIntoViewIfNeeded()
+    await expect(cancel).toBeInViewport({ ratio: 1 })
+    await expect(dialog.getByRole('button', { name: /Confirmar Reserva/i })).toBeInViewport({ ratio: 1 })
+    await cancel.click()
+    await expect(dialog).toHaveCount(0)
+  } finally {
+    await context.close()
+  }
+})
