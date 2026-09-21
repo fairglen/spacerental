@@ -38,6 +38,13 @@ describe('bookingErrorMessage (B31)', () => {
     expect(bookingErrorMessage(httpError(409, 'This time slot is already booked'), 'package')).toMatch(/já está reservado/)
     expect(bookingErrorMessage(httpError(409, 'No active package with 3 hours remaining'), 'package')).toMatch(/horas suficientes/)
   })
+  it('tells a retried mixed hold that its pack hours are gone, whatever method the caller passes (C13)', () => {
+    const gone = httpError(409, 'The package no longer has the hours this booking reserved')
+    for (const method of ['hourly', 'mixed', 'package'] as const) {
+      expect(bookingErrorMessage(gone, method)).toMatch(/pack/i)
+      expect(bookingErrorMessage(gone, method)).not.toMatch(/já está reservado/)
+    }
+  })
   it('tells a customer whose retry hit an already-paid session to wait for confirmation', () => {
     expect(bookingErrorMessage(httpError(409, 'Payment already received for this booking; waiting for confirmation'), 'hourly'))
       .toMatch(/já foi recebido/)

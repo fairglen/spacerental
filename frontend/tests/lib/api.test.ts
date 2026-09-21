@@ -470,3 +470,32 @@ describe('space location shape (C10)', () => {
     expect(updated.latitude).toBeNull()
   })
 })
+
+// C13: a mixed booking's split arrives as Decimal strings like every amount.
+describe('mixed payment shape (C13)', () => {
+  const wire = {
+    id: 'b1', status: 'pending', payment_method: 'mixed', duration_hours: '8.00',
+    package_hours_used: '7.00', total_amount: '11.00',
+  }
+
+  it('bookingsApi.create sends the method and converts the split', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { booking: wire, checkout_url: 'http://x/cs' } }) } as any
+    const body = { room_id: 'r', start_time: 's', end_time: 'e', payment_method: 'mixed' as const }
+    const { booking, checkout_url } = await bookingsApi.create(body, mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/bookings', body)
+    expect(booking.payment_method).toBe('mixed')
+    expect(booking.package_hours_used).toBe(7)
+    expect(booking.total_amount).toBe(11)
+    expect(checkout_url).toBe('http://x/cs')
+  })
+
+  it('listMine and the admin list convert it too, and default a missing share to 0', async () => {
+    const mine = { get: vi.fn().mockResolvedValue({ data: { bookings: [wire, { id: 'old', total_amount: '11.00', duration_hours: '1' }] } }) } as any
+    const [mixed, old] = await bookingsApi.listMine(mine)
+    expect(mixed.package_hours_used).toBe(7)
+    expect(old.package_hours_used).toBe(0)
+
+    const admin = { defaults: {}, get: vi.fn().mockResolvedValue({ data: { bookings: [wire], total: 1, page: 1, page_size: 20 } }) } as any
+    expect((await adminApi.getBookings({}, admin)).bookings[0].package_hours_used).toBe(7)
+  })
+})

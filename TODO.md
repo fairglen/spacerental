@@ -1698,7 +1698,30 @@ one commit per task, in the order C13 → C14 → C15 → C16 → C17 → C18 �
 
 ### C13 — Pack hours first, pay only the extra hours (`mixed` payment)
 
-**Priority: P1. State: IN PROGRESS** (PR 1). **Observed:** with a pack that has
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help` (backend `0240817`, frontend in the next
+commit), committed locally; DONE only once merged. **Evidence (2026-09-22):**
+26 real-PG tests in `tests/test_mixed_payment.py` (the 7h+1h split and Checkout
+amount/description; client numbers ignored; whole-block pack wins; soonest pack
+pays the partial share; another org's pack untouched; confirm keeps hours;
+stub cancel, lazy expiry via packs page / another customer taking the slot /
+the next booking all restore them once; cancel of paid and unpaid restores 7
+not 8 and moves no money; operator cancel + reinstate; pay-now re-debit and its
+409; late money with and without hours, incl. a lapse nothing had noticed; two
+bookings racing for one pack; revenue; CHECK constraint). Full backend 453
+passed. Migration `0005_booking_mixed_payment`: upgrade → check → downgrade →
+upgrade clean on an empty PostgreSQL 16, backfill and the lossy downgrade
+verified against real `package` and `mixed` rows. Frontend: `lib/paymentSplit`
+(mirror of the server rule, 12 unit tests), BookingModal breakdown + choice
+(7 component tests; the old "hide the pack when it cannot cover the block"
+test — the reported bug — now asserts pack-plus-money), dashboard/admin split,
+API shape tests; Vitest 370. Playwright `pay-mixed.spec.ts`: fresh customer,
+7h left, books 8h → modal breakdown → stub Checkout shows 11,00 € and
+"1h Sala Brisa (7h pagas com o pack)" → dashboard "7h do pack + 11,00 €",
+0h left; full suite 35 passed. **Known limitation:** hold expiry is lazy, so an
+abandoned mixed hold's hours return when that customer (or anyone touching the
+slot) next hits the API, not at the 15-minute mark; a sweeper is O-series work.
+**Observed:** with a pack that has
 7h left, booking 8h hides the pack option and charges all 8h. **Wanted:** the 7h
 come out of the pack and the customer pays only the extra hour, shown clearly.
 

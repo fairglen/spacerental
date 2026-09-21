@@ -76,6 +76,17 @@ export function cancellationEligibility(
   return { eligible: true }
 }
 
+/** What a booking cost the customer: prepaid hours, money, or both (B29, C13). */
+export function formatBookingCost(
+  b: Pick<Booking, 'payment_method' | 'duration_hours' | 'total_amount' | 'package_hours_used'>,
+): string {
+  if (b.payment_method === 'package') return `${formatHours(b.duration_hours)} do pack`
+  if (b.payment_method === 'mixed') {
+    return `${formatHours(b.package_hours_used ?? 0)} do pack + ${formatCurrency(b.total_amount)}`
+  }
+  return formatCurrency(b.total_amount)
+}
+
 /** "10h", "7,5h" — a whole number of hours has no fraction, a real fraction
  * keeps the Portuguese decimal comma (B29/B30). */
 export function formatHours(hours: number): string {

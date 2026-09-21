@@ -166,13 +166,14 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
     expect(await screen.findByRole('radio', { name: /5h disponíveis/i })).toBeChecked()
   })
 
-  it('hides the pack when the remaining hours cannot cover the block', async () => {
-    // 2h left, 3h block — the backend would 409, so never offer it.
+  // C13 replaced "hide the pack when it cannot cover the block" — the observed
+  // bug: 7h left, 8h booked, all 8h charged — with paying only the difference.
+  it('offers pack-plus-money when the remaining hours cannot cover the block', async () => {
     vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
     renderModal()
 
-    await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
-    expect(screen.queryByRole('radio', { name: /pack/i })).not.toBeInTheDocument()
+    expect(await screen.findByRole('radio', { name: /usar as horas do pack e pagar o resto/i })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /pagar tudo agora/i })).not.toBeChecked()
   })
 
   it.each([
@@ -439,5 +440,84 @@ describe('BookingModal error mapping (B31)', () => {
     renderModal()
     await user.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/ligação/i)
+  })
+})
+
+describe('BookingModal price breakdown (C13)', () => {
+  const breakdown = () => screen.getByRole('group', { name: /resumo do pagamento/i })
+
+  it('pack covers part: shows pack hours, what is left of it, and only the extra hour to pay', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
+    renderModal() // 3h block at 11 €/h
+
+    await screen.findByRole('radio', { name: /usar as horas do pack e pagar o resto/i })
+    expect(breakdown()).toHaveTextContent(/Duração\s*3h/)
+    expect(breakdown()).toHaveTextContent(/Horas do pack\s*−\s*2h\s*\(ficam 0h\)/)
+    expect(breakdown()).toHaveTextContent(/A pagar agora\s*1h × 11,00\s€ = 11,00\s€/)
+  })
+
+  it('pack covers part: books with payment_method mixed and goes to Checkout', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
+    vi.mocked(bookingsApi.create).mockResolvedValue({
+      booking: { ...pendingBooking, payment_method: 'mixed', package_hours_used: 2, total_amount: 11 },
+      checkout_url: CHECKOUT_URL,
+    })
+    const user = userEvent.setup()
+    renderModal()
+
+    await screen.findByRole('radio', { name: /usar as horas do pack e pagar o resto/i })
+    await user.click(screen.getByRole('button', { name: 'Confirmar Reserva' }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(CHECKOUT_URL))
+    expect(vi.mocked(bookingsApi.create).mock.calls[0][0]).toMatchObject({ payment_method: 'mixed' })
+    // The split is the server's to compute: the client sends no numbers.
+    expect(vi.mocked(bookingsApi.create).mock.calls[0][0]).not.toHaveProperty('package_hours_used')
+  })
+
+  it('pack covers part: "Pagar tudo agora" charges every hour and leaves the pack alone', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
+    vi.mocked(bookingsApi.create).mockResolvedValue({ booking: pendingBooking, checkout_url: CHECKOUT_URL })
+    const user = userEvent.setup()
+    renderModal()
+
+    await user.click(await screen.findByRole('radio', { name: /pagar tudo agora/i }))
+    expect(breakdown()).not.toHaveTextContent(/Horas do pack/)
+    expect(breakdown()).toHaveTextContent(/A pagar agora\s*3h × 11,00\s€ = 33,00\s€/)
+    await user.click(screen.getByRole('button', { name: 'Confirmar Reserva' }))
+    await waitFor(() => expect(bookingsApi.create).toHaveBeenCalled())
+    expect(vi.mocked(bookingsApi.create).mock.calls[0][0]).toMatchObject({ payment_method: 'hourly' })
+  })
+
+  it('pack covers all: keeps the single pack option and shows nothing to pay', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(5)])
+    renderModal()
+
+    expect(await screen.findByRole('radio', { name: /usar horas do pack \(5h disponíveis\)/i })).toBeChecked()
+    expect(screen.queryByRole('radio', { name: /pagar o resto/i })).toBeNull()
+    expect(breakdown()).toHaveTextContent(/Horas do pack\s*−\s*3h\s*\(ficam 2h\)/)
+    expect(breakdown()).toHaveTextContent(/A pagar agora\s*0,00\s€/)
+  })
+
+  it('no usable hours: no breakdown, the plain total as before', async () => {
+    renderModal()
+    await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
+    expect(screen.queryByRole('group', { name: /resumo do pagamento/i })).toBeNull()
+    expect(screen.getByText('Total')).toBeVisible()
+    expect(screen.getByText(/33,00\s€/)).toBeVisible()
+  })
+
+  it('a server that finds the pack can cover everything after all still ends on the success state', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
+    vi.mocked(bookingsApi.create).mockResolvedValue({
+      booking: { ...pendingBooking, status: 'confirmed', payment_method: 'package', package_hours_used: 3 },
+      checkout_url: null,
+    })
+    const user = userEvent.setup()
+    renderModal()
+
+    await screen.findByRole('radio', { name: /pagar o resto/i })
+    await user.click(screen.getByRole('button', { name: 'Confirmar Reserva' }))
+    expect(await screen.findByRole('heading', { name: 'Reserva confirmada' })).toBeVisible()
+    expect(assign).not.toHaveBeenCalled()
   })
 })

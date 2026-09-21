@@ -204,6 +204,39 @@ describe('Dashboard — package bookings show hours, not money (B29)', () => {
   })
 })
 
+describe('Dashboard — a mixed booking shows both halves of what it cost (C13)', () => {
+  it('labels it with the pack hours and the money paid', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-mixed', payment_method: 'mixed', duration_hours: 8, package_hours_used: 7, total_amount: 11 }),
+    ])
+    renderPage()
+    expect(await screen.findByText(/7h do pack \+ 11,00\s€/)).toBeVisible()
+  })
+
+  it('does the same in the history', async () => {
+    const past = new Date(Date.now() - 5 * 86_400_000).toISOString()
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-mixed-past', payment_method: 'mixed', duration_hours: 3, package_hours_used: 2, total_amount: 11, start_time: past, end_time: past }),
+    ])
+    renderPage()
+    expect(await screen.findByText(/2h do pack \+ 11,00\s€/)).toBeVisible()
+  })
+
+  it('explains a retry refused because the pack hours went elsewhere', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-mixed-gone', status: 'expired', payment_method: 'mixed', package_hours_used: 7, total_amount: 11, hold_expires_at: new Date(Date.now() - 60_000).toISOString() }),
+    ])
+    vi.mocked(bookingsApi.checkout).mockRejectedValue({
+      response: { status: 409, data: { detail: 'The package no longer has the hours this booking reserved' } },
+    })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Tentar pagar de novo/i }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/pack/i)
+    expect(alert).not.toHaveTextContent(/já está reservado/)
+  })
+})
+
 describe('Dashboard — packs summary (B30)', () => {
   it('summarises active packs with hours left, expiry and a link', async () => {
     vi.mocked(bookingsApi.listMine).mockResolvedValue([])

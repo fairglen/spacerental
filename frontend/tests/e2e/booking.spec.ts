@@ -229,7 +229,9 @@ async function dragHours(page: Page, fromHour: number, toHour: number) {
 
 /** Select "pay now" in the modal, if a package alternative is even offered. */
 async function chooseHourly(page: Page) {
-  const hourly = page.getByRole('radio', { name: /Pagar/i })
+  // "Pagar 33,00 € agora" when a pack could pay for it all, "Pagar tudo agora"
+  // when it could pay for part (C13) — but never "…e pagar o resto".
+  const hourly = page.getByRole('radio', { name: /^Pagar /i })
   if (await hourly.count()) await hourly.check()
 }
 
@@ -331,7 +333,8 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(page.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Duração', { exact: true }).locator('..')).toContainText('3h')
     await chooseHourly(page)
-    await expect(page.getByText('Total', { exact: true }).locator('..')).toContainText('33,00')
+    // The money line is "Total", or "A pagar agora" once the account has pack hours (C13).
+    await expect(page.getByText(/^(Total|A pagar agora)$/).locator('..')).toContainText('33,00')
 
     const booking = await confirmAndPay(page, api, token)
     expect(booking.start_time).toBe(utcHour(offset, 9).toISOString().replace('.000Z', 'Z'))

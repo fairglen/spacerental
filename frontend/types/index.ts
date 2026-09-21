@@ -44,7 +44,11 @@ export type Booking = {
   // can be retried); `paid_unfulfilled` = money arrived late for a slot that
   // was taken meanwhile (kept visible; refunds are O02).
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'expired' | 'paid_unfulfilled'
-  payment_method: 'hourly' | 'package'
+  // `mixed` (C13): part of the block came out of a pack, the rest was paid.
+  payment_method: 'hourly' | 'package' | 'mixed'
+  // Hours paid with pack hours: 0 for hourly, the whole duration for package,
+  // in between for mixed. For hourly/mixed `total_amount` is the money charged.
+  package_hours_used?: number
   notes?: string
   // Set when this booking is one occurrence of a recurring series.
   recurrence_rule_id?: string | null

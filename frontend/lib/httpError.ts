@@ -66,7 +66,7 @@ export function cancellationErrorMessage(error: unknown): string {
   return 'Não foi possível cancelar a reserva. Tenta novamente daqui a pouco.'
 }
 
-export type BookingPaymentMethod = 'hourly' | 'package'
+export type BookingPaymentMethod = 'hourly' | 'package' | 'mixed'
 
 /**
  * Portuguese explanation for a failed `POST /bookings` (B31). Everything that
@@ -81,8 +81,12 @@ export function bookingErrorMessage(error: unknown, method: BookingPaymentMethod
       if (detail.includes('already received')) {
         return 'O pagamento desta reserva já foi recebido. A confirmação aparece em instantes.'
       }
+      // Retrying an expired mixed hold needs the same pack hours again (C13).
+      if (detail.includes('package no longer has')) {
+        return 'O teu pack já não tem as horas que esta reserva tinha guardadas. Faz uma nova reserva para veres o novo valor.'
+      }
       const slotTaken = detail.includes('time slot') || detail.includes('horário') || detail.includes('reservado')
-      return method === 'package' && !slotTaken
+      return method !== 'hourly' && !slotTaken
         ? 'O teu pack já não tem horas suficientes para esta reserva.'
         : 'Este horário já está reservado. Escolhe outro intervalo no calendário.'
     }

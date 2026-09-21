@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { bookingsApi, recurrencesApi, packagesApi, createAuthenticatedApi } from '@/lib/api'
 import { formatCurrency, formatHours } from '@/lib/utils'
+import { planPayment } from '@/lib/paymentSplit'
 import { statusOf, conflictsOf, bookingErrorMessage } from '@/lib/httpError'
 import { signInHref } from '@/lib/navigation'
 import { expandWeeklyOccurrences } from '@/lib/recurrence'
@@ -18,7 +19,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import { ContactNote } from '@/components/booking/ContactNote'
-import type { Room, UserPackagePurchase } from '@/types'
+import type { Room } from '@/types'
 
 interface BookingModalProps {
   room: Room | null
@@ -27,34 +28,17 @@ interface BookingModalProps {
   onClose: () => void
 }
 
-type PaymentMethod = 'hourly' | 'package'
-
-/** Hours the backend would actually accept for a booking of `duration` hours.
- *
- * Mirrors `package_hours.redeem_hours`: same org, active, unexpired, and enough
- * left to cover the whole block. Showing the option when the backend would
- * reject it just moves the failure to after the click. */
-function spendablePurchases(
-  purchases: UserPackagePurchase[],
-  orgId: string,
-  duration: number,
-): UserPackagePurchase[] {
-  const now = Date.now()
-  return purchases.filter(
-    p =>
-      p.org_id === orgId &&
-      p.status === 'active' &&
-      new Date(p.expires_at).getTime() > now &&
-      p.hours_remaining >= duration,
-  )
-}
+type PaymentMethod = 'hourly' | 'package' | 'mixed'
+// The customer's choice is only "my pack" or "money for everything"; whether
+// "my pack" means `package` or `mixed` follows from what the pack can cover.
+type PaymentChoice = 'pack' | 'hourly'
 
 export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   const { data: session, status } = useSession()
   const pathname = usePathname()
   const queryClient = useQueryClient()
   // null until the user picks — the default depends on data that arrives later.
-  const [method, setMethod] = useState<PaymentMethod | null>(null)
+  const [choice, setChoice] = useState<PaymentChoice | null>(null)
 
   const recurrenceEnabled = process.env.NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED === 'true'
   const [repeatWeekly, setRepeatWeekly] = useState(false)
@@ -73,15 +57,20 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
     enabled: status === 'authenticated',
   })
 
-  const usable = room ? spendablePurchases(purchases, room.org_id, duration) : []
-  const canPayWithPackage = usable.length > 0
+  // What the pack can do for this block (C13): pay for all of it, for part of
+  // it, or nothing. A preview of the server's own computation — see
+  // `lib/paymentSplit.ts`.
+  const plan = room && !repeatWeekly ? planPayment(purchases, room.org_id, duration) : ({ kind: 'none' } as const)
+  const canPayWithPackage = plan.kind === 'full'
   // Default to spending hours the customer has already paid for — charging them
   // again while a valid pack sits unused is the wrong way round. Falls back to
-  // hourly when there is no usable pack, which also covers the case where the
-  // user picks "package" and then drags out a longer block their hours no
-  // longer cover.
-  const effectiveMethod: PaymentMethod = !repeatWeekly && canPayWithPackage ? (method ?? 'package') : 'hourly'
-  const hoursLeft = usable.reduce((max, p) => Math.max(max, p.hours_remaining), 0)
+  // hourly when there is no usable pack. Re-derived on every render, so a
+  // longer block the hours no longer cover becomes pack-plus-money by itself.
+  const usesPack = plan.kind !== 'none' && (choice ?? 'pack') === 'pack'
+  const effectiveMethod: PaymentMethod = !usesPack ? 'hourly' : plan.kind === 'full' ? 'package' : 'mixed'
+  const hoursLeft = plan.kind === 'none' ? 0 : plan.packHours + plan.hoursLeftAfter
+  const paidHours = usesPack ? plan.paidHours : duration
+  const amountDue = room ? paidHours * room.hourly_rate : 0
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -108,7 +97,9 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
       // that legitimately has no URL. On the hourly path a missing URL means the
       // booking is stranded at "Pendente" with no way to pay for it — surface
       // that instead of closing on a dead end.
-      if (effectiveMethod === 'hourly' && !checkout_url) {
+      // Judged by what the server made of it, not by what was asked: a
+      // `mixed` request may legitimately come back `package` (C13).
+      if (booking.payment_method !== 'package' && !checkout_url) {
         throw new Error('Booking created without a checkout_url')
       }
       return { booking, checkout_url }
@@ -235,12 +226,38 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
               <span className="text-muted-foreground">Duração</span>
               <span className="font-medium text-foreground">{duration}h</span>
             </div>
-            <div className="border-t border-primary-light pt-2 flex justify-between">
-              <span className="font-semibold text-foreground">{repeatWeekly ? 'Total por semana' : 'Total'}</span>
-              <span className="font-bold text-primary text-lg">
-                {effectiveMethod === 'package' ? `${duration}h do teu pack` : formatCurrency(total)}
-              </span>
-            </div>
+            {plan.kind === 'none' ? (
+              <div className="border-t border-primary-light pt-2 flex justify-between">
+                <span className="font-semibold text-foreground">{repeatWeekly ? 'Total por semana' : 'Total'}</span>
+                <span className="font-bold text-primary text-lg">{formatCurrency(total)}</span>
+              </div>
+            ) : (
+              // C13: whoever has pack hours sees where they go and what is left
+              // to pay, before confirming — never a surprise at Checkout.
+              <div role="group" aria-label="Resumo do pagamento" className="border-t border-primary-light pt-2 space-y-1">
+                <span className="sr-only">Duração {formatHours(duration)}</span>
+                {usesPack && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Horas do pack</span>
+                    <span className="font-medium text-foreground">
+                      − {formatHours(plan.packHours)}{' '}
+                      <span className="font-normal text-muted-foreground">(ficam {formatHours(plan.hoursLeftAfter)})</span>
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-baseline">
+                  <span className="font-semibold text-foreground">A pagar agora</span>
+                  <span className="font-bold text-primary text-lg">
+                    {paidHours > 0 && (
+                      <span className="mr-1 text-sm font-normal text-muted-foreground">
+                        {formatHours(paidHours)} × {formatCurrency(room.hourly_rate)} ={' '}
+                      </span>
+                    )}
+                    {formatCurrency(amountDue)}
+                  </span>
+                </div>
+              </div>
+            )}
             {repeatWeekly && occurrences.length > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Total da série ({occurrences.length} reservas)</span>
@@ -302,30 +319,34 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
             )}
           </div>
           )}
-          {canPayWithPackage && !repeatWeekly && (
+          {plan.kind !== 'none' && (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium text-foreground mb-1">Pagamento</legend>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="radio"
                   name="payment_method"
-                  value="package"
-                  checked={effectiveMethod === 'package'}
-                  onChange={() => setMethod('package')}
+                  value="pack"
+                  checked={usesPack}
+                  onChange={() => setChoice('pack')}
                   disabled={mutation.isPending}
                 />
-                <span>Usar horas do pack ({hoursLeft}h disponíveis)</span>
+                <span>
+                  {canPayWithPackage
+                    ? `Usar horas do pack (${formatHours(hoursLeft)} disponíveis)`
+                    : 'Usar as horas do pack e pagar o resto'}
+                </span>
               </label>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="radio"
                   name="payment_method"
                   value="hourly"
-                  checked={effectiveMethod === 'hourly'}
-                  onChange={() => setMethod('hourly')}
+                  checked={!usesPack}
+                  onChange={() => setChoice('hourly')}
                   disabled={mutation.isPending}
                 />
-                <span>Pagar {formatCurrency(total)} agora</span>
+                <span>{canPayWithPackage ? `Pagar ${formatCurrency(total)} agora` : 'Pagar tudo agora'}</span>
               </label>
             </fieldset>
           )}

@@ -127,7 +127,7 @@ test('week view: drag two hours → stub checkout → Confirmado; the toolbar ha
   await expect(dialog.getByText('Horário', { exact: true }).locator('..')).toContainText(`${String(hour).padStart(2, '0')}:00 – ${String(hour + 2).padStart(2, '0')}:00`)
   await expect(dialog.getByRole('note').getByRole('link')).toHaveAttribute('href', /^mailto:.+\?subject=/)
 
-  const hourly = dialog.getByRole('radio', { name: /Pagar/i })
+  const hourly = dialog.getByRole('radio', { name: /^Pagar /i })
   if (await hourly.count()) await hourly.check()
   await dialog.getByRole('button', { name: /Confirmar Reserva/i }).click()
   await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })

@@ -27,7 +27,7 @@ type Api = ReturnType<typeof createAuthenticatedApi>
 export const DECIMAL_FIELDS = {
   space: ['latitude', 'longitude'],
   room: ['hourly_rate'],
-  booking: ['total_amount', 'duration_hours'],
+  booking: ['total_amount', 'duration_hours', 'package_hours_used'],
   pkg: ['price'],
   purchase: ['hours_total', 'hours_used', 'hours_remaining'],
 } as const
@@ -63,6 +63,7 @@ function normBooking<T extends Booking>(b: T): T {
     ...b,
     total_amount: num(b.total_amount),
     duration_hours: num(b.duration_hours),
+    package_hours_used: num(b.package_hours_used),
     room: b.room ? normRoom(b.room) : b.room,
   }
 }
@@ -131,14 +132,16 @@ export const bookingsApi = {
   // An `hourly` booking comes back `pending` with a Stripe Checkout URL — it is
   // the webhook, not this response, that confirms it. A `package` booking is
   // paid from prepaid hours, so it is already `confirmed` and `checkout_url` is
-  // null.
+  // null. `mixed` (C13) asks for "my pack first, money for the rest": the
+  // server computes the split, and may answer with a plain `package` or
+  // `hourly` booking if that is what the balance makes it.
   create: (
     data: {
       room_id: string
       start_time: string
       end_time: string
       notes?: string
-      payment_method?: 'hourly' | 'package'
+      payment_method?: 'hourly' | 'package' | 'mixed'
     },
     api: Api,
   ) =>
