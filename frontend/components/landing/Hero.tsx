@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { ArrowRight, Clock } from 'lucide-react'
 import { useT } from '@/lib/i18n'
+import { SpaceModeText } from '@/components/spaces/SpaceModeText'
 
 export function Hero() {
   const t = useT()
@@ -30,7 +31,8 @@ export function Hero() {
             <div className="flex flex-col sm:flex-row gap-4">
               <Link href="/spaces">
                 <Button size="lg" className="gap-2">
-                  {t('hero.cta_primary')} <ArrowRight className="h-4 w-4" />
+                  <SpaceModeText single="hero.cta_primary_rooms" multi="hero.cta_primary" skeletonClassName="h-4 w-20 bg-white/40" />{' '}
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
               <Link href="/#como-funciona">

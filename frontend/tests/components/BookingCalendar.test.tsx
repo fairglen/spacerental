@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, act, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -23,6 +23,14 @@ type CapturedCalendarProps = {
   onSelectSlot: (payload: SelectSlotPayload) => void
   slotPropGetter: (date: Date) => CalendarStyle
   events: { start: Date; end: Date; title: string }[]
+  view: string
+  views: string[]
+  onView: (view: string) => void
+  onNavigate: (date: Date) => void
+  onDrillDown?: unknown
+  selectable: boolean
+  messages: Record<string, unknown>
+  formats: Record<string, unknown>
 }
 
 let calendar: CapturedCalendarProps | null = null
@@ -90,9 +98,25 @@ function select(start: string, end: string, action: SelectSlotPayload['action'] 
   })
 }
 
+/** The browser's width, as both of the things a component may ask. */
+function setViewportWidth(width: number) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width })
+  window.matchMedia = vi.fn().mockImplementation((query: string) => {
+    const min = /min-width:\s*(\d+)px/.exec(query)
+    return {
+      matches: min ? width >= Number(min[1]) : false,
+      media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+      addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+    }
+  })
+}
+
 beforeEach(() => {
   calendar = null
   vi.clearAllMocks()
+  window.sessionStorage.clear()
+  // A phone: the day view, which is what every test below was written against.
+  setViewportWidth(390)
 })
 
 describe('BookingCalendar selection', () => {
@@ -343,5 +367,151 @@ describe('BookingCalendar visible range follows the slots (B34)', () => {
     const fallback = calendar as unknown as RangeProps
     expect(hoursOf(fallback.min)).toBe(8)
     expect(hoursOf(fallback.max)).toBe(20)
+  })
+})
+
+describe('BookingCalendar views: hourly booking on a day or a week (C12)', () => {
+  const monday = [
+    slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z'),
+    slot('2030-08-12T10:00:00Z', '2030-08-12T11:00:00Z'),
+    slot('2030-08-12T11:00:00Z', '2030-08-12T12:00:00Z'),
+  ]
+
+  it('offers the day and the week, and nothing else', async () => {
+    await renderCalendar(monday)
+    expect(calendar!.views).toEqual(['day', 'week'])
+    expect(calendar!.messages).not.toHaveProperty('month')
+    expect(calendar!.formats).not.toHaveProperty('monthHeaderFormat')
+    // There is no month grid left to drill down from.
+    expect(calendar!.onDrillDown).toBeUndefined()
+    expect(calendar!.selectable).toBe(true)
+  })
+
+  it.each([
+    [1024, 'week'],
+    [1440, 'week'],
+    [1023, 'day'],
+    [390, 'day'],
+  ])('opens at %ipx on the %s view', async (width, expected) => {
+    setViewportWidth(width)
+    await renderCalendar(monday)
+    expect(calendar!.view).toBe(expected)
+  })
+
+  /** Like the API: each date has its own slots. Only the first date asked for has any here. */
+  function serveOnce(slots: AvailabilitySlot[]) {
+    let servedFor: string | null = null
+    vi.mocked(spacesApi.getAvailability).mockImplementation(async (_roomId, date) => {
+      servedFor ??= date
+      return date === servedFor ? slots : []
+    })
+  }
+
+  async function renderServingOnce(slots: AvailabilitySlot[]) {
+    const onSlotSelect = vi.fn()
+    serveOnce(slots)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BookingCalendar room={room} onSlotSelect={onSlotSelect} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => {
+      expect(calendar).not.toBeNull()
+      expect(calendar!.slotPropGetter(parseISO(slots[0].start)).style).toBeDefined()
+    })
+    return { onSlotSelect }
+  }
+
+  const askedDates = () =>
+    Array.from(new Set(vi.mocked(spacesApi.getAvailability).mock.calls.map(([, date]) => date))).sort()
+
+  it('asks for a single day on the day view', async () => {
+    await renderServingOnce(monday)
+    expect(askedDates()).toHaveLength(1)
+  })
+
+  it('asks for Monday to Sunday on the week view', async () => {
+    setViewportWidth(1440)
+    await renderServingOnce(monday)
+    const week = askedDates()
+    expect(week).toHaveLength(7)
+    expect(parseISO(week[0]).getDay()).toBe(1)
+    expect(parseISO(week[6]).getDay()).toBe(0)
+  })
+
+  it.each([['day', 390], ['week', 1440]])(
+    'books one hour on a click and several on a drag, on the %s view',
+    async (view, width) => {
+      setViewportWidth(width)
+      const { onSlotSelect } = await renderServingOnce(monday)
+      expect(calendar!.view).toBe(view)
+
+      select('2030-08-12T10:00:00Z', '2030-08-12T11:00:00Z', 'click')
+      expect(onSlotSelect).toHaveBeenLastCalledWith(parseISO('2030-08-12T10:00:00Z'), parseISO('2030-08-12T11:00:00Z'))
+
+      select('2030-08-12T09:00:00Z', '2030-08-12T12:00:00Z')
+      expect(onSlotSelect).toHaveBeenLastCalledWith(parseISO('2030-08-12T09:00:00Z'), parseISO('2030-08-12T12:00:00Z'))
+      expect(onSlotSelect).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it('keeps the customer\'s own choice of view for the rest of the session', async () => {
+    setViewportWidth(1440)
+    await renderCalendar(monday)
+    expect(calendar!.view).toBe('week')
+
+    act(() => calendar!.onView('day'))
+    expect(calendar!.view).toBe('day')
+
+    // Another room, another mount — and a viewport that would default to week.
+    cleanup()
+    calendar = null
+    await renderCalendar(monday)
+    expect(calendar!.view).toBe('day')
+  })
+
+  it('lets a phone user keep the week view once they have asked for it', async () => {
+    await renderCalendar(monday)
+    expect(calendar!.view).toBe('day')
+    act(() => calendar!.onView('week'))
+    cleanup()
+    calendar = null
+    await renderCalendar(monday)
+    expect(calendar!.view).toBe('week')
+  })
+
+  it('ignores a remembered view it no longer offers', async () => {
+    window.sessionStorage.setItem('espacohora.calendarView', 'month')
+    setViewportWidth(1440)
+    await renderCalendar(monday)
+    expect(calendar!.view).toBe('week')
+  })
+
+  it('still works when session storage is unavailable', async () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      setViewportWidth(1440)
+      await renderCalendar(monday)
+      expect(calendar!.view).toBe('week')
+      act(() => calendar!.onView('day'))
+      expect(calendar!.view).toBe('day')
+    } finally {
+      getItem.mockRestore()
+      setItem.mockRestore()
+    }
+  })
+
+  it('names a closed week as a week', async () => {
+    setViewportWidth(1440)
+    vi.mocked(spacesApi.getAvailability).mockResolvedValue([])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BookingCalendar room={room} onSlotSelect={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText(/Fechado nesta semana/)).toBeVisible()
   })
 })

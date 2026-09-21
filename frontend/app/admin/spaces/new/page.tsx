@@ -11,6 +11,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { SpaceLocationFields } from '@/components/admin/SpaceLocationFields'
+import {
+  locationDefaults, locationFormShape, locationPayload, refineCoordinatePair, type LocationFormValues,
+} from '@/lib/spaceLocationForm'
+import type { FieldErrors, UseFormRegister, UseFormSetValue } from 'react-hook-form'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obrigatório'),
@@ -18,19 +23,24 @@ const schema = z.object({
   address: z.string().min(2, 'Morada obrigatória'),
   city: z.string().min(2, 'Cidade obrigatória'),
   amenities: z.string().optional(),
-})
+  ...locationFormShape,
+}).superRefine(refineCoordinatePair)
 type FormData = z.infer<typeof schema>
 
 export default function NewSpacePage() {
   const { data: session } = useSession()
   const api = useApi()
   const router = useRouter()
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: locationDefaults(),
+  })
 
   const mutation = useMutation({
     mutationFn: (data: FormData) =>
       adminApi.createSpace({
         ...data,
+        ...locationPayload(data),
         amenities: data.amenities ? data.amenities.split(',').map(s => s.trim()).filter(Boolean) : [],
       }, api),
     onSuccess: () => router.push('/admin/spaces'),
@@ -64,6 +74,13 @@ export default function NewSpacePage() {
               <Input id="city" {...register('city')} className="mt-1" placeholder="ex: Lisboa" />
               {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city.message}</p>}
             </div>
+            {/* The location slice of this form's helpers; see SpaceLocationFields. */}
+            <SpaceLocationFields
+              idPrefix="new-space"
+              register={register as unknown as UseFormRegister<LocationFormValues>}
+              setValue={setValue as unknown as UseFormSetValue<LocationFormValues>}
+              errors={errors as FieldErrors<LocationFormValues>}
+            />
             <div>
               <Label htmlFor="amenities">Comodidades (separadas por vírgula)</Label>
               <Input id="amenities" {...register('amenities')} className="mt-1" placeholder="ex: Wi-Fi, Ar condicionado, Insonorizado" />

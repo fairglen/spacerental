@@ -3,10 +3,18 @@ import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { Building2, MapPin, Mail } from 'lucide-react'
 import { useT } from '@/lib/i18n'
+import { CONTACT_EMAIL, contactMailto } from '@/lib/contact'
+import { useSingleSpace } from '@/lib/hooks/useSingleSpace'
+import { SpaceModeText } from '@/components/spaces/SpaceModeText'
 
 export function Footer() {
   const t = useT()
   const { status } = useSession()
+  // The footer names a city only when there is exactly one space to name;
+  // nothing is shown until that is known, so a place never appears and changes.
+  const { mode, space } = useSingleSpace()
+  const city = mode === 'single' ? space?.city?.trim() : null
+  const location = mode === 'loading' ? '' : city ? t('footer.location_city', { city }) : t('footer.location')
   return (
     <footer className="bg-foreground text-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -25,7 +33,7 @@ export function Footer() {
             <ul className="space-y-2 text-sm text-gray-400">
               <li>
                 <Link href="/spaces" className="hover:text-white transition-colors">
-                  {t('footer.spaces')}
+                  <SpaceModeText single="footer.rooms" multi="footer.spaces" skeletonClassName="bg-gray-700" />
                 </Link>
               </li>
               <li>
@@ -55,10 +63,13 @@ export function Footer() {
             <h3 className="font-semibold mb-4 text-primary-light">{t('footer.contact_heading')}</h3>
             <ul className="space-y-2 text-sm text-gray-400">
               <li className="flex items-center gap-2">
-                <MapPin className="h-4 w-4" /> {t('footer.location')}
+                <MapPin className="h-4 w-4" /> <span data-testid="footer-location">{location}</span>
               </li>
               <li className="flex items-center gap-2">
-                <Mail className="h-4 w-4" /> {t('footer.email')}
+                <Mail className="h-4 w-4" />
+                <a href={contactMailto()} className="hover:text-white transition-colors">
+                  {CONTACT_EMAIL}
+                </a>
               </li>
             </ul>
           </div>

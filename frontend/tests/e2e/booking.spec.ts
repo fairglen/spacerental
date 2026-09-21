@@ -1,6 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
 import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
+import { openSpaceRooms, preferDayView, useDayView } from './helpers/rooms'
 
 /**
  * Booking flows people actually perform (TODO.md B1, B2, B4, B5).
@@ -116,22 +117,21 @@ async function signIn(page: Page) {
   await page.waitForURL('**/dashboard', { timeout: 30000 })
 }
 
-/** Open the availability calendar of a room by name. */
+/**
+ * Open the availability calendar of a room by name: the same click a customer
+ * makes, on that room's own card. Trying each card in turn until the heading
+ * matched mounted up to three calendars, and every mount is a public read
+ * against the budget all specs share (TODO.md B18, B48).
+ */
 async function openRoomCalendar(page: Page, roomName: string) {
-  await page.goto('/spaces')
-  await page.getByRole('button', { name: /Ver Salas e Reservar/i }).first().click()
-  await page.waitForURL('**/spaces/**', { timeout: 10000 })
+  await openSpaceRooms(page)
 
-  const bookButtons = page.getByRole('button', { name: /Reservar Esta Sala/i })
-  await expect(bookButtons.first()).toBeVisible({ timeout: 15000 })
-  const total = await bookButtons.count()
-  for (let i = 0; i < total; i++) {
-    await bookButtons.nth(i).click()
-    const heading = page.getByRole('heading', { name: /^Disponibilidade — / })
-    await expect(heading).toBeVisible({ timeout: 10000 })
-    if ((await heading.innerText()).includes(roomName)) return
-  }
-  throw new Error(`Room "${roomName}" not found on the space page`)
+  const card = page.getByTestId('room-card').filter({ hasText: roomName })
+  await expect(card, `Room "${roomName}" not found on the space page`).toHaveCount(1)
+  await card.getByRole('button', { name: /Reservar Esta Sala/i }).click()
+  await expect(page.getByRole('heading', { name: `Disponibilidade — ${roomName}` })).toBeVisible({ timeout: 10000 })
+  // These flows step day by day; the week view has its own spec.
+  await useDayView(page)
 }
 
 /** Step the day view forward `offset` days from today. */
@@ -299,6 +299,7 @@ test.describe('Reservas — fluxos reais', () => {
     }
 
     const context = await browser.newContext({ timezoneId: 'UTC' })
+    await preferDayView(context)
     page = await context.newPage()
     await signIn(page)
   })
@@ -311,9 +312,13 @@ test.describe('Reservas — fluxos reais', () => {
     if (page) await page.context().close()
   })
 
-  test('browse spaces page', async () => {
+  test('browse rooms page', async () => {
+    // One seeded space: /spaces goes straight to its rooms, with no list of
+    // one to click through (C11).
     await page.goto('/spaces')
-    await expect(page.getByText(/Todos os Espaços/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Reservar Esta Sala/i }).first()).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('button', { name: /Ver Salas e Reservar/i })).toHaveCount(0)
+    await expect(page).toHaveURL(/\/spaces$/)
   })
 
   test('a 09:00–12:00 drag books all three hours and reaches confirmed (B1, B4)', async () => {
@@ -454,6 +459,7 @@ test.describe('Reservas — fluxos reais', () => {
     await createBookingViaApi(api, token, roomId, utcHour(offset, 9), utcHour(offset, 11))
 
     const visitorContext = await browser.newContext({ timezoneId: 'UTC' })
+    await preferDayView(visitorContext)
     const visitor = await visitorContext.newPage()
     try {
       await openRoomCalendar(visitor, 'Sala Névoa')

@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
+import { ContactNote } from '@/components/booking/ContactNote'
 import type { Room, UserPackagePurchase } from '@/types'
 
 interface BookingModalProps {
@@ -361,6 +362,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
               </p>
             )
           )}
+          <ContactNote roomName={room.name} variant="inline" />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button>

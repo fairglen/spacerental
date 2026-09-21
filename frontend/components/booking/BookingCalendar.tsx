@@ -1,10 +1,11 @@
 'use client'
 import { useState, useCallback, useRef } from 'react'
-import { Calendar, dateFnsLocalizer, type Event, type SlotInfo, type View } from 'react-big-calendar'
+import { Calendar, dateFnsLocalizer, type Event, type SlotInfo } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay, parseISO, addDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useQueries } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
+import { CALENDAR_VIEWS, useCalendarView, type CalendarView } from '@/lib/hooks/useCalendarView'
 import type { Room, AvailabilitySlot } from '@/types'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
@@ -16,7 +17,7 @@ interface BookingCalendarProps {
   onSlotSelect: (start: Date, end: Date) => void
 }
 
-function getDatesForView(date: Date, view: View): string[] {
+function getDatesForView(date: Date, view: CalendarView): string[] {
   if (view === 'week') {
     const weekStart = startOfWeek(date, { weekStartsOn: 1 })
     return Array.from({ length: 7 }, (_, i) => format(addDays(weekStart, i), 'yyyy-MM-dd'))
@@ -123,7 +124,8 @@ function visibleRange(slots: AvailabilitySlot[]): { min: Date; max: Date } {
 
 export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
   const [selectedDate, setSelectedDate] = useState(new Date())
-  const [view, setView] = useState<View>('day')
+  // Hourly booking on a day or a week: there is no month view (C12).
+  const [view, setView] = useCalendarView()
   const [selectionError, setSelectionError] = useState<string | null>(null)
 
   const datesToFetch = getDatesForView(selectedDate, view)
@@ -132,7 +134,6 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
     queries: datesToFetch.map((dateStr) => ({
       queryKey: ['availability', room.id, dateStr],
       queryFn: () => spacesApi.getAvailability(room.id, dateStr),
-      enabled: view !== 'month',
     })),
   })
 
@@ -143,8 +144,7 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
   // underneath so the customer can still navigate away from a closed day.
   const isLoadingSlots = slotQueries.some((q) => q.isLoading)
   const failedQueries = slotQueries.filter((q) => q.isError)
-  const isClosed =
-    view !== 'month' && !isLoadingSlots && failedQueries.length === 0 && allSlots.length === 0
+  const isClosed = !isLoadingSlots && failedQueries.length === 0 && allSlots.length === 0
   const retryFailed = () => failedQueries.forEach((q) => q.refetch())
   // Keep the last known window while the next day's slots load, so the grid
   // does not snap to the fallback and back on every navigation.
@@ -189,11 +189,6 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
     [allSlots, onSlotSelect]
   )
 
-  const handleDrillDown = useCallback((date: Date) => {
-    setSelectedDate(date)
-    setView('day')
-  }, [])
-
   return (
     <>
       {selectionError && (
@@ -216,7 +211,9 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       )}
       {isClosed && (
         <p role="status" className="mb-3 text-sm text-foreground bg-accent rounded-lg px-3 py-2">
-          {view === 'week' ? 'Fechado nesta semana.' : 'Fechado neste dia.'} Usa as setas para ver outro dia.
+          {view === 'week'
+            ? 'Fechado nesta semana. Usa as setas para ver outra semana.'
+            : 'Fechado neste dia. Usa as setas para ver outro dia.'}
         </p>
       )}
       <div className="h-[600px] [&_.rbc-today]:bg-accent [&_.rbc-selected]:bg-primary/20 [&_.rbc-event]:bg-muted-foreground [&_.rbc-toolbar-label]:font-semibold [&_.rbc-toolbar-label]:text-foreground">
@@ -225,10 +222,9 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
           events={events}
           view={view}
           onView={setView}
-          views={['day', 'week', 'month']}
-          selectable={view !== 'month'}
+          views={CALENDAR_VIEWS}
+          selectable
           onSelectSlot={handleSelectSlot}
-          onDrillDown={handleDrillDown}
           onNavigate={setSelectedDate}
           date={selectedDate}
           min={range.min}
@@ -241,7 +237,6 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
             dayHeaderFormat: (date, culture, loc) => loc!.format(date, "EEEE, d 'de' MMMM", culture),
             dayRangeHeaderFormat: ({ start, end }, culture, loc) =>
               `${loc!.format(start, "d 'de' MMM", culture)} – ${loc!.format(end, "d 'de' MMM", culture)}`,
-            monthHeaderFormat: (date, culture, loc) => loc!.format(date, "MMMM 'de' yyyy", culture),
           }}
           messages={{
             today: 'Hoje',
@@ -249,7 +244,6 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
             next: '›',
             day: 'Dia',
             week: 'Semana',
-            month: 'Mês',
             noEventsInRange: 'Sem reservas.',
             showMore: (total: number) => `+${total} mais`,
           }}
@@ -257,7 +251,6 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
             style: { backgroundColor: '#6B7280', border: 'none', borderRadius: '4px', opacity: 0.85 },
           })}
           slotPropGetter={(date) => {
-            if (view === 'month') return {}
             const slot = slotAt(allSlots, date)
             if (slot && isPastSlot(slot, new Date())) {
               return { style: { backgroundColor: '#fafafa', color: '#9ca3af', cursor: 'not-allowed', opacity: 0.6 } }

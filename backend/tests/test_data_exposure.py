@@ -23,9 +23,11 @@ from app.models.user import User
 from httpx import ASGITransport, AsyncClient
 
 API = "/api/v1"
+# postal_code/latitude/longitude were published deliberately by C10: a venue's
+# address is public by nature, and the customer-facing map needs the point.
 SPACE_FIELDS = {
-    "id", "org_id", "name", "description", "address", "city", "images", "amenities",
-    "is_active", "created_at", "updated_at", "rooms",
+    "id", "org_id", "name", "description", "address", "city", "postal_code", "latitude",
+    "longitude", "images", "amenities", "is_active", "created_at", "updated_at", "rooms",
 }  # fmt: skip
 ROOM_FIELDS = {
     "id", "space_id", "org_id", "name", "description", "capacity", "hourly_rate", "images",

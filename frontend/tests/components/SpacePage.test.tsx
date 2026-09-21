@@ -76,3 +76,25 @@ describe('Space page — selecting a room (B27)', () => {
     expect(screen.getByText(/Sala selecionada/i)).toBeVisible()
   })
 })
+
+describe('Space page — location header (C10)', () => {
+  it('shows the address through SpaceLocation, with directions', async () => {
+    vi.mocked(spacesApi.get).mockResolvedValue({
+      space: { ...space, address: 'R. 12 de Julho de 1997 5, Loja 1', postal_code: '2745-841', city: 'Queluz', latitude: 38.755723, longitude: -9.279799 },
+      rooms: [roomA],
+    })
+    renderPage()
+    expect(await screen.findByText('2745-841 Queluz')).toBeVisible()
+    expect(screen.getByRole('link', { name: /como chegar/i })).toHaveAttribute('href', expect.stringContaining('destination=38.755723,-9.279799'))
+  })
+
+  it('prints no "null" for a space whose address was never filled in', async () => {
+    vi.mocked(spacesApi.get).mockResolvedValue({
+      space: { ...space, address: null as unknown as string, city: null as unknown as string },
+      rooms: [roomA],
+    })
+    renderPage()
+    const heading = await screen.findByRole('heading', { name: 'Espaço Calmo' })
+    expect(heading.parentElement?.textContent).not.toMatch(/null|undefined/)
+  })
+})

@@ -75,7 +75,12 @@ the correct reservation and payment state without manual database changes.
   checks where applicable, and the production build pass on the integrated
   changes. The full journey is runnable locally with no external credentials.
 
-## 2. Regular customers can manage their schedule
+## 2. Regular customers can manage their schedule — DEFERRED
+
+**DEFERRED** — parked by owner 2026-09-19 to simplify; customers rebook each week; weekly series code stays in the repo, flag off. This covers series payment, series management and the
+outcome's acceptance ([TODO.md](TODO.md) R02, R03, R99). Anchoring opening hours
+to the location's timezone (R01) is NOT parked: it affects hourly booking too.
+The work list below is kept as the record of what the outcome meant.
 
 A therapist can reserve the same weekly local-time slot, pay for it, and manage
 individual dates or future occurrences without rebuilding the schedule by hand.
@@ -147,6 +152,12 @@ physical access, including when processes restart or external services fail.
   existing tenant isolation remains mandatory throughout.
 - Additional multi-operator or multi-space UX.
 - Daily booking products and monthly recurrence without an explicit product need.
+  Owner decision 2026-09-19: the only booking product is HOURLY booking (one or
+  more contiguous hours) chosen on a day or week view. No half-day or full-day
+  products, no monthly booking, no recurring bookings.
+- Outcome 2 (paid and manageable weekly series), as marked above.
+- Admin handling of special requests (recurring arrangements, longer bookings,
+  questions) raised through the booking contact note — [TODO.md](TODO.md) D06.
 
 Small existing improvements such as migration diagnostics and admin pagination
 can be reviewed and integrated when ready. They do not change the outcome order

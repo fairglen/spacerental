@@ -3,6 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { decode, encode } from 'next-auth/jwt'
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
+import { waitOutPublicRateWindow } from './helpers/rooms'
 
 /**
  * Package purchase flows (TODO.md B12): buying a package from the landing
@@ -100,6 +101,12 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
   let page: Page
 
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
+    // booking.spec.ts, which runs just before, spends most of the shared
+    // public budget, and since C11 every full page load reads the spaces list
+    // once. Measured on 2026-09-19: exactly 120 public reads in the 60 s
+    // before this file's first page load, so the pricing section's own
+    // GET /spaces was the 121st and came back 429 (no pack buttons).
+    await waitOutPublicRateWindow()
     api = await playwrightRequest.newContext()
     token = await login(api)
 

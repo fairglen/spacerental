@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
+import { SpaceModeText } from '@/components/spaces/SpaceModeText'
 import {
   Select,
   SelectContent,
@@ -46,7 +47,7 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const isSignedIn = status === 'authenticated'
   const navLinks = [
-    { href: '/spaces', label: t('navbar.spaces_link') },
+    { href: '/spaces', label: <SpaceModeText single="navbar.rooms_link" multi="navbar.spaces_link" /> },
     { href: '/#como-funciona', label: t('navbar.how_it_works_link') },
     { href: '/#precos', label: t('navbar.pricing_link') },
   ]

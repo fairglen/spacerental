@@ -24,7 +24,7 @@ const catalogs: Record<Locale, unknown> = { pt: ptCatalog, en: enCatalog }
  * Also supports string interpolation for placeholders like {year}, {name}, etc.
  *
  * @example
- * t('hero.badge') // 'Disponível à hora, por pacote ou recorrente'
+ * t('hero.badge') // 'Disponível à hora ou com pacote de horas'
  * t('footer.copyright', { year: 2025 }) // '© 2025 EspaçoHora. Todos os direitos reservados.'
  */
 export function t(

@@ -5,6 +5,7 @@
     "headline_highlight": "on your time",
     "description": "Private rooms for psychologists, therapists, and health professionals. Book online in seconds, no long contracts.",
     "cta_primary": "View Spaces",
+    "cta_primary_rooms": "View Rooms",
     "cta_secondary": "Learn More",
     "benefit_1": "No deposit",
     "benefit_2": "Free cancellation 24h before",
@@ -38,6 +39,7 @@
     "step_1_title": "Sign up",
     "step_1_desc": "Create your account in seconds with your email.",
     "step_2_title": "Choose a space",
+    "step_2_title_rooms": "Choose a room",
     "step_2_desc": "Check available rooms and their amenities.",
     "step_3_title": "Book the time",
     "step_3_desc": "Pick the date and time on the calendar and confirm the booking.",
@@ -57,10 +59,16 @@
     "section_description": "Rooms ready for your professional practice.",
     "cta_detail": "View Availability",
     "empty_state": "No spaces available yet.",
-    "cta_all": "View All Spaces"
+    "cta_all": "View All Spaces",
+    "rooms_title": "Available Rooms",
+    "rooms_empty": "No rooms available yet.",
+    "rooms_cta_all": "View All Rooms",
+    "error": "Could not load the rooms.",
+    "retry": "Try again"
   },
   "navbar": {
     "spaces_link": "Spaces",
+    "rooms_link": "Rooms",
     "how_it_works_link": "How It Works",
     "pricing_link": "Pricing",
     "admin_link": "Admin",
@@ -79,12 +87,38 @@
     "tagline": "Professional spaces by the hour for psychologists, therapists, and other health professionals.",
     "links_heading": "Links",
     "spaces": "Spaces",
+    "rooms": "Rooms",
     "how_it_works": "How It Works",
     "pricing": "Pricing",
     "sign_in": "Sign In",
     "contact_heading": "Contact",
-    "location": "Lisbon, Portugal",
-    "email": "geral@espacohora.pt",
+    "location": "Portugal",
+    "location_city": "{city}, Portugal",
     "copyright": "© {year} EspaçoHora. All rights reserved."
+  },
+  "location": {
+    "heading": "Where we are",
+    "address_label": "Address",
+    "directions": "Get directions",
+    "show_map": "Show map",
+    "map_privacy": "The map comes from OpenStreetMap and only loads when you ask for it.",
+    "map_title": "Map of {name}",
+    "map_title_generic": "Location map",
+    "open_full_map": "Open the full map"
+  },
+  "roomCard": {
+    "capacity_one": "Up to {count} person",
+    "capacity_many": "Up to {count} people",
+    "cta": "Book This Room",
+    "selected": "Selected room"
+  },
+  "common": {
+    "loading": "Loading…"
+  },
+  "contactNote": {
+    "lead": "We're flexible.",
+    "body": "Need the same slot every week, a different arrangement, or have a question?",
+    "cta": "Talk to us:",
+    "subject": "Booking request — {room}"
   }
 }

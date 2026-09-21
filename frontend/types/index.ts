@@ -5,6 +5,11 @@ export type Space = {
   description: string
   address: string
   city: string
+  postal_code?: string | null
+  // Both or neither (the API refuses half a point). Numbers here; the API
+  // sends Decimal strings and lib/api.ts converts them at the boundary.
+  latitude?: number | null
+  longitude?: number | null
   images: string[]
   amenities: string[]
   is_active: boolean

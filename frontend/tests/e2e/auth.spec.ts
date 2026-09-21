@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { test, expect } from '@playwright/test'
+import { openSpaceRooms, preferDayView, useDayView } from './helpers/rooms'
 
 test.use({ timezoneId: 'UTC' })
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
@@ -59,15 +60,20 @@ test.describe('Authentication', () => {
       headers, params: { org_id: memberships[0].org_id },
     })
     expect(denied.status()).toBe(403)
-    await page.goto('/spaces')
-    await page.getByRole('button', { name: /Ver Salas e Reservar/i }).first().click()
-    await page.waitForURL('**/spaces/**')
-    const spaceId = new URL(page.url()).pathname.split('/').pop()
+    await preferDayView(page)
+    await openSpaceRooms(page)
+    // With one public space the rooms view lives at /spaces itself (C11), so
+    // the space is identified through the API rather than read off the URL.
+    const { spaces } = await (await page.request.get(`${API_URL}/spaces`)).json()
+    const spaceId = /\/spaces\/[^/]+$/.test(new URL(page.url()).pathname)
+      ? new URL(page.url()).pathname.split('/').pop()
+      : spaces[0].id
     const detail = await (await page.request.get(`${API_URL}/spaces/${spaceId}`)).json()
     expect(detail.space.org_id).toBe(memberships[0].org_id)
     const room = detail.rooms[0]
     await page.getByRole('button', { name: /Reservar Esta Sala/i }).first().click()
     await expect(page.getByRole('heading', { name: /^Disponibilidade — / })).toBeVisible()
+    await useDayView(page)
 
     // Each run picks free future inventory and cancels only its own reservation.
     let offset = 7
