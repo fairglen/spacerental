@@ -6,7 +6,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import clock, email
+from app import clock, email, package_hours
 from app.booking_validity import expire_stale_holds, has_conflicting_booking, is_lost_slot_race
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
@@ -91,6 +91,11 @@ async def _confirm_booking(
     )
     if late:
         await expire_stale_holds(db, booking.room_id, booking.start_time, booking.end_time, now)
+        # The bulk update above may have flipped this very row (lapsed but
+        # still `pending`) and returned its pack share (C13); re-read what the
+        # row is now, so the hours below move exactly once.
+        await db.refresh(booking, attribute_names=["status"])
+        previous = booking.status
         taken = await has_conflicting_booking(
             db,
             booking.room_id,
@@ -101,17 +106,31 @@ async def _confirm_booking(
         )
         if not taken:
             # The EXCLUDE constraint is the last line against a concurrent
-            # insert between the check above and this flush.
-            booking.status = BookingStatus.confirmed
-            booking.hold_expires_at = None
+            # insert between the check above and this flush. A mixed hold also
+            # needs its pack hours again: they went back when it lapsed, and
+            # may have been spent since. Both live in the savepoint, so losing
+            # the slot also undoes the re-debit.
             try:
                 async with db.begin_nested():
-                    await db.flush()
+                    fulfillable = await package_hours.settle_status_change(
+                        db, booking, previous=previous, new=BookingStatus.confirmed, now=now
+                    )
+                    if fulfillable:
+                        booking.status = BookingStatus.confirmed
+                        booking.hold_expires_at = None
+                        await db.flush()
             except DBAPIError as exc:
                 if not is_lost_slot_race(exc):
                     raise
                 taken = True
+            else:
+                taken = not fulfillable
         if taken:
+            # Slot gone, or the pack can no longer pay its share: the money is
+            # kept visible for a person to resolve, never dropped.
+            await package_hours.settle_status_change(
+                db, booking, previous=previous, new=BookingStatus.paid_unfulfilled, now=now
+            )
             booking.status = BookingStatus.paid_unfulfilled
             booking.hold_expires_at = None
             await db.flush()

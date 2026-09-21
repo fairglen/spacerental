@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -38,6 +39,15 @@ class BookingStatus(StrEnum):
 class PaymentMethod(StrEnum):
     hourly = "hourly"
     package = "package"
+    # C13: part of the block comes out of a pack (`package_hours_used`), the
+    # rest is paid at Checkout (`total_amount`). Always 0 < pack share < duration:
+    # a pack that covers everything is a `package` booking, none is `hourly`.
+    mixed = "mixed"
+
+
+# The methods that take money at Checkout: they start as an unpaid `pending`
+# hold, can be resumed with "Pagar agora", and their `total_amount` is revenue.
+PAID_AT_CHECKOUT = (PaymentMethod.hourly, PaymentMethod.mixed)
 
 
 class Booking(Base):
@@ -50,6 +60,10 @@ class Booking(Base):
         Index("ix_bookings_user_id", "user_id"),
         Index("ix_bookings_org_id_status", "org_id", "status"),
         Index("ix_bookings_recurrence_rule_id", "recurrence_rule_id"),
+        CheckConstraint(
+            "package_hours_used >= 0 AND package_hours_used <= duration_hours",
+            name="ck_bookings_package_hours_used_within_duration",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -70,6 +84,13 @@ class Booking(Base):
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration_hours: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     total_amount: Mapped[decimal.Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # Hours of this booking paid with `package_purchase_id`'s prepaid hours:
+    # 0 for `hourly`, the whole duration for `package`, in between for `mixed`
+    # (C13). It records the booking's split for good; whether those hours are
+    # currently debited follows the status — see `package_hours`.
+    package_hours_used: Mapped[decimal.Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=decimal.Decimal(0), server_default="0"
+    )
     status: Mapped[BookingStatus] = mapped_column(
         SAEnum(BookingStatus, name="booking_status"),
         nullable=False,
@@ -94,7 +115,7 @@ class Booking(Base):
     )
     # The prepaid purchase this booking's hours were debited from, so cancelling
     # can credit them back to that exact purchase rather than guessing which of
-    # the user's packages to refund. NULL for every `hourly` booking.
+    # the user's packages to credit. NULL for every `hourly` booking.
     package_purchase_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(

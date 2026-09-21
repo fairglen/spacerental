@@ -109,6 +109,22 @@ what comes back:
   from the soonest-expiring eligible purchase, and `409` is returned if no
   active, unexpired purchase in the room's org has enough hours for the whole
   block. Nothing is written when it fails.
+- `mixed` — "use my pack and pay the rest". A request, not an instruction: the
+  server alone decides the method stored, the pack share and the amount, and
+  ignores any such numbers in the body.
+  - One purchase can cover the whole block → a plain `package` booking
+    (confirmed, no `checkout_url`), exactly as above.
+  - Otherwise the soonest-expiring purchase that still has hours gives what it
+    has (one purchase per booking). Those hours are debited NOW, the booking is
+    `pending` with `package_hours_used` set, `total_amount` is the money for the
+    remaining hours only, and `checkout_url` charges just that. The Checkout
+    description reads e.g. `1h Sala Calma (7h pagas com o pack)`.
+  - No usable hours at all → a plain `hourly` booking.
+  The reserved hours go back to the same purchase whenever the hold ends
+  without being paid (backing out of Checkout, the hold expiring, a cancel) and
+  are taken again if the hold is resumed. Confirmation changes nothing about
+  them. Expiry is lazy: a lapsed hold's hours return the next time that
+  customer's bookings, packs or a new booking are read, or the slot is touched.
 
 Body: `{ room_id, start_time, end_time, notes?, payment_method? }`
 Response: `{ booking: Booking, checkout_url: string | null }`
@@ -119,8 +135,10 @@ already booked *or* insufficient package hours.
 Cancel a booking (own only, if > 24h before; an unpaid checkout hold — `pending`
 with a `hold_expires_at` — can be cancelled at any time). This is also how you
 cancel **one occurrence** of a recurring series: the occurrence is marked
-`cancelled` and the `RecurrenceRule` stays active. Package-paid bookings credit
-hours back to the exact purchase they were taken from. `400` for `expired` and
+`cancelled` and the `RecurrenceRule` stays active. Bookings paid with pack hours credit
+`package_hours_used` back to the exact purchase they were taken from — all of a
+`package` booking, the prepaid share of a `mixed` one. Cancelling moves no money
+for any method. `400` for `expired` and
 `paid_unfulfilled` rows: they hold no slot to cancel.
 
 ### POST /bookings/:id/checkout
@@ -131,9 +149,11 @@ Checkout Session at the provider and mints a fresh one for the **same** booking:
 a live `pending` hold gets a new deadline; an `expired` one becomes `pending`
 again if its slot is still free. No second booking is ever created.
 Response: `{ booking: Booking, checkout_url: string }` — same shape as `POST /bookings`.
-`409` when the slot was taken meanwhile (the row stays `expired`), when the
-booking is not an unpaid hourly hold (confirmed, package-paid, series
-occurrence), or when the provider reports the previous session already paid
+`409` when the slot was taken meanwhile (the row stays `expired`), when an
+expired `mixed` hold's pack can no longer give back the hours it had reserved
+(the split and price of an existing booking are never recomputed — book again),
+when the booking is not an unpaid `hourly`/`mixed` hold (confirmed,
+package-paid, series occurrence), or when the provider reports the previous session already paid
 (`Payment already received…`: keep waiting for the webhook). `502` when the
 provider cannot start or close a session.
 
@@ -281,12 +301,17 @@ type Booking = {
   start_time: string   // ISO8601
   end_time: string
   duration_hours: number
+  // `hourly`/`mixed`: the money charged. `package`: the slot's value (nothing
+  // was charged; the pack was paid for earlier). Revenue sums hourly + mixed.
   total_amount: number
+  // Hours paid with the linked pack: 0 for `hourly`, the whole duration for
+  // `package`, strictly in between for `mixed`. Fixed at creation.
+  package_hours_used: number
   // `expired`: an unpaid hold whose deadline passed (holds no slot; retry via
   // POST /bookings/:id/checkout). `paid_unfulfilled`: a payment arrived after
   // another booking took the slot; kept visible, refund handling is O02.
   status: "pending" | "confirmed" | "cancelled" | "completed" | "expired" | "paid_unfulfilled"
-  payment_method: "hourly" | "package"
+  payment_method: "hourly" | "package" | "mixed"
   notes?: string
   // Deadline of an unpaid checkout hold (C03). `null` for package bookings,
   // series occurrences and any booking once it is confirmed. It is kept on
