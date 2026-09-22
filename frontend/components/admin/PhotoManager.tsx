@@ -229,7 +229,7 @@ export function PhotoManager({ kind, entityId, entityName, photos, onChange }: P
         <p className="mt-2 text-xs">
           {full
             ? 'Máximo de 10 fotografias. Apague uma para adicionar outra.'
-            : 'Ou larga aqui os ficheiros. JPEG, PNG ou WebP, até 8 MB cada, máximo de 10.'}
+            : 'Ou largue aqui os ficheiros. JPEG, PNG ou WebP, até 8 MB cada, máximo de 10.'}
         </p>
       </div>
 

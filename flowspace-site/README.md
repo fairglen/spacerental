@@ -692,10 +692,13 @@ The config's `webServer` starts `python3 -m http.server` against
 - field errors set `aria-invalid` on their controls and clear it once fixed;
 - the menu toggle's `aria-label`/`aria-expanded`/`aria-controls` behave.
 
-Because the committed `APPS_SCRIPT_URL` is the placeholder, the spec rewrites
-that constant in the served script via `page.route()` rather than adding a
-test-only override hook to the production file, and stubs the endpoint so no
-real request leaves the machine.
+The spec rewrites the `APPS_SCRIPT_URL` constant in the served script via
+`page.route()` — to the stub URL for the configured-form tests and to the
+placeholder for the unconfigured-form test — rather than adding a test-only
+override hook to the production file, and stubs the endpoint so no real
+request leaves the machine. It matches the declaration whatever the file
+holds (today the deployed `/exec` URL from #43, before that the placeholder),
+so the suite does not depend on which is committed (B49).
 
 **What these tests cannot prove:** that a real deployment's response is
 readable cross-origin. Playwright fulfils intercepted requests below the

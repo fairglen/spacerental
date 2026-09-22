@@ -170,7 +170,7 @@ function OrgCalendar() {
   }, [])
 
   if (spacesLoading) return <div className="p-8"><Skeleton className="h-[70vh] rounded-xl" /></div>
-  if (spacesError) return <div className="p-8"><p role="alert" className="text-sm text-red-600">Não foi possível carregar os espaços. Recarrega a página.</p></div>
+  if (spacesError) return <div className="p-8"><p role="alert" className="text-sm text-red-600">Não foi possível carregar os espaços. Recarregue a página.</p></div>
   if (!space) return <div className="p-8"><p className="text-sm text-muted-foreground">Ainda não há espaços ativos. Crie um em Espaços.</p></div>
 
   const loading = bookingsQuery.isLoading || blockQueries.some((q) => q.isLoading)

@@ -3171,7 +3171,8 @@ check that no CI runs (README "Optional smoke test"). **Fix:** match the
 declaration whatever URL it holds (a pattern on `const APPS_SCRIPT_URL =
 '…';`), still failing loudly when the constant is absent, so the suite is
 independent of which URL is committed. Test-only; no production file changes.
-**Acceptance:** 21/21 on the committed file, and the needle still throws on a
+**Acceptance:** 22/22 on the committed file (the 21 existing tests plus the
+new needle test), and the needle still throws on a
 file without the constant.
 
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22

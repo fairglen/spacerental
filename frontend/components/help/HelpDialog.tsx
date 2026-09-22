@@ -218,7 +218,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
               <summary className="cursor-pointer">O que enviamos com o pedido</summary>
               <p className="mt-1">
                 Para percebermos o problema, o pedido leva o endereço da página onde está, o tamanho do ecrã,
-                o browser que usas, a versão da app ({APP_VERSION}) e a hora do envio
+                o browser que usa, a versão da app ({APP_VERSION}) e a hora do envio
                 {signedIn ? ', e o identificador de utilizador da sua conta' : ''}. Nada mais: sem capturas de ecrã.
               </p>
             </details>

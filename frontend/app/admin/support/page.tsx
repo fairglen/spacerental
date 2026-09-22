@@ -56,7 +56,7 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
         <div>
           <h1 className="text-2xl font-bold text-foreground mb-2">Pedidos de ajuda</h1>
           <p className="text-muted-foreground text-sm">
-            O que os clientes enviaram pelo formulário &quot;Ajuda&quot;. Responde por email; aqui só marcas o que está tratado.
+            O que os clientes enviaram pelo formulário &quot;Ajuda&quot;. Responda por email; aqui só marca o que está tratado.
           </p>
         </div>
         <div>

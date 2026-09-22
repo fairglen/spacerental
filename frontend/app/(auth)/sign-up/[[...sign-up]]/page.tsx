@@ -49,7 +49,7 @@ export default function SignUpPage() {
       setAccountCreated(true)
       const result = await signIn('credentials', { email: data.email, password: data.password, redirect: false })
       if (!result?.ok || result.error) {
-        setError('A conta foi criada, mas não foi possível iniciar sessão. Usa o link Entrar abaixo.')
+        setError('A conta foi criada, mas não foi possível iniciar sessão. Use o link Entrar abaixo.')
         return
       }
       router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : callbackUrl ?? '/dashboard')
@@ -99,10 +99,10 @@ export default function SignUpPage() {
               </div>
               <div>
                 <Label htmlFor="confirmPassword">Confirmar password</Label>
-                <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="mt-1" placeholder="Repete a password" autoComplete="new-password" />
+                <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="mt-1" placeholder="Repita a password" autoComplete="new-password" />
                 {errors.confirmPassword && <p className="text-xs text-red-500 mt-1">{errors.confirmPassword.message}</p>}
               </div>
-              {accountCreated && <p role="status" className="text-sm">Conta criada. Se a sessão não iniciou, usa o link Entrar abaixo.</p>}
+              {accountCreated && <p role="status" className="text-sm">Conta criada. Se a sessão não iniciou, use o link Entrar abaixo.</p>}
               {error && <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading || accountCreated}>
                 {loading ? 'A criar conta...' : 'Criar Conta'}
