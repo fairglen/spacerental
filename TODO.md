@@ -3661,6 +3661,22 @@ photos are asked for: replacing the illustrations is Q-V08. **Links:** C16
 form), C10 (the space location and map), C09 (the contact address), A03 (the
 admin calendar's opening-hours residual), R01 (rules still evaluated in UTC).
 
+**Integrated verification (2026-09-23, final code state `aeb13a4` plus this
+evidence commit, stub mode, no credentials, isolated stack rebuilt from an
+empty database with the illustrations mounted):** backend pytest 645 passed
+(635 at PR 1's HEAD); migration round trip clean at
+`0011_booking_package_debits` (no schema change in PR 2); ruff check + format
+clean; `tsc` clean; Vitest 539 (507 at PR 1's HEAD); `next build` OK; full
+app Playwright 46 passed on the freshly seeded stack (the same 46 files as
+PR 1; `photos` and `single-space` extended); flowspace-site smoke 26 passed
+(22 at PR 1's HEAD) and Code.gs 38. Screenshots in `pr-screenshots/`
+(uncommitted): the mosaic at 1280px, the carousel at 390px, the gallery open,
+"Onde estamos" on the app and on the static site, the site's room cards.
+`PR2_DRAFT.md` (uncommitted) has the per-section summary, the decisions with
+reversals, the open questions (Q-H04 prices, Q-V08 real photos, V03's seed
+notes, V05's UTC hours, V07's static hours line) and the local reproduction
+commands.
+
 ### V01 — Room photo mosaic and gallery (app), seeded illustration photos
 
 **Priority: P1. State: IN PROGRESS** — implemented on
