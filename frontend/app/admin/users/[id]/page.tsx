@@ -9,7 +9,7 @@ import { pt } from 'date-fns/locale'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { useOrg } from '@/contexts/OrgContext'
-import { formatBookingCost, formatCurrency, formatHours, STATUS_LABELS } from '@/lib/utils'
+import { formatBookingCost, formatCurrency, formatHours, packSplitLines, STATUS_LABELS } from '@/lib/utils'
 import { SUPPORT_CATEGORY_LABELS } from '@/components/help/HelpDialog'
 import { ROLE_LABELS, RoleDialog } from '@/components/admin/users/RoleDialog'
 import { GrantHoursDialog } from '@/components/admin/users/GrantHoursDialog'
@@ -166,7 +166,18 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
                     </td>
                     <td className="px-4 py-2 text-foreground">{b.room?.name ?? '—'}</td>
                     <td className="px-4 py-2"><Badge variant="secondary">{STATUS_LABELS[b.status]}</Badge></td>
-                    <td className="px-4 py-2 text-foreground">{formatBookingCost(b)}</td>
+                    <td className="px-4 py-2 text-foreground">
+                      {formatBookingCost(b)}
+                      {/* H02: which packs, on hover — the same hint as the bookings table. */}
+                      {(b.package_debits?.length ?? 0) > 0 && (
+                        <span
+                          className="block text-xs text-muted-foreground underline decoration-dotted cursor-help"
+                          title={packSplitLines(b.package_debits).join('\n')}
+                        >
+                          {b.package_debits!.length === 1 ? '1 pack' : `de ${b.package_debits!.length} packs`}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
