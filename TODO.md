@@ -3156,7 +3156,10 @@ is W01 below; the deploy workflow publishes it on the merge to main.
 ### B49 — The flowspace-site smoke suite is stale since the real Apps Script URL landed
 
 **Priority: P2. State: IN PROGRESS** on `feat/flowspace-brand-copy` (found as
-the W-series baseline, 2026-09-22). `flowspace-site/tests/smoke.spec.ts`
+the W-series baseline, 2026-09-22). **Evidence:** `0fc2c10` — the rewrite matches
+`const APPS_SCRIPT_URL = '…';` whatever it holds; the placeholder test serves the
+placeholder explicitly; a new test pins that a script without the constant still
+throws. 22 passed on the committed file (3/21 before). `flowspace-site/tests/smoke.spec.ts`
 rewrites the served `contact-form.js` by replacing the literal
 `const APPS_SCRIPT_URL = 'PASTE_DEPLOYED_URL_HERE';`. #43 (`cced0f4`)
 committed the deployed `/exec` URL in its place, so `replaceOnce` throws
@@ -3180,6 +3183,17 @@ conservative way, recorded under the task and tagged `DECISION:` in the
 commit body. Nothing here touches prices, adds photos or door signs; the two
 business items the source raised are W06/W07, queued for the owner.
 
+**Integrated verification (2026-09-22, final branch state `297dc4c`, stub mode,
+no credentials, isolated stack rebuilt from an empty database):** backend
+pytest 598 passed (596 on main); `alembic check` clean at
+`0010_purchase_amount_paid` (no schema change in this branch); ruff clean;
+`tsc` clean; Vitest 475 (471 on main); `next build` OK; full app Playwright
+43 passed on the freshly seeded stack (auth, booking, help, locale and
+week-view specs re-pointed at the catalogs / formal strings); flowspace-site
+smoke 22 passed (3/21 on main, B49) and Code.gs 38 passed; `npm audit`
+unchanged at 21. Screenshots and the before/after copy tables are in
+`PR_DRAFT.md` (uncommitted).
+
 **Baked-in decisions (each reversible on its own commit):** BRAND — the app is
 called FlowSpace wherever a customer or operator can read it; internal
 identifiers (repo, npm/Python package names, DB names, env var names, Compose
@@ -3194,7 +3208,13 @@ never "você"), done last as W05 with one commit per surface.
 
 ### W01 — Static site copy (`flowspace-site/`)
 
-**Priority: P2. State: IN PROGRESS.** Links F01 (this is the published page).
+**Priority: P2. State: IN PROGRESS** — `727988e` (copy) + `04a448e` (register,
+W05a). **Evidence (2026-09-22):** preview renders; site smoke 22 passed; Code.gs
+38 passed; heading order h1→h2→h3 intact; room cards, form options and Code.gs
+untouched. Conversion line "Reserva à hora, sem contratos nem compromissos."
+(DECISION: no online-booking promise — the site's only conversion path is the
+contact form, B32). No OG/Twitter tags existed and none were added. Links F01
+(this is the published page).
 **Scope:** `index.html` H1 → "O seu espaço, no seu tempo." keeping the `<em>`
 on "espaço"; hero lede → the source subtitle + support line, keeping the
 hero badge and one conversion line; "O espaço" → the two source paragraphs;
@@ -3208,7 +3228,17 @@ workflow deploys on the merge to main (paths filter) — nothing to do now.
 
 ### W02 — App brand: EspaçoHora → FlowSpace
 
-**Priority: P2. State: IN PROGRESS.** **Scope:** every customer/operator-visible
+**Priority: P2. State: IN PROGRESS** — `d8ac677`. **Evidence (2026-09-22):**
+`grep -ri espaçohora/espacohora` leaves only the three "formerly" notes, this
+file's history, the `espacohora.*` storage-key identifiers (kept: renaming them
+resets every visitor's saved locale/calendar view) and a negative test
+assertion; Navbar/Footer tests prove the brand comes from `brand.name`;
+test_email pins the customer sign-off and its absence from the support
+forward; titles on the dev stack "FlowSpace · Gabinetes profissionais",
+"Salas · FlowSpace", "Entrar · FlowSpace", "Criar conta · FlowSpace",
+"Painel de Admin · FlowSpace" (admin chrome moved to
+`components/admin/AdminShell.tsx` so a server layout carries the title);
+`/icon.svg` linked. **Scope:** every customer/operator-visible
 "EspaçoHora" in `frontend/` (Navbar, Footer, admin layout, sign-in/sign-up,
 root metadata, i18n copyright) reads a single `brand.name` catalog key; the
 `<title>` pattern becomes "<page> · FlowSpace" with the new audience in the
@@ -3226,7 +3256,15 @@ identifier names; email tests green.
 
 ### W03 — App landing copy
 
-**Priority: P2. State: IN PROGRESS.** **Scope:** Hero H1/subtitle/support line
+**Priority: P2. State: IN PROGRESS** — `55001d8` (+ `94bae62` register, W05b).
+**Evidence (2026-09-22):** Hero test asserts headline/subtitle/support/pills from
+the catalog; TheSpace test asserts a labelled `#o-espaco` region with an H2 and
+two paragraphs; LocaleSwitcher and the auth/locale Playwright specs compare
+against the catalogs; i18n parity + B32 promise checks green; screenshots in
+`PR_DRAFT.md`. DECISION: "O espaço" sits after the rooms section and before
+"Como funciona" because "Onde estamos" is rendered inside SpaceCards. The old
+subtitle's online-booking sentence survives as a fourth pill. **Scope:** Hero
+H1/subtitle/support line
 from the source, pills and both CTAs kept; a new "O espaço" section (two
 source paragraphs, same visual language, no image); audience wording in the
 value props, "Como funciona", pricing subtitle and footer tagline; EN catalog
@@ -3236,7 +3274,12 @@ links; `i18nCatalogs` parity and B32 promise checks green.
 
 ### W04 — Seed and demo content
 
-**Priority: P3. State: IN PROGRESS.** **Scope:** demo space description →
+**Priority: P3. State: IN PROGRESS** — `a92782c`. **Evidence (2026-09-22):**
+`TestSeed` real-PG tests: fresh seed writes the new texts, a re-seed refreshes
+seed-written texts and keeps an operator's own, no duplicates (35 passed in
+`test_space_location.py`); re-seeding the running dev stack rewrote existing
+rows, read back through `/api/v1/spaces`. Room lines use only facts the
+marketing site states per room. **Scope:** demo space description →
 one sentence consistent with "O espaço"; each room description → a short
 factual line; names, capacities, prices and hours unchanged; the seed keeps
 updating rows it wrote before (previous-text sets, as the location does).
@@ -3245,7 +3288,13 @@ rewrite; no test pins the old text.
 
 ### W05 — Formal register on every customer- and operator-facing surface
 
-**Priority: P2. State: IN PROGRESS.** Done last, one commit per surface so it
+**Priority: P2. State: IN PROGRESS** — six commits, see the DECISION below.
+**Evidence (2026-09-22):** marker grep per surface leaves only third-person
+statements about a room/photo/series ("volta a aparecer", "aguarda
+confirmação"), EN strings and identifiers; every prose pin updated with its
+assertion intact (ContactNote, DashboardPage, BookingModal, HelpDialog,
+httpError, PhotoManager, AdminUsersParts, help/week-view Playwright specs);
+test_email pins "Responda a este email". Done last, one commit per surface so it
 can be reverted alone: (a) static site, (b) app landing + auth pages, (c)
 customer dashboard, booking dialogs and errors, (d) emails, (e) admin UI, (f)
 the CLAUDE.md/AGENTS.md rule. Informal → formal ("tu/teu/tua/tens/podes/clica/
