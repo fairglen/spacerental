@@ -2350,7 +2350,38 @@ booking, block an hour, and the customer calendar shows both unavailable.
 
 ### A04 — Operator capability audit ("god mode")
 
-**Priority: P1. State: QUEUED** (PR 2, docs). **Scope:** walk the customer
+**Priority: P1. State: DONE (docs, 2026-09-22)** — the walk of the customer
+journey below; each state an operator may need to change and cannot today,
+with a priority and whether PR 2 delivers it (A01–A03, A05–A07) or it is
+queued as a new item. Reviewed against the API as it is on
+`feat/admin-calendar-tools` after A03.
+
+| Area | What the operator cannot do today | Priority | Disposition |
+|---|---|---|---|
+| Users | See one customer's bookings, packs and help requests in one place; the list has no search or pages and lists only people who already booked | P1 | **A05** (this PR) |
+| Users | Promote/demote an org admin from the UI (`promote_admin.py` is a script; no demote at all; no "cannot demote yourself" rule) | P1 | **A05** (this PR) |
+| Users | Grant complimentary hours | P1 | **A05** (this PR): a purchase row at 0,00 € with a reason, so reports still add up |
+| Users | Deactivate/ban a customer, or reset their password | P3 | **Q-A08** queued: needs a policy on what happens to their future bookings; no self-service reset exists either |
+| Packages | Extend a purchase's expiry; see remaining hours per purchase; see a customer's purchase history | P1 | **A06** (this PR) |
+| Packages | Refund/cancel a purchase, or move hours between purchases | P3 | O02 (money) — not here |
+| Rooms | Activate/deactivate with a check for future confirmed bookings | P1 | **A07** (this PR); C15 already exposes the flag without the check |
+| Rooms | Opening hours: the editor covers one window per weekday; a lunch break (two windows) or a one-off closure has no UI (blocks cover the latter, A02) | P2 | **Q-A09** queued: multi-window rules in the editor |
+| Rooms | Delete a room outright (only deactivate) | P3 | deliberately absent: bookings reference it |
+| Bookings | Reschedule/move, create for a customer, mark as paid, private note, block time | P1 | **A01, A02, A03** (this PR) |
+| Bookings | Refund a paid booking after an operator cancel | — | O02; the calendar's cancel says "nada é devolvido aqui" |
+| Bookings | Change a booking's customer (re-assign) | P3 | **Q-A10** queued; workaround: cancel + manual booking |
+| Payments | See the Stripe Checkout Session id / payment status for a booking or purchase; a link into the Stripe dashboard | P2 | **Q-A11** queued: read-only exposure of `stripe_checkout_session_id` in admin responses (customer responses must never carry it) |
+| Payments | Reconcile revenue vs. refunds | — | O03 |
+| Support | Answer from the inbox, assign, history | P2 | D06 (C19 is the first slice) |
+| Settings | Contact/support email, hold expiry, enrollment org, rate limits are env vars; no per-org settings UI | P2 | **Q-A12** queued: an org settings page over `organizations.settings` (JSONB, unused today) for the values that are per-tenant (support email, hold minutes); env stays for deployment-wide ones |
+| Settings | Access codes: see/revoke a customer's door code by hand | P2 | O04 (durable lock state first) |
+| Spaces | Deactivate a space with active future bookings | P2 | **Q-A13** queued: same check as A07, at space level |
+| Audit | Who did what (every table above) | P2 | O05 |
+
+New queued items from this audit (recorded, not started): Q-A08 customer
+deactivation/reset, Q-A09 multi-window opening hours, Q-A10 re-assign a
+booking, Q-A11 payment session visibility, Q-A12 per-org settings page,
+Q-A13 space deactivation check. **Scope:** walk the customer
 journey and list every state an operator may need to change and cannot today
 (users, packages, rooms, bookings, payments, support requests, settings), each
 with a priority and whether PR 2 delivers it or it is queued.
