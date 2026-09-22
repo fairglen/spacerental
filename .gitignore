@@ -61,3 +61,6 @@ Thumbs.db
 # ── Claude Code ────────────────────────────────────────────────
 .claude/worktrees/
 .claude/settings.local.json
+
+# Uploaded photos when the backend runs without Docker (MEDIA_ROOT=./media)
+backend/media/

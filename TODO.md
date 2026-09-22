@@ -51,6 +51,22 @@ and tests stay in the repo, passing, with the flag off. The assignment's four
 steps are recorded as C09–C12 below, and admin handling of requests raised
 through the new contact note is D06. Commits stay local; the owner opens the PR.
 
+**Customer payments/photos/help and operator tooling (2026-09-22):** by explicit
+owner assignment, delivered unattended on two stacked branches that become two
+PRs. **PR 1** `feat/customer-mixed-pay-photos-help` (from main `6218d6d`, with
+`fix/smoke-findings` #46 and `feat/location-single-space-simple-booking` #54
+already merged): C13–C19. **PR 2** `feat/admin-calendar-tools` (from the
+finished PR 1 branch): A01–A07. Money-touching customer code stays separate
+from operator tooling. Out of scope for both: refunds of any kind (there are
+none in the product; nothing here builds, mentions or promises one — money
+questions after a cancellation go to a person through the help form, C17/C18;
+O02 stays as it is), recurring bookings (code stays, flag off), half/full-day
+or monthly products, the audit log (O05), and any third-party service that
+needs credentials in tests. The owner is not available during delivery: where
+a decision was not given, the most conservative option that keeps existing
+behaviour is taken, recorded under the task and tagged `DECISION:` in the
+commit body. Commits stay local; the owner reviews and merges.
+
 States used below:
 
 - **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
@@ -1675,6 +1691,317 @@ because CI does. **Proposal:** a ranged availability read
 endpoint, so it was not made under C12. **Acceptance:** one request per week
 shown; real-PG tests for range bounds and the rate tier; week-view E2E green.
 
+### Customer payments, photos and help — 2026-09-22 (PR 1)
+
+Owner assignment recorded above; branch `feat/customer-mixed-pay-photos-help`,
+one commit per task, in the order C13 → C14 → C15 → C16 → C17 → C18 → C19.
+
+**Integrated verification (2026-09-22, final branch state `2718b05`, stub
+mode, no credentials, isolated stack rebuilt from an empty database):** backend
+pytest 516 passed (427 on main); `alembic upgrade head` → `check` → downgrade →
+upgrade → `downgrade base` (no tables or enum types left) → `upgrade head` →
+`check` clean through `0007_support_requests`; `tsc` clean; Vitest 434 (346 on
+main); `next build` OK; full Playwright 40 passed with the recurrence flag off
+AND 40 passed with it on (CI's configuration); `npm audit` unchanged at 21.
+
+### C13 — Pack hours first, pay only the extra hours (`mixed` payment)
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help` (backend `0240817`, frontend in the next
+commit), committed locally; DONE only once merged. **Evidence (2026-09-22):**
+26 real-PG tests in `tests/test_mixed_payment.py` (the 7h+1h split and Checkout
+amount/description; client numbers ignored; whole-block pack wins; soonest pack
+pays the partial share; another org's pack untouched; confirm keeps hours;
+stub cancel, lazy expiry via packs page / another customer taking the slot /
+the next booking all restore them once; cancel of paid and unpaid restores 7
+not 8 and moves no money; operator cancel + reinstate; pay-now re-debit and its
+409; late money with and without hours, incl. a lapse nothing had noticed; two
+bookings racing for one pack; revenue; CHECK constraint). Full backend 453
+passed. Migration `0005_booking_mixed_payment`: upgrade → check → downgrade →
+upgrade clean on an empty PostgreSQL 16, backfill and the lossy downgrade
+verified against real `package` and `mixed` rows. Frontend: `lib/paymentSplit`
+(mirror of the server rule, 12 unit tests), BookingModal breakdown + choice
+(7 component tests; the old "hide the pack when it cannot cover the block"
+test — the reported bug — now asserts pack-plus-money), dashboard/admin split,
+API shape tests; Vitest 370. Playwright `pay-mixed.spec.ts`: fresh customer,
+7h left, books 8h → modal breakdown → stub Checkout shows 11,00 € and
+"1h Sala Brisa (7h pagas com o pack)" → dashboard "7h do pack + 11,00 €",
+0h left; full suite 35 passed. **Known limitation:** hold expiry is lazy, so an
+abandoned mixed hold's hours return when that customer (or anyone touching the
+slot) next hits the API, not at the 15-minute mark; a sweeper is O-series work.
+**Observed:** with a pack that has
+7h left, booking 8h hides the pack option and charges all 8h. **Wanted:** the 7h
+come out of the pack and the customer pays only the extra hour, shown clearly.
+
+**Decision (recorded 2026-09-22 before implementation; items 1–5 are the
+owner's, 6–9 are conservative choices made unattended):**
+1. Keep `hourly` and `package`; add `mixed`. A booking stores
+   `package_hours_used` (Decimal, default 0) next to `package_purchase_id`.
+   For `mixed`, `total_amount` is the MONEY charged (uncovered hours × rate),
+   so revenue keeps meaning money: it sums `hourly` and `mixed`. A `package`
+   booking's `total_amount` stays what it is today (the slot's value, excluded
+   from revenue); its `package_hours_used` is backfilled to its duration.
+2. Hours are reserved (debited) when the mixed booking is created `pending`
+   and restored whenever it leaves the held state without confirming: stub
+   checkout cancel, lazy hold expiry, customer/admin cancel. Confirmation
+   changes nothing about the hours. Same ledger module (`package_hours`), no
+   fork: one "debit the first usable purchase" helper serves both the
+   whole-block rule and the partial one.
+3. One pack per booking, the soonest-expiring one that still has hours.
+4. Cancelling a mixed booking follows the existing rules exactly: hours go
+   back as a `package` booking's do; the money part is treated as an `hourly`
+   booking's is. Nothing about money changes on cancel (no refunds exist).
+5. `mixed` requires 0 < `package_hours_used` < duration. The server computes
+   the split and ignores client numbers: remainder 0 → a plain `package`
+   booking; nothing usable → a plain `hourly` one.
+6. If ONE pack can cover the whole block, a `mixed` request becomes `package`
+   against that pack (today's rule), even when a sooner-expiring pack holds a
+   few hours. Charging money while a pack could pay for everything would be
+   the wrong way round. Alternative: always take the soonest-expiring pack
+   and charge the rest. Reverse: drop the whole-block attempt in
+   `create_booking`.
+7. "Holds its hours" is one predicate for every path: `pending`, `confirmed`
+   and `completed` hold them; `cancelled`, `expired` and `paid_unfulfilled` do
+   not. The admin status change used "cancelled or not"; under the single
+   predicate an operator moving a pack-paid booking to `expired` or
+   `paid_unfulfilled` now returns its hours too, instead of burning them
+   silently. Alternative: keep two rules (a fork). Reverse: narrow
+   `holds_package_hours()`.
+8. Retrying an expired mixed hold ("Pagar agora") re-debits the same pack for
+   the same hours; if the pack can no longer cover them → 409 and the hold
+   stays expired (the customer books again and gets a fresh split). The split
+   and the price of an existing booking are never recomputed.
+9. Money arriving late for an expired/cancelled mixed hold (C03) confirms it
+   only if the slot is free AND the same hours can be re-debited; otherwise it
+   becomes `paid_unfulfilled`, as a lost slot does today, for a person to
+   resolve. Expiry stays lazy (no sweeper): a lapsed hold's hours return the
+   next time that customer's bookings, packs or a new booking are touched, or
+   anyone touches the slot.
+
+**Scope:** model + migration (`package_hours_used`, enum value), `POST
+/bookings`, hold release, cancel, resume checkout, webhook, admin status change,
+revenue, checkout description ("1h Sala Calma (7h pagas com o pack)"), admin
+bookings table, `BookingModal` breakdown and payment choice, dashboard rows,
+`lib/api.ts` + shape test, API_SPEC. **Dependencies:** C02, C03 (merged).
+**Links:** O02 (no refunds here), O03 (revenue meaning). **Acceptance:** 7h pack
++ 8h booking → 7 used, 1h charged; abandon/expire restores 7h; confirm keeps
+them; cancel restores per the existing rule; two concurrent mixed bookings
+against one 7h pack → only one gets the hours; remainder 0 downgrades to
+`package`; a client-supplied `package_hours_used` is ignored. **Validation:**
+real-PG integration tests for each; component tests for the three modal cases;
+Playwright: 7h pack, book 8h, stub checkout shows 11,00 €, dashboard shows the
+split and 0h left.
+
+### C14 — Image storage and upload behind a gateway
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally; DONE only once
+merged. **Evidence (2026-09-22):** 28 real-PG + temp-dir tests in
+`tests/test_media.py` (processing to 1600px/480px WebP; the client's filename
+never reaches disk or URL; JPEG/PNG/WebP accepted by content whatever the name;
+PHP/PDF/SVG/empty/GIF → 415; > 8 MB → 413; 11th → 409; EXIF/GPS/ICC stripped
+from both files; orientation applied to the pixels before stripping; spaces;
+public shape + file served as `image/webp`, PUT → 405; another org's admin →
+403 / 404 identical to a missing id, no file written; member 403, anonymous
+401; reorder = full permutation else 409; delete removes both files, second
+delete 404; a backfilled external photo can be removed; upload rate tier →
+429; an unimplemented `MEDIA_STORAGE` raises). The six routes are classified in
+the S01 matrix (incl. its cross-org sweeps); S19's public field allowlist
+declares `photos`. Migration `0006_photos` round trip clean, backfill verified
+(order kept, `images` untouched). Full backend 481 passed. **Decisions:**
+(1) `photos` (JSONB) is a NEW field and the source of truth for uploads;
+`images` (external URLs) is left exactly as it was, so no API client sees a
+change; existing URLs are copied into `photos` so nothing configured vanishes
+from the carousel. Reverse: drop the column. (2) The database stores storage
+KEYS and responses build absolute URLs from `MEDIA_BASE_URL`, so moving to a
+bucket or another domain rewrites no rows. (3) Delete answers 200 with the
+updated entity, not 204 — the client needs the new list and cover. (4) A new
+`upload` rate tier (30/min) rather than reusing `auth`/`public`. (5) Found on
+the way: python:3.12-slim has no WebP MIME type, so files were served as
+`text/plain`; registered explicitly. **Scope:** `images` exists on Space and
+Room and in the admin schemas but nothing writes it. A `MediaStorage` gateway
+(`MEDIA_STORAGE=local` now: files under `MEDIA_ROOT`, served read-only at
+`/media/…` by the API; a marked seam for S3/R2 later, no cloud SDK). `POST
+/admin/rooms/{id}/images` and `POST /admin/spaces/{id}/images` (multipart, one
+file, tenant-scoped lookup first), `DELETE …/images/{image_id}`, `PUT
+…/images/order`. Validate by content with Pillow (jpeg/png/webp, else 415;
+> 8 MB → 413; 11th image → 409). On upload: fix EXIF orientation, strip all
+metadata, max 1600px long edge, WebP q≈82, plus a 480px thumbnail; random uuid
+filenames. Stored as `{id, url, thumb_url, width, height}` objects with one
+migration backfilling the old string shape. Uploads rate-limited with the
+existing limiter. **Dependencies:** none. **Acceptance/Validation:** real-PG +
+tmp-dir tests: happy path, wrong type, oversize, 11th image, cross-tenant 403
+with no detail leak, metadata stripped, orientation fixed, reorder, delete
+removes files; migration round trip; API_SPEC; `.env.example`/Compose so a fresh
+checkout still comes up.
+
+### C15 — Admin: manage photos and every customer-visible room field
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** `PhotoManager` (17 component tests: empty/grid/limit states,
+"Capa" on the first only, reorder by buttons and by drag sending the full
+order, a refused reorder keeps the list and says why, delete behind a confirm
+step, client-side type/size refusal naming the file with no request, several
+files sent one request at a time with a progressbar, every server error mapped
+next to its file while the queue carries on, drop zone, only as many files as
+fit); room edit dialog tests (description, amenities, active; an inactive room
+is listed and can be switched back on; the Fotografias section); 3 API shape
+tests. Vitest 394; admin Playwright spec 6 passed; a live upload → fetch
+(`image/webp`, `nosniff`) → delete against the running stack. **Found and
+fixed here:** the admin rooms page read rooms from the PUBLIC endpoint, which
+hides inactive rooms — so a room an operator switched off vanished from the
+admin and could never be switched back on. It now reads the operator's own
+listing. **Decisions:** (1) never optimistic — the grid always shows the last
+list the server returned; (2) the new-space page reveals the photo step after
+the space is created (photos need an owner) instead of sending the operator to
+find "Editar"; (3) plain `<img>`, not `next/image`, for operator-uploaded files
+on the API's origin. **Limit to know:** deactivating a room here does not yet
+check for future bookings — that check is A07 (PR 2). **Scope:** a "Fotografias" section on
+the admin room edit page and the space new/edit pages: thumbnail grid, first =
+"Capa", drag-to-reorder with move up/down buttons as the keyboard path, delete
+with confirm, upload (button + drop zone, several files, one request at a time,
+per-file progress and errors), client-side type/size checks with the API's
+limits. Every customer-visible room field (name, description, capacity, hourly
+rate, amenities, active) is editable. **Dependencies:** C14. **Validation:**
+component tests (states, reorder, delete confirm, upload error); `lib/api.ts`
+shape tests.
+
+### C16 — Customer photo carousel, and seeded placeholder photos
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** `PhotoCarousel` — 16 component tests (0 photos → the given
+placeholder and no region; 1 → no controls or indicators; 3 → prev/next + a
+`tab` per photo labelled "Fotografia 2 de 3"; 5 dots vs "1 / 8" counter from 6;
+ends disable the buttons; arrow keys; dot jump; the live region is empty until
+the visitor moves it; nothing moves in 60 s of fake time; `behavior: 'auto'`
+under prefers-reduced-motion; region role/roledescription/label, focusable,
+icons `aria-hidden`; first image eager, the rest lazy, all with width/height;
+thumbnails on cards vs full images on the page; 44px buttons; controls never
+reach a surrounding click handler; a swipe is not a click, a tap still is).
+Used by `RoomCard` (landing + space page, today's placeholder kept for zero
+photos) and, full size, above the booking section. Seed: 2 real-PG tests — each
+demo room gets 3 generated photos through the upload pipeline (WebP, no
+metadata, distinct files); a re-seed adds none and leaves an operator's photos
+alone. Playwright `photos.spec.ts` 2 passed: a landing card shows a decoded
+image from `/media`, "next" selects the second dot and brings its image into
+view without following the card's link, ArrowLeft goes back; the booking
+section shows the full-size file. Vitest 410. **Found by looking at it:** white
+dots vanished on light photos (now on a dark pill); the placeholder caption
+drew hollow and Pillow's built-in font has no "é" (now ASCII on a dark band).
+**Scope:** one `PhotoCarousel` (native
+scroll-snap, no new dependency) on room cards and, larger, above the room's
+booking section: fixed 4:3 frame, first image eager and the rest lazy,
+thumbnails on cards; prev/next buttons (≥44px, "Fotografia anterior/seguinte"),
+arrow keys, dots as a `tablist` up to 5 photos and a "2 / 8" counter from 6,
+`role="region"` + `aria-roledescription="carrossel"`, no autoplay, controls
+never trigger a surrounding card's navigation, one photo = no controls, zero =
+today's placeholder, `prefers-reduced-motion` respected. The seed generates 2–3
+small gradient PNGs per room with Pillow through the C14 storage (no binary
+assets in git). **Dependencies:** C14. **Validation:** component tests for
+0/1/3/8 photos, keyboard, dots vs counter, aria; Playwright: a landing card
+shows a photo and "next" advances.
+
+### C17 — Help / report a problem: support requests, dialog and email
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** 18 real-PG tests in `tests/test_support.py` (stored row and
+receipt shape; email to `SUPPORT_EMAIL` = `geral@flowspace.pt` with Reply-To
+the customer and subject "[Ajuda] Pagamento — #REF"; the message is never
+echoed and is escaped in the HTML part; email required when signed out; bounds
+incl. NUL and an unknown category; a visitor's `booking_id` ignored; unknown
+context keys dropped; signed-in identity from the token not the body; own
+booking attached and sets the org; someone else's booking = 404 identical to a
+missing one; a bad token is 401, not an anonymous request; honeypot answers
+like success and stores nothing; 5/hour → 429; a mail failure keeps the row).
+Route classified PUBLIC in the S01 matrix. Migration `0007_support_requests`
+round trip clean (downgrade drops its enum types too). Full backend 508.
+Frontend: `HelpProvider` (one shared dialog, presets per opener) + `HelpDialog`
+— 10 component tests (signed-out validation and success with the reference,
+context captured, "O que enviamos" collapsed, failure keeps the message,
+honeypot hidden from people; signed-in read-only email, upcoming bookings only,
+presets from props; the provider opens it from anywhere). "Ajuda" in the
+navbar (desktop + mobile, signed in and out) and footer. Vitest 420.
+Playwright `help.spec.ts`: a visitor submits from the navbar → reference and
+"Respondemos por email"; the row lands with the enrollment org resolved.
+**Decisions:** (1) a present-but-invalid token is a 401, not a silent
+anonymous request (an expired session must not drop the booking link);
+(2) `org_id` resolves booking → the customer's only org → the enrollment org →
+null, and a null-org row is emailed but listed for no tenant; (3) the app
+version is baked in at build time from `NEXT_PUBLIC_APP_VERSION` or the git
+commit. **Scope:** "Ajuda" in the navbar (signed
+in and out) and footer opens a dialog (not a floating widget): Assunto
+(Problema técnico / Reserva / Pagamento / Pack / Outro), Mensagem (20–2000),
+Email (prefilled and read-only when signed in), optional upcoming booking, a
+collapsed "O que enviamos" (URL, viewport, user agent, app version, timestamp,
+user id). Initial category and booking come in as props. `POST
+/support/requests` (optional auth) stores a `support_requests` row (org_id when
+resolvable, user_id, category, message, contact_email, booking_id, context JSON,
+status `new`) and emails `SUPPORT_EMAIL` (default `geral@flowspace.pt`, the C09
+address) through the existing gateway with Reply-To = the customer, subject
+"[Ajuda] <categoria> — #<short id>". Honeypot + the existing limiter, tight
+(5/hour/IP). No screenshots. **Links:** this table IS the inbox D06 will read;
+C09 (contact address). **Validation:** pytest: stored row, email stub called
+with Reply-To, honeypot drop, rate limit, no cross-org read; component tests
+for validation and signed-in/out variants; Playwright: a signed-out visitor
+submits → success state with the reference.
+
+### C18 — Cancellations and the contact note route to the help dialog
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** dashboard component tests — a cancellable hourly or mixed
+booking keeps self-service cancel and gets one muted line below the buttons
+("Questões sobre o valor pago? Fala connosco" → help, Assunto "Pagamento",
+booking preselected), the dialog says nothing about refunds; a package booking
+and an unpaid hold get no money line (nothing was paid for them); inside the
+24h window Cancel stays disabled with C07's reason and "Precisas de cancelar?
+Fala connosco" opens help on "Reserva" with the booking; the link is absent
+when cancel is allowed. Contact note tests: "Fala connosco" opens help on
+"Reserva", the address stays visible, no bare mailto. Catalog guard refuses
+"cancelamento gratuito"/"free cancellation"/refund wording; PT+EN hero pill
+and hourly-plan feature now read "Cancelamento até 24h antes" / "Cancel up to
+24h ahead". Vitest 427. Playwright `help.spec.ts` (2): a signed-in customer
+opens help from the cancel dialog of a paid booking, sees Assunto "Pagamento"
+and the booking preselected, submits, gets a reference. **Decision (the
+owner's default (a), kept):** >24h self-service cancel stays open for
+money-paid bookings; only the muted line was added. **Scope:** (a) the C12 contact note's
+"Fala connosco" opens the help dialog with Assunto "Reserva" instead of a bare
+mailto; (b) the dashboard cancel dialog: for still-cancellable bookings keep
+self-service cancel (C07 behaviour, pack hours restored as today) and add one
+muted line "Questões sobre o valor pago? Fala connosco" → help dialog, Assunto
+"Pagamento", booking preselected, saying nothing about whether money comes
+back; inside the 24h window, where C07 disables Cancel with its reason, add
+"Precisas de cancelar? Fala connosco" → Assunto "Reserva", booking preselected;
+(c) landing copy "Cancelamento gratuito 24h antes" → "Cancelamento até 24h
+antes" / "Cancel up to 24h ahead" (hero pill and hourly plan feature, PT + EN),
+with no statement about refunds. **Dependencies:** C17. **Links:** C07, C12,
+O02. **Validation:** component tests for both cancel variants and the note;
+catalog guard; Playwright: cancel dialog → help → submit.
+
+### C19 — Minimal operator inbox for support requests (`/admin/support`)
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** 6 real-PG tests (newest first with booking/room and the
+list's fields; status filter and paging; reopen; another org lists nothing and
+gets 403/404 on close; a null-org request is listed for nobody but still
+emailed; a member gets 403); both routes classified OPERATOR in the S01
+matrix. Page: 5 component tests (list columns, message and context shown as
+text — an `<img>` payload renders as text —, close/reopen, status filter,
+empty state) + 2 API shape tests; sidebar entry "Pedidos de ajuda". Vitest
+434. Playwright `admin-support.spec.ts`: the admin sees the visitor's and the
+customer's requests, the customer's with its room and time, opens one, closes
+it. **Scope:** `GET /admin/support/requests`
+and a status toggle (new/closed), admin of that org only; a list page (newest
+first: category, email, excerpt, linked booking, status). Full handling stays
+deferred in **D06**, which this delivers the first slice of. **Dependencies:**
+C17. **Validation:** real-PG happy/failure + cross-org denial; `lib/api.ts`
+shape test; component test; Playwright: the admin sees the visitor's request
+with its booking reference.
+
 ### C99 — Outcome 1 acceptance
 
 **Depends on:** C01–C08. **Scope:** integrated validation and evidence only.
@@ -1893,6 +2220,90 @@ provider failures; recover without duplicate financial effects or lost revoke
 capability. Demonstrate accurate operator statuses, revenue reconciliation and
 audit history. Record unavoidable external-delivery limits and manual recovery
 procedures. Required suites and migration checks pass without external credentials.
+
+## Operator tooling (A-series) — owner assignment 2026-09-22 (PR 2)
+
+Branch `feat/admin-calendar-tools`, created from the finished PR 1 branch. Not
+part of the outcome gates above: assigned directly by the owner. Every endpoint
+does its tenant-scoped lookup first and uses `require_admin`. No charge, credit
+or refund is ever created by an operator action (O02 owns money movement; O05
+owns the audit trail — neither is started here). **Links:** B46 (operators had
+no action on a confirmed booking) and B43 are answered by A01/A03.
+
+### A01 — Operator booking management API
+
+**Priority: P1. State: QUEUED** (PR 2). **Scope:** `PUT /admin/bookings/{id}`
+also accepts `start_time`/`end_time`/`room_id` (same org; same validity and
+conflict checks as a customer booking, EXCLUDE race included; no 24h rule for
+admins); a duration change on a paid booking moves no money — old and new hour
+counts are returned and the admin settles outside the platform (known
+limitation); the customer gets the confirmation email with one added line "A
+tua reserva foi alterada". `POST /admin/bookings` for an org member with
+payment method `manual` ("paid or arranged outside the platform"), optional
+`admin_note`, confirmed at once with access code and email. `manual` is
+admin-only: the customer `POST /bookings` rejects it. `POST
+/admin/bookings/{id}/mark-paid` (pending hourly/mixed → confirmed `manual`,
+reason required, open checkout session expired so a late webhook cannot
+double-confirm). `admin_note` (Text) never returned by customer endpoints.
+Admin cancel shares the customer cancel code path. **Dependencies:** C13.
+**Validation:** each endpoint happy/failure, cross-tenant 403/404, `admin_note`
+never leaks, manual booking gets a code and an email, customer `manual`
+rejected, mark-paid then late webhook stays single-confirmed, reschedule email
+sent once; enum + column migration round trip.
+
+### A02 — Blocked time (`room_blocks`)
+
+**Priority: P1. State: QUEUED** (PR 2). **Scope:** `room_blocks` (org_id,
+room_id, start, end, reason, created_by) with the bookings' overlap EXCLUDE
+pattern; blocks count as unavailable in `/rooms/{id}/availability` and in every
+booking conflict check (customer and admin); CRUD under
+`/admin/rooms/{id}/blocks`; a block over a slot-holding booking → 409 listing
+it (no silent overrides). **Validation:** block vs booking conflicts both
+directions, cross-tenant, migration round trip with a constraint test.
+
+### A03 — Admin calendar (`/admin/calendar`)
+
+**Priority: P1. State: QUEUED** (PR 2). **Scope:** react-big-calendar with
+`resources` and its drag-and-drop addon. "Dia por sala" (a column per active
+room) and "Semana" for one room; status shown by colour AND text; cancelled
+hidden behind a toggle; blocks hatched; a right-side sheet per booking with
+every A01 action; drag/resize open a confirm popover before any write (never
+optimistic on money-bearing objects); click/drag on empty space → "Nova
+reserva" (manual) or "Bloquear horário"; view/room/date in the URL; below
+1024px a read-only agenda. **Dependencies:** A01, A02, A05 (customer link).
+**Validation:** component tests for the sheet actions and the move-confirm
+popover; Playwright as admin: open, cancel the seeded booking, create a manual
+booking, block an hour, and the customer calendar shows both unavailable.
+
+### A04 — Operator capability audit ("god mode")
+
+**Priority: P1. State: QUEUED** (PR 2, docs). **Scope:** walk the customer
+journey and list every state an operator may need to change and cannot today
+(users, packages, rooms, bookings, payments, support requests, settings), each
+with a priority and whether PR 2 delivers it or it is queued.
+
+### A05 — Users: list, customer page, admin role, complimentary hours
+
+**Priority: P1. State: QUEUED** (PR 2). **Scope:** `/admin/users` searchable and
+paginated; a user page with bookings, package purchases and support requests;
+"Tornar admin / Remover admin" per org with confirm (cannot demote yourself);
+"Atribuir horas": a package purchase of N hours at 0,00 € with a reason — policy:
+complimentary hours are a purchase row with amount 0 and a note, so reports
+still add up. **Links:** `promote_admin.py` (script only today), D05
+(pagination). **Validation:** per endpoint happy/failure/cross-tenant; UI
+confirm-step tests.
+
+### A06 — Package purchases: extend validity, see remaining hours
+
+**Priority: P1. State: QUEUED** (PR 2). **Scope:** "Prolongar validade" (new
+expiry date, reason) and remaining hours per purchase visible to the admin.
+**Validation:** happy/failure/cross-tenant; component test.
+
+### A07 — Room activate/deactivate with a future-bookings check
+
+**Priority: P1. State: QUEUED** (PR 2). **Scope:** activate/deactivate from the
+room page; deactivating a room with future confirmed bookings → 409 listing
+them. **Validation:** happy/409/cross-tenant; component test.
 
 ## Security hardening (S-series)
 
@@ -2516,7 +2927,7 @@ follow-up, not half-built).
 | D03 | Additional multi-operator/multi-space UX | Explicit expansion decision; existing tenant isolation and org-cache correctness remain mandatory now. |
 | D04 | B13: daily booking products/monthly recurrence | Explicit customer/product requirement; these are new products, not regressions of hourly or weekly booking. Owner decision 2026-09-19: hourly booking is the only product (C12); half-day, full-day, multi-date and monthly booking stay deferred, as do R02/R03/R99. |
 | D05 | Epic 5: pagination beyond existing admin bookings | Demonstrated list growth. Q20 owns existing work; add further list coverage only when needed (O05's bounded audit listing is part of that task). |
-| D06 | Admin handling of special requests (recurring arrangements, longer bookings, questions) raised through the booking contact note (C12) | Stub only. **Scope:** somewhere in the admin panel for an operator to see, answer and close requests that today arrive by email at the C09 contact address; tenant-scoped, no customer-facing request form implied. **Acceptance (to be written when reactivated):** an operator can list, read and resolve a request for their own organization only, with real-PG happy/failure tests and a Playwright admin flow. Reactivate on demonstrated request volume or an explicit owner decision; until then the mailbox is the process. |
+| D06 | Admin handling of special requests (recurring arrangements, longer bookings, questions) raised through the booking contact note (C12). First slice assigned 2026-09-22: C17 stores requests in `support_requests`, C19 lists them at `/admin/support`; answering, assignment and history stay deferred here. | Stub only. **Scope:** somewhere in the admin panel for an operator to see, answer and close requests that today arrive by email at the C09 contact address; tenant-scoped, no customer-facing request form implied. **Acceptance (to be written when reactivated):** an operator can list, read and resolve a request for their own organization only, with real-PG happy/failure tests and a Playwright admin flow. Reactivate on demonstrated request volume or an explicit owner decision; until then the mailbox is the process. |
 
 ## Legacy IDs and verified baseline
 

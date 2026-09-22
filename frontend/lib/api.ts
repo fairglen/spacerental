@@ -1,8 +1,9 @@
 import axios from 'axios'
 import type {
-  Space, Room, Booking, Package, UserPackagePurchase,
+  Space, Room, Booking, Package, UserPackagePurchase, Photo,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
+  SupportRequestBody, SupportRequestReceipt, SupportRequestRow, PaginatedSupportRequests,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -27,7 +28,7 @@ type Api = ReturnType<typeof createAuthenticatedApi>
 export const DECIMAL_FIELDS = {
   space: ['latitude', 'longitude'],
   room: ['hourly_rate'],
-  booking: ['total_amount', 'duration_hours'],
+  booking: ['total_amount', 'duration_hours', 'package_hours_used'],
   pkg: ['price'],
   purchase: ['hours_total', 'hours_used', 'hours_remaining'],
 } as const
@@ -45,17 +46,18 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function normSpace<T extends { latitude?: unknown; longitude?: unknown; rooms?: Room[] }>(s: T): T {
+function normSpace<T extends { latitude?: unknown; longitude?: unknown; rooms?: Room[]; photos?: Photo[] }>(s: T): T {
   return {
     ...s,
     latitude: numOrNull(s.latitude),
     longitude: numOrNull(s.longitude),
+    photos: s.photos ?? [],
     ...(s.rooms ? { rooms: s.rooms.map(normRoom) } : {}),
   } as T
 }
 
-function normRoom<T extends { hourly_rate?: unknown }>(r: T): T {
-  return { ...r, hourly_rate: num(r.hourly_rate) } as T
+function normRoom<T extends { hourly_rate?: unknown; photos?: Photo[] }>(r: T): T {
+  return { ...r, hourly_rate: num(r.hourly_rate), photos: r.photos ?? [] } as T
 }
 
 function normBooking<T extends Booking>(b: T): T {
@@ -63,6 +65,7 @@ function normBooking<T extends Booking>(b: T): T {
     ...b,
     total_amount: num(b.total_amount),
     duration_hours: num(b.duration_hours),
+    package_hours_used: num(b.package_hours_used),
     room: b.room ? normRoom(b.room) : b.room,
   }
 }
@@ -131,14 +134,16 @@ export const bookingsApi = {
   // An `hourly` booking comes back `pending` with a Stripe Checkout URL — it is
   // the webhook, not this response, that confirms it. A `package` booking is
   // paid from prepaid hours, so it is already `confirmed` and `checkout_url` is
-  // null.
+  // null. `mixed` (C13) asks for "my pack first, money for the rest": the
+  // server computes the split, and may answer with a plain `package` or
+  // `hourly` booking if that is what the balance makes it.
   create: (
     data: {
       room_id: string
       start_time: string
       end_time: string
       notes?: string
-      payment_method?: 'hourly' | 'package'
+      payment_method?: 'hourly' | 'package' | 'mixed'
     },
     api: Api,
   ) =>
@@ -195,7 +200,23 @@ export const packagesApi = {
       })),
 }
 
+// ─── Support (C17) ───────────────────────────────────────────────────────
+
+export const supportApi = {
+  // Works signed out (apiClient) and signed in (an authenticated instance,
+  // which is what attaches the customer's identity and their booking).
+  create: (body: SupportRequestBody, api: Api = apiClient) =>
+    api.post<{ request: SupportRequestReceipt }>('/support/requests', body).then(r => r.data.request),
+}
+
 // ─── Admin ───────────────────────────────────────────────────────────────
+
+export type PhotoOwner = 'rooms' | 'spaces'
+type PhotoOwnerResponse = { room?: Room; space?: Space }
+
+function photosOf(kind: PhotoOwner, data: PhotoOwnerResponse): Photo[] {
+  return (kind === 'rooms' ? data.room?.photos : data.space?.photos) ?? []
+}
 
 export const adminApi = {
   getDashboard: (api: Api) =>
@@ -239,6 +260,35 @@ export const adminApi = {
 
   updatePackage: (id: string, data: Partial<Package>, api: Api) =>
     api.put<{ package: Package }>(`/admin/packages/${id}`, data).then(r => normPackage(r.data.package)),
+
+  // ── Photos (C14/C15) ──────────────────────────────────────────────────
+  // Every photo call answers with the updated room or space; the photo manager
+  // only needs the new list, so that is what these return.
+  uploadPhoto: (
+    kind: PhotoOwner, id: string, file: File, api: Api, onProgress?: (percent: number) => void,
+  ): Promise<Photo[]> => {
+    const body = new FormData()
+    body.append('file', file)
+    return api.post<PhotoOwnerResponse>(`/admin/${kind}/${id}/images`, body, {
+      onUploadProgress: (e) => { if (e.total) onProgress?.(Math.round((e.loaded / e.total) * 100)) },
+    }).then(r => photosOf(kind, r.data))
+  },
+
+  deletePhoto: (kind: PhotoOwner, id: string, photoId: string, api: Api): Promise<Photo[]> =>
+    api.delete<PhotoOwnerResponse>(`/admin/${kind}/${id}/images/${photoId}`).then(r => photosOf(kind, r.data)),
+
+  // The FULL list of ids in the order wanted; the first becomes the cover.
+  reorderPhotos: (kind: PhotoOwner, id: string, order: string[], api: Api): Promise<Photo[]> =>
+    api.put<PhotoOwnerResponse>(`/admin/${kind}/${id}/images/order`, { order }).then(r => photosOf(kind, r.data)),
+
+  // ── Support inbox (C19) ───────────────────────────────────────────────
+  getSupportRequests: (params: Record<string, string | number>, api: Api): Promise<PaginatedSupportRequests> =>
+    api.get<PaginatedSupportRequests>('/admin/support/requests', {
+      params: { ...(api.defaults.params || {}), ...params },
+    }).then(r => ({ ...r.data, requests: r.data.requests.map(row => ({ ...row, booking: row.booking ? normBooking(row.booking) : null })) })),
+
+  updateSupportRequest: (id: string, status: 'new' | 'closed', api: Api): Promise<SupportRequestRow> =>
+    api.put<{ request: SupportRequestRow }>(`/admin/support/requests/${id}`, { status }).then(r => r.data.request),
 
   getAvailability: (roomId: string, api: Api) =>
     api.get<{ rules: AvailabilityRule[] }>(`/admin/rooms/${roomId}/availability`).then(r => r.data.rules),

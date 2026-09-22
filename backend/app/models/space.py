@@ -15,7 +15,7 @@ from sqlalchemy import (
     Time,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -54,6 +54,14 @@ class Space(Base):
     )
     amenities: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list, server_default="{}"
+    )
+    # Uploaded photos, in display order; the first is the cover (C14). Each is
+    # `{id, key, thumb_key, width, height}` for a file we store, or
+    # `{id, url, thumb_url, width, height}` for an external URL carried over
+    # from `images`. Replaced as a whole list on every change, never mutated in
+    # place: JSONB columns do not see in-place edits.
+    photos: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
@@ -97,6 +105,14 @@ class Room(Base):
     )
     amenities: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=list, server_default="{}"
+    )
+    # Uploaded photos, in display order; the first is the cover (C14). Each is
+    # `{id, key, thumb_key, width, height}` for a file we store, or
+    # `{id, url, thumb_url, width, height}` for an external URL carried over
+    # from `images`. Replaced as a whole list on every change, never mutated in
+    # place: JSONB columns do not see in-place edits.
+    photos: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
     )
     color: Mapped[str] = mapped_column(
         String(20), nullable=False, default="#6366f1", server_default="#6366f1"

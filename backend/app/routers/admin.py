@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import and_, distinct, func, select
@@ -19,7 +19,7 @@ from app.locks import (
     try_issue_access_code,
     try_revoke_access_code,
 )
-from app.models.booking import Booking, BookingStatus, PaymentMethod
+from app.models.booking import PAID_AT_CHECKOUT, Booking, BookingStatus
 from app.models.package import Package
 from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
@@ -63,7 +63,7 @@ async def dashboard(
         select(func.coalesce(func.sum(Booking.total_amount), 0)).where(
             Booking.org_id == org_id,
             Booking.status.in_([BookingStatus.confirmed, BookingStatus.completed]),
-            Booking.payment_method == PaymentMethod.hourly,
+            Booking.payment_method.in_(PAID_AT_CHECKOUT),
         )
     )
     total_revenue = float(revenue_result.scalar_one())
@@ -400,33 +400,19 @@ async def admin_update_booking(
             detail="This time slot is already booked",
         )
 
-    if booking.package_purchase_id is not None and body.status != previous_status:
-        # An admin status change moves prepaid hours exactly like a member
-        # cancellation does. Without this an admin-cancelled package booking
-        # would silently burn the customer's hours.
-        was_cancelled = previous_status is BookingStatus.cancelled
-        now_cancelled = body.status is BookingStatus.cancelled
-        if now_cancelled and not was_cancelled:
-            await package_hours.credit_hours(
-                db,
-                purchase_id=booking.package_purchase_id,
-                hours=booking.duration_hours,
-            )
-        elif was_cancelled and not now_cancelled:
-            # Reinstating a refunded booking has to take the hours back, or the
-            # cancel/re-confirm round trip hands out a free booking. It can fail
-            # honestly: the refunded hours may already be spent elsewhere.
-            reinstated = await package_hours.debit_purchase(
-                db,
-                purchase_id=booking.package_purchase_id,
-                hours=booking.duration_hours,
-                now=datetime.now(tz=UTC),
-            )
-            if not reinstated:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=("The package no longer has enough hours to reinstate this booking"),
-                )
+    # An admin status change moves the pack's share exactly like every other
+    # transition does (`package_hours.settle_status_change`): returned when the
+    # booking stops holding its slot, taken again when it is reinstated — or an
+    # admin-cancelled booking would silently burn the customer's hours, and a
+    # cancel/re-confirm round trip would hand out a free one. Re-debiting can
+    # fail honestly: the returned hours may already be spent elsewhere.
+    if not await package_hours.settle_status_change(
+        db, booking, previous=previous_status, new=body.status, now=now
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=("The package no longer has enough hours to reinstate this booking"),
+        )
 
     booking.status = body.status
     # Keep the hold marker consistent with the new status (C03): a one-off
@@ -435,7 +421,7 @@ async def admin_update_booking(
     # status holds no checkout hold.
     if body.status is BookingStatus.pending:
         payable_hold = (
-            booking.payment_method is PaymentMethod.hourly and booking.recurrence_rule_id is None
+            booking.payment_method in PAID_AT_CHECKOUT and booking.recurrence_rule_id is None
         )
         if payable_hold and previous_status is not BookingStatus.pending:
             booking.hold_expires_at = now + timedelta(minutes=settings.BOOKING_HOLD_MINUTES)

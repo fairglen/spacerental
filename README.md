@@ -179,6 +179,24 @@ inspect the diff before deciding whether a migration or metadata repair is neede
 - Admin booking pagination and PT/EN marketing/layout translation are present.
   Booking and admin copy remain Portuguese. Further pagination/i18n are deferred.
 
+## Room and space photos
+
+Operators upload photos from the admin (rooms and spaces); customers see them in
+a carousel. Storage sits behind a gateway (`backend/app/media.py`) like payments,
+email and locks. `MEDIA_STORAGE=local` is the default and the only implementation
+today: processed photos (WebP, metadata stripped, 1600px + a 480px thumbnail) live
+in the `media` Docker volume and the API serves them read-only at `/media`. No
+account or credentials. The module marks the seam for S3/R2; any other value stops
+the backend at startup rather than quietly writing to local disk.
+
+- `MEDIA_BASE_URL` (default `http://localhost:8000/media`) is the browser-facing
+  URL of that directory; change it with the API's public origin.
+- Without Docker, files go to `backend/media/` (gitignored).
+- `python -m app.seed` gives each demo room a few generated placeholder photos,
+  so the carousel has something to show locally; no image files live in git.
+- Removing the volume (`docker compose down -v`) removes the photos with the
+  database, which keeps the two consistent.
+
 ## Third-party integrations (stub/live)
 
 Stripe, Resend (email), and Seam (smart locks) sit behind credential-free stub
@@ -274,6 +292,9 @@ puts the app in single-space mode (`single-space.spec.ts` skips itself
 otherwise). Every browser shares one backend rate-limit budget (120 public reads
 a minute), so a few spec files deliberately wait out a 60-second window at their
 boundary; the full run takes several minutes and those pauses are not hangs.
+The help form is throttled at 5 requests an hour per client and the suite sends
+four, so restart the backend (`docker compose restart backend`) before running
+it a second time within an hour, or the fifth request answers 429.
 CI runs this suite with `RECURRING_BOOKINGS_ENABLED=true` (the weekly-series
 spec only runs its full body then), so before opening a PR run it that way too:
 start the stack with that variable set and pass it to `npm run test:e2e`.

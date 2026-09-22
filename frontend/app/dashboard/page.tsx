@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { useHelp } from '@/components/help/HelpProvider'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +11,7 @@ import { Calendar, Clock, Building2, KeyRound, X, Package } from 'lucide-react'
 import type { Booking } from '@/types'
 import { bookingsApi, packagesApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
-import { formatCurrency, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS, isUnpaidHold } from '@/lib/utils'
+import { formatBookingCost, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS, isUnpaidHold } from '@/lib/utils'
 import { cancellationErrorMessage, bookingErrorMessage } from '@/lib/httpError'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
@@ -21,11 +22,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
-
-/** What the booking cost the customer: prepaid hours, or money (B29). */
-function bookingCost(b: Booking): string {
-  return b.payment_method === 'package' ? `${formatHours(b.duration_hours)} do pack` : formatCurrency(b.total_amount)
-}
 
 export default function DashboardPage() {
   const { data: session } = useSession()
@@ -83,6 +79,12 @@ export default function DashboardPage() {
     setCancelId(null)
     cancelMutation.reset()
   }
+
+  const { openHelp } = useHelp()
+  const cancelling = (bookings ?? []).find((b) => b.id === cancelId) ?? null
+  // Money went out for it (hourly/mixed, past the unpaid hold): the one case
+  // where "what about what I paid?" is a real question — for a person (C18).
+  const paidMoney = !!cancelling && cancelling.payment_method !== 'package' && !isUnpaidHold(cancelling)
 
   // "Pagar agora" / "Tentar pagar de novo" (C03): resume or retry the hold's
   // Checkout on the same booking row, then leave for the payment page.
@@ -240,7 +242,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold text-primary">{bookingCost(b)}</span>
+                      <span className="font-semibold text-primary">{formatBookingCost(b)}</span>
                       <Badge className={STATUS_COLORS[b.status]}>
                         {isUnpaidHold(b) ? 'A aguardar pagamento' : STATUS_LABELS[b.status]}
                       </Badge>
@@ -269,6 +271,16 @@ export default function DashboardPage() {
                             {!eligibility.eligible && eligibility.reason && (
                               <span className="text-[11px] text-muted-foreground text-right max-w-[11rem]">{eligibility.reason}</span>
                             )}
+                            {/* Inside the 24h window the rule still holds; a person can make an exception (C18). */}
+                            {!eligibility.eligible && b.status === 'confirmed' && !isPast(parseISO(b.start_time)) && (
+                              <button
+                                type="button"
+                                onClick={() => openHelp({ category: 'booking', bookingId: b.id })}
+                                className="text-[11px] font-medium text-primary underline underline-offset-2 text-right"
+                              >
+                                Precisas de cancelar? Fala connosco
+                              </button>
+                            )}
                           </div>
                         )
                       })()}
@@ -290,7 +302,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-muted-foreground">{format(parseISO(b.start_time), "d MMM yyyy, HH:mm", { locale: pt })}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-muted-foreground">{bookingCost(b)}</span>
+                        <span className="text-sm font-medium text-muted-foreground">{formatBookingCost(b)}</span>
                         <Badge className={STATUS_COLORS[b.status]} variant="secondary">{STATUS_LABELS[b.status]}</Badge>
                       </div>
                     </CardContent>
@@ -335,6 +347,19 @@ export default function DashboardPage() {
               {cancelMutation.isPending ? 'A cancelar...' : 'Sim, cancelar'}
             </Button>
           </DialogFooter>
+          {paidMoney && (
+            // Says nothing about whether money comes back: a person answers that.
+            <p className="text-xs text-muted-foreground">
+              Questões sobre o valor pago?{' '}
+              <button
+                type="button"
+                onClick={() => { closeCancelDialog(); openHelp({ category: 'payment', bookingId: cancelling.id }) }}
+                className="font-medium text-primary underline underline-offset-2"
+              >
+                Fala connosco
+              </button>
+            </p>
+          )}
         </DialogContent>
       </Dialog>
     </>

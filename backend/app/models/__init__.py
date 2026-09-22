@@ -3,6 +3,7 @@ from app.models.organization import Organization, OrganizationMember
 from app.models.package import Package, UserPackagePurchase
 from app.models.recurrence import RecurrenceFrequency, RecurrenceRule
 from app.models.space import AvailabilityRule, Room, Space
+from app.models.support import SupportRequest
 from app.models.user import User
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "RecurrenceRule",
     "Room",
     "Space",
+    "SupportRequest",
     "User",
     "UserPackagePurchase",
 ]

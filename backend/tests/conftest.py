@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import shutil
+import tempfile
 from contextlib import suppress
 
 import pytest
@@ -17,6 +19,8 @@ TEST_DATABASE_URL = os.getenv(
 )
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["SECRET_KEY"] = "test-secret-key-32-chars-min-test-test"
+# Uploaded photos go to a throwaway directory, never into the checkout (C14).
+os.environ["MEDIA_ROOT"] = tempfile.mkdtemp(prefix="spacerental-test-media-")
 
 from app.auth import create_access_token, hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
@@ -93,6 +97,15 @@ def reset_rate_limiter():
     limiter.reset()
     yield
     limiter.reset()
+
+
+@pytest.fixture(autouse=True)
+def clean_media_root():
+    """Each test starts and ends with an empty media directory."""
+    yield
+    root = os.environ["MEDIA_ROOT"]
+    for entry in os.listdir(root):
+        shutil.rmtree(os.path.join(root, entry), ignore_errors=True)
 
 
 @pytest_asyncio.fixture

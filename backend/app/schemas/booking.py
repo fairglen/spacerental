@@ -20,7 +20,12 @@ class BookingOut(BaseModel):
     start_time: datetime
     end_time: datetime
     duration_hours: Decimal
+    # For `hourly` and `mixed`, the money charged; for `package`, the slot's
+    # value (no charge — the pack was paid for earlier).
     total_amount: Decimal
+    # Hours of this booking paid with prepaid pack hours (C13): 0 for
+    # `hourly`, the whole duration for `package`, in between for `mixed`.
+    package_hours_used: Decimal = Decimal(0)
     status: BookingStatus
     payment_method: PaymentMethod
     notes: str | None

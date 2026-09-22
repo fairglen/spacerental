@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -12,6 +13,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { SpaceLocationFields } from '@/components/admin/SpaceLocationFields'
+import { PhotoManager } from '@/components/admin/PhotoManager'
+import type { Space } from '@/types'
 import {
   locationDefaults, locationFormShape, locationPayload, refineCoordinatePair, type LocationFormValues,
 } from '@/lib/spaceLocationForm'
@@ -31,6 +34,7 @@ export default function NewSpacePage() {
   const { data: session } = useSession()
   const api = useApi()
   const router = useRouter()
+  const [created, setCreated] = useState<Space | null>(null)
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: locationDefaults(),
@@ -43,8 +47,36 @@ export default function NewSpacePage() {
         ...locationPayload(data),
         amenities: data.amenities ? data.amenities.split(',').map(s => s.trim()).filter(Boolean) : [],
       }, api),
-    onSuccess: () => router.push('/admin/spaces'),
+    // Photos need a space to belong to, so the form's second step appears once
+    // it exists, instead of sending the operator away to find "Editar".
+    onSuccess: (space) => setCreated(space),
   })
+
+  if (created) {
+    return (
+      <div className="p-8 max-w-2xl">
+        <h1 className="text-2xl font-bold text-foreground mb-2">{created.name} foi criado</h1>
+        <p className="text-muted-foreground text-sm mb-8">
+          Adiciona fotografias agora, ou mais tarde em Editar. A seguir, cria as salas.
+        </p>
+        <Card>
+          <CardContent className="p-6">
+            <PhotoManager
+              kind="spaces"
+              entityId={created.id}
+              entityName={created.name}
+              photos={created.photos ?? []}
+              onChange={(photos) => setCreated((s) => (s ? { ...s, photos } : s))}
+            />
+          </CardContent>
+        </Card>
+        <div className="flex gap-3 pt-6">
+          <Button onClick={() => router.push(`/admin/rooms/${created.id}`)}>Criar salas</Button>
+          <Button variant="outline" onClick={() => router.push('/admin/spaces')}>Concluir</Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-8 max-w-2xl">

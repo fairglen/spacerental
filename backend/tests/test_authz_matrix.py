@@ -70,12 +70,27 @@ ROUTES: dict[tuple[str, str], str] = {
     ("PUT", f"{API}/admin/rooms/{{room_id}}"): OPERATOR,
     ("GET", f"{API}/admin/rooms/{{room_id}}/availability"): OPERATOR,
     ("POST", f"{API}/admin/rooms/{{room_id}}/availability"): OPERATOR,
+    # C14 photos. The uploads are multipart, which the JSON sweeps below cannot
+    # send: their cross-org and role cases live in tests/test_media.py.
+    ("POST", f"{API}/admin/rooms/{{room_id}}/images"): OPERATOR,
+    ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"): OPERATOR,
+    ("DELETE", f"{API}/admin/rooms/{{room_id}}/images/{{image_id}}"): OPERATOR,
+    ("POST", f"{API}/admin/spaces/{{space_id}}/images"): OPERATOR,
+    ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): OPERATOR,
+    ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"): OPERATOR,
     ("GET", f"{API}/admin/bookings"): OPERATOR,
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
     ("GET", f"{API}/admin/users"): OPERATOR,
     ("GET", f"{API}/admin/packages"): OPERATOR,
+    # C19 inbox; its cross-org cases are in test_support.py.
+    ("GET", f"{API}/admin/support/requests"): OPERATOR,
+    ("PUT", f"{API}/admin/support/requests/{{request_id}}"): OPERATOR,
     ("POST", f"{API}/admin/packages"): OPERATOR,
     ("PUT", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
+    # C17 help form: open to visitors by design (whoever cannot sign in needs it
+    # most). A signed-in sender is identified from their token; someone else's
+    # booking, a bad token, throttling and the honeypot are in test_support.py.
+    ("POST", f"{API}/support/requests"): PUBLIC,
     ("POST", f"{API}/webhooks/stripe"): WEBHOOK,
     ("GET", "/checkout/stub/{session_id}"): STUB,
     ("POST", "/checkout/stub/{session_id}/pay"): STUB,
@@ -91,9 +106,12 @@ BODIES: dict[tuple[str, str], dict] = {
     ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"): {"name": "Sala", "hourly_rate": "10.00"},
     ("PUT", f"{API}/admin/rooms/{{room_id}}"): {"hourly_rate": "0.01"},
     ("POST", f"{API}/admin/rooms/{{room_id}}/availability"): {"rules": []},
+    ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"): {"order": []},
+    ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): {"order": []},
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): {"status": "cancelled"},
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
+    ("PUT", f"{API}/admin/support/requests/{{request_id}}"): {"status": "closed"},
 }
 
 _PASSWORD_HASH: str | None = None
@@ -471,6 +489,8 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("PUT", f"{API}/admin/spaces/{{space_id}}"),
             ("DELETE", f"{API}/admin/spaces/{{space_id}}"),
             ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"),
+            ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"),
+            ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
@@ -485,6 +505,8 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("PUT", f"{API}/admin/rooms/{{room_id}}"),
             ("GET", f"{API}/admin/rooms/{{room_id}}/availability"),
             ("POST", f"{API}/admin/rooms/{{room_id}}/availability"),
+            ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"),
+            ("DELETE", f"{API}/admin/rooms/{{room_id}}/images/{{image_id}}"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"

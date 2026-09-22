@@ -7,7 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import clock
 from app.auth import get_current_user
+from app.booking_validity import expire_user_holds
 from app.database import get_db
 from app.models.organization import OrganizationMember
 from app.models.package import Package, PurchaseStatus, UserPackagePurchase
@@ -136,6 +138,9 @@ async def my_packages(
     db: AsyncSession = Depends(get_db),
 ):
     """My package purchases and remaining hours."""
+    # A lapsed mixed hold still has hours debited until something reconciles
+    # it (expiry is lazy); the balance shown here must not be short by them.
+    await expire_user_holds(db, user.id, clock.utcnow())
     result = await db.execute(
         select(UserPackagePurchase)
         .options(selectinload(UserPackagePurchase.package))

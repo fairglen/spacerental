@@ -8,7 +8,7 @@
     "cta_primary_rooms": "Ver Salas",
     "cta_secondary": "Saber Mais",
     "benefit_1": "Sem caução",
-    "benefit_2": "Cancelamento gratuito 24h antes",
+    "benefit_2": "Cancelamento até 24h antes",
     "benefit_3": "Pagamento seguro"
   },
   "pricing": {
@@ -18,7 +18,7 @@
     "hourly_plan_unit": "/ hora",
     "hourly_plan_desc": "Sem compromisso. Paga apenas o que usas.",
     "hourly_plan_feature_1": "Reserva instantânea",
-    "hourly_plan_feature_2": "Cancelamento gratuito 24h",
+    "hourly_plan_feature_2": "Cancelamento até 24h antes",
     "hourly_plan_feature_3": "Sem mensalidade",
     "hourly_plan_cta": "Reservar Agora",
     "hourly_plan_from": "desde",
@@ -71,6 +71,7 @@
     "rooms_link": "Salas",
     "how_it_works_link": "Como Funciona",
     "pricing_link": "Preços",
+    "help": "Ajuda",
     "admin_link": "Admin",
     "org_selector_label": "Organização ativa",
     "org_selector_placeholder": "Selecionar organização",
@@ -90,6 +91,7 @@
     "rooms": "Salas",
     "how_it_works": "Como Funciona",
     "pricing": "Preços",
+    "help": "Ajuda",
     "sign_in": "Entrar",
     "contact_heading": "Contacto",
     "location": "Portugal",
@@ -118,7 +120,6 @@
   "contactNote": {
     "lead": "Somos flexíveis.",
     "body": "Precisas de um horário fixo todas as semanas, de um acordo diferente, ou tens dúvidas?",
-    "cta": "Fala connosco:",
-    "subject": "Pedido de reserva — {room}"
+    "cta": "Fala connosco"
   }
 }

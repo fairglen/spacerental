@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import email, package_hours
+from app import clock, email, package_hours
 from app.email import EmailGateway
 from app.locks import LockGateway, try_revoke_access_code
 from app.models.booking import Booking, BookingStatus
@@ -48,19 +48,18 @@ async def apply_cancellation(
     lock_gateway: LockGateway,
 ) -> None:
     """Apply an already validated cancellation to a locked, eagerly loaded row."""
+    previous = booking.status
     booking.status = BookingStatus.cancelled
 
-    if booking.package_purchase_id is not None:
-        # Cancelling more than 24h out is free, so the hours go back on the
-        # package. Same transaction as the status change: the booking is never
-        # cancelled without the credit, and never credited twice — the
-        # already-cancelled guard above is what makes a repeat call a 400
-        # rather than a second refund.
-        await package_hours.credit_hours(
-            db,
-            purchase_id=booking.package_purchase_id,
-            hours=booking.duration_hours,
-        )
+    # The pack's share of the booking goes back on the package: all of a
+    # `package` booking, the prepaid part of a `mixed` one (C13), nothing for
+    # `hourly`. Same transaction as the status change: the booking is never
+    # cancelled without the credit, and never credited twice — the
+    # already-cancelled guard above is what makes a repeat call a 400 rather
+    # than a second credit. Money is not touched here, for any method.
+    await package_hours.settle_status_change(
+        db, booking, previous=previous, new=BookingStatus.cancelled, now=clock.utcnow()
+    )
 
     email.enqueue_email(
         background_tasks,

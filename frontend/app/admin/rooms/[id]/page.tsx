@@ -6,8 +6,10 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Pencil, Clock } from 'lucide-react'
-import { adminApi, spacesApi } from '@/lib/api'
+import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
+import { useOrg } from '@/contexts/OrgContext'
+import { PhotoManager } from '@/components/admin/PhotoManager'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,11 +30,15 @@ const roomSchema = z.object({
 })
 type RoomFormData = z.infer<typeof roomSchema>
 
+// Everything a customer sees about a room is editable here (C15).
 const editRoomSchema = z.object({
   name: z.string().min(2),
+  description: z.string().optional(),
   capacity: z.coerce.number().min(1),
   hourly_rate: z.coerce.number().min(0),
   color: z.string(),
+  amenities: z.string().optional(),
+  is_active: z.boolean(),
 })
 type EditRoomFormData = z.infer<typeof editRoomSchema>
 
@@ -56,6 +62,7 @@ function defaultDayRows(): DayRow[] {
 export default function AdminRoomsPage({ params }: { params: { id: string } }) {
   const { data: session } = useSession()
   const api = useApi()
+  const { currentOrgId } = useOrg()
   const qc = useQueryClient()
   const { register, handleSubmit, reset, formState: { errors } } = useForm<RoomFormData>({ resolver: zodResolver(roomSchema) })
   const editForm = useForm<EditRoomFormData>({ resolver: zodResolver(editRoomSchema) })
@@ -63,22 +70,29 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
   const [availabilityRoom, setAvailabilityRoom] = useState<Room | null>(null)
   const [dayRows, setDayRows] = useState<DayRow[]>(defaultDayRows())
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['space', params.id],
-    queryFn: () => spacesApi.get(params.id),
-    enabled: !!session?.accessToken,
+  // The operator's own listing, not the public `GET /spaces/{id}`: that one
+  // hides rooms that are switched off, which left no way to switch one back on.
+  const { data: spaces, isLoading } = useQuery({
+    queryKey: ['admin', 'spaces', currentOrgId],
+    queryFn: () => adminApi.getSpaces(api),
+    enabled: !!session?.accessToken && !!currentOrgId,
   })
+  const refreshRooms = () => {
+    qc.invalidateQueries({ queryKey: ['admin', 'spaces'] })
+    // What customers see, cached under the public key.
+    qc.invalidateQueries({ queryKey: ['space', params.id] })
+  }
   const createRoom = useMutation({
     mutationFn: (formData: RoomFormData) => adminApi.createRoom(params.id, {
       ...formData,
       amenities: formData.amenities ? formData.amenities.split(',').map(s => s.trim()).filter(Boolean) : [],
     }, api),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['space', params.id] }); reset() },
+    onSuccess: () => { refreshRooms(); reset() },
   })
   const updateRoom = useMutation({
     mutationFn: ({ id, data: roomData }: { id: string; data: Partial<Room> }) => adminApi.updateRoom(id, roomData, api),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['space', params.id] })
+      refreshRooms()
       setEditingRoom(null)
     },
   })
@@ -88,15 +102,19 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
     onSuccess: () => setAvailabilityRoom(null),
   })
 
-  const { space, rooms } = data ?? { space: null, rooms: [] }
+  const space = (spaces ?? []).find((s) => s.id === params.id) ?? null
+  const rooms = space?.rooms ?? []
 
   function openEditRoom(room: Room) {
     setEditingRoom(room)
     editForm.reset({
       name: room.name,
+      description: room.description ?? '',
       capacity: room.capacity,
       hourly_rate: room.hourly_rate,
       color: room.color,
+      amenities: room.amenities.join(', '),
+      is_active: room.is_active,
     })
   }
 
@@ -143,11 +161,14 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
           {isLoading ? <Skeleton className="h-48 rounded-xl" /> : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {rooms.map((room) => (
-                <Card key={room.id}>
+                <Card key={room.id} data-testid="admin-room-card" className={room.is_active ? undefined : 'opacity-70'}>
                   <div className="h-16 rounded-t-xl" style={{ backgroundColor: room.color + '44' }} />
                   <CardContent className="p-4">
                     <div className="flex justify-between items-start mb-1">
-                      <p className="font-semibold text-foreground">{room.name}</p>
+                      <p className="font-semibold text-foreground">
+                        {room.name}
+                        {!room.is_active && <Badge variant="secondary" className="ml-2 align-middle">Inativa</Badge>}
+                      </p>
                       <span className="text-sm font-bold text-primary">{formatCurrency(room.hourly_rate)}/h</span>
                     </div>
                     <p className="text-xs text-muted-foreground mb-2">{room.capacity} pessoa{room.capacity > 1 ? 's' : ''}</p>
@@ -214,11 +235,17 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
           <DialogHeader>
             <DialogTitle>Editar Sala</DialogTitle>
             <DialogDescription>
-              Atualiza a capacidade, o preço por hora e a cor desta sala.
+              Tudo o que os clientes veem sobre esta sala: dados, fotografias e se pode ser reservada.
             </DialogDescription>
           </DialogHeader>
           <form
-            onSubmit={editForm.handleSubmit((d) => editingRoom && updateRoom.mutate({ id: editingRoom.id, data: d }))}
+            onSubmit={editForm.handleSubmit((d) => editingRoom && updateRoom.mutate({
+              id: editingRoom.id,
+              data: {
+                ...d,
+                amenities: d.amenities ? d.amenities.split(',').map((a) => a.trim()).filter(Boolean) : [],
+              },
+            }))}
             className="space-y-4"
           >
             <div>
@@ -243,12 +270,41 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
                 <Input {...editForm.register('color')} className="flex-1" />
               </div>
             </div>
+            <div>
+              <Label htmlFor="edit-room-description">Descrição</Label>
+              <Input id="edit-room-description" {...editForm.register('description')} className="mt-1" />
+            </div>
+            <div>
+              <Label htmlFor="edit-room-amenities">Comodidades (separadas por vírgula)</Label>
+              <Input id="edit-room-amenities" {...editForm.register('amenities')} className="mt-1" />
+            </div>
+            <div className="flex items-start gap-2">
+              <input id="edit-room-active" type="checkbox" {...editForm.register('is_active')}
+                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary" />
+              <div>
+                <Label htmlFor="edit-room-active">Sala ativa</Label>
+                <p className="text-xs text-muted-foreground">Uma sala inativa deixa de aparecer aos clientes e não pode ser reservada.</p>
+              </div>
+            </div>
+            {updateRoom.isError && <p role="alert" className="text-sm text-red-600">Não foi possível guardar a sala. Tenta novamente.</p>}
             <DialogFooter>
               <Button type="submit" disabled={updateRoom.isPending}>
                 {updateRoom.isPending ? 'A guardar...' : 'Guardar'}
               </Button>
             </DialogFooter>
           </form>
+          {/* Outside the form: photos save themselves, one request per change. */}
+          {editingRoom && (
+            <div className="mt-6 border-t border-border pt-4">
+              <PhotoManager
+                kind="rooms"
+                entityId={editingRoom.id}
+                entityName={editingRoom.name}
+                photos={editingRoom.photos ?? []}
+                onChange={(photos) => { setEditingRoom((r) => (r ? { ...r, photos } : r)); refreshRooms() }}
+              />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

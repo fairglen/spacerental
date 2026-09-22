@@ -8,7 +8,7 @@
     "cta_primary_rooms": "View Rooms",
     "cta_secondary": "Learn More",
     "benefit_1": "No deposit",
-    "benefit_2": "Free cancellation 24h before",
+    "benefit_2": "Cancel up to 24h ahead",
     "benefit_3": "Secure payment"
   },
   "pricing": {
@@ -18,7 +18,7 @@
     "hourly_plan_unit": "/ hour",
     "hourly_plan_desc": "No commitment. Pay only for what you use.",
     "hourly_plan_feature_1": "Instant booking",
-    "hourly_plan_feature_2": "Free cancellation 24h before",
+    "hourly_plan_feature_2": "Cancel up to 24h ahead",
     "hourly_plan_feature_3": "No monthly fee",
     "hourly_plan_cta": "Book Now",
     "hourly_plan_from": "from",
@@ -71,6 +71,7 @@
     "rooms_link": "Rooms",
     "how_it_works_link": "How It Works",
     "pricing_link": "Pricing",
+    "help": "Help",
     "admin_link": "Admin",
     "org_selector_label": "Active organization",
     "org_selector_placeholder": "Select organization",
@@ -90,6 +91,7 @@
     "rooms": "Rooms",
     "how_it_works": "How It Works",
     "pricing": "Pricing",
+    "help": "Help",
     "sign_in": "Sign In",
     "contact_heading": "Contact",
     "location": "Portugal",
@@ -118,7 +120,6 @@
   "contactNote": {
     "lead": "We're flexible.",
     "body": "Need the same slot every week, a different arrangement, or have a question?",
-    "cta": "Talk to us:",
-    "subject": "Booking request — {room}"
+    "cta": "Talk to us"
   }
 }

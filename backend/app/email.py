@@ -24,6 +24,7 @@ router that sends an email.
 """
 
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -60,6 +61,9 @@ class EmailMessage:
     subject: str
     html_body: str
     text_body: str
+    # Who a reply should go to, when that is not the sender (C17: a help
+    # request is sent to support but answered to the customer).
+    reply_to: str | None = None
 
 
 class EmailGateway(ABC):
@@ -97,6 +101,7 @@ class ResendEmailGateway(EmailGateway):
                         "subject": message.subject,
                         "html": message.html_body,
                         "text": message.text_body,
+                        **({"reply_to": message.reply_to} if message.reply_to else {}),
                     },
                 )
                 response.raise_for_status()
@@ -237,6 +242,65 @@ def booking_cancellation_email(
         f'<p><a href="{browse_url}">Fazer nova reserva</a></p>'
     )
     return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+
+
+SUPPORT_CATEGORY_LABELS_PT = {
+    "technical": "Problema técnico",
+    "booking": "Reserva",
+    "payment": "Pagamento",
+    "package": "Pack",
+    "other": "Outro",
+}
+
+
+def support_request_email(
+    *,
+    request_id: uuid.UUID,
+    category: str,
+    message: str,
+    contact_email: str,
+    context: dict,
+    user_id: uuid.UUID | None,
+    booking_id: uuid.UUID | None,
+) -> EmailMessage:
+    """A help-form request, sent to the support mailbox (C17).
+
+    Reply-To is the customer, so whoever reads it just hits reply. Every value
+    below came from a public form: the HTML part escapes all of it.
+    """
+    reference = request_id.hex[:8].upper()
+    label = SUPPORT_CATEGORY_LABELS_PT.get(str(category), str(category))
+    facts = [
+        ("Referência", f"#{reference}"),
+        ("Assunto", label),
+        ("Email", contact_email),
+        ("Utilizador", str(user_id) if user_id else "sem sessão iniciada"),
+        ("Reserva", str(booking_id) if booking_id else "—"),
+        ("Página", context.get("page_url", "—")),
+        ("Ecrã", context.get("viewport", "—")),
+        ("Browser", context.get("user_agent", "—")),
+        ("Versão", context.get("app_version", "—")),
+        ("Enviado às", context.get("timestamp", "—")),
+    ]
+    text_body = (
+        f"Novo pedido de ajuda #{reference}\n\n{message}\n\n"
+        + "\n".join(f"{name}: {value}" for name, value in facts)
+        + "\n\nResponde a este email para falar com o cliente.\n"
+    )
+    html_body = (
+        f"<p>Novo pedido de ajuda <strong>#{escape(reference)}</strong></p>"
+        f'<p style="white-space:pre-wrap">{escape(message)}</p>'
+        "<ul>"
+        + "".join(f"<li><strong>{escape(n)}:</strong> {escape(str(v))}</li>" for n, v in facts)
+        + "</ul><p>Responde a este email para falar com o cliente.</p>"
+    )
+    return EmailMessage(
+        to=settings.SUPPORT_EMAIL,
+        subject=f"[Ajuda] {label} — #{reference}",
+        html_body=html_body,
+        text_body=text_body,
+        reply_to=contact_email,
+    )
 
 
 # ─── Queueing ───────────────────────────────────────────────────────────────

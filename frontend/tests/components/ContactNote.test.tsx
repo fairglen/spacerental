@@ -11,6 +11,8 @@ import { makeRoom, makeSpace } from './spaceModeFixtures'
 vi.mock('@/components/layout/Navbar', () => ({ Navbar: () => null }))
 vi.mock('@/components/layout/Footer', () => ({ Footer: () => null }))
 vi.mock('@/components/booking/BookingCalendar', () => ({ BookingCalendar: () => <div data-testid="calendar" /> }))
+const openHelp = vi.fn()
+vi.mock('@/components/help/HelpProvider', () => ({ useHelp: () => ({ openHelp }) }))
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
   spacesApi: { get: vi.fn() },
@@ -24,11 +26,15 @@ function withClient(ui: React.ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
-function expectContactLink(scope: HTMLElement, roomName: string) {
-  const link = within(scope).getByRole('link', { name: CONTACT_EMAIL })
-  const href = link.getAttribute('href')!
-  expect(href.startsWith(`mailto:${CONTACT_EMAIL}?subject=`)).toBe(true)
-  expect(new URL(href).searchParams.get('subject')).toBe(`Pedido de reserva — ${roomName}`)
+// C18: "Fala connosco" opens the help dialog preset to "Reserva"; the address
+// stays visible as plain text so it can still be copied, but it is no longer a
+// bare mailto.
+function expectContactLink(scope: HTMLElement, _roomName: string) {
+  openHelp.mockClear()
+  fireEvent.click(within(scope).getByRole('button', { name: /Fala connosco/ }))
+  expect(openHelp).toHaveBeenCalledWith({ category: 'booking' })
+  expect(within(scope).getByText(CONTACT_EMAIL)).toBeInTheDocument()
+  expect(within(scope).queryByRole('link', { name: CONTACT_EMAIL })).toBeNull()
 }
 
 beforeEach(() => {
@@ -40,7 +46,7 @@ beforeEach(() => {
 // C12: special requests go to a mailbox, not a form. The note offers that
 // without getting in the way of the booking.
 describe('ContactNote', () => {
-  it('links the single-source address, with the room in a prefilled subject', () => {
+  it('opens the help dialog on "Reserva" and still shows the single-source address', () => {
     const { container } = render(<ContactNote roomName={room.name} />)
     expectContactLink(container, room.name)
   })
@@ -50,7 +56,8 @@ describe('ContactNote', () => {
     expect(screen.getByRole('note')).toBeVisible()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
-    expect(screen.queryByRole('button')).toBeNull() // nothing to dismiss, nothing persisted
+    // The one button is the way in, not a dismiss: nothing is persisted.
+    expect(screen.getAllByRole('button')).toHaveLength(1)
   })
 
   it('does not dress up as a warning', () => {
@@ -94,6 +101,7 @@ describe('contact note in the confirm dialog', () => {
     expectContactLink(note, room.name)
     expect(note.className).toMatch(/muted/)
     expect(note.querySelectorAll('p, div').length).toBeLessThanOrEqual(1)
+    expect(openHelp).toHaveBeenCalledWith({ category: 'booking' })
 
     const cancel = within(dialog).getByRole('button', { name: 'Cancelar' })
     expect(note.compareDocumentPosition(cancel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

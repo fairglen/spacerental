@@ -1,16 +1,24 @@
+import mimetypes
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import Response
+from starlette.staticfiles import StaticFiles
+from starlette.types import Scope
 
 from app.config import settings
+from app.media import LocalMediaStorage, get_media_storage
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.routers import (
     admin,
     auth,
     bookings,
     checkout_stub,
+    media,
     packages,
     recurrences,
     spaces,
+    support,
     webhooks,
 )
 
@@ -51,10 +59,36 @@ app.include_router(bookings.router, prefix=API_PREFIX)
 app.include_router(recurrences.router, prefix=API_PREFIX)
 app.include_router(packages.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
+app.include_router(media.router, prefix=API_PREFIX)
+app.include_router(support.router, prefix=API_PREFIX)
+app.include_router(support.admin_router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
 # No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
 # see app/routers/checkout_stub.py.
 app.include_router(checkout_stub.router)
+
+
+# python:3.12-slim ships no /etc/mime.types and its built-in table has no WebP,
+# so the photos were served as text/plain — which, with `nosniff` below, a
+# browser refuses to render as an image.
+mimetypes.add_type("image/webp", ".webp")
+
+
+class _MediaFiles(StaticFiles):
+    """Read-only photo files. Everything here was re-encoded by `app.media`."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        # Defence in depth: served as exactly what we encoded, never sniffed.
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+
+# Local storage only: the API itself serves what it stored (C14). With object
+# storage, MEDIA_BASE_URL points at the bucket and nothing is mounted here.
+_storage = get_media_storage()
+if isinstance(_storage, LocalMediaStorage):
+    app.mount("/media", _MediaFiles(directory=_storage.root), name="media")
 
 
 @app.get("/health", tags=["health"])

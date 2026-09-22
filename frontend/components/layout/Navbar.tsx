@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Building2, LogOut, User, Menu, X } from 'lucide-react'
+import { Building2, LogOut, User, Menu, X, LifeBuoy } from 'lucide-react'
+import { useHelp } from '@/components/help/HelpProvider'
 import { useOrg } from '@/contexts/OrgContext'
 import { useT } from '@/lib/i18n'
 import { LocaleSwitcher } from '@/components/layout/LocaleSwitcher'
@@ -45,6 +46,7 @@ export function Navbar() {
   const { data: session, status } = useSession()
   const { currentMembership } = useOrg()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { openHelp } = useHelp()
   const isSignedIn = status === 'authenticated'
   const navLinks = [
     { href: '/spaces', label: <SpaceModeText single="navbar.rooms_link" multi="navbar.spaces_link" /> },
@@ -81,6 +83,11 @@ export function Navbar() {
           {/* Desktop auth */}
           <div className="hidden md:flex items-center gap-3">
             <LocaleSwitcher />
+            {/* Signed in or out: whoever cannot sign in needs it most (C17). */}
+            <Button variant="ghost" size="sm" onClick={() => openHelp()} className="gap-1.5 text-muted-foreground">
+              <LifeBuoy className="h-4 w-4" aria-hidden />
+              {t('navbar.help')}
+            </Button>
             {isSignedIn ? (
               <>
                 <OrgSwitcher />
@@ -143,6 +150,10 @@ export function Navbar() {
           ))}
           <div className="pt-3 border-t border-border flex flex-col gap-2">
             <LocaleSwitcher className="self-start" />
+            <Button variant="ghost" size="sm" onClick={() => { setMobileOpen(false); openHelp() }} className="w-full gap-1.5 text-muted-foreground">
+              <LifeBuoy className="h-4 w-4" aria-hidden />
+              {t('navbar.help')}
+            </Button>
             {isSignedIn ? (
               <>
                 <OrgSwitcher className="w-full" />

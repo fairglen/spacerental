@@ -1,3 +1,14 @@
+// An uploaded photo (C14). URLs are absolute and ready to use; `thumb_url` is
+// the 480px version for cards. Sizes are null only for a photo carried over
+// from an old external `images` URL.
+export type Photo = {
+  id: string
+  url: string
+  thumb_url: string
+  width: number | null
+  height: number | null
+}
+
 export type Space = {
   id: string
   org_id: string
@@ -11,6 +22,8 @@ export type Space = {
   latitude?: number | null
   longitude?: number | null
   images: string[]
+  // In display order; the first is the cover.
+  photos?: Photo[]
   amenities: string[]
   is_active: boolean
   created_at: string
@@ -26,6 +39,8 @@ export type Room = {
   capacity: number
   hourly_rate: number
   images: string[]
+  // In display order; the first is the cover.
+  photos?: Photo[]
   amenities: string[]
   color: string
   is_active: boolean
@@ -44,7 +59,11 @@ export type Booking = {
   // can be retried); `paid_unfulfilled` = money arrived late for a slot that
   // was taken meanwhile (kept visible; refunds are O02).
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'expired' | 'paid_unfulfilled'
-  payment_method: 'hourly' | 'package'
+  // `mixed` (C13): part of the block came out of a pack, the rest was paid.
+  payment_method: 'hourly' | 'package' | 'mixed'
+  // Hours paid with pack hours: 0 for hourly, the whole duration for package,
+  // in between for mixed. For hourly/mixed `total_amount` is the money charged.
+  package_hours_used?: number
   notes?: string
   // Set when this booking is one occurrence of a recurring series.
   recurrence_rule_id?: string | null
@@ -147,6 +166,57 @@ export type AvailabilityRule = {
   open_time: string
   close_time: string
   is_active: boolean
+}
+
+// The help form (C17).
+export type SupportCategory = 'technical' | 'booking' | 'payment' | 'package' | 'other'
+
+export type SupportRequestBody = {
+  category: SupportCategory
+  message: string
+  // Required when signed out; ignored (the account's address is used) when signed in.
+  contact_email?: string
+  booking_id?: string
+  context: {
+    page_url?: string
+    viewport?: string
+    user_agent?: string
+    app_version?: string
+    timestamp?: string
+  }
+  // Honeypot: always empty from a real form.
+  website: string
+}
+
+// What the sender gets back: a reference to quote, never the message.
+export type SupportRequestReceipt = {
+  id: string
+  reference: string
+  status: 'new' | 'closed'
+  created_at: string
+}
+
+// One inbox row for the operator (C19).
+export type SupportRequestRow = {
+  id: string
+  reference: string
+  category: SupportCategory
+  status: 'new' | 'closed'
+  contact_email: string
+  user_id: string | null
+  booking_id: string | null
+  booking: Booking | null
+  message: string
+  context: SupportRequestBody['context']
+  created_at: string
+  updated_at: string
+}
+
+export type PaginatedSupportRequests = {
+  requests: SupportRequestRow[]
+  total: number
+  page: number
+  page_size: number
 }
 
 export type AdminStats = {

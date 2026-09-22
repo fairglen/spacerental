@@ -3,7 +3,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 import Link from 'next/link'
-import { LayoutDashboard, Building2, Calendar, Package, LogOut } from 'lucide-react'
+import { LayoutDashboard, Building2, Calendar, Package, LogOut, LifeBuoy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useOrg } from '@/contexts/OrgContext'
 
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/admin/spaces', label: 'Espaços', icon: Building2 },
   { href: '/admin/bookings', label: 'Reservas', icon: Calendar },
   { href: '/admin/packages', label: 'Pacotes', icon: Package },
+  { href: '/admin/support', label: 'Pedidos de ajuda', icon: LifeBuoy },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

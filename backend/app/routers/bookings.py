@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,6 +14,7 @@ from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
     expire_stale_holds,
+    expire_user_holds,
     has_conflicting_booking,
     is_lost_slot_race,
     is_within_open_hours,
@@ -22,7 +23,7 @@ from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_issue_access_code
-from app.models.booking import Booking, BookingStatus, PaymentMethod
+from app.models.booking import PAID_AT_CHECKOUT, Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember
 from app.models.space import Room
 from app.models.user import User
@@ -47,18 +48,9 @@ async def my_bookings(
     """List current user's bookings."""
     # Expiry is lazy (no sweeper): reconcile the caller's own lapsed holds so
     # the dashboard shows `expired` rather than a pending row that no longer
-    # blocks anything (C03).
-    await db.execute(
-        update(Booking)
-        .where(
-            Booking.user_id == user.id,
-            Booking.status == BookingStatus.pending,
-            Booking.hold_expires_at.is_not(None),
-            Booking.hold_expires_at <= clock.utcnow(),
-        )
-        .values(status=BookingStatus.expired)
-        .execution_options(synchronize_session=False)
-    )
+    # blocks anything (C03), and a lapsed mixed hold's pack hours are back on
+    # the pack (C13).
+    await expire_user_holds(db, user.id, clock.utcnow())
     result = await db.execute(
         select(Booking)
         .options(selectinload(Booking.room))
@@ -91,6 +83,12 @@ async def create_booking(
       transaction and the booking is `confirmed` immediately. There is nothing
       left to pay, so the response carries no `checkout_url`, and the
       confirmation email is sent from here rather than from the webhook.
+    * `mixed` (C13) — "use my pack and pay the rest". The server alone decides
+      the split: a pack that covers the whole block makes it a `package`
+      booking; otherwise the soonest-expiring pack gives what it has, that
+      share is reserved now, and only the remaining hours go to Checkout as a
+      `pending` hold; with no usable hours at all it is a plain `hourly` one.
+      The reserved hours return whenever the hold ends without being paid.
     """
     # Fetch room. Space.is_active is checked alongside Room.is_active — a room
     # under a deactivated space is just as unbookable, and the public listing
@@ -178,9 +176,15 @@ async def create_booking(
     duration_hours = Decimal(str(round(delta.total_seconds() / 3600, 2)))
     total_amount = duration_hours * room.hourly_rate
 
-    pays_with_package = body.payment_method is PaymentMethod.package
+    # What the client asked for is only a request: the method stored, the pack
+    # share and the amount charged are all decided here, from the ledger.
+    method = body.payment_method
     purchase_id: uuid.UUID | None = None
-    if pays_with_package:
+    package_hours_used = Decimal(0)
+    if method is not PaymentMethod.hourly:
+        # A lapsed mixed hold of this customer still has hours debited until
+        # something reconciles it; do that before judging what they can spend.
+        await expire_user_holds(db, user.id, now)
         purchase = await package_hours.redeem_hours(
             db,
             user_id=user.id,
@@ -188,14 +192,34 @@ async def create_booking(
             hours=duration_hours,
             now=now,
         )
-        if purchase is None:
+        if purchase is not None:
+            # One pack pays for everything, so nothing is left to charge — even
+            # if a sooner-expiring pack holds a few hours (C13 decision 6).
+            method = PaymentMethod.package
+            purchase_id, package_hours_used = purchase.id, duration_hours
+        elif method is PaymentMethod.package:
             # Nothing was deducted and no booking exists yet — the request is
             # refused before anything is written.
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(f"No active package with {duration_hours} hours remaining"),
             )
-        purchase_id = purchase.id
+        else:
+            partial = await package_hours.redeem_up_to(
+                db, user_id=user.id, org_id=room.org_id, hours=duration_hours, now=now
+            )
+            if partial is None:
+                method = PaymentMethod.hourly
+            else:
+                purchase_id, package_hours_used = partial[0].id, partial[1]
+                # A balance that grew between the two looks can cover it all.
+                if package_hours_used == duration_hours:
+                    method = PaymentMethod.package
+                else:
+                    # `total_amount` is the money charged: the uncovered hours.
+                    total_amount = (duration_hours - package_hours_used) * room.hourly_rate
+
+    pays_with_package = method is PaymentMethod.package
 
     booking = Booking(
         org_id=room.org_id,
@@ -208,8 +232,9 @@ async def create_booking(
         # fresh charge — the money arrived when the package was bought.
         total_amount=total_amount,
         status=BookingStatus.confirmed if pays_with_package else BookingStatus.pending,
-        payment_method=body.payment_method,
+        payment_method=method,
         package_purchase_id=purchase_id,
+        package_hours_used=package_hours_used,
         notes=body.notes,
         hold_expires_at=None if pays_with_package else now + _hold_lifetime(),
     )
@@ -233,14 +258,14 @@ async def create_booking(
         try:
             session = await gateway.create_checkout_session(
                 amount=total_amount,
-                description=f"{room.name} — {duration_hours}h",
+                description=_checkout_description(booking, room.name),
                 kind=CheckoutKind.booking,
                 reference_id=booking.id,
                 org_id=booking.org_id,
             )
         except PaymentProviderError as exc:
             # Nothing is committed: get_db rolls back on the raised exception,
-            # so no unpayable booking is left holding the slot.
+            # so no unpayable booking is left holding the slot (or pack hours).
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Could not start the payment session",
@@ -323,6 +348,23 @@ def _hold_lifetime() -> timedelta:
     return timedelta(minutes=settings.BOOKING_HOLD_MINUTES)
 
 
+def _hours_label(hours: Decimal) -> str:
+    # 7.00 -> "7h", 1.50 -> "1.5h"
+    return f"{hours.normalize():f}h"
+
+
+def _checkout_description(booking: Booking, room_name: str) -> str:
+    """What the customer reads on the Checkout page, and later on a receipt."""
+    if booking.payment_method is PaymentMethod.mixed:
+        # Says what the amount is for AND why it is less than the block booked.
+        paid = booking.duration_hours - booking.package_hours_used
+        return (
+            f"{_hours_label(paid)} {room_name} "
+            f"({_hours_label(booking.package_hours_used)} pagas com o pack)"
+        )
+    return f"{room_name} — {booking.duration_hours}h"
+
+
 @router.post("/{booking_id}/checkout")
 async def resume_checkout(
     booking_id: uuid.UUID,
@@ -362,7 +404,7 @@ async def resume_checkout(
     lapsed = booking.status is BookingStatus.expired or (
         booking.status is BookingStatus.pending and not live_hold
     )
-    if booking.payment_method is not PaymentMethod.hourly or not (live_hold or lapsed):
+    if booking.payment_method not in PAID_AT_CHECKOUT or not (live_hold or lapsed):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Booking is {booking.status.value} and has nothing to pay",
@@ -380,6 +422,10 @@ async def resume_checkout(
 
     if lapsed:
         await expire_stale_holds(db, booking.room_id, booking.start_time, booking.end_time, now)
+        # That bulk update may just have flipped THIS row (a hold that lapsed
+        # but still read `pending`), returning its pack share; the ORM copy is
+        # stale, and the hours decision below needs the status the row has.
+        await db.refresh(booking, attribute_names=["status"])
         if await has_conflicting_booking(
             db,
             booking.room_id,
@@ -430,6 +476,16 @@ async def resume_checkout(
                 detail="Could not restart the payment session",
             ) from exc
 
+    # An expired mixed hold gave its pack hours back; holding the slot again
+    # takes the same hours from the same pack, or the retry is refused. The
+    # split and the price of an existing booking are never recomputed (C13).
+    if not await package_hours.settle_status_change(
+        db, booking, previous=booking.status, new=BookingStatus.pending, now=now
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The package no longer has the hours this booking reserved",
+        )
     booking.status = BookingStatus.pending
     booking.hold_expires_at = now + _hold_lifetime()
     try:
@@ -446,7 +502,7 @@ async def resume_checkout(
     try:
         session = await gateway.create_checkout_session(
             amount=booking.total_amount,
-            description=f"{booking.room.name} — {booking.duration_hours}h",
+            description=_checkout_description(booking, booking.room.name),
             kind=CheckoutKind.booking,
             reference_id=booking.id,
             org_id=booking.org_id,

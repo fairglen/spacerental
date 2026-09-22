@@ -39,6 +39,28 @@ which it clears.
 
 ## Public Endpoints
 
+### POST /support/requests
+The help form ("Ajuda"). Public; a Bearer token is optional, but one that is
+present and invalid is a `401` (an expired session is reported, not silently
+filed as an anonymous request).
+Body: `{ category: "technical" | "booking" | "payment" | "package" | "other",
+message (20–2000 chars), contact_email?, booking_id?, context?, website? }`
+- `contact_email` is required for a visitor and IGNORED for a signed-in
+  customer, whose account address is used.
+- `booking_id` is honoured only for the signed-in customer's OWN booking;
+  someone else's is a `404` identical to a missing one. A visitor's is ignored.
+- `context` is a whitelist — `page_url`, `viewport`, `user_agent`,
+  `app_version`, `timestamp` — each bounded; anything else is dropped.
+- `website` is a honeypot: a non-empty value is answered exactly like a success
+  and nothing is stored or sent.
+Stores a `support_requests` row (status `new`; `org_id` from the booking, else
+the customer's only organisation, else `CUSTOMER_ENROLLMENT_ORG_SLUG`, else
+null) and emails `SUPPORT_EMAIL` with `Reply-To` = the customer and subject
+`[Ajuda] <categoria> — #<reference>`. A mail failure does not lose the request.
+Throttled tightly (`RATE_LIMIT_SUPPORT_*`, default 5/hour per client) → `429`.
+Response `201`: `{ request: { id, reference, status, created_at } }` — never the
+message: a public endpoint does not reflect what it was sent.
+
 ### GET /spaces
 List all active spaces (public). Each space carries its location: `address`,
 `postal_code`, `city`, `latitude`, `longitude` (any of them may be `null`).
@@ -109,6 +131,22 @@ what comes back:
   from the soonest-expiring eligible purchase, and `409` is returned if no
   active, unexpired purchase in the room's org has enough hours for the whole
   block. Nothing is written when it fails.
+- `mixed` — "use my pack and pay the rest". A request, not an instruction: the
+  server alone decides the method stored, the pack share and the amount, and
+  ignores any such numbers in the body.
+  - One purchase can cover the whole block → a plain `package` booking
+    (confirmed, no `checkout_url`), exactly as above.
+  - Otherwise the soonest-expiring purchase that still has hours gives what it
+    has (one purchase per booking). Those hours are debited NOW, the booking is
+    `pending` with `package_hours_used` set, `total_amount` is the money for the
+    remaining hours only, and `checkout_url` charges just that. The Checkout
+    description reads e.g. `1h Sala Calma (7h pagas com o pack)`.
+  - No usable hours at all → a plain `hourly` booking.
+  The reserved hours go back to the same purchase whenever the hold ends
+  without being paid (backing out of Checkout, the hold expiring, a cancel) and
+  are taken again if the hold is resumed. Confirmation changes nothing about
+  them. Expiry is lazy: a lapsed hold's hours return the next time that
+  customer's bookings, packs or a new booking are read, or the slot is touched.
 
 Body: `{ room_id, start_time, end_time, notes?, payment_method? }`
 Response: `{ booking: Booking, checkout_url: string | null }`
@@ -119,8 +157,10 @@ already booked *or* insufficient package hours.
 Cancel a booking (own only, if > 24h before; an unpaid checkout hold — `pending`
 with a `hold_expires_at` — can be cancelled at any time). This is also how you
 cancel **one occurrence** of a recurring series: the occurrence is marked
-`cancelled` and the `RecurrenceRule` stays active. Package-paid bookings credit
-hours back to the exact purchase they were taken from. `400` for `expired` and
+`cancelled` and the `RecurrenceRule` stays active. Bookings paid with pack hours credit
+`package_hours_used` back to the exact purchase they were taken from — all of a
+`package` booking, the prepaid share of a `mixed` one. Cancelling moves no money
+for any method. `400` for `expired` and
 `paid_unfulfilled` rows: they hold no slot to cancel.
 
 ### POST /bookings/:id/checkout
@@ -131,9 +171,11 @@ Checkout Session at the provider and mints a fresh one for the **same** booking:
 a live `pending` hold gets a new deadline; an `expired` one becomes `pending`
 again if its slot is still free. No second booking is ever created.
 Response: `{ booking: Booking, checkout_url: string }` — same shape as `POST /bookings`.
-`409` when the slot was taken meanwhile (the row stays `expired`), when the
-booking is not an unpaid hourly hold (confirmed, package-paid, series
-occurrence), or when the provider reports the previous session already paid
+`409` when the slot was taken meanwhile (the row stays `expired`), when an
+expired `mixed` hold's pack can no longer give back the hours it had reserved
+(the split and price of an existing booking are never recomputed — book again),
+when the booking is not an unpaid `hourly`/`mixed` hold (confirmed,
+package-paid, series occurrence), or when the provider reports the previous session already paid
 (`Payment already received…`: keep waiting for the webhook). `502` when the
 provider cannot start or close a session.
 
@@ -206,6 +248,47 @@ one value: a body that carries one must carry the other (both numbers, or both
 ### DELETE /admin/spaces/:id
 Soft-delete a space.
 
+### GET /admin/support/requests
+The help-form inbox (C19), operator of `org_id` only. Newest first. Query:
+`status?` (`new` | `closed`), `page` (default 1), `page_size` (default 20, max
+100). A request whose tenant could not be resolved appears in no inbox.
+Response: `{ requests: SupportRequest[], total, page, page_size }` where each
+row is `{ id, reference, category, status, contact_email, user_id, booking_id,
+booking: Booking | null, message, context, created_at, updated_at }`.
+
+### PUT /admin/support/requests/:id
+Body: `{ status: "new" | "closed" }` — mark handled, or reopen. `404` for
+another organisation's request. Response: `{ request: SupportRequest }`.
+Answering happens by email (the notification carries `Reply-To`); nothing here
+sends anything. Full handling stays deferred (TODO.md D06).
+
+### Photos: POST /admin/rooms/:id/images · POST /admin/spaces/:id/images
+Upload ONE photo (`multipart/form-data`, field `file`). Operator of `org_id`
+only; the room/space is looked up inside that org first, so another tenant's id
+answers `404` exactly like an id that does not exist.
+The file is judged by its content, never its name or Content-Type: JPEG, PNG or
+WebP, else `415`; more than 8 MB (or 50 megapixels) → `413`; an 11th photo →
+`409`. On upload the image is rotated per its EXIF orientation, stripped of ALL
+metadata, resized to at most 1600px on the long edge, re-encoded as WebP
+(q≈82) with a 480px thumbnail, and stored under a random name.
+Throttled (`RATE_LIMIT_UPLOAD_*`, default 30/min per client) → `429`.
+Response `201`: the updated entity, `{ room: Room }` / `{ space: Space }`.
+
+### PUT /admin/rooms/:id/images/order · PUT /admin/spaces/:id/images/order
+Body: `{ order: string[] }` — EVERY current photo id, once, in the order wanted.
+The first is the cover. Anything that is not a permutation of the current list
+(one missing, unknown or repeated — e.g. a list gone stale) → `409`.
+Response: the updated entity.
+
+### DELETE /admin/rooms/:id/images/:image_id · DELETE /admin/spaces/:id/images/:image_id
+Removes the photo and its files. Response `200` with the updated entity (not
+`204`: the caller needs the new list and cover). `404` for an unknown photo.
+
+### GET /media/...
+The stored photo files, read-only, served by the API while
+`MEDIA_STORAGE=local` (`image/webp`, `X-Content-Type-Options: nosniff`). Clients
+never build these URLs: they arrive ready-made in `photos`.
+
 ### POST /admin/spaces/:id/rooms
 Add a room to a space.
 Body: `{ name, description, capacity, hourly_rate, color, amenities?, images? }`
@@ -252,11 +335,22 @@ type Space = {
   // frontend/lib/api.ts converts them to numbers and keeps null as null.
   latitude: string | null
   longitude: string | null
+  // Legacy list of external URLs; nothing renders it. Left as it was.
   images: string[]
+  // Uploaded photos in display order, first = cover (C14).
+  photos: Photo[]
   amenities: string[]
   is_active: boolean
   created_at: string
   rooms?: Room[]
+}
+
+type Photo = {
+  id: string
+  url: string         // absolute; up to 1600px on the long edge, WebP
+  thumb_url: string   // absolute; up to 480px
+  width: number | null   // of `url`; null for a photo carried over from `images`
+  height: number | null
 }
 
 type Room = {
@@ -281,12 +375,17 @@ type Booking = {
   start_time: string   // ISO8601
   end_time: string
   duration_hours: number
+  // `hourly`/`mixed`: the money charged. `package`: the slot's value (nothing
+  // was charged; the pack was paid for earlier). Revenue sums hourly + mixed.
   total_amount: number
+  // Hours paid with the linked pack: 0 for `hourly`, the whole duration for
+  // `package`, strictly in between for `mixed`. Fixed at creation.
+  package_hours_used: number
   // `expired`: an unpaid hold whose deadline passed (holds no slot; retry via
   // POST /bookings/:id/checkout). `paid_unfulfilled`: a payment arrived after
   // another booking took the slot; kept visible, refund handling is O02.
   status: "pending" | "confirmed" | "cancelled" | "completed" | "expired" | "paid_unfulfilled"
-  payment_method: "hourly" | "package"
+  payment_method: "hourly" | "package" | "mixed"
   notes?: string
   // Deadline of an unpaid checkout hold (C03). `null` for package bookings,
   // series occurrences and any booking once it is confirmed. It is kept on

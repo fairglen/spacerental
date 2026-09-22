@@ -33,7 +33,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import clock
+from app import clock, package_hours
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, get_lock_gateway
@@ -236,6 +236,11 @@ async def cancel_checkout(
         )
         booking = result.scalar_one_or_none()
         if booking is not None:
-            booking.hold_expires_at = clock.utcnow()
+            now = clock.utcnow()
+            # A mixed hold reserved pack hours; letting go returns them (C13).
+            await package_hours.settle_status_change(
+                db, booking, previous=booking.status, new=BookingStatus.expired, now=now
+            )
+            booking.hold_expires_at = now
             booking.status = BookingStatus.expired
     return RedirectResponse(gateway.cancel_url, status_code=status.HTTP_303_SEE_OTHER)

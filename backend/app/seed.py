@@ -9,12 +9,16 @@ if they do not already exist, and keeps the demo space's location current.
 """
 
 import asyncio
+import io
+import unicodedata
 from datetime import time
 from decimal import Decimal
 
+from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import media
 from app.auth import hash_password
 from app.database import async_session_factory, engine
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
@@ -62,6 +66,66 @@ DEMO_SPACE_DESCRIPTION = "Um espaço tranquilo para consultas e trabalho, com sa
 _PREVIOUS_DEMO_SPACE_DESCRIPTIONS = {
     "Um espaço tranquilo para consultas e trabalho no coração de Lisboa.",
 }
+
+
+PLACEHOLDER_PHOTOS_PER_ROOM = 3
+
+
+def _placeholder_png(room_name: str, color: str, variant: int) -> bytes:
+    """A small gradient picture with the room's name on it.
+
+    Generated rather than committed: the repository carries no binary assets,
+    and the demo rooms still have something for the carousel to show (C16).
+    """
+    width, height = 960, 720
+    base = tuple(int(color.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
+    # Each variant fades towards a different tone so the photos are tellable apart.
+    toward = [(255, 255, 255), (61, 122, 94), (40, 50, 70)][variant % 3]
+    image = Image.new("RGB", (width, height))
+    draw = ImageDraw.Draw(image)
+    for y in range(height):
+        t = y / (height - 1)
+        draw.line(
+            [(0, y), (width, y)],
+            fill=tuple(round(b + (e - b) * t) for b, e in zip(base, toward, strict=True)),
+        )
+    # Pillow's built-in font has no accented glyphs ("Névoa" drew a box), and
+    # white text vanishes into the light end of the gradient: plain ASCII on a
+    # dark band reads on every variant.
+    ascii_name = unicodedata.normalize("NFKD", room_name).encode("ascii", "ignore").decode()
+    caption = f"{ascii_name} - {variant + 1}"
+    font = ImageFont.load_default(size=52)
+    left, top, right, bottom = draw.textbbox((0, 0), caption, font=font)
+    text_w, text_h = right - left, bottom - top
+    x, y = (width - text_w) / 2, (height - text_h) / 2
+    draw.rounded_rectangle(
+        (x - 36, y - 24, x + text_w + 36, y + text_h + 36), radius=18, fill=(30, 40, 50)
+    )
+    draw.text((x - left, y - top), caption, font=font, fill=(255, 255, 255))
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
+async def _seed_room_photos(room: Room) -> None:
+    """Give a photo-less demo room its placeholders, through the upload pipeline."""
+    storage = media.get_media_storage()
+    photos: list[dict] = []
+    for variant in range(PLACEHOLDER_PHOTOS_PER_ROOM):
+        processed = media.process_image(_placeholder_png(room.name, room.color, variant))
+        photo_id, key, thumb_key = media.new_photo_keys("rooms", room.id)
+        await storage.save(key, processed.main)
+        await storage.save(thumb_key, processed.thumb)
+        photos.append(
+            {
+                "id": photo_id,
+                "key": key,
+                "thumb_key": thumb_key,
+                "width": processed.width,
+                "height": processed.height,
+            }
+        )
+    room.photos = photos
 
 
 async def seed_demo_data(session: AsyncSession) -> None:
@@ -172,6 +236,12 @@ async def seed_demo_data(session: AsyncSession) -> None:
             print(f"Created room: {room.name} ({room.id})")
         else:
             print(f"Room already exists: {room.name} ({room.id})")
+        # Only a room with no photos at all: whatever an operator uploaded,
+        # removed or reordered is theirs, and a re-seed must not touch it.
+        if not room.photos:
+            await _seed_room_photos(room)
+            await session.flush()
+            print(f"  Generated {len(room.photos)} placeholder photos for {room.name}")
         created_rooms.append(room)
 
     # ── Availability Rules (Mon-Sat 08:00-20:00) ──────────────────────────

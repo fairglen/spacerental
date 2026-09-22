@@ -24,7 +24,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import clock
+from app import clock, package_hours
 from app.models.booking import Booking, BookingStatus
 from app.models.space import AvailabilityRule
 
@@ -99,20 +99,52 @@ async def expire_stale_holds(
     The UPDATE takes the row locks, which serialises two customers racing for
     the released slot; the constraint then decides between them as before.
     """
+    return await _expire_lapsed_holds(
+        db,
+        now,
+        Booking.room_id == room_id,
+        Booking.start_time < end_time,
+        Booking.end_time > start_time,
+    )
+
+
+async def expire_user_holds(db: AsyncSession, user_id: uuid.UUID, now: datetime) -> int:
+    """Flip one customer's lapsed holds to `expired`, wherever they are.
+
+    Expiry is lazy (no sweeper, C03), so this runs whenever that customer's
+    bookings or pack balance are about to be read or spent: a lapsed `mixed`
+    hold still has pack hours debited until something reconciles it (C13).
+    """
+    return await _expire_lapsed_holds(db, now, Booking.user_id == user_id)
+
+
+async def _expire_lapsed_holds(db: AsyncSession, now: datetime, *scope) -> int:
+    """The one place a hold lapses: status to `expired`, pack share back (C13).
+
+    A bulk UPDATE, not a load-and-loop, so it stays a single statement for the
+    common case of nothing to do. RETURNING names exactly the rows THIS
+    statement flipped — a concurrent expiry of the same row waits on its lock,
+    then matches nothing — so each lapsed hold credits its hours once. Booking
+    locks are taken before the purchase lock, the order `package_hours` asks of
+    every status transition.
+    """
     result = await db.execute(
         update(Booking)
         .where(
-            Booking.room_id == room_id,
             Booking.status == BookingStatus.pending,
             Booking.hold_expires_at.is_not(None),
             Booking.hold_expires_at <= now,
-            Booking.start_time < end_time,
-            Booking.end_time > start_time,
+            *scope,
         )
         .values(status=BookingStatus.expired)
+        .returning(Booking.package_purchase_id, Booking.package_hours_used)
         .execution_options(synchronize_session=False)
     )
-    return result.rowcount or 0
+    lapsed = result.all()
+    for purchase_id, hours in lapsed:
+        if purchase_id is not None and hours > 0:
+            await package_hours.credit_hours(db, purchase_id=purchase_id, hours=hours)
+    return len(lapsed)
 
 
 async def has_conflicting_booking(

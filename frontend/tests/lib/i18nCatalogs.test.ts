@@ -30,6 +30,9 @@ describe('i18n catalogs', () => {
     // C12: hourly booking is the only product.
     ['weekly or fixed-slot booking as a product', /\bsemanal(mente)?\b|\bweekly\b/i],
     ['day or half-day rates', /dia inteiro|meio[- ]dia|\bdi[áa]ria\b|por dia|half[- ]day|full[- ]day|per day|day rate/i],
+    // C18: cancelling up to 24h ahead is what the product does by itself;
+    // whether money comes back is a person's answer, never a promise here.
+    ['free cancellation or refunds', /cancelamento gratuito|free cancellation|reembols|refund|devolu[cç]/i],
   ])('do not promise %s', (_label, pattern) => {
     const offenders = [...Object.entries(ptFlat), ...Object.entries(enFlat)]
       .filter(([, value]) => pattern.test(value))

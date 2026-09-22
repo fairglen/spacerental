@@ -31,6 +31,25 @@ class Settings(BaseSettings):
     # Only enable behind a proxy that overwrites X-Forwarded-For; see the
     # trust note in app/ratelimit.py:client_identity.
     RATE_LIMIT_TRUST_FORWARDED_FOR: bool = False
+    # Upload tier: operator photo uploads (C14). Each accepted request decodes
+    # and re-encodes an image of up to 8 MB.
+    RATE_LIMIT_UPLOAD_MAX_REQUESTS: int = 30
+    RATE_LIMIT_UPLOAD_WINDOW_SECONDS: int = 60
+    # Support tier: the public help form (C17). Tight, because every accepted
+    # request writes a row and sends an email to a person: 5 an hour per client.
+    RATE_LIMIT_SUPPORT_MAX_REQUESTS: int = 5
+    RATE_LIMIT_SUPPORT_WINDOW_SECONDS: int = 3600
+
+    # ── Media (room and space photos, C14) ───────────────────────────────
+    # "local" writes processed photos under MEDIA_ROOT and the API serves them
+    # read-only at /media. There is no other implementation yet; anything else
+    # stops the app at startup (see app.media.build_media_storage).
+    MEDIA_STORAGE: str = "local"
+    MEDIA_ROOT: str = "./media"
+    # Browser-facing URL that maps to MEDIA_ROOT. Handed to the visitor's
+    # browser inside API responses, so `localhost` is correct here even under
+    # docker-compose (same reasoning as STRIPE_STUB_CHECKOUT_BASE_URL).
+    MEDIA_BASE_URL: str = "http://localhost:8000/media"
 
     # ── Stripe ────────────────────────────────────────────────────────────
     # "stub" runs the whole checkout → webhook flow locally with no Stripe
@@ -60,6 +79,9 @@ class Settings(BaseSettings):
     EMAIL_MODE: str = "stub"
     RESEND_API_KEY: str | None = None
     EMAIL_FROM_ADDRESS: str = "EspaçoHora <no-reply@espacohora.pt>"
+    # Where help-form requests are sent (C17). The public contact address, the
+    # same one the frontend shows (frontend/lib/contact.ts, C09).
+    SUPPORT_EMAIL: str = "geral@flowspace.pt"
     # Base URL used to build links inside outgoing emails (e.g. "cancel this
     # booking"). This is handed to the user's mail client, so localhost is
     # correct here — unlike backend-to-backend calls (CLAUDE.md §6.3).

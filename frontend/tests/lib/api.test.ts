@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, createAuthenticatedApi } from '@/lib/api'
+import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, supportApi, createAuthenticatedApi } from '@/lib/api'
 
 describe('spacesApi.list', () => {
   it('extracts spaces array from wrapped response', async () => {
@@ -468,5 +468,106 @@ describe('space location shape (C10)', () => {
     const updated = await adminApi.updateSpace('s2', cleared, mockApi)
     expect(mockApi.put).toHaveBeenCalledWith('/admin/spaces/s2', cleared)
     expect(updated.latitude).toBeNull()
+  })
+})
+
+// C13: a mixed booking's split arrives as Decimal strings like every amount.
+describe('mixed payment shape (C13)', () => {
+  const wire = {
+    id: 'b1', status: 'pending', payment_method: 'mixed', duration_hours: '8.00',
+    package_hours_used: '7.00', total_amount: '11.00',
+  }
+
+  it('bookingsApi.create sends the method and converts the split', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { booking: wire, checkout_url: 'http://x/cs' } }) } as any
+    const body = { room_id: 'r', start_time: 's', end_time: 'e', payment_method: 'mixed' as const }
+    const { booking, checkout_url } = await bookingsApi.create(body, mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/bookings', body)
+    expect(booking.payment_method).toBe('mixed')
+    expect(booking.package_hours_used).toBe(7)
+    expect(booking.total_amount).toBe(11)
+    expect(checkout_url).toBe('http://x/cs')
+  })
+
+  it('listMine and the admin list convert it too, and default a missing share to 0', async () => {
+    const mine = { get: vi.fn().mockResolvedValue({ data: { bookings: [wire, { id: 'old', total_amount: '11.00', duration_hours: '1' }] } }) } as any
+    const [mixed, old] = await bookingsApi.listMine(mine)
+    expect(mixed.package_hours_used).toBe(7)
+    expect(old.package_hours_used).toBe(0)
+
+    const admin = { defaults: {}, get: vi.fn().mockResolvedValue({ data: { bookings: [wire], total: 1, page: 1, page_size: 20 } }) } as any
+    expect((await adminApi.getBookings({}, admin)).bookings[0].package_hours_used).toBe(7)
+  })
+})
+
+// C14/C15: photo management. Each call answers with the updated entity; the
+// wrapper hands back just its `photos`, which is all the photo manager needs.
+describe('photo management shape (C15)', () => {
+  const photos = [{ id: 'p1', url: 'http://api/media/a.webp', thumb_url: 'http://api/media/a_thumb.webp', width: 1600, height: 1200 }]
+
+  it('uploadPhoto posts multipart to the room or the space and extracts photos', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { room: { id: 'r1', hourly_rate: '11.00', photos } } }) } as any
+    const file = new File(['x'], 'a.jpg', { type: 'image/jpeg' })
+    const onProgress = vi.fn()
+    expect(await adminApi.uploadPhoto('rooms', 'r1', file, mockApi, onProgress)).toEqual(photos)
+    const [url, body, config] = mockApi.post.mock.calls[0]
+    expect(url).toBe('/admin/rooms/r1/images')
+    expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('file')).toBe(file)
+    config.onUploadProgress({ loaded: 50, total: 200 })
+    expect(onProgress).toHaveBeenCalledWith(25)
+
+    const spaceApi = { post: vi.fn().mockResolvedValue({ data: { space: { id: 's1', photos } } }) } as any
+    expect(await adminApi.uploadPhoto('spaces', 's1', file, spaceApi)).toEqual(photos)
+    expect(spaceApi.post.mock.calls[0][0]).toBe('/admin/spaces/s1/images')
+  })
+
+  it('deletePhoto and reorderPhotos extract photos from the updated entity', async () => {
+    const mockApi = {
+      delete: vi.fn().mockResolvedValue({ data: { room: { id: 'r1', photos: [] } } }),
+      put: vi.fn().mockResolvedValue({ data: { space: { id: 's1', photos } } }),
+    } as any
+    expect(await adminApi.deletePhoto('rooms', 'r1', 'p1', mockApi)).toEqual([])
+    expect(mockApi.delete).toHaveBeenCalledWith('/admin/rooms/r1/images/p1')
+    expect(await adminApi.reorderPhotos('spaces', 's1', ['p1'], mockApi)).toEqual(photos)
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/spaces/s1/images/order', { order: ['p1'] })
+  })
+
+  it('an entity without the field yet reads as no photos', async () => {
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { space: { id: 's1' }, rooms: [{ id: 'r1', hourly_rate: '11.00' }] } }) } as any
+    const { space, rooms } = await spacesApi.get('s1', mockApi)
+    expect(space.photos).toEqual([])
+    expect(rooms[0].photos).toEqual([])
+  })
+})
+
+// C17: the help form. The receipt is wrapped and carries no message back.
+describe('supportApi (C17)', () => {
+  it('posts the request and unwraps the receipt', async () => {
+    const receipt = { id: '3f9a12bc-0000-0000-0000-000000000000', reference: '3F9A12BC', status: 'new', created_at: '2026-09-22T10:00:00Z' }
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { request: receipt } }) } as any
+    const body = { category: 'technical' as const, message: 'x'.repeat(20), contact_email: 'a@b.pt', context: {}, website: '' }
+    expect(await supportApi.create(body, mockApi)).toEqual(receipt)
+    expect(mockApi.post).toHaveBeenCalledWith('/support/requests', body)
+  })
+})
+
+// C19: the operator inbox, paginated like the admin bookings list.
+describe('adminApi support inbox (C19)', () => {
+  it('getSupportRequests merges the org param, passes filters and returns the page', async () => {
+    const mockApi = {
+      defaults: { params: { org_id: 'org-1' } },
+      get: vi.fn().mockResolvedValue({ data: { requests: [{ id: 'r1', reference: 'R1' }], total: 1, page: 1, page_size: 20 } }),
+    } as any
+    const page = await adminApi.getSupportRequests({ status: 'new', page: 2 }, mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/support/requests', { params: { org_id: 'org-1', status: 'new', page: 2 } })
+    expect(page.requests[0].reference).toBe('R1')
+    expect(page.total).toBe(1)
+  })
+
+  it('updateSupportRequest puts the status and unwraps the request', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { request: { id: 'r1', status: 'closed' } } }) } as any
+    expect((await adminApi.updateSupportRequest('r1', 'closed', mockApi)).status).toBe('closed')
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/support/requests/r1', { status: 'closed' })
   })
 })
