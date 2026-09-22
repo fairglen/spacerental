@@ -598,7 +598,14 @@ describe('adminApi booking management and blocks (A01, A02)', () => {
     expect(mockApi.put).toHaveBeenCalledWith('/admin/bookings/b1', body)
     expect(result.booking.total_amount).toBe(22)
     expect(result.booking.admin_note).toBe('n')
-    expect(result.hours).toEqual({ before: 1, after: 2 })
+    // H03: `uncovered` is 0 when the API did not report any.
+    expect(result.hours).toEqual({ before: 1, after: 2, uncovered: 0 })
+  })
+
+  it('updateBookingDetails carries the hours the bank could not cover (H03)', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { booking, hours: { before: '2.00', after: '4.00', uncovered: '1.00' } } }) } as any
+    const result = await adminApi.updateBookingDetails('b1', { end_time: 'e' }, mockApi)
+    expect(result.hours).toEqual({ before: 2, after: 4, uncovered: 1 })
   })
 
   it('updateBooking (status only) still works and normalizes', async () => {

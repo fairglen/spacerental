@@ -196,10 +196,14 @@ async def record_debits(db: AsyncSession, booking: Booking, draws: list[Draw]) -
 
 
 async def debits_of(db: AsyncSession, booking_id: uuid.UUID) -> list[BookingPackageDebit]:
+    """A booking's debit rows in draw order: soonest-expiring purchase first,
+    the order every walk takes (rows written in one flush share a timestamp,
+    so `created_at` alone cannot tell them apart)."""
     result = await db.execute(
         select(BookingPackageDebit)
+        .join(UserPackagePurchase, UserPackagePurchase.id == BookingPackageDebit.purchase_id)
         .where(BookingPackageDebit.booking_id == booking_id)
-        .order_by(BookingPackageDebit.created_at.asc(), BookingPackageDebit.id.asc())
+        .order_by(UserPackagePurchase.expires_at.asc(), UserPackagePurchase.id.asc())
         .execution_options(populate_existing=True)
     )
     return list(result.scalars().all())
@@ -265,6 +269,70 @@ async def redebit_booking(db: AsyncSession, booking: Booking, *, now: datetime) 
         return False
     await record_debits(db, booking, draws)
     return True
+
+
+async def settle_moved_booking(
+    db: AsyncSession, booking: Booking, *, new_duration: Decimal, now: datetime
+) -> Decimal:
+    """Bring a booking's pack share in line with a new length (H03 a).
+
+    Shrinking gives the surplus back in REVERSE draw order, so the hours that
+    lapse first stay spent and the latest-expiring purchase is the one that
+    gets hours back. Growing draws the extra from the bank, soonest-expiring
+    first, and returns what the bank could NOT cover — the operator settles
+    that with the customer outside the platform; no money moves here in
+    either direction. A booking that holds no hours (cancelled, expired) only
+    has its recorded share capped at the new length; nothing is credited
+    twice or drawn for a booking that is not live.
+    """
+    if booking.package_hours_used <= 0:
+        return Decimal(0)
+    if not holds_package_hours(booking.status):
+        booking.package_hours_used = min(booking.package_hours_used, new_duration)
+        return Decimal(0)
+
+    if new_duration < booking.package_hours_used:
+        surplus = booking.package_hours_used - new_duration
+        for debit in reversed(await debits_of(db, booking.id)):
+            if surplus <= 0:
+                break
+            give = min(debit.hours, surplus)
+            await credit_hours(db, purchase_id=debit.purchase_id, hours=give)
+            debit.hours -= give
+            if debit.hours <= 0:
+                await db.delete(debit)
+            surplus -= give
+        booking.package_hours_used = new_duration
+        await db.flush()
+        return Decimal(0)
+
+    extra = new_duration - booking.duration_hours
+    if extra <= 0:
+        return Decimal(0)
+    # The CHECK constraint (share <= duration) is evaluated at every flush,
+    # so the longer duration must be on the row before the share grows.
+    booking.duration_hours = new_duration
+    draws = await redeem_up_to(
+        db, user_id=booking.user_id, org_id=booking.org_id, hours=extra, now=now
+    )
+    existing = {d.purchase_id: d for d in await debits_of(db, booking.id)}
+    for purchase, taken in draws:
+        # One row per purchase: a purchase already drawn on grows its row.
+        if purchase.id in existing:
+            existing[purchase.id].hours += taken
+        else:
+            db.add(
+                BookingPackageDebit(
+                    org_id=booking.org_id,
+                    booking_id=booking.id,
+                    purchase_id=purchase.id,
+                    hours=taken,
+                )
+            )
+    drawn = total_drawn(draws)
+    booking.package_hours_used += drawn
+    await db.flush()
+    return extra - drawn
 
 
 # A booking has its pack share debited exactly while it is in one of these.

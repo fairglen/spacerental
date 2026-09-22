@@ -379,12 +379,23 @@ hold. Response: `{ booking: AdminBooking }`.
 Any combination of (A01): a status change (`status`), a move (`start_time`,
 `end_time`, `room_id` — the room must be in the same org, else `404`) and a
 private note (`admin_note`). Omitted fields are unchanged; an empty body is
-`422`. A move passes the same validity and conflict checks as a customer
-booking (`400`/`409`) with NO 24h rule for operators, and moves NO money: a
-changed duration recomputes nothing about `total_amount`; the response carries
-`hours: { before, after }` and the operator settles the difference outside the
-platform (known limitation). A moved confirmed booking gets the confirmation
-email again with the line "A tua reserva foi alterada" and a new access code.
+`422`. A move passes the same opening-hours and conflict checks as a customer
+booking (`400`/`409`) with NO 24h rule and NO booking window for operators.
+The past rule is an operator's (H03): a booking that has already started may
+keep its start — or be given a later one — while the end or the room
+changes; only a START earlier than both now and the original is `400`
+(`start_time cannot be in the past`), and the new END must lie ahead (`400`
+`end_time cannot be in the past`). A move moves NO money: `total_amount` is
+never recomputed. The PACK share does follow the new length (H03) through
+the hour bank: shrinking credits the surplus back, latest-expiring purchase
+first, so the hours that lapse soonest stay spent; growing draws the extra
+from the bank, soonest-expiring first. The response carries `hours: {
+before, after, uncovered? }` — `uncovered` is what the bank could not give
+for a longer booking (the operator settles it with the customer outside the
+platform; no charge is created). A write that still trips a database
+constraint answers `409` `The change violates a constraint (<name>)`, never
+`500`. A moved confirmed booking gets the confirmation email again with the
+line "A sua reserva foi alterada" and a new access code.
 Response: `{ booking: AdminBooking, hours? }`.
 
 `AdminBooking` = `Booking` + `admin_note: string | null` +

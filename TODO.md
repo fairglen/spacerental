@@ -3526,7 +3526,56 @@ customer, book 12h across them, dashboard shows the split and the bank shows
 
 ### H03 — Admin "Alterar horário" fails: two real causes, fixed
 
-**Priority: P1. State: QUEUED.** Reproduced with the seeded stack, then fixed:
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/booking-rules-hour-bank`, committed locally; DONE only once merged.
+**Reproduced (2026-09-22), as failing tests first:** (a) 09:00–18:00 paid
+with 9h of pack, moved to 09:00–15:00 → the CHECK constraint fired at flush
+and — precisely — came back as a misleading `409 This time slot is already
+booked` (`is_lost_slot_race` treated every IntegrityError as a lost slot),
+which the sheet showed as "Este horário já está reservado ou bloqueado."; (b)
+shortening a booking half an hour after it started → `400 start_time cannot
+be in the past`. **Evidence:** 14 real-PG tests in
+`tests/test_admin_reschedule.py` — the reproduction (2 from A + 7 from B → 6:
+B gives 3 back, A's sooner-lapsing hours stay spent, `hours {9 → 6}`, no
+`uncovered`, money untouched); shrinking past the last-drawn purchase frees
+the earlier one too; a mixed booking keeps its 11,00 € and returns only the
+pack hours past the new end; growing draws the extra from the bank; what the
+bank cannot cover is `hours.uncovered` with no charge; an hourly booking is
+reported as before and touches no pack; a booking in progress: end change
+and room change succeed, a new end behind now is `400 end_time cannot be in
+the past`, a start earlier than now is still refused, a start between the
+original and now is allowed, the customer path stays strict, a conflict is
+still 409; a constraint the settle could not prevent (forced by monkeypatch)
+is `409 The change violates a constraint (ck_bookings_…)` with nothing
+written. Full backend 635; `alembic check` clean (no schema change). Frontend:
+`adminBookingErrorMessage` tells a moved-back start from an end behind now,
+names an end before the start, the conflict, the pack-settle constraint and
+any other refused constraint (4 unit tests); the sheet reports "9h → 6h. As
+horas a mais voltaram ao banco de horas do cliente. Nenhum dinheiro foi
+movido." / "…saíram do banco de horas…" / "O banco de horas do cliente não
+cobre 1h; acerte essas horas com o cliente fora da plataforma." and, for a
+money booking, the previous settle-outside line; a refused move keeps the
+room/date/time values and the button enabled (3 sheet tests); `lib/api.ts`
+carries `hours.uncovered` (2 shape tests). Vitest 507; tsc clean. Playwright
+`admin-reschedule.spec.ts`: 9h granted, 09:00–18:00 booked with the pack,
+the sheet's "Alterar horário" → 15:00 shows "9h → 6h … voltaram ao banco de
+horas", the sheet reads 09:00–15:00 / 6h do pack, the bank is back up by 3,
+the operator list shows 6h with a split summing to 6; an end before the
+start is refused with "O fim tem de ser depois do início." and the form
+keeps "08:00". The sheet's copy also moved to the formal register ("acerte",
+missed by W05e). **DECISIONS:** (1) `is_lost_slot_race` now says no for a
+CHECK/UNIQUE violation (sqlstate 23514/23505), so a refused write is never
+reported as someone taking the slot; the admin route answers 409 naming the
+constraint, the customer route re-raises as before (it cannot trip one).
+(2) An hourly booking that grows draws nothing from the bank — its money
+stays what it was and the extra is reported as before (A01); only a booking
+that already holds pack hours settles its share. Alternative: draw for every
+method. Reverse: drop the `package_hours_used <= 0` early return in
+`settle_moved_booking`. (3) A booking that holds no hours (cancelled,
+expired) only has its recorded share capped at the new length — nothing is
+credited twice or drawn for a booking that is not live. (4) Debit rows are
+read in the walk's order (purchase expiry) rather than `created_at`, which
+one flush shares across rows. **Scope (as assigned):** Reproduced with the seeded stack, then fixed:
 (a) Shrinking a booking that used pack hours (09:00–18:00 paid with 9h of
 pack, moved to 09:00–15:00): `admin_update_booking` recomputes
 `duration_hours` but not `package_hours_used`, so

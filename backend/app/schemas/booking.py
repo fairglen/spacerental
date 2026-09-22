@@ -111,6 +111,15 @@ class AdminBookingOut(BookingOut):
     admin_note: str | None = None
     package_debits: list[BookingPackageDebitOut] = []
 
+    @field_validator("package_debits")
+    @classmethod
+    def _draw_order(cls, debits: list[BookingPackageDebitOut]) -> list[BookingPackageDebitOut]:
+        # Soonest-expiring first: the order the hours were drawn in.
+        def key(d: BookingPackageDebitOut):
+            return (d.expires_at is None, d.expires_at, str(d.purchase_id))
+
+        return sorted(debits, key=key)
+
 
 class BookingStatusUpdate(BaseModel):
     """PUT /admin/bookings/{id}: any combination of a status change, a move

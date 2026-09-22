@@ -28,6 +28,24 @@ const PAYMENT_LABELS: Record<Booking['payment_method'], string> = {
   hourly: 'À hora', package: 'Pack', mixed: 'Pack + pagamento', manual: 'Pago no local',
 }
 
+/**
+ * What a move did to the hours (A01, H03): money never moves; the pack share
+ * follows the new length through the hour bank, and `uncovered` is what the
+ * bank could not give for a longer booking.
+ */
+function moveOutcome(b: Booking, hours?: { before: number; after: number; uncovered?: number }): string {
+  if (!hours || hours.before === hours.after) return 'Horário alterado. O cliente recebe um email.'
+  const change = `Horário alterado. Duração ${formatHours(hours.before)} → ${formatHours(hours.after)}.`
+  const usesPack = (b.package_hours_used ?? 0) > 0 || b.payment_method === 'package' || b.payment_method === 'mixed'
+  if (!usesPack) return `${change} Nada foi cobrado nem devolvido; acerte a diferença com o cliente fora da plataforma.`
+  if (hours.uncovered && hours.uncovered > 0) {
+    return `${change} O banco de horas do cliente não cobre ${formatHours(hours.uncovered)}; acerte essas horas com o cliente fora da plataforma. Nenhum dinheiro foi movido.`
+  }
+  return hours.after < hours.before
+    ? `${change} As horas a mais voltaram ao banco de horas do cliente. Nenhum dinheiro foi movido.`
+    : `${change} As horas a mais saíram do banco de horas do cliente. Nenhum dinheiro foi movido.`
+}
+
 const toLocalDate = (iso: string) => format(parseISO(iso), 'yyyy-MM-dd')
 const toLocalTime = (iso: string) => format(parseISO(iso), 'HH:mm')
 const fromLocal = (date: string, time: string) => new Date(`${date}T${time}:00`).toISOString()
@@ -84,12 +102,7 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
       if (move.room_id !== booking.room_id) body.room_id = move.room_id
       return adminApi.updateBookingDetails(booking.id, body, api)
     },
-    onSuccess: ({ booking: b, hours }) => done(
-      b,
-      hours && hours.before !== hours.after
-        ? `Horário alterado. Duração ${formatHours(hours.before)} → ${formatHours(hours.after)}: nada foi cobrado nem devolvido; acerta a diferença com o cliente fora da plataforma.`
-        : 'Horário alterado. O cliente recebe um email.',
-    ),
+    onSuccess: ({ booking: b, hours }) => done(b, moveOutcome(b, hours)),
     onError: fail,
   })
   const saveNote = useMutation({
@@ -221,7 +234,7 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
               <div><Label htmlFor="move-start">Início</Label><Input id="move-start" type="time" step={3600} value={move.start} onChange={(e) => setMove({ ...move, start: e.target.value })} className="mt-1" /></div>
               <div><Label htmlFor="move-end">Fim</Label><Input id="move-end" type="time" step={3600} value={move.end} onChange={(e) => setMove({ ...move, end: e.target.value })} className="mt-1" /></div>
             </div>
-            <p className="text-xs text-muted-foreground">O cliente recebe um email com o novo horário. Uma duração diferente não cobra nem devolve nada aqui.</p>
+            <p className="text-xs text-muted-foreground">O cliente recebe um email com o novo horário. Uma duração diferente não cobra nem devolve dinheiro aqui; as horas de pack acertam-se pelo banco de horas.</p>
             <div className="flex gap-2">
               <Button size="sm" type="submit" disabled={busy}>Guardar horário</Button>
               <Button size="sm" type="button" variant="outline" onClick={() => setMode('view')}>Voltar</Button>

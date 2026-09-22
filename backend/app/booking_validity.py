@@ -51,8 +51,24 @@ MAX_BOOKING_DURATION = timedelta(hours=24)
 # here, this is only a sanity cap on what one row may claim.
 MAX_BLOCK_DURATION = timedelta(days=31)
 
-# Postgres sqlstate for `deadlock_detected`.
+# Postgres sqlstates: `deadlock_detected`, and the two constraint classes a
+# flush can trip that are NOT a lost race for a slot.
 _DEADLOCK_SQLSTATE = "40P01"
+_CHECK_VIOLATION = "23514"
+_UNIQUE_VIOLATION = "23505"
+
+
+def violated_constraint(exc: DBAPIError) -> str | None:
+    """The name of the CHECK or UNIQUE constraint `exc` reports, else None.
+
+    Such a violation is a bug in what the caller tried to write, never a
+    concurrent customer taking the slot — it must not be reported as one
+    (H03), and never as a 500 either: the caller answers 409 naming it.
+    """
+    if getattr(exc.orig, "sqlstate", None) not in (_CHECK_VIOLATION, _UNIQUE_VIOLATION):
+        return None
+    cause = getattr(exc.orig, "__cause__", None)
+    return getattr(cause, "constraint_name", None) or "unknown"
 
 
 def booking_window_end(now: datetime) -> datetime:
@@ -79,6 +95,8 @@ def is_lost_slot_race(exc: DBAPIError) -> bool:
     unhandled 500 for what is, semantically, still just a lost race for the
     slot — the exact failure mode this module exists to close off.
     """
+    if violated_constraint(exc) is not None:
+        return False
     return isinstance(exc, IntegrityError) or getattr(exc.orig, "sqlstate", None) == (
         _DEADLOCK_SQLSTATE
     )
