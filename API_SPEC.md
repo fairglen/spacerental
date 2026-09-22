@@ -72,7 +72,15 @@ Response: `{ space: Space, rooms: Room[] }`
 
 ### GET /rooms/:id/availability
 Query: `?date=YYYY-MM-DD`
-Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool }] }`
+Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool, reason }] }`
+
+`reason` (H01) says why a slot is not bookable and is `null` exactly when
+`available` is true: `"past"` (already started), `"beyond_window"` (later than
+now + `BOOKING_MAX_ADVANCE_DAYS`, the customer's horizon), `"booked"` (a
+booking holds it) or `"blocked"` (operator blocked time). One reason per slot,
+in that order of precedence. A `date` after the window's last day is refused
+with `400` (`date is beyond the booking window`) rather than served as all
+unavailable.
 
 ---
 
@@ -150,7 +158,10 @@ what comes back:
 
 Body: `{ room_id, start_time, end_time, notes?, payment_method? }`
 Response: `{ booking: Booking, checkout_url: string | null }`
-Errors: `403` not a member of the room's org, `404` unknown room, `409` slot
+Errors: `400` `start_time cannot be in the past`, `start_time is beyond the
+booking window` (later than now + `BOOKING_MAX_ADVANCE_DAYS`, default 30 —
+a customer's rule; operator endpoints have no horizon, H01), outside opening
+hours; `403` not a member of the room's org, `404` unknown room, `409` slot
 already booked *or* insufficient package hours.
 
 ### DELETE /bookings/:id

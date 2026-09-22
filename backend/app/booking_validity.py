@@ -25,6 +25,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import clock, package_hours
+from app.config import settings
 from app.models.booking import Booking, BookingStatus
 from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule
@@ -52,6 +53,17 @@ MAX_BLOCK_DURATION = timedelta(days=31)
 
 # Postgres sqlstate for `deadlock_detected`.
 _DEADLOCK_SQLSTATE = "40P01"
+
+
+def booking_window_end(now: datetime) -> datetime:
+    """The last instant a CUSTOMER may start a booking at (H01).
+
+    Inclusive: a start exactly `BOOKING_MAX_ADVANCE_DAYS` days out is allowed,
+    one second later is not. Read at call time, not import time, so a test
+    (or a deployment) can change the setting without reloading the module.
+    Operators are not bound by it — their paths never call this.
+    """
+    return now + timedelta(days=settings.BOOKING_MAX_ADVANCE_DAYS)
 
 
 def is_lost_slot_race(exc: DBAPIError) -> bool:

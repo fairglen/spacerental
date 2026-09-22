@@ -7,13 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import clock
-from app.booking_validity import holds_slot
+from app.booking_validity import booking_window_end, holds_slot
 from app.database import get_db
 from app.models.booking import Booking
 from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule, Room, Space
 from app.ratelimit import PUBLIC_TIER, rate_limit
-from app.schemas.space import AvailabilitySlot, RoomOut, SpaceOut
+from app.schemas.space import AvailabilitySlot, RoomOut, SlotReason, SpaceOut
 
 router = APIRouter(tags=["spaces"])
 
@@ -59,7 +59,7 @@ async def get_room_availability(
 ):
     """
     Generate 1-hour availability slots for a room on a given date.
-    Returns array of {start, end, available}.
+    Returns array of {start, end, available, reason}.
     """
     result = await db.execute(
         select(Room).where(Room.id == room_id, Room.is_active == True)  # noqa: E712
@@ -67,6 +67,21 @@ async def get_room_availability(
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+
+    # A slot that has already started cannot be booked (POST /bookings rejects
+    # a past start_time), so it must not be advertised as available either;
+    # the calendar used to paint every same-day hour green late at night (B24).
+    now = clock.utcnow()
+    # The customer's horizon (H01). Days past it are refused outright rather
+    # than served as all-unavailable, so a client cannot fan out one request
+    # per day for months; the last day inside it is served with each slot past
+    # the exact instant marked `beyond_window`.
+    window_end = booking_window_end(now)
+    if date > window_end.date():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date is beyond the booking window",
+        )
 
     # 0=Monday, 6=Sunday in Python's weekday()
     day_of_week = date.weekday()
@@ -103,11 +118,6 @@ async def get_room_availability(
     day_start = min(w[0] for w in windows)
     day_end = max(w[1] for w in windows)
 
-    # A slot that has already started cannot be booked (POST /bookings rejects
-    # a past start_time), so it must not be advertised as available either;
-    # the calendar used to paint every same-day hour green late at night (B24).
-    now = clock.utcnow()
-
     # Bookings holding a slot on this date; an expired unpaid hold is free (C03).
     result = await db.execute(
         select(Booking).where(
@@ -134,18 +144,36 @@ async def get_room_availability(
         .scalars()
         .all()
     )
-    taken_ranges = [(b.start_time, b.end_time) for b in existing_bookings] + [
-        (b.start_time, b.end_time) for b in blocks
-    ]
+    booked_ranges = [(b.start_time, b.end_time) for b in existing_bookings]
+    blocked_ranges = [(b.start_time, b.end_time) for b in blocks]
 
-    def is_slot_taken(slot_start: datetime, slot_end: datetime) -> bool:
+    def overlaps(ranges, slot_start: datetime, slot_end: datetime) -> bool:
         # Overlap: it starts before the slot ends AND ends after the slot starts.
-        return any(start < slot_end and end > slot_start for start, end in taken_ranges)
+        return any(start < slot_end and end > slot_start for start, end in ranges)
+
+    def reason_for(slot_start: datetime, slot_end: datetime) -> SlotReason | None:
+        # One reason per slot, in the order the customer can act on it: a gone
+        # hour is gone whatever else is true; past the horizon nothing matters
+        # (an operator's booking out there is not the customer's business);
+        # then whose it is. A block never overlaps a live booking (A02).
+        if slot_start < now:
+            return "past"
+        if slot_start > window_end:
+            return "beyond_window"
+        if overlaps(booked_ranges, slot_start, slot_end):
+            return "booked"
+        if overlaps(blocked_ranges, slot_start, slot_end):
+            return "blocked"
+        return None
 
     slots: list[AvailabilitySlot] = []
     for slot_start in sorted(slot_starts):
         slot_end = slot_start + timedelta(hours=1)
-        available = slot_start >= now and not is_slot_taken(slot_start, slot_end)
-        slots.append(AvailabilitySlot(start=slot_start, end=slot_end, available=available))
+        reason = reason_for(slot_start, slot_end)
+        slots.append(
+            AvailabilitySlot(
+                start=slot_start, end=slot_end, available=reason is None, reason=reason
+            )
+        )
 
     return {"slots": [s.model_dump() for s in slots]}

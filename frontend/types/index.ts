@@ -195,10 +195,14 @@ export type PackagePurchaseCheckout = {
   checkout_url: string
 }
 
+// Why a slot is not bookable (H01); null exactly when `available` is true.
+export type SlotReason = 'past' | 'booked' | 'blocked' | 'beyond_window'
+
 export type AvailabilitySlot = {
   start: string
   end: string
   available: boolean
+  reason?: SlotReason | null
 }
 
 export type AvailabilityRule = {

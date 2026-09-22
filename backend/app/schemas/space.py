@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, time
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -57,10 +58,17 @@ class AvailabilityRulesSetBody(BaseModel):
     rules: list[AvailabilityRuleIn] = Field(max_length=50)
 
 
+# Why a slot is not bookable (H01), so the calendar can style each case on
+# its own: a gone-by hour, someone's booking, operator blocked time, or an hour
+# past the customer's horizon. `None` exactly when `available` is true.
+SlotReason = Literal["past", "booked", "blocked", "beyond_window"]
+
+
 class AvailabilitySlot(BaseModel):
     start: datetime
     end: datetime
     available: bool
+    reason: SlotReason | None = None
 
 
 class PhotoOut(BaseModel):

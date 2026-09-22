@@ -13,6 +13,7 @@ from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
+    booking_window_end,
     expire_stale_holds,
     expire_user_holds,
     has_conflicting_booking,
@@ -135,6 +136,14 @@ async def create_booking(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="start_time cannot be in the past",
+        )
+    # A customer's horizon (H01), checked before the opening hours so the
+    # answer names the rule that actually applies: a far-off Sunday is "too
+    # far", not "closed". The operator's paths (admin.py) have no horizon.
+    if body.start_time > booking_window_end(now):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_time is beyond the booking window",
         )
 
     # Defensive technical bound, not a product decision about how long a

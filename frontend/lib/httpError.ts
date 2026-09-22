@@ -1,3 +1,7 @@
+import { format } from 'date-fns'
+import { pt } from 'date-fns/locale'
+import { bookingMaxAdvanceDays, bookingWindowEnd } from '@/lib/bookingWindow'
+
 /**
  * HTTP status of a failed request, without importing axios into a component
  * (§9 keeps API concerns in lib/api.ts). Undefined for network-level failures.
@@ -92,6 +96,10 @@ export function bookingErrorMessage(error: unknown, method: BookingPaymentMethod
     }
     case 400:
       if (detail.includes('past')) return 'Essa hora já passou. Escolha um horário a partir de agora.'
+      if (detail.includes('booking window')) {
+        // H01: the API's horizon; the date is the calendar's own hint.
+        return `Só é possível reservar com ${bookingMaxAdvanceDays()} dias de antecedência, no máximo. Escolha uma data até ${format(bookingWindowEnd(), "d 'de' MMMM", { locale: pt })}.`
+      }
       if (detail.includes('opening hours')) {
         return 'O horário escolhido está fora do horário de funcionamento da sala.'
       }

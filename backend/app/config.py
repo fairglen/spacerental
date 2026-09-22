@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     # Positive by construction: zero or negative would expire every hold at
     # once and make hourly Checkout unusable; there is no "disable" value.
     BOOKING_HOLD_MINUTES: int = Field(default=15, gt=0)
+    # How far ahead a CUSTOMER may book (H01): `start_time` later than now +
+    # this many days is refused, and the public availability reports such
+    # slots as `beyond_window`. Operators have no horizon (A01 paths are
+    # untouched). The frontend mirrors it as NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS
+    # for the calendar's hint; the API stays authoritative.
+    BOOKING_MAX_ADVANCE_DAYS: int = Field(default=30, gt=0)
 
     # ── Rate limiting ────────────────────────────────────────────────────
     RATE_LIMIT_ENABLED: bool = True

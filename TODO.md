@@ -3358,7 +3358,43 @@ reschedule this fixes), C07 (the 24h cancel rule, which stays as it is), C05
 
 ### H01 — Booking window: customers book at most 30 days ahead
 
-**Priority: P1. State: QUEUED.** Customers may cancel only up to 24h before
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/booking-rules-hour-bank`, committed locally; DONE only once merged.
+**Evidence (2026-09-22):** 10 real-PG tests in `tests/test_booking_window.py`
+(the last instant of the window, now + 30 days exactly, is bookable and one
+hour later is refused with `start_time is beyond the booking window`; the
+window is checked before opening hours so a far-off Sunday names the rule
+that applies; the setting moves the boundary; an operator creates and moves a
+booking a day past it; availability on the last day marks the hours after the
+instant `beyond_window`; past/booked/blocked each carry their reason and
+`reason` is null exactly when `available`; a date past the window is 400 and
+the last day is still served). The S19 slot allowlist gains `reason`. Full
+backend 608 passed; `alembic check` clean (no schema change). Frontend:
+`lib/bookingWindow` (7 unit tests: default, configured value, loud failure on
+a bad value, when › must stop in day and week view, the API's reason is the
+only "beyond"); calendar (5 new component tests: beyond-window slots styled
+as past with no "Ocupado" chip, a selection there names the last open date,
+the hint is always shown, › enabled up to the last open day and disabled on
+it in both views while ‹/Hoje/Dia/Semana stay live); `bookingErrorMessage`
+maps the 400 to "Só é possível reservar com 30 dias de antecedência, no
+máximo. Escolha uma data até <data>." (1 test). Vitest 487; tsc clean.
+Playwright `booking-window.spec.ts` on the seeded stack: the week view walks
+to the week holding day 30, › is disabled there and the hint names the date;
+the same session gets 400 from `POST /bookings` one day past the window and
+201 from `POST /admin/bookings` (then cancels it). The dashboard cancel dialog
+(C07) was verified unchanged. **DECISIONS:** (1) the boundary is inclusive —
+`start_time > now + N days` is refused, `==` allowed — per the assignment's
+own "later than"; the availability hint therefore names the day of that
+instant, and the hours of that day after it read `beyond_window`. Alternative:
+end-of-day granularity. Reverse: `>=` in `create_booking` and
+`booking_window_end`. (2) `reason` precedence past → beyond_window → booked →
+blocked, so the region past the horizon reads uniformly and an operator's
+booking out there is not advertised; a block never overlaps a live booking
+(A02). (3) `NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS` unset means the backend's
+default (30); set-but-invalid throws (§9). Alternative: throw when unset —
+would break `next build` and Vitest on a fresh checkout. (4) The calendar's
+toolbar is a same-markup replacement of react-big-calendar's (same class
+names), the only way to render › disabled. **Scope (as assigned):** Customers may cancel only up to 24h before
 start (C07, kept) and — new — may book at most `BOOKING_MAX_ADVANCE_DAYS`
 (default 30) days ahead. Admins have no window either way (cancel already;
 the new rule must not touch the admin endpoints).
