@@ -18,10 +18,14 @@
  */
 import { test, expect } from '@playwright/test';
 
-test('hero copy renders', async ({ page }) => {
+test('hero renders one headline with its emphasised word and a lede', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('h1')).toContainText('O teu');
-  await expect(page.locator('h1')).toContainText('no teu tempo');
+  // Structure, not prose (W01): one H1 with an <em> inside it, followed by a lede.
+  const h1 = page.locator('h1');
+  await expect(h1).toHaveCount(1);
+  await expect(h1).not.toBeEmpty();
+  await expect(h1.locator('em')).not.toBeEmpty();
+  await expect(page.locator('.hero p.lede').first()).not.toBeEmpty();
 });
 
 test('maps link points at the correct address', async ({ page }) => {

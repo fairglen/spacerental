@@ -488,7 +488,7 @@ covered by `tests/code-gs.test.mjs`, see Testing).
 
 **Content and navigation**
 - [ ] Every section's content matches `index.html` verbatim against the spec
-      (hero headline/subheading, "O espaço" paragraph, the three room cards'
+      (hero headline/subheading, the two "O espaço" paragraphs, the three room cards'
       names/prices/descriptions/amenities, the four "Como funciona" steps,
       the three pricing cards, the address, and the footer copyright line).
 - [ ] Nav anchors (`#espaco`, `#salas`, `#como-funciona`, `#precos`,
@@ -662,9 +662,14 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-21 tests, all passing at time of writing. They assert:
+22 tests, all passing at time of writing. They assert:
 
-- the hero copy renders, and the Google Maps link href is exactly correct;
+- the hero renders one headline with its emphasised word and a lede (structure,
+  not prose — the copy is the owner's to change), and the Google Maps link
+  href is exactly correct;
+- the script rewrite the suite relies on matches whatever `APPS_SCRIPT_URL` is
+  committed (placeholder or deployed URL) and still fails loudly if the
+  constant disappears (B49);
 - a mocked `{"result":"success"}` shows the success banner, clears the form,
   and that the request went out as `Content-Type: text/plain;charset=utf-8` —
   the simple-request property that makes the response readable at all;
