@@ -1786,7 +1786,31 @@ split and 0h left.
 
 ### C14 — Image storage and upload behind a gateway
 
-**Priority: P1. State: QUEUED** (PR 1). **Scope:** `images` exists on Space and
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally; DONE only once
+merged. **Evidence (2026-09-22):** 28 real-PG + temp-dir tests in
+`tests/test_media.py` (processing to 1600px/480px WebP; the client's filename
+never reaches disk or URL; JPEG/PNG/WebP accepted by content whatever the name;
+PHP/PDF/SVG/empty/GIF → 415; > 8 MB → 413; 11th → 409; EXIF/GPS/ICC stripped
+from both files; orientation applied to the pixels before stripping; spaces;
+public shape + file served as `image/webp`, PUT → 405; another org's admin →
+403 / 404 identical to a missing id, no file written; member 403, anonymous
+401; reorder = full permutation else 409; delete removes both files, second
+delete 404; a backfilled external photo can be removed; upload rate tier →
+429; an unimplemented `MEDIA_STORAGE` raises). The six routes are classified in
+the S01 matrix (incl. its cross-org sweeps); S19's public field allowlist
+declares `photos`. Migration `0006_photos` round trip clean, backfill verified
+(order kept, `images` untouched). Full backend 481 passed. **Decisions:**
+(1) `photos` (JSONB) is a NEW field and the source of truth for uploads;
+`images` (external URLs) is left exactly as it was, so no API client sees a
+change; existing URLs are copied into `photos` so nothing configured vanishes
+from the carousel. Reverse: drop the column. (2) The database stores storage
+KEYS and responses build absolute URLs from `MEDIA_BASE_URL`, so moving to a
+bucket or another domain rewrites no rows. (3) Delete answers 200 with the
+updated entity, not 204 — the client needs the new list and cover. (4) A new
+`upload` rate tier (30/min) rather than reusing `auth`/`public`. (5) Found on
+the way: python:3.12-slim has no WebP MIME type, so files were served as
+`text/plain`; registered explicitly. **Scope:** `images` exists on Space and
 Room and in the admin schemas but nothing writes it. A `MediaStorage` gateway
 (`MEDIA_STORAGE=local` now: files under `MEDIA_ROOT`, served read-only at
 `/media/…` by the API; a marked seam for S3/R2 later, no cloud SDK). `POST

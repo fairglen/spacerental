@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.media import public_url
 from app.schemas.bounds import (
     Address,
     Capacity,
@@ -62,6 +63,33 @@ class AvailabilitySlot(BaseModel):
     available: bool
 
 
+class PhotoOut(BaseModel):
+    """One photo as clients see it: always absolute URLs, never storage keys."""
+
+    id: str
+    url: str
+    thumb_url: str
+    # Unknown for a photo carried over from an external `images` URL.
+    width: int | None = None
+    height: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_stored_keys(cls, data):
+        if isinstance(data, dict) and "key" in data:
+            return {
+                **data,
+                "url": public_url(data["key"]),
+                "thumb_url": public_url(data["thumb_key"]),
+            }
+        return data
+
+
+class PhotoOrder(BaseModel):
+    # The full list, in the order wanted; the first becomes the cover.
+    order: list[uuid.UUID] = Field(max_length=50)
+
+
 class RoomOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -73,6 +101,7 @@ class RoomOut(BaseModel):
     capacity: int
     hourly_rate: Decimal
     images: list[str]
+    photos: list[PhotoOut] = []
     amenities: list[str]
     color: str
     is_active: bool
@@ -121,6 +150,7 @@ class SpaceOut(BaseModel):
     latitude: Decimal | None
     longitude: Decimal | None
     images: list[str]
+    photos: list[PhotoOut] = []
     amenities: list[str]
     is_active: bool
     created_at: datetime

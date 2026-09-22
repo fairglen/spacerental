@@ -34,6 +34,17 @@ services:
       RATE_LIMIT_PUBLIC_MAX_REQUESTS: ${RATE_LIMIT_PUBLIC_MAX_REQUESTS:-120}
       RATE_LIMIT_PUBLIC_WINDOW_SECONDS: ${RATE_LIMIT_PUBLIC_WINDOW_SECONDS:-60}
       RATE_LIMIT_TRUST_FORWARDED_FOR: ${RATE_LIMIT_TRUST_FORWARDED_FOR:-false}
+      RATE_LIMIT_UPLOAD_MAX_REQUESTS: ${RATE_LIMIT_UPLOAD_MAX_REQUESTS:-30}
+      RATE_LIMIT_UPLOAD_WINDOW_SECONDS: ${RATE_LIMIT_UPLOAD_WINDOW_SECONDS:-60}
+      # ── Room and space photos (C14) ──────────────────────────────────────
+      # "local" is the only storage today: processed photos live in the `media`
+      # volume below and the API serves them read-only at /media. Any other
+      # value stops the backend at boot instead of silently writing locally.
+      MEDIA_STORAGE: ${MEDIA_STORAGE:-local}
+      MEDIA_ROOT: /var/lib/spacerental/media
+      # Handed to the visitor's browser inside API responses, so localhost is
+      # correct here (same reasoning as STRIPE_STUB_CHECKOUT_BASE_URL).
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-http://localhost:8000/media}
       # Defaults mirror app/config.py so a fresh clone comes up in stub mode
       # with nothing set. The keys are forwarded empty rather than omitted:
       # app.payments.validate_payment_settings() treats empty as missing, so
@@ -73,6 +84,8 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      # Outside the bind mount on purpose: uploads must not land in the checkout.
+      - media:/var/lib/spacerental/media
     # The image's ENTRYPOINT runs `alembic upgrade head` before handing off to
     # this command, so a fresh clone still comes up with a working schema in one
     # step. The app itself never creates tables — see backend/app/database.py.
@@ -98,3 +111,4 @@ services:
 
 volumes:
   pgdata:
+  media:

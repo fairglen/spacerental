@@ -226,6 +226,33 @@ one value: a body that carries one must carry the other (both numbers, or both
 ### DELETE /admin/spaces/:id
 Soft-delete a space.
 
+### Photos: POST /admin/rooms/:id/images · POST /admin/spaces/:id/images
+Upload ONE photo (`multipart/form-data`, field `file`). Operator of `org_id`
+only; the room/space is looked up inside that org first, so another tenant's id
+answers `404` exactly like an id that does not exist.
+The file is judged by its content, never its name or Content-Type: JPEG, PNG or
+WebP, else `415`; more than 8 MB (or 50 megapixels) → `413`; an 11th photo →
+`409`. On upload the image is rotated per its EXIF orientation, stripped of ALL
+metadata, resized to at most 1600px on the long edge, re-encoded as WebP
+(q≈82) with a 480px thumbnail, and stored under a random name.
+Throttled (`RATE_LIMIT_UPLOAD_*`, default 30/min per client) → `429`.
+Response `201`: the updated entity, `{ room: Room }` / `{ space: Space }`.
+
+### PUT /admin/rooms/:id/images/order · PUT /admin/spaces/:id/images/order
+Body: `{ order: string[] }` — EVERY current photo id, once, in the order wanted.
+The first is the cover. Anything that is not a permutation of the current list
+(one missing, unknown or repeated — e.g. a list gone stale) → `409`.
+Response: the updated entity.
+
+### DELETE /admin/rooms/:id/images/:image_id · DELETE /admin/spaces/:id/images/:image_id
+Removes the photo and its files. Response `200` with the updated entity (not
+`204`: the caller needs the new list and cover). `404` for an unknown photo.
+
+### GET /media/...
+The stored photo files, read-only, served by the API while
+`MEDIA_STORAGE=local` (`image/webp`, `X-Content-Type-Options: nosniff`). Clients
+never build these URLs: they arrive ready-made in `photos`.
+
 ### POST /admin/spaces/:id/rooms
 Add a room to a space.
 Body: `{ name, description, capacity, hourly_rate, color, amenities?, images? }`
@@ -272,11 +299,22 @@ type Space = {
   // frontend/lib/api.ts converts them to numbers and keeps null as null.
   latitude: string | null
   longitude: string | null
+  // Legacy list of external URLs; nothing renders it. Left as it was.
   images: string[]
+  // Uploaded photos in display order, first = cover (C14).
+  photos: Photo[]
   amenities: string[]
   is_active: boolean
   created_at: string
   rooms?: Room[]
+}
+
+type Photo = {
+  id: string
+  url: string         // absolute; up to 1600px on the long edge, WebP
+  thumb_url: string   // absolute; up to 480px
+  width: number | null   // of `url`; null for a photo carried over from `images`
+  height: number | null
 }
 
 type Room = {

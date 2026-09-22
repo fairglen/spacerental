@@ -179,6 +179,24 @@ inspect the diff before deciding whether a migration or metadata repair is neede
 - Admin booking pagination and PT/EN marketing/layout translation are present.
   Booking and admin copy remain Portuguese. Further pagination/i18n are deferred.
 
+## Room and space photos
+
+Operators upload photos from the admin (rooms and spaces); customers see them in
+a carousel. Storage sits behind a gateway (`backend/app/media.py`) like payments,
+email and locks. `MEDIA_STORAGE=local` is the default and the only implementation
+today: processed photos (WebP, metadata stripped, 1600px + a 480px thumbnail) live
+in the `media` Docker volume and the API serves them read-only at `/media`. No
+account or credentials. The module marks the seam for S3/R2; any other value stops
+the backend at startup rather than quietly writing to local disk.
+
+- `MEDIA_BASE_URL` (default `http://localhost:8000/media`) is the browser-facing
+  URL of that directory; change it with the API's public origin.
+- Without Docker, files go to `backend/media/` (gitignored).
+- `python -m app.seed` gives each demo room a few generated placeholder photos,
+  so the carousel has something to show locally; no image files live in git.
+- Removing the volume (`docker compose down -v`) removes the photos with the
+  database, which keeps the two consistent.
+
 ## Third-party integrations (stub/live)
 
 Stripe, Resend (email), and Seam (smart locks) sit behind credential-free stub

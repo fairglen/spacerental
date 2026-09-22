@@ -25,13 +25,15 @@ from httpx import ASGITransport, AsyncClient
 API = "/api/v1"
 # postal_code/latitude/longitude were published deliberately by C10: a venue's
 # address is public by nature, and the customer-facing map needs the point.
+# `photos` was published deliberately by C14: customers see them. Each entry is
+# `{id, url, thumb_url, width, height}` — storage keys never leave the API.
 SPACE_FIELDS = {
     "id", "org_id", "name", "description", "address", "city", "postal_code", "latitude",
-    "longitude", "images", "amenities", "is_active", "created_at", "updated_at", "rooms",
+    "longitude", "images", "photos", "amenities", "is_active", "created_at", "updated_at", "rooms",
 }  # fmt: skip
 ROOM_FIELDS = {
     "id", "space_id", "org_id", "name", "description", "capacity", "hourly_rate", "images",
-    "amenities", "color", "is_active", "created_at", "updated_at",
+    "photos", "amenities", "color", "is_active", "created_at", "updated_at",
 }  # fmt: skip
 PACKAGE_FIELDS = {
     "id", "org_id", "name", "hours", "price", "validity_days", "is_active", "created_at",

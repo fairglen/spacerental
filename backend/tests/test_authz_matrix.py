@@ -70,6 +70,14 @@ ROUTES: dict[tuple[str, str], str] = {
     ("PUT", f"{API}/admin/rooms/{{room_id}}"): OPERATOR,
     ("GET", f"{API}/admin/rooms/{{room_id}}/availability"): OPERATOR,
     ("POST", f"{API}/admin/rooms/{{room_id}}/availability"): OPERATOR,
+    # C14 photos. The uploads are multipart, which the JSON sweeps below cannot
+    # send: their cross-org and role cases live in tests/test_media.py.
+    ("POST", f"{API}/admin/rooms/{{room_id}}/images"): OPERATOR,
+    ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"): OPERATOR,
+    ("DELETE", f"{API}/admin/rooms/{{room_id}}/images/{{image_id}}"): OPERATOR,
+    ("POST", f"{API}/admin/spaces/{{space_id}}/images"): OPERATOR,
+    ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): OPERATOR,
+    ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"): OPERATOR,
     ("GET", f"{API}/admin/bookings"): OPERATOR,
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
     ("GET", f"{API}/admin/users"): OPERATOR,
@@ -91,6 +99,8 @@ BODIES: dict[tuple[str, str], dict] = {
     ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"): {"name": "Sala", "hourly_rate": "10.00"},
     ("PUT", f"{API}/admin/rooms/{{room_id}}"): {"hourly_rate": "0.01"},
     ("POST", f"{API}/admin/rooms/{{room_id}}/availability"): {"rules": []},
+    ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"): {"order": []},
+    ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): {"order": []},
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): {"status": "cancelled"},
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
@@ -471,6 +481,8 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("PUT", f"{API}/admin/spaces/{{space_id}}"),
             ("DELETE", f"{API}/admin/spaces/{{space_id}}"),
             ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"),
+            ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"),
+            ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
@@ -485,6 +497,8 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("PUT", f"{API}/admin/rooms/{{room_id}}"),
             ("GET", f"{API}/admin/rooms/{{room_id}}/availability"),
             ("POST", f"{API}/admin/rooms/{{room_id}}/availability"),
+            ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"),
+            ("DELETE", f"{API}/admin/rooms/{{room_id}}/images/{{image_id}}"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
