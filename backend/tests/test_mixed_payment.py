@@ -402,6 +402,52 @@ class TestHoursComeBack:
         assert await _balance(db_session, seven_hours) == (Decimal(0), Decimal(7))
         assert Decimal(back.json()["booking"]["package_hours_used"]) == Decimal(7)
 
+    async def test_an_operator_confirming_a_lapsed_hold_never_hands_out_free_hours(
+        self, client, auth_headers, admin, test_room, test_member, test_org, payments, db_session,
+        seven_hours, monkeypatch,
+    ):  # fmt: skip
+        """Review question on #55: the admin path runs `expire_stale_holds`
+        before settling — could that flip THIS booking to `expired`, return its
+        hours, and then let `pending -> confirmed` skip the re-debit? No: the
+        expiry only runs when the row is NOT already slot-holding, so it cannot
+        touch a pending target; and once something else has reconciled the
+        lapse, the operator's confirm goes `expired -> confirmed` and re-debits.
+        Both orders end with the seven hours spent exactly once."""
+        url_of = lambda b: f"{API}/admin/bookings/{b['id']}"  # noqa: E731
+        org = {"org_id": str(test_org.id)}
+
+        # 1. Lapsed, but nothing has noticed yet: still `pending`, hours still debited.
+        first = (await _book(client, auth_headers, test_room, _monday(), 8)).json()["booking"]
+        _pin(monkeypatch, datetime.now(tz=UTC) + timedelta(minutes=16))
+        assert (await _db_booking(db_session, first["id"])).status is BookingStatus.pending
+        assert await _balance(db_session, seven_hours) == (Decimal(0), Decimal(7))
+        confirmed = await client.put(
+            url_of(first), params=org, json={"status": "confirmed"}, headers=admin
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert (await _db_booking(db_session, first["id"])).status is BookingStatus.confirmed
+        assert await _balance(db_session, seven_hours) == (Decimal(0), Decimal(7))
+
+        # 2. Free the hours again, then a hold that HAS been reconciled (`expired`,
+        #    hours returned) is confirmed by the operator: re-debited, once.
+        undone = await client.put(
+            url_of(first), params=org, json={"status": "cancelled"}, headers=admin
+        )
+        assert undone.status_code == 200, undone.text
+        assert await _balance(db_session, seven_hours) == (Decimal(7), Decimal(0))
+        second = (await _book(client, auth_headers, test_room, _monday(21), 8)).json()["booking"]
+        _pin(monkeypatch, datetime.now(tz=UTC) + timedelta(minutes=32))
+        await client.get(f"{API}/bookings/me", headers=auth_headers)  # lazy reconciliation
+        assert (await _db_booking(db_session, second["id"])).status is BookingStatus.expired
+        assert await _balance(db_session, seven_hours) == (Decimal(7), Decimal(0))
+        revived = await client.put(
+            url_of(second), params=org, json={"status": "confirmed"}, headers=admin
+        )
+        assert revived.status_code == 200, revived.text
+        assert (await _db_booking(db_session, second["id"])).status is BookingStatus.confirmed
+        assert await _balance(db_session, seven_hours) == (Decimal(0), Decimal(7))
+        assert Decimal(revived.json()["booking"]["package_hours_used"]) == Decimal(7)
+
 
 class TestRetryAndLateMoney:
     async def test_pay_now_on_an_expired_mixed_hold_takes_the_hours_again(
