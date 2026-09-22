@@ -262,6 +262,22 @@ another organisation's request. Response: `{ request: SupportRequest }`.
 Answering happens by email (the notification carries `Reply-To`); nothing here
 sends anything. Full handling stays deferred (TODO.md D06).
 
+### Blocked time: GET · POST /admin/rooms/:id/blocks · PUT · DELETE /admin/rooms/:id/blocks/:block_id
+A stretch of time the operator takes a room out of service (A02). Operator of
+`org_id` only; the room is looked up inside the org first (`404` otherwise).
+Body (POST): `{ start_time, end_time, reason }`; PUT takes any subset. A block
+may have started already but may not lie entirely in the past (`400`), and is
+at most 31 days long (`400`). A block counts as unavailable everywhere a
+booking does: hidden in `GET /rooms/:id/availability` and refused by every
+booking path's conflict check, customer and operator alike (`409`).
+A block over a booking that holds its slot is refused — `409` with
+`detail: { detail, conflicts: [{ id, start_time, end_time, status }] }` — the
+operator moves or cancels the booking first; nothing is overridden silently.
+Two blocks on one room may not overlap (database EXCLUDE constraint; `409`).
+GET accepts `from`/`to` to window the list. Responses: `{ blocks: RoomBlock[] }`,
+`{ block: RoomBlock }`, `204` on delete, where `RoomBlock = { id, org_id,
+room_id, start_time, end_time, reason, created_by, created_at }`.
+
 ### Photos: POST /admin/rooms/:id/images · POST /admin/spaces/:id/images
 Upload ONE photo (`multipart/form-data`, field `file`). Operator of `org_id`
 only; the room/space is looked up inside that org first, so another tenant's id

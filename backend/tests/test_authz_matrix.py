@@ -79,6 +79,11 @@ ROUTES: dict[tuple[str, str], str] = {
     ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): OPERATOR,
     ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"): OPERATOR,
     ("GET", f"{API}/admin/bookings"): OPERATOR,
+    # A02 blocked time; cross-org cases in test_room_blocks.py.
+    ("GET", f"{API}/admin/rooms/{{room_id}}/blocks"): OPERATOR,
+    ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"): OPERATOR,
+    ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"): OPERATOR,
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
     # A01: operator booking management; cross-org cases in
     # test_admin_booking_management.py.
@@ -120,6 +125,12 @@ BODIES: dict[tuple[str, str], dict] = {
         "end_time": "2030-01-07T11:00:00Z",
     },
     ("POST", f"{API}/admin/bookings/{{booking_id}}/mark-paid"): {"reason": "sweep"},
+    ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"): {
+        "start_time": "2030-01-07T10:00:00Z",
+        "end_time": "2030-01-07T11:00:00Z",
+        "reason": "sweep",
+    },
+    ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"): {"reason": "sweep"},
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
     ("PUT", f"{API}/admin/support/requests/{{request_id}}"): {"status": "closed"},
@@ -518,6 +529,10 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("POST", f"{API}/admin/rooms/{{room_id}}/availability"),
             ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"),
             ("DELETE", f"{API}/admin/rooms/{{room_id}}/images/{{image_id}}"),
+            ("GET", f"{API}/admin/rooms/{{room_id}}/blocks"),
+            ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"),
+            ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"),
+            ("DELETE", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"

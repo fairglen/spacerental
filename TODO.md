@@ -2280,7 +2280,24 @@ sent once; enum + column migration round trip.
 
 ### A02 — Blocked time (`room_blocks`)
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** `room_blocks` (org_id,
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Evidence (2026-09-22):** 18
+real-PG tests in `tests/test_room_blocks.py` (CRUD with `created_by`; windowed
+listing; bounds incl. naive datetimes, empty reason, > 31 days; a block may
+start in the past but not end there; another org's admin → 403/404 on every
+verb, a member → 403; the public calendar hides the hours; a customer cannot
+book into, across or over a block but can at its edge; an operator cannot move
+or create a booking into one; a reinstated booking cannot land on one; a block
+over a held booking → 409 listing it; cancelled/expired bookings do not stand
+in the way; moving/extending a block is checked too; the EXCLUDE constraint
+refuses overlapping blocks and the API reports the race as 409). Routes
+classified in the S01 matrix incl. its cross-org room sweep. Migration
+`0009_room_blocks` round trip clean; `room_blocks_no_overlap` verified present
+after migration (invisible to `alembic check`, like the bookings one). Full
+backend 563. **Decision:** blocks enter `has_conflicting_booking`, the ONE
+conflict check every booking path already uses, rather than each path
+checking separately. A 31-day cap per block (create several) is a technical
+bound, not a product rule. **Scope:** `room_blocks` (org_id,
 room_id, start, end, reason, created_by) with the bookings' overlap EXCLUDE
 pattern; blocks count as unavailable in `/rooms/{id}/availability` and in every
 booking conflict check (customer and admin); CRUD under

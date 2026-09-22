@@ -10,6 +10,7 @@ from app import clock
 from app.booking_validity import holds_slot
 from app.database import get_db
 from app.models.booking import Booking
+from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule, Room, Space
 from app.ratelimit import PUBLIC_TIER, rate_limit
 from app.schemas.space import AvailabilitySlot, RoomOut, SpaceOut
@@ -119,13 +120,27 @@ async def get_room_availability(
         )
     )
     existing_bookings = result.scalars().all()
+    # Blocked time (A02) reads exactly like a booking to the customer.
+    blocks = (
+        (
+            await db.execute(
+                select(RoomBlock).where(
+                    RoomBlock.room_id == room_id,
+                    RoomBlock.start_time < day_end,
+                    RoomBlock.end_time > day_start,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    taken_ranges = [(b.start_time, b.end_time) for b in existing_bookings] + [
+        (b.start_time, b.end_time) for b in blocks
+    ]
 
     def is_slot_taken(slot_start: datetime, slot_end: datetime) -> bool:
-        for booking in existing_bookings:
-            # Overlap: booking starts before slot ends AND booking ends after slot starts
-            if booking.start_time < slot_end and booking.end_time > slot_start:
-                return True
-        return False
+        # Overlap: it starts before the slot ends AND ends after the slot starts.
+        return any(start < slot_end and end > slot_start for start, end in taken_ranges)
 
     slots: list[AvailabilitySlot] = []
     for slot_start in sorted(slot_starts):
