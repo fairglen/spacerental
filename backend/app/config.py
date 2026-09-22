@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # browser inside API responses, so `localhost` is correct here even under
     # docker-compose (same reasoning as STRIPE_STUB_CHECKOUT_BASE_URL).
     MEDIA_BASE_URL: str = "http://localhost:8000/media"
+    # Where `python -m app.seed` finds the four room illustrations (V01).
+    # Empty = the repo's own `flowspace-site/assets/img/room-photos`, which a
+    # native run sees and the backend container does not — Compose mounts the
+    # folder and sets this.
+    SEED_PHOTOS_DIR: str | None = None
 
     # ── Stripe ────────────────────────────────────────────────────────────
     # "stub" runs the whole checkout → webhook flow locally with no Stripe

@@ -3663,7 +3663,44 @@ admin calendar's opening-hours residual), R01 (rules still evaluated in UTC).
 
 ### V01 — Room photo mosaic and gallery (app), seeded illustration photos
 
-**Priority: P1. State: QUEUED.** The booking area (`SpaceRoomsView`, above
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally; DONE only once merged.
+**Evidence (2026-09-23):** `PhotoMosaic` — 13 component tests (0 → the given
+placeholder, no region, no button; 1 → hero; 2 → halves; 3 → big + 2; 4 → big
++ 3; 5 and 8 → big + 4 with five tiles; the first photo is the big tile, every
+tile a sized cover-fitted `<img>` with alt "<sala> — fotografia N de M",
+eager then lazy; a `region` "<sala> — fotografias"; the <1024px branch is the
+carousel with a counter and no dots; the gallery opens on the button with the
+full images, a counter, a thumbnail `tablist` and a close button and closes on
+Escape; a tapped tile opens the gallery on that photo and a thumbnail moves
+it; arrow keys move it, "Fechar" closes; a tap on the small-screen carousel
+opens it on that photo). `PhotoCarousel` gained `size='full'`,
+`indicator='counter'`, `initialIndex`/`onIndexChange`, `onPhotoClick`, a
+`regionLabel` and "N de M" alts; its 16 tests unchanged. The card
+carousel's dots sit on their dark pill inside the frame — nothing to fix.
+Seed: 7 real-PG tests in `test_media.py` (each demo room gets the four
+illustrations in order, 1600×1200, the very bytes the site ships for main
+and thumbnail, WebP; the public shape carries no seed mark; a re-seed
+replaces its own photos and keeps an operator's, in front, without
+duplicates; the unmarked 960×720 gradients an earlier seed generated are
+replaced too; a second seed with nothing to do rewrites nothing; a missing
+illustration fails loudly naming `SEED_PHOTOS_DIR`; the gradient generator is
+gone). Vitest 520; tsc clean. Playwright `photos.spec.ts` (2): the landing
+card carousel as before; the room being booked shows the mosaic at 1280px
+("big + 3", four `/media` files, ~2:1), "Mostrar todas as fotos" opens the
+gallery (1 / 4 → 2 / 4, Escape closes), and at 390px the carousel fills the
+content width with its counter and no mosaic. **DECISIONS:** (1) both the
+mosaic and the carousel are in the DOM and CSS (`lg:`) picks one, so the
+server render is right on every screen; the hidden branch's lazy images do
+not load. Alternative: a `matchMedia` hook (hydration mismatch risk).
+(2) Seed photos carry a `seed: "sala-0N"` mark in the stored JSON (never in
+`PhotoOut`), which is how a re-seed tells its own rows from an operator's;
+the pre-V01 gradients are recognised by their shape (2–3 unmarked photos,
+all exactly 960×720) so an existing dev database is cleaned up too. Reverse:
+drop `_is_legacy_placeholder_set`. (3) The illustrations reach the
+container by a read-only bind mount in both Compose files rather than a
+`COPY` into the image (the test image's context is `backend/` alone).
+**Scope (as assigned):** The booking area (`SpaceRoomsView`, above
 "Disponibilidade — <sala>") shows the card-size 4:3 carousel left-aligned in a
 wide container. **Scope:** a `PhotoMosaic` for the selected room spanning the
 content width. ≥1024px: 2 columns × 2 rows, the first photo spanning both rows

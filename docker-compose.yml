@@ -48,6 +48,7 @@ services:
       # Handed to the visitor's browser inside API responses, so localhost is
       # correct here (same reasoning as STRIPE_STUB_CHECKOUT_BASE_URL).
       MEDIA_BASE_URL: ${MEDIA_BASE_URL:-http://localhost:8000/media}
+      SEED_PHOTOS_DIR: /app/seed-photos
       # Defaults mirror app/config.py so a fresh clone comes up in stub mode
       # with nothing set. The keys are forwarded empty rather than omitted:
       # app.payments.validate_payment_settings() treats empty as missing, so
@@ -93,6 +94,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      # The room illustrations the seed copies into MEDIA_ROOT (V01): the
+      # container has no view of flowspace-site/, so the folder is mounted.
+      - ./flowspace-site/assets/img/room-photos:/app/seed-photos:ro
       # Outside the bind mount on purpose: uploads must not land in the checkout.
       - media:/var/lib/spacerental/media
     # The image's ENTRYPOINT runs `alembic upgrade head` before handing off to

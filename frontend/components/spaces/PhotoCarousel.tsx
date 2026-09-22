@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Photo } from '@/types'
@@ -10,8 +10,22 @@ interface PhotoCarouselProps {
   label: string
   /** What is shown today when there are no photos. */
   placeholder: ReactNode
-  /** 'card' loads thumbnails; 'page' loads the full images. */
-  size?: 'card' | 'page'
+  /**
+   * 'card' loads thumbnails in a 4:3 frame; 'page' the full images in the
+   * same frame; 'full' the full images in a frame that fills its container
+   * (the gallery, V01) with a counter instead of dots.
+   */
+  size?: 'card' | 'page' | 'full'
+  /** Dots up to five photos and a counter from six (default), or always a counter. */
+  indicator?: 'auto' | 'counter'
+  /** The photo to show first; changes move the carousel (the gallery's thumbnails). */
+  initialIndex?: number
+  /** Told whenever the visible photo changes, by any means. */
+  onIndexChange?: (index: number) => void
+  /** A tap on a photo (not a swipe, not a control). */
+  onPhotoClick?: (index: number) => void
+  /** The region's own name when the default "<label> — fotografias" is already taken by a parent. */
+  regionLabel?: string
   className?: string
 }
 
@@ -29,11 +43,13 @@ const SWIPE_THRESHOLD = 10
  * It never moves by itself: no autoplay, and the live region only speaks after
  * the visitor moved it — a carousel that talks unprompted is noise.
  */
-export function PhotoCarousel({ photos, label, placeholder, size = 'card', className }: PhotoCarouselProps) {
+export function PhotoCarousel({
+  photos, label, placeholder, size = 'card', indicator = 'auto', initialIndex = 0, onIndexChange, onPhotoClick, regionLabel, className,
+}: PhotoCarouselProps) {
   const track = useRef<HTMLDivElement>(null)
   const pressedAt = useRef<{ x: number; y: number } | null>(null)
   const swiped = useRef(false)
-  const [index, setIndex] = useState(0)
+  const [index, setIndex] = useState(initialIndex)
   const [announcement, setAnnouncement] = useState('')
 
   const count = photos.length
@@ -42,12 +58,21 @@ export function PhotoCarousel({ photos, label, placeholder, size = 'card', class
   const goTo = useCallback((next: number) => {
     const target = Math.min(count - 1, Math.max(0, next))
     setIndex(target)
+    onIndexChange?.(target)
     setAnnouncement(`Fotografia ${target + 1} de ${count}`)
     const el = track.current
     if (!el || typeof el.scrollTo !== 'function') return
     const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollTo({ left: target * el.clientWidth, behavior: reduced ? 'auto' : 'smooth' })
-  }, [count])
+  }, [count, onIndexChange])
+
+  // The gallery's thumbnail strip, or a reopen on another photo: follow it.
+  const lastInitial = useRef(initialIndex)
+  useEffect(() => {
+    if (lastInitial.current === initialIndex) return
+    lastInitial.current = initialIndex
+    goTo(initialIndex)
+  }, [initialIndex, goTo])
 
   if (count === 0) return <>{placeholder}</>
 
@@ -88,11 +113,15 @@ export function PhotoCarousel({ photos, label, placeholder, size = 'card', class
   const onScroll = () => {
     const el = track.current
     if (!el || el.clientWidth === 0) return
-    const seen = Math.round(el.scrollLeft / el.clientWidth)
-    if (seen !== index) setIndex(Math.min(count - 1, Math.max(0, seen)))
+    const seen = Math.min(count - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)))
+    if (seen !== index) {
+      setIndex(seen)
+      onIndexChange?.(seen)
+    }
   }
 
   const multiple = count > 1
+  const showDots = indicator === 'auto' && count <= MAX_DOTS
   const control = cn(
     // 44px hit area; visible on hover, and always while anything inside the
     // frame — or the frame itself — has keyboard focus.
@@ -106,11 +135,12 @@ export function PhotoCarousel({ photos, label, placeholder, size = 'card', class
     <div
       role="region"
       aria-roledescription="carrossel"
-      aria-label={`${label} — fotografias`}
+      aria-label={regionLabel ?? `${label} — fotografias`}
       tabIndex={multiple ? 0 : undefined}
       onKeyDown={multiple ? onKeyDown : undefined}
       className={cn(
-        'group relative aspect-[4/3] w-full overflow-hidden bg-accent',
+        'group relative w-full overflow-hidden bg-accent',
+        size === 'full' ? 'h-full' : 'aspect-[4/3]',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
         className,
       )}
@@ -137,14 +167,15 @@ export function PhotoCarousel({ photos, label, placeholder, size = 'card', class
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- operator photos on the API's origin; width/height reserve the space, so nothing shifts */}
             <img
-              src={size === 'page' ? photo.url : photo.thumb_url}
-              alt={`${label} — fotografia ${i + 1}`}
+              src={size === 'card' ? photo.thumb_url : photo.url}
+              alt={`${label} — fotografia ${i + 1} de ${count}`}
               width={photo.width ?? 1600}
               height={photo.height ?? 1200}
               loading={i === 0 ? 'eager' : 'lazy'}
               decoding="async"
               draggable={false}
-              className="h-full w-full object-cover"
+              onClick={onPhotoClick ? () => onPhotoClick(i) : undefined}
+              className={cn('h-full w-full', size === 'full' ? 'object-contain' : 'object-cover', onPhotoClick && 'cursor-zoom-in')}
             />
           </div>
         ))}
@@ -161,7 +192,7 @@ export function PhotoCarousel({ photos, label, placeholder, size = 'card', class
             <ChevronRight className="h-5 w-5" aria-hidden="true" />
           </button>
 
-          {count <= MAX_DOTS ? (
+          {showDots ? (
             // A dark pill behind the dots: white dots alone vanish on a light photo.
             <div role="tablist" aria-label="Escolher fotografia"
               className="absolute bottom-2 left-1/2 z-10 flex -translate-x-1/2 rounded-full bg-black/35 px-1">

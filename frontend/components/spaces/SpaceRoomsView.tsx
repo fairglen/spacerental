@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
 import { RoomCard } from '@/components/spaces/RoomCard'
 import { SpaceLocation } from '@/components/spaces/SpaceLocation'
-import { PhotoCarousel } from '@/components/spaces/PhotoCarousel'
+import { PhotoMosaic } from '@/components/spaces/PhotoMosaic'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { BookingModal } from '@/components/booking/BookingModal'
 import { ContactNote } from '@/components/booking/ContactNote'
@@ -103,14 +103,24 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
           </div>
           {calendarRoom && (
             <div ref={calendarSectionRef} className="bg-white rounded-xl border border-border p-6 scroll-mt-20">
-              {/* The room being booked, larger. Nothing at all without photos:
-                  the card above already carries the placeholder. */}
-              <PhotoCarousel
+              {/* The room being booked, across the content width (V01): a
+                  mosaic on wide screens, the carousel below; the same
+                  placeholder the card carries, at the mosaic's size, when
+                  there are no photos. */}
+              <PhotoMosaic
                 photos={calendarRoom.photos ?? []}
                 label={calendarRoom.name}
-                size="page"
-                placeholder={null}
-                className="mb-4 max-w-2xl rounded-xl"
+                className="mb-6"
+                placeholder={
+                  <div
+                    data-testid="photo-placeholder"
+                    className="mb-6 flex aspect-[2/1] w-full items-center justify-center rounded-xl text-5xl"
+                    style={{ backgroundColor: calendarRoom.color + '33' }}
+                    aria-hidden="true"
+                  >
+                    🛋️
+                  </div>
+                }
               />
               <h3 ref={calendarHeadingRef} tabIndex={-1} className="text-lg font-semibold text-foreground mb-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
                 Disponibilidade — {calendarRoom.name}
