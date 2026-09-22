@@ -15,6 +15,7 @@ Revises: 0001_baseline_schema
 Create Date: 2026-09-02
 
 """
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -31,9 +32,7 @@ FK_NAME = "fk_bookings_package_purchase_id"
 
 
 def upgrade() -> None:
-    op.add_column(
-        "bookings", sa.Column("package_purchase_id", sa.UUID(), nullable=True)
-    )
+    op.add_column("bookings", sa.Column("package_purchase_id", sa.UUID(), nullable=True))
     op.create_foreign_key(
         FK_NAME,
         "bookings",

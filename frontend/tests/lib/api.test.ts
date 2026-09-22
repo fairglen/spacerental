@@ -571,3 +571,112 @@ describe('adminApi support inbox (C19)', () => {
     expect(mockApi.put).toHaveBeenCalledWith('/admin/support/requests/r1', { status: 'closed' })
   })
 })
+
+// A01/A02/A03: what the admin calendar calls.
+describe('adminApi booking management and blocks (A01, A02)', () => {
+  const booking = { id: 'b1', total_amount: '22.00', duration_hours: '2.00', package_hours_used: '0', admin_note: 'n' }
+
+  it('updateBookingDetails puts any subset and returns the booking with hours when it moved', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { booking, hours: { before: '1.00', after: '2.00' } } }) } as any
+    const body = { start_time: 's', end_time: 'e', room_id: 'r', admin_note: 'n' }
+    const result = await adminApi.updateBookingDetails('b1', body, mockApi)
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/bookings/b1', body)
+    expect(result.booking.total_amount).toBe(22)
+    expect(result.booking.admin_note).toBe('n')
+    expect(result.hours).toEqual({ before: 1, after: 2 })
+  })
+
+  it('updateBooking (status only) still works and normalizes', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { booking } }) } as any
+    expect((await adminApi.updateBooking('b1', 'cancelled', mockApi)).total_amount).toBe(22)
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/bookings/b1', { status: 'cancelled' })
+  })
+
+  it('createManualBooking posts and unwraps', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { booking: { ...booking, payment_method: 'manual' } } }) } as any
+    const body = { user_id: 'u', room_id: 'r', start_time: 's', end_time: 'e', admin_note: 'cash' }
+    expect((await adminApi.createManualBooking(body, mockApi)).payment_method).toBe('manual')
+    expect(mockApi.post).toHaveBeenCalledWith('/admin/bookings', body)
+  })
+
+  it('markBookingPaid posts the reason and unwraps', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { booking } }) } as any
+    await adminApi.markBookingPaid('b1', 'MB WAY', mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/admin/bookings/b1/mark-paid', { reason: 'MB WAY' })
+  })
+
+  it('blocks: list, create, update, delete', async () => {
+    const block = { id: 'k1', room_id: 'r', start_time: 's', end_time: 'e', reason: 'obras' }
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({ data: { blocks: [block] } }),
+      post: vi.fn().mockResolvedValue({ data: { block } }),
+      put: vi.fn().mockResolvedValue({ data: { block: { ...block, reason: 'pintura' } } }),
+      delete: vi.fn().mockResolvedValue({}),
+    } as any
+    expect(await adminApi.getBlocks('r', { from: 'a', to: 'b' }, mockApi)).toEqual([block])
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/rooms/r/blocks', { params: { from: 'a', to: 'b' } })
+    expect(await adminApi.createBlock('r', { start_time: 's', end_time: 'e', reason: 'obras' }, mockApi)).toEqual(block)
+    expect((await adminApi.updateBlock('r', 'k1', { reason: 'pintura' }, mockApi)).reason).toBe('pintura')
+    await adminApi.deleteBlock('r', 'k1', mockApi)
+    expect(mockApi.delete).toHaveBeenCalledWith('/admin/rooms/r/blocks/k1')
+  })
+
+  it('getBookings passes a date window and room for the calendar', async () => {
+    const mockApi = { defaults: { params: { org_id: 'o' } }, get: vi.fn().mockResolvedValue({ data: { bookings: [booking], total: 1, page: 1, page_size: 100 } }) } as any
+    await adminApi.getBookings({ from: 'a', to: 'b', room_id: 'r', page_size: 100 }, mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/bookings', { params: { org_id: 'o', from: 'a', to: 'b', room_id: 'r', page_size: 100 } })
+  })
+})
+
+// A05: users, one customer, the role and complimentary hours.
+describe('adminApi users (A05)', () => {
+  const orgUser = { id: 'u1', email: 'ana@example.com', name: 'Ana', role: 'member', joined_at: '2026-01-01T00:00:00Z', bookings_count: 2, created_at: '2026-01-01T00:00:00Z' }
+
+  it('getUsers returns the page envelope untouched, with the search and paging params', async () => {
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { users: [orgUser], total: 1, page: 1, page_size: 20 } }) } as any
+    const page = await adminApi.getUsers({ q: 'ana', page: 1, page_size: 20 }, mockApi)
+    expect(page.users).toEqual([orgUser])
+    expect(page.total).toBe(1)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/users', { params: { q: 'ana', page: 1, page_size: 20 } })
+  })
+
+  it('getUser normalises the money and hours strings on purchases and bookings', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({
+        data: {
+          user: orgUser,
+          bookings: [{ id: 'b1', total_amount: '22.00', duration_hours: '2.00', package_hours_used: '0.00', room: { id: 'r', hourly_rate: '11.00' } }],
+          purchases: [{ id: 'p1', hours_total: '3.00', hours_used: '0.00', hours_remaining: '3.00', amount_paid: '0.00', admin_note: 'oferta', package: { id: 'k', price: '100.00' } }],
+          support_requests: [],
+        },
+      }),
+    } as any
+    const detail = await adminApi.getUser('u1', mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/users/u1')
+    expect(detail.user).toEqual(orgUser)
+    expect(detail.bookings[0].total_amount).toBe(22)
+    expect(detail.purchases[0]).toMatchObject({ hours_remaining: 3, amount_paid: 0, admin_note: 'oferta', package: { price: 100 } })
+  })
+
+  it('setUserRole puts the role and unwraps the member row', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { user: { ...orgUser, role: 'admin' } } }) } as any
+    expect((await adminApi.setUserRole('u1', 'admin', mockApi)).role).toBe('admin')
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/users/u1/role', { role: 'admin' })
+  })
+
+  it('grantHours posts the body and unwraps the zero-amount purchase', async () => {
+    const purchase = { id: 'p1', hours_total: '3.00', hours_used: '0.00', hours_remaining: '3.00', amount_paid: '0.00', admin_note: 'avaria' }
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { purchase } }) } as any
+    const body = { hours: 3, package_id: 'k', reason: 'avaria' }
+    expect(await adminApi.grantHours('u1', body, mockApi)).toMatchObject({ amount_paid: 0, hours_remaining: 3 })
+    expect(mockApi.post).toHaveBeenCalledWith('/admin/users/u1/complimentary-hours', body)
+  })
+
+  it('extendPurchase puts the new expiry and reason, and unwraps (A06)', async () => {
+    const purchase = { id: 'p1', hours_remaining: '7.00', amount_paid: '100.00', expires_at: '2030-04-15T23:59:59Z', admin_note: '[2026-09-22] Validade: 2030-03-01 → 2030-04-15. baixa' }
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { purchase } }) } as any
+    const body = { expires_at: '2030-04-15T23:59:59Z', reason: 'baixa' }
+    expect(await adminApi.extendPurchase('p1', body, mockApi)).toMatchObject({ hours_remaining: 7, amount_paid: 100 })
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/purchases/p1/expiry', body)
+  })
+})

@@ -84,6 +84,8 @@ export function formatBookingCost(
   if (b.payment_method === 'mixed') {
     return `${formatHours(b.package_hours_used ?? 0)} do pack + ${formatCurrency(b.total_amount)}`
   }
+  // A01: arranged with the operator; the amount is the slot's value, not a charge.
+  if (b.payment_method === 'manual') return 'Pago no local'
   return formatCurrency(b.total_amount)
 }
 

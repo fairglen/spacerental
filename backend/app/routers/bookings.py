@@ -178,7 +178,9 @@ async def create_booking(
 
     # What the client asked for is only a request: the method stored, the pack
     # share and the amount charged are all decided here, from the ledger.
-    method = body.payment_method
+    # The schema admits customer methods only (`manual` is an operator's, A01)
+    # and hands over a plain string; the identity checks below need the enum.
+    method = PaymentMethod(body.payment_method)
     purchase_id: uuid.UUID | None = None
     package_hours_used = Decimal(0)
     if method is not PaymentMethod.hourly:

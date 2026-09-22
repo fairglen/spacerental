@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import clock, package_hours
 from app.models.booking import Booking, BookingStatus
+from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule
 
 # The product currently only ever offers whole-hour slots (see
@@ -44,6 +45,10 @@ SLOT_DURATION = timedelta(hours=1)
 # must check `end_time - start_time` against this *before* calling
 # `is_within_open_hours`, so the day-loop below is bounded no matter what.
 MAX_BOOKING_DURATION = timedelta(hours=24)
+# A block is an operator's, so it may be longer than a booking (a week of
+# works), but not unbounded: the same one-query-per-day loop applies nowhere
+# here, this is only a sanity cap on what one row may claim.
+MAX_BLOCK_DURATION = timedelta(days=31)
 
 # Postgres sqlstate for `deadlock_detected`.
 _DEADLOCK_SQLSTATE = "40P01"
@@ -172,6 +177,25 @@ async def has_conflicting_booking(
         conditions.append(Booking.id != exclude_booking_id)
 
     result = await db.execute(select(Booking.id).where(and_(*conditions)).limit(1))
+    if result.first() is not None:
+        return True
+    # Blocked time (A02) is unavailable to every booking path, customer and
+    # operator alike, through this one check.
+    return await has_blocking_block(db, room_id, start_time, end_time)
+
+
+async def has_blocking_block(
+    db: AsyncSession, room_id: uuid.UUID, start_time: datetime, end_time: datetime
+) -> bool:
+    result = await db.execute(
+        select(RoomBlock.id)
+        .where(
+            RoomBlock.room_id == room_id,
+            RoomBlock.start_time < end_time,
+            RoomBlock.end_time > start_time,
+        )
+        .limit(1)
+    )
     return result.first() is not None
 
 

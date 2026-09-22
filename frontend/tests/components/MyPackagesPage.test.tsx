@@ -41,7 +41,7 @@ const activePurchase: UserPackagePurchase = {
   org_id: 'org-1',
   hours_total: 10,
   hours_used: 3,
-  hours_remaining: 7,
+  hours_remaining: 7, amount_paid: 100,
   status: 'active',
   purchased_at: new Date().toISOString(),
   expires_at: new Date('2027-01-01').toISOString(),
@@ -87,8 +87,8 @@ describe('Dashboard packages page — buy section (B12)', () => {
 describe('Packages page hours formatting (B30)', () => {
   it('renders whole hours without a decimal and fractions with a comma', async () => {
     vi.mocked(packagesApi.listMine).mockResolvedValue([
-      { ...activePurchase, id: 'whole', hours_remaining: 10, hours_used: 0 },
-      { ...activePurchase, id: 'frac', hours_remaining: 7.5, hours_used: 2.5 },
+      { ...activePurchase, id: 'whole', hours_remaining: 10, amount_paid: 100, hours_used: 0 },
+      { ...activePurchase, id: 'frac', hours_remaining: 7.5, amount_paid: 100, hours_used: 2.5 },
     ])
     vi.mocked(packagesApi.list).mockResolvedValue([pack10])
     renderPage()

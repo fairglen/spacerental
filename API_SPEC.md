@@ -262,6 +262,22 @@ another organisation's request. Response: `{ request: SupportRequest }`.
 Answering happens by email (the notification carries `Reply-To`); nothing here
 sends anything. Full handling stays deferred (TODO.md D06).
 
+### Blocked time: GET · POST /admin/rooms/:id/blocks · PUT · DELETE /admin/rooms/:id/blocks/:block_id
+A stretch of time the operator takes a room out of service (A02). Operator of
+`org_id` only; the room is looked up inside the org first (`404` otherwise).
+Body (POST): `{ start_time, end_time, reason }`; PUT takes any subset. A block
+may have started already but may not lie entirely in the past (`400`), and is
+at most 31 days long (`400`). A block counts as unavailable everywhere a
+booking does: hidden in `GET /rooms/:id/availability` and refused by every
+booking path's conflict check, customer and operator alike (`409`).
+A block over a booking that holds its slot is refused — `409` with
+`detail: { detail, conflicts: [{ id, start_time, end_time, status }] }` — the
+operator moves or cancels the booking first; nothing is overridden silently.
+Two blocks on one room may not overlap (database EXCLUDE constraint; `409`).
+GET accepts `from`/`to` to window the list. Responses: `{ blocks: RoomBlock[] }`,
+`{ block: RoomBlock }`, `204` on delete, where `RoomBlock = { id, org_id,
+room_id, start_time, end_time, reason, created_by, created_at }`.
+
 ### Photos: POST /admin/rooms/:id/images · POST /admin/spaces/:id/images
 Upload ONE photo (`multipart/form-data`, field `file`). Operator of `org_id`
 only; the room/space is looked up inside that org first, so another tenant's id
@@ -294,7 +310,12 @@ Add a room to a space.
 Body: `{ name, description, capacity, hourly_rate, color, amenities?, images? }`
 
 ### PUT /admin/rooms/:id
-Update a room.
+Update a room. `is_active: false` switches it off for customers (A07) — but
+not while bookings still hold future slots in it: then **409** with
+`detail = { message, total, bookings: [{ id, start_time, end_time, status,
+customer_email, customer_name }] }` (soonest first, at most 20; `total` is the
+true count) and the room stays active. Move or cancel them first.
+`is_active: true` is always accepted.
 
 ### POST /admin/rooms/:id/availability
 Set availability rules for a room.
@@ -304,12 +325,80 @@ Body: `{ rules: [{ day_of_week, open_time, close_time }] }`
 All bookings for org.
 Query: `?status=&room_id=&from=&to=`
 
+### POST /admin/bookings
+A booking the operator makes for a customer, paid or arranged outside the
+platform (A01). Body: `{ user_id, room_id, start_time, end_time, admin_note?,
+notes? }`. The customer must be a member of `org_id` and the room in it (else
+`404`); the same validity and conflict checks as a customer booking (`400`,
+`409`), but no 24h rule. Created `confirmed` with `payment_method: "manual"`,
+an access code and the confirmation email. `total_amount` is the slot's value
+for the record; nothing is charged. Response `201`: `{ booking: AdminBooking }`.
+
+### POST /admin/bookings/:id/mark-paid
+Body: `{ reason }` (required). A `pending` or `expired` `hourly`/`mixed` hold
+the customer paid some other way (cash, MB WAY): becomes `confirmed` with
+`payment_method: "manual"`, an access code and the confirmation email; the
+reason is appended to `admin_note`. The open Checkout Session is expired at the
+provider and the row loses its session id, so a late
+`checkout.session.completed` cannot double-confirm it. An expired hold's slot
+is re-checked (`409` if taken); a lapsed `mixed` hold's pack hours are taken
+again (`409` if gone). `409` for anything that is not an unpaid hourly/mixed
+hold. Response: `{ booking: AdminBooking }`.
+
 ### PUT /admin/bookings/:id
-Update booking status.
+Any combination of (A01): a status change (`status`), a move (`start_time`,
+`end_time`, `room_id` — the room must be in the same org, else `404`) and a
+private note (`admin_note`). Omitted fields are unchanged; an empty body is
+`422`. A move passes the same validity and conflict checks as a customer
+booking (`400`/`409`) with NO 24h rule for operators, and moves NO money: a
+changed duration recomputes nothing about `total_amount`; the response carries
+`hours: { before, after }` and the operator settles the difference outside the
+platform (known limitation). A moved confirmed booking gets the confirmation
+email again with the line "A tua reserva foi alterada" and a new access code.
+Response: `{ booking: AdminBooking, hours? }`.
+
+`AdminBooking` = `Booking` + `admin_note: string | null`. **`admin_note` is
+never returned by a customer endpoint.**
 Body: `{ status: "confirmed"|"cancelled" }`
 
 ### GET /admin/users
-All users who have booked in this org.
+The org's members (A05), searchable and paged.
+Query: `q` (name or email, case-insensitive, ≤200 chars), `page` (≥1),
+`page_size` (1–100, default 20).
+Response: `{ users: OrgUser[], total, page, page_size }` where
+`OrgUser = { id, email, name, role: "owner"|"admin"|"member", joined_at, bookings_count, created_at }`.
+`bookings_count` counts the member's bookings in this org only.
+
+### GET /admin/users/{user_id}
+One member of this org: `{ user: OrgUser, bookings: AdminBooking[] (newest
+first, ≤200, with `room`), purchases: AdminPurchase[] (with `package`),
+support_requests: SupportRequest[] (≤50) }`. Everything is scoped to this
+org. A person who is not a member → 404, identical to an unknown id.
+`AdminPurchase` = `UserPackagePurchase` + `admin_note: string | null`.
+
+### PUT /admin/users/{user_id}/role
+Body: `{ role: "admin" | "member" }` — per org. Response `{ user: OrgUser }`.
+409 when the target is yourself or an owner; 422 for `owner`; 404 for a
+non-member.
+
+### POST /admin/users/{user_id}/complimentary-hours
+Complimentary hours (A05): a purchase of `hours` of `package_id` at 0,00 €
+with a reason. Body: `{ hours (0 < h ≤ 999, 2 dp), package_id, reason
+(1–2000), expires_at? (tz-aware, future; default now + the package's
+`validity_days`) }`. → 201 `{ purchase: AdminPurchase }` with
+`amount_paid: "0.00"`, `admin_note = reason`, `status: "active"`. 404 for a
+non-member or a package of another org; 400 for a past `expires_at`.
+
+`UserPackagePurchase` now carries `amount_paid` (the package's price at
+purchase time, or `"0.00"` for granted hours). `admin_note` is never returned
+by a customer endpoint.
+
+### PUT /admin/purchases/{purchase_id}/expiry
+"Prolongar validade" (A06). Body: `{ expires_at (tz-aware; later than the
+current expiry and in the future), reason (1–2000) }` → `{ purchase:
+AdminPurchase }`. The reason is appended to `admin_note`, dated. 400 when the
+date does not extend; 409 unless the purchase is `active`; 404 for another
+org's purchase or an unknown id.
 
 ### GET /admin/packages
 List packages for this org.
@@ -429,6 +518,7 @@ type UserPackagePurchase = {
   hours_total: number
   hours_used: number
   hours_remaining: number
+  amount_paid: number      // the package's price at purchase time; 0 for granted hours (A05)
   status: "pending" | "active" | "cancelled"
   purchased_at: string
   expires_at: string

@@ -35,7 +35,7 @@ const pendingPurchase: UserPackagePurchase = {
   org_id: pkg.org_id,
   hours_total: 10,
   hours_used: 0,
-  hours_remaining: 10,
+  hours_remaining: 10, amount_paid: 100,
   status: 'pending',
   purchased_at: new Date().toISOString(),
   expires_at: new Date().toISOString(),

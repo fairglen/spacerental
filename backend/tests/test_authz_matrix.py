@@ -79,8 +79,22 @@ ROUTES: dict[tuple[str, str], str] = {
     ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): OPERATOR,
     ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"): OPERATOR,
     ("GET", f"{API}/admin/bookings"): OPERATOR,
+    # A02 blocked time; cross-org cases in test_room_blocks.py.
+    ("GET", f"{API}/admin/rooms/{{room_id}}/blocks"): OPERATOR,
+    ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"): OPERATOR,
+    ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"): OPERATOR,
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
+    # A01: operator booking management; cross-org cases in
+    # test_admin_booking_management.py.
+    ("POST", f"{API}/admin/bookings"): OPERATOR,
+    ("POST", f"{API}/admin/bookings/{{booking_id}}/mark-paid"): OPERATOR,
     ("GET", f"{API}/admin/users"): OPERATOR,
+    # A05; per-org role and complimentary-hours cases in test_admin_users.py.
+    ("GET", f"{API}/admin/users/{{user_id}}"): OPERATOR,
+    ("PUT", f"{API}/admin/users/{{user_id}}/role"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): OPERATOR,
+    ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"): OPERATOR,
     ("GET", f"{API}/admin/packages"): OPERATOR,
     # C19 inbox; its cross-org cases are in test_support.py.
     ("GET", f"{API}/admin/support/requests"): OPERATOR,
@@ -109,6 +123,29 @@ BODIES: dict[tuple[str, str], dict] = {
     ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"): {"order": []},
     ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): {"order": []},
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): {"status": "cancelled"},
+    ("POST", f"{API}/admin/bookings"): {
+        "user_id": str(uuid.UUID(int=1)),
+        "room_id": str(uuid.UUID(int=2)),
+        "start_time": "2030-01-07T10:00:00Z",
+        "end_time": "2030-01-07T11:00:00Z",
+    },
+    ("POST", f"{API}/admin/bookings/{{booking_id}}/mark-paid"): {"reason": "sweep"},
+    ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"): {
+        "start_time": "2030-01-07T10:00:00Z",
+        "end_time": "2030-01-07T11:00:00Z",
+        "reason": "sweep",
+    },
+    ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"): {"reason": "sweep"},
+    ("PUT", f"{API}/admin/users/{{user_id}}/role"): {"role": "admin"},
+    ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"): {
+        "expires_at": "2099-01-01T00:00:00Z",
+        "reason": "sweep",
+    },
+    ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): {
+        "hours": "1",
+        "package_id": str(uuid.UUID(int=3)),
+        "reason": "sweep",
+    },
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
     ("PUT", f"{API}/admin/support/requests/{{request_id}}"): {"status": "closed"},
@@ -507,6 +544,10 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("POST", f"{API}/admin/rooms/{{room_id}}/availability"),
             ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"),
             ("DELETE", f"{API}/admin/rooms/{{room_id}}/images/{{image_id}}"),
+            ("GET", f"{API}/admin/rooms/{{room_id}}/blocks"),
+            ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"),
+            ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"),
+            ("DELETE", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
@@ -540,6 +581,33 @@ class TestOperatorCannotTouchAnotherOrgsResources:
         assert resp.status_code == 404, resp.text
         package = await _fresh(db_session, Package, world.package_b.id)
         assert (package.price, package.is_active) == (Decimal("100.00"), True)
+
+    async def test_user_and_purchase(self, client, world, db_session):
+        # A05/A06: B's customer and B's purchase are invisible to A's operator,
+        # whatever the route — and nothing about them changes.
+        headers, org = _as(world.op_a, "owner"), world.org_a.id
+        ids = {"user_id": world.cust_b.id, "purchase_id": world.purchase_b.id}
+        for method, path in (
+            ("GET", f"{API}/admin/users/{{user_id}}"),
+            ("PUT", f"{API}/admin/users/{{user_id}}/role"),
+            ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"),
+            ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"),
+        ):
+            resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
+            assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
+        purchase = await _fresh(db_session, UserPackagePurchase, world.purchase_b.id)
+        assert purchase.expires_at == world.purchase_b.expires_at
+        member = await db_session.scalar(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == world.cust_b.id,
+                OrganizationMember.org_id == world.org_b.id,
+            )
+        )
+        assert member.role is MemberRole.member
+        purchases = await _count(
+            db_session, UserPackagePurchase, UserPackagePurchase.user_id == world.cust_b.id
+        )
+        assert purchases == 1
 
     async def test_filtering_bookings_by_another_orgs_room_leaks_nothing(self, client, world):
         resp = await client.get(
@@ -582,7 +650,14 @@ class TestOperatorListsAreScoped:
         bookings = (await get("bookings"))["bookings"]
         assert [b["id"] for b in bookings] == [str(world.booking_a.id)]
         assert [p["id"] for p in (await get("packages"))["packages"]] == [str(world.package_a.id)]
-        assert [u["id"] for u in (await get("users"))["users"]] == [str(world.cust_a.id)]
+        # A05: the users list is the org's members, operator included — and
+        # nobody from org B.
+        assert {u["id"] for u in (await get("users"))["users"]} == {
+            str(world.cust_a.id),
+            str(world.cust_a2.id),
+            str(world.op_a.id),
+            str(world.dual.id),
+        }
         assert await get("dashboard") == {
             "total_bookings": 1,
             "total_revenue": 11.0,
