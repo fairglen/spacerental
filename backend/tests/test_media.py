@@ -368,3 +368,46 @@ class TestStorageSeam:
         monkeypatch.setattr(settings, "MEDIA_STORAGE", "s3")
         with pytest.raises(RuntimeError, match="not implemented"):
             media.build_media_storage()
+
+
+class TestSeededPhotos:
+    """The demo rooms get generated placeholder photos, so the carousel has data locally."""
+
+    async def test_each_demo_room_gets_a_few_generated_photos_through_the_same_pipeline(
+        self, db_session
+    ):
+        from app.seed import seed_demo_data
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        rooms = (await db_session.execute(select(Room))).scalars().all()
+        assert len(rooms) == 3
+        for room in rooms:
+            assert 2 <= len(room.photos) <= 3
+            for photo in room.photos:
+                # Stored like any upload: keys, real files, WebP, no metadata.
+                assert set(photo) == {"id", "key", "thumb_key", "width", "height"}
+                for key in (photo["key"], photo["thumb_key"]):
+                    with Image.open(MEDIA_ROOT / key) as stored:
+                        assert stored.format == "WEBP"
+                        assert not dict(stored.getexif())
+        # Different pictures, not one file three times.
+        first = rooms[0].photos
+        assert len({(MEDIA_ROOT / p["key"]).read_bytes() for p in first}) == len(first)
+
+    async def test_reseeding_adds_none_and_leaves_an_operators_photos_alone(self, db_session):
+        from app.seed import seed_demo_data
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        room = (await db_session.execute(select(Room).order_by(Room.name))).scalars().first()
+        kept = [room.photos[0]]
+        room.photos = kept
+        await db_session.commit()
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        await db_session.refresh(room)
+        assert room.photos == kept
+        counts = (await db_session.execute(select(Room.photos))).scalars().all()
+        assert sorted(len(c) for c in counts) == [1, 3, 3]

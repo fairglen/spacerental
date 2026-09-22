@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, cn } from '@/lib/utils'
 import { useT } from '@/lib/i18n'
+import { PhotoCarousel } from '@/components/spaces/PhotoCarousel'
 import type { Room } from '@/types'
 
 type RoomCardProps = {
@@ -25,12 +26,20 @@ export function RoomCard({ room, onBook, href, selected = false }: RoomCardProps
   const t = useT()
   return (
     <Card data-testid="room-card" className={cn('hover:shadow-md transition-shadow', selected && 'ring-2 ring-primary border-primary')}>
-      <div
-        className="h-32 rounded-t-xl flex items-center justify-center text-3xl"
-        style={{ backgroundColor: room.color + '33' }}
-      >
-        🛋️
-      </div>
+      <PhotoCarousel
+        photos={room.photos ?? []}
+        label={room.name}
+        size="card"
+        className="rounded-t-xl"
+        placeholder={
+          <div
+            className="h-32 rounded-t-xl flex items-center justify-center text-3xl"
+            style={{ backgroundColor: room.color + '33' }}
+          >
+            🛋️
+          </div>
+        }
+      />
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between">
           <CardTitle className="text-base">

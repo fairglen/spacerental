@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
 import { RoomCard } from '@/components/spaces/RoomCard'
 import { SpaceLocation } from '@/components/spaces/SpaceLocation'
+import { PhotoCarousel } from '@/components/spaces/PhotoCarousel'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { BookingModal } from '@/components/booking/BookingModal'
 import { ContactNote } from '@/components/booking/ContactNote'
@@ -102,6 +103,15 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
           </div>
           {calendarRoom && (
             <div ref={calendarSectionRef} className="bg-white rounded-xl border border-border p-6 scroll-mt-20">
+              {/* The room being booked, larger. Nothing at all without photos:
+                  the card above already carries the placeholder. */}
+              <PhotoCarousel
+                photos={calendarRoom.photos ?? []}
+                label={calendarRoom.name}
+                size="page"
+                placeholder={null}
+                className="mb-4 max-w-2xl rounded-xl"
+              />
               <h3 ref={calendarHeadingRef} tabIndex={-1} className="text-lg font-semibold text-foreground mb-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
                 Disponibilidade — {calendarRoom.name}
               </h3>

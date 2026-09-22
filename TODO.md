@@ -1861,7 +1861,28 @@ shape tests.
 
 ### C16 — Customer photo carousel, and seeded placeholder photos
 
-**Priority: P1. State: QUEUED** (PR 1). **Scope:** one `PhotoCarousel` (native
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** `PhotoCarousel` — 16 component tests (0 photos → the given
+placeholder and no region; 1 → no controls or indicators; 3 → prev/next + a
+`tab` per photo labelled "Fotografia 2 de 3"; 5 dots vs "1 / 8" counter from 6;
+ends disable the buttons; arrow keys; dot jump; the live region is empty until
+the visitor moves it; nothing moves in 60 s of fake time; `behavior: 'auto'`
+under prefers-reduced-motion; region role/roledescription/label, focusable,
+icons `aria-hidden`; first image eager, the rest lazy, all with width/height;
+thumbnails on cards vs full images on the page; 44px buttons; controls never
+reach a surrounding click handler; a swipe is not a click, a tap still is).
+Used by `RoomCard` (landing + space page, today's placeholder kept for zero
+photos) and, full size, above the booking section. Seed: 2 real-PG tests — each
+demo room gets 3 generated photos through the upload pipeline (WebP, no
+metadata, distinct files); a re-seed adds none and leaves an operator's photos
+alone. Playwright `photos.spec.ts` 2 passed: a landing card shows a decoded
+image from `/media`, "next" selects the second dot and brings its image into
+view without following the card's link, ArrowLeft goes back; the booking
+section shows the full-size file. Vitest 410. **Found by looking at it:** white
+dots vanished on light photos (now on a dark pill); the placeholder caption
+drew hollow and Pillow's built-in font has no "é" (now ASCII on a dark band).
+**Scope:** one `PhotoCarousel` (native
 scroll-snap, no new dependency) on room cards and, larger, above the room's
 booking section: fixed 4:3 frame, first image eager and the rest lazy,
 thumbnails on cards; prev/next buttons (≥44px, "Fotografia anterior/seguinte"),
