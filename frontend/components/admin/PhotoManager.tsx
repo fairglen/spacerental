@@ -53,8 +53,8 @@ export function PhotoManager({ kind, entityId, entityName, photos, onChange }: P
       // 409: the list here is stale (a photo was added or removed elsewhere).
       setListError(
         statusOf(error) === 409
-          ? 'A lista de fotografias mudou entretanto. Atualiza a página e tenta de novo.'
-          : 'Não foi possível alterar a ordem. Tenta novamente.',
+          ? 'A lista de fotografias mudou entretanto. Atualize a página e tente de novo.'
+          : 'Não foi possível alterar a ordem. Tente novamente.',
       )
     } finally {
       setBusy(false)
@@ -83,7 +83,7 @@ export function PhotoManager({ kind, entityId, entityName, photos, onChange }: P
       onChange(await adminApi.deletePhoto(kind, entityId, photo.id, api))
       setDoomed(null)
     } catch {
-      setListError('Não foi possível apagar a fotografia. Tenta novamente.')
+      setListError('Não foi possível apagar a fotografia. Tente novamente.')
       setDoomed(null)
     } finally {
       setBusy(false)
@@ -192,7 +192,7 @@ export function PhotoManager({ kind, entityId, entityName, photos, onChange }: P
       )}
       {photos.length > 1 && (
         <p className="text-xs text-muted-foreground">
-          A primeira é a capa. Arrasta para mudar a ordem, ou usa as setas.
+          A primeira é a capa. Arraste para mudar a ordem, ou use as setas.
         </p>
       )}
       {listError && <p role="alert" className="text-sm text-red-600">{listError}</p>}
@@ -228,7 +228,7 @@ export function PhotoManager({ kind, entityId, entityName, photos, onChange }: P
         </label>
         <p className="mt-2 text-xs">
           {full
-            ? 'Máximo de 10 fotografias. Apaga uma para adicionar outra.'
+            ? 'Máximo de 10 fotografias. Apague uma para adicionar outra.'
             : 'Ou larga aqui os ficheiros. JPEG, PNG ou WebP, até 8 MB cada, máximo de 10.'}
         </p>
       </div>

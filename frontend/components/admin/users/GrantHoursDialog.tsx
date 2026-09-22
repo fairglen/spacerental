@@ -34,9 +34,9 @@ export function GrantHoursDialog({ open, userLabel, packages, busy, error, onSub
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const n = Number(hours)
-    if (!Number.isFinite(n) || n <= 0 || n > 999) return setProblem('Indica um número de horas entre 0,5 e 999.')
-    if (!chosen) return setProblem('Escolhe o pack que serve de base.')
-    if (reason.trim().length < 3) return setProblem('Escreve o motivo — fica registado na compra.')
+    if (!Number.isFinite(n) || n <= 0 || n > 999) return setProblem('Indique um número de horas entre 0,5 e 999.')
+    if (!chosen) return setProblem('Escolha o pack que serve de base.')
+    if (reason.trim().length < 3) return setProblem('Escreva o motivo — fica registado na compra.')
     setProblem(null)
     onSubmit({
       hours: n,

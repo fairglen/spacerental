@@ -51,7 +51,7 @@ export function RoomActiveDialog({ room, busy, inUse, error, onConfirm, onClose 
             {inUse && (
               <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
                 <p className="font-medium text-foreground">
-                  Ainda há {inUse.total} {inUse.total === 1 ? 'reserva marcada' : 'reservas marcadas'} nesta sala. Move-as ou cancela-as no calendário primeiro.
+                  Ainda há {inUse.total} {inUse.total === 1 ? 'reserva marcada' : 'reservas marcadas'} nesta sala. Mova-as ou cancele-as no calendário primeiro.
                 </p>
                 <ul className="mt-2 space-y-1 text-muted-foreground">
                   {inUse.bookings.map((b) => (

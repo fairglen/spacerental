@@ -34,8 +34,8 @@ export function ExtendValidityDialog({ purchase, busy, error, onSubmit, onClose 
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!date || (min && date < min)) return setProblem(`Escolhe uma data a partir de ${min ? format(parseISO(min), 'd MMM yyyy', { locale: pt }) : 'amanhã'}.`)
-    if (reason.trim().length < 3) return setProblem('Escreve o motivo — fica anotado na compra.')
+    if (!date || (min && date < min)) return setProblem(`Escolha uma data a partir de ${min ? format(parseISO(min), 'd MMM yyyy', { locale: pt }) : 'amanhã'}.`)
+    if (reason.trim().length < 3) return setProblem('Escreva o motivo — fica anotado na compra.')
     setProblem(null)
     onSubmit({ expires_at: new Date(`${date}T23:59:59`).toISOString(), reason: reason.trim() })
   }

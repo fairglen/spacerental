@@ -77,7 +77,7 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
       {isLoading ? (
         <Skeleton className="h-64 rounded-xl" />
       ) : isError ? (
-        <p role="alert" className="text-sm text-red-600">Não foi possível carregar os pedidos. Tenta novamente.</p>
+        <p role="alert" className="text-sm text-red-600">Não foi possível carregar os pedidos. Tente novamente.</p>
       ) : (data?.requests.length ?? 0) === 0 ? (
         <p className="text-sm text-muted-foreground">Sem pedidos{status ? ' neste estado' : ''}.</p>
       ) : (
@@ -145,7 +145,7 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
           </CardContent>
         </Card>
       )}
-      {update.isError && <p role="alert" className="mt-3 text-sm text-red-600">Não foi possível alterar o estado. Tenta novamente.</p>}
+      {update.isError && <p role="alert" className="mt-3 text-sm text-red-600">Não foi possível alterar o estado. Tente novamente.</p>}
 
       <Dialog open={!!openRow} onOpenChange={(open) => !open && setOpenRow(null)}>
         <DialogContent>

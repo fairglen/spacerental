@@ -35,7 +35,7 @@ export function refineCoordinatePair(
   values: Pick<LocationFormValues, 'latitude' | 'longitude'>,
   ctx: z.RefinementCtx,
 ) {
-  const message = 'Indica a latitude e a longitude, ou deixa as duas em branco'
+  const message = 'Indique a latitude e a longitude, ou deixe as duas em branco'
   const hasLat = values.latitude.trim() !== ''
   const hasLng = values.longitude.trim() !== ''
   if (hasLat && !hasLng) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['longitude'], message })

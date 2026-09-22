@@ -92,7 +92,7 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setGranting(true)} disabled={activePacks.length === 0} title={activePacks.length === 0 ? 'Cria um pack ativo primeiro' : undefined}>
+            <Button variant="outline" onClick={() => setGranting(true)} disabled={activePacks.length === 0} title={activePacks.length === 0 ? 'Crie um pack ativo primeiro' : undefined}>
               Atribuir horas
             </Button>
             {canChangeRole && (
@@ -191,14 +191,14 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
       <RoleDialog
         user={roleTarget}
         busy={setRole.isPending}
-        error={setRole.isError ? errorMessage(setRole.error, 'Não foi possível alterar o papel. Tenta novamente.') : null}
+        error={setRole.isError ? errorMessage(setRole.error, 'Não foi possível alterar o papel. Tente novamente.') : null}
         onConfirm={(role) => setRole.mutate(role)}
         onClose={() => { setRoleTarget(null); setRole.reset() }}
       />
       <ExtendValidityDialog
         purchase={extending}
         busy={extend.isPending}
-        error={extend.isError ? errorMessage(extend.error, 'Não foi possível prolongar a validade. Tenta novamente.') : null}
+        error={extend.isError ? errorMessage(extend.error, 'Não foi possível prolongar a validade. Tente novamente.') : null}
         onSubmit={(body) => extending && extend.mutate({ id: extending.id, body })}
         onClose={() => { setExtending(null); extend.reset() }}
       />
@@ -208,7 +208,7 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
           userLabel={user.name || user.email}
           packages={activePacks}
           busy={grant.isPending}
-          error={grant.isError ? errorMessage(grant.error, 'Não foi possível atribuir as horas. Tenta novamente.') : null}
+          error={grant.isError ? errorMessage(grant.error, 'Não foi possível atribuir as horas. Tente novamente.') : null}
           onSubmit={(body) => grant.mutate(body)}
           onClose={() => { setGranting(false); grant.reset() }}
         />

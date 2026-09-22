@@ -57,7 +57,7 @@ export default function NewSpacePage() {
       <div className="p-8 max-w-2xl">
         <h1 className="text-2xl font-bold text-foreground mb-2">{created.name} foi criado</h1>
         <p className="text-muted-foreground text-sm mb-8">
-          Adiciona fotografias agora, ou mais tarde em Editar. A seguir, cria as salas.
+          Adicione fotografias agora, ou mais tarde em Editar. A seguir, crie as salas.
         </p>
         <Card>
           <CardContent className="p-6">
@@ -81,7 +81,7 @@ export default function NewSpacePage() {
   return (
     <div className="p-8 max-w-2xl">
       <h1 className="text-2xl font-bold text-foreground mb-2">Novo Espaço</h1>
-      <p className="text-muted-foreground text-sm mb-8">Preenche os dados do espaço. Podes adicionar salas depois.</p>
+      <p className="text-muted-foreground text-sm mb-8">Preencha os dados do espaço. Pode adicionar salas depois.</p>
       <Card>
         <CardContent className="p-6">
           <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-5">
@@ -117,7 +117,7 @@ export default function NewSpacePage() {
               <Label htmlFor="amenities">Comodidades (separadas por vírgula)</Label>
               <Input id="amenities" {...register('amenities')} className="mt-1" placeholder="ex: Wi-Fi, Ar condicionado, Insonorizado" />
             </div>
-            {mutation.isError && <p className="text-sm text-red-600">Erro ao criar espaço. Tenta novamente.</p>}
+            {mutation.isError && <p className="text-sm text-red-600">Erro ao criar espaço. Tente novamente.</p>}
             <div className="flex gap-3 pt-2">
               <Button type="submit" disabled={mutation.isPending}>
                 {mutation.isPending ? 'A criar...' : 'Criar Espaço'}

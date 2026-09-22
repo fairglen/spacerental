@@ -84,7 +84,7 @@ describe('PhotoManager — reorder', () => {
     vi.mocked(adminApi.reorderPhotos).mockRejectedValue({ response: { status: 409 } })
     const { onChange } = renderManager()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Descer fotografia 1' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(/atualiza a página/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/atualize a página/i)
     expect(onChange).not.toHaveBeenCalled()
     expect(order()).toEqual(['a', 'b', 'c'])
   })
@@ -149,7 +149,7 @@ describe('PhotoManager — upload', () => {
     [415, /JPEG, PNG ou WebP/],
     [413, /8 MB/],
     [409, /máximo de 10/i],
-    [429, /aguarda/i],
+    [429, /aguarde/i],
     [500, /não foi possível enviar/i],
   ])('explains a %i from the server next to the file, and carries on with the next one', async (status, message) => {
     vi.mocked(adminApi.uploadPhoto)

@@ -62,7 +62,7 @@ describe('GrantHoursDialog', () => {
   it('refuses without a reason and with zero hours, and never submits', async () => {
     const onSubmit = renderIt()
     await userEvent.click(screen.getByRole('button', { name: 'Atribuir horas' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Escreve o motivo')
+    expect(screen.getByRole('alert')).toHaveTextContent('Escreva o motivo')
     await userEvent.type(screen.getByLabelText('Motivo'), 'ok então')
     await userEvent.clear(screen.getByLabelText('Horas'))
     await userEvent.type(screen.getByLabelText('Horas'), '0')
@@ -108,7 +108,7 @@ describe('ExtendValidityDialog', () => {
     await userEvent.clear(screen.getByLabelText('Nova validade'))
     await userEvent.type(screen.getByLabelText('Nova validade'), '2030-05-01')
     await userEvent.click(screen.getByRole('button', { name: 'Prolongar' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Escreve o motivo')
+    expect(screen.getByRole('alert')).toHaveTextContent('Escreva o motivo')
     expect(onSubmit).not.toHaveBeenCalled()
   })
 

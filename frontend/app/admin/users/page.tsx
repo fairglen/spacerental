@@ -43,7 +43,7 @@ function OrgUsers({ currentOrgId }: { currentOrgId: string | null }) {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground mb-2">Utilizadores</h1>
-          <p className="text-muted-foreground text-sm">Quem tem conta neste espaço: clientes e equipa. Abre um para ver reservas, packs e pedidos de ajuda.</p>
+          <p className="text-muted-foreground text-sm">Quem tem conta neste espaço: clientes e equipa. Abra um para ver reservas, packs e pedidos de ajuda.</p>
         </div>
         <div>
           <Label htmlFor="users-search">Procurar</Label>
@@ -54,7 +54,7 @@ function OrgUsers({ currentOrgId }: { currentOrgId: string | null }) {
       {isLoading ? (
         <Skeleton className="h-64 rounded-xl" />
       ) : isError ? (
-        <p role="alert" className="text-sm text-red-600">Não foi possível carregar os utilizadores. Tenta novamente.</p>
+        <p role="alert" className="text-sm text-red-600">Não foi possível carregar os utilizadores. Tente novamente.</p>
       ) : (data?.users.length ?? 0) === 0 ? (
         <p className="text-sm text-muted-foreground">{q ? 'Ninguém com esse nome ou email.' : 'Ainda não há utilizadores.'}</p>
       ) : (
