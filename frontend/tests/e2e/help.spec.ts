@@ -5,9 +5,10 @@ import { test, expect } from '@playwright/test'
  * navbar and gets a reference back. The row's arrival is checked from the
  * operator side in admin-support.spec.ts (C19).
  *
- * The help form is throttled at 5 requests an hour per client: this file
- * sends exactly one, and the loop stack's backend is restarted before a
- * full run so a previous run's requests do not count.
+ * The help form is throttled at 5 requests an hour per client. The whole
+ * suite sends four (two here, two in admin-support.spec.ts), so a full run
+ * fits in one window; restart the backend before running it twice within an
+ * hour, or the fifth request answers 429.
  */
 test('a signed-out visitor sends a help request and gets a reference', async ({ page }) => {
   await page.goto('/')
@@ -55,6 +56,13 @@ test('a customer opens the help dialog from the cancel dialog and submits about 
   const day = new Date(); day.setUTCDate(day.getUTCDate() + 8)
   while (day.getUTCDay() === 0) day.setUTCDate(day.getUTCDate() + 1)
   const start = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 15))
+  // A previous run that failed before its cleanup may still hold this slot.
+  const mine = (await (await api.get(`${API}/bookings/me`, { headers: auth })).json()).bookings
+  for (const b of mine) {
+    if (b.start_time === start.toISOString().replace('.000Z', 'Z') && !['cancelled', 'expired'].includes(b.status)) {
+      await api.delete(`${API}/bookings/${b.id}`, { headers: auth })
+    }
+  }
   const created = await api.post(`${API}/bookings`, {
     headers: auth,
     data: { room_id: room.id, start_time: start.toISOString(), end_time: new Date(start.getTime() + 3_600_000).toISOString(), payment_method: 'hourly' },

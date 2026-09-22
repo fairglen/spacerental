@@ -292,6 +292,9 @@ puts the app in single-space mode (`single-space.spec.ts` skips itself
 otherwise). Every browser shares one backend rate-limit budget (120 public reads
 a minute), so a few spec files deliberately wait out a 60-second window at their
 boundary; the full run takes several minutes and those pauses are not hangs.
+The help form is throttled at 5 requests an hour per client and the suite sends
+four, so restart the backend (`docker compose restart backend`) before running
+it a second time within an hour, or the fifth request answers 429.
 CI runs this suite with `RECURRING_BOOKINGS_ENABLED=true` (the weekly-series
 spec only runs its full body then), so before opening a PR run it that way too:
 start the stack with that variable set and pass it to `npm run test:e2e`.
