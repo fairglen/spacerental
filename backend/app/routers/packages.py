@@ -95,6 +95,7 @@ async def purchase_package(
         package_id=package.id,
         org_id=body.org_id,
         hours_total=hours_total,
+        amount_paid=package.price,
         hours_used=Decimal(0),
         hours_remaining=hours_total,
         purchased_at=now,

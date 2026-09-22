@@ -5,11 +5,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Pencil, Clock } from 'lucide-react'
+import { Pencil, Clock, Power } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { useOrg } from '@/contexts/OrgContext'
 import { PhotoManager } from '@/components/admin/PhotoManager'
+import { RoomActiveDialog, roomInUseOf } from '@/components/admin/RoomActiveDialog'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -68,6 +69,7 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
   const editForm = useForm<EditRoomFormData>({ resolver: zodResolver(editRoomSchema) })
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [availabilityRoom, setAvailabilityRoom] = useState<Room | null>(null)
+  const [togglingRoom, setTogglingRoom] = useState<Room | null>(null)
   const [dayRows, setDayRows] = useState<DayRow[]>(defaultDayRows())
 
   // The operator's own listing, not the public `GET /spaces/{id}`: that one
@@ -95,6 +97,11 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
       refreshRooms()
       setEditingRoom(null)
     },
+  })
+  // A07: on/off with a confirm; a 409 shows the bookings in the way.
+  const toggleActive = useMutation({
+    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) => adminApi.updateRoom(id, { is_active }, api),
+    onSuccess: () => { refreshRooms(); setTogglingRoom(null) },
   })
   const setAvailability = useMutation({
     mutationFn: ({ id, rules }: { id: string; rules: Array<{ day_of_week: number; open_time: string; close_time: string }> }) =>
@@ -182,6 +189,9 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
                       <Button variant="outline" size="sm" onClick={() => openAvailability(room)}>
                         <Clock className="h-4 w-4 mr-1" /> Horários
                       </Button>
+                      <Button variant="ghost" size="sm" onClick={() => { toggleActive.reset(); setTogglingRoom(room) }} aria-label={`${room.is_active ? 'Desativar' : 'Ativar'} ${room.name}`}>
+                        <Power className="h-4 w-4 mr-1" /> {room.is_active ? 'Desativar' : 'Ativar'}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -229,6 +239,15 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
           </CardContent>
         </Card>
       </div>
+
+      <RoomActiveDialog
+        room={togglingRoom}
+        busy={toggleActive.isPending}
+        inUse={toggleActive.isError ? roomInUseOf(toggleActive.error) : null}
+        error={toggleActive.isError ? 'Não foi possível alterar a sala. Tenta novamente.' : null}
+        onConfirm={(is_active) => togglingRoom && toggleActive.mutate({ id: togglingRoom.id, is_active })}
+        onClose={() => { setTogglingRoom(null); toggleActive.reset() }}
+      />
 
       <Dialog open={!!editingRoom} onOpenChange={(open) => !open && setEditingRoom(null)}>
         <DialogContent>
@@ -286,7 +305,13 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
                 <p className="text-xs text-muted-foreground">Uma sala inativa deixa de aparecer aos clientes e não pode ser reservada.</p>
               </div>
             </div>
-            {updateRoom.isError && <p role="alert" className="text-sm text-red-600">Não foi possível guardar a sala. Tenta novamente.</p>}
+            {updateRoom.isError && (
+              <p role="alert" className="text-sm text-red-600">
+                {roomInUseOf(updateRoom.error)
+                  ? `Ainda há ${roomInUseOf(updateRoom.error)!.total} reserva(s) marcada(s) nesta sala; não pode ser desativada. Move-as ou cancela-as no calendário primeiro.`
+                  : 'Não foi possível guardar a sala. Tenta novamente.'}
+              </p>
+            )}
             <DialogFooter>
               <Button type="submit" disabled={updateRoom.isPending}>
                 {updateRoom.isPending ? 'A guardar...' : 'Guardar'}

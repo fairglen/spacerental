@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -77,6 +77,14 @@ class UserPackagePurchase(Base):
         Numeric(5, 2), nullable=False, default=decimal.Decimal(0), server_default="0"
     )
     hours_remaining: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    # What was paid for this purchase, at purchase time (A05). A paid purchase
+    # copies the package's price; complimentary hours are a purchase at 0,00 €
+    # with a note, so revenue and balances still add up from the same rows.
+    amount_paid: Mapped[decimal.Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=decimal.Decimal(0), server_default="0"
+    )
+    # The operator's private reason for a granted purchase; never customer-facing.
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # A purchase only becomes `active` — i.e. its hours become spendable —
     # once Stripe confirms payment. Defaults to active so the payments-off
     # POC path keeps working unchanged.

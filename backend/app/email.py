@@ -180,12 +180,20 @@ def booking_confirmation_email(
     room_name: str,
     start_time: datetime,
     end_time: datetime,
+    changed: bool = False,
 ) -> EmailMessage:
+    """The confirmation; with `changed`, the same message for a booking an
+    operator moved (A01) — one added line, not a second template."""
     date_str, time_str = _format_datetime_pt(start_time, end_time)
     cancel_url = f"{settings.FRONTEND_URL}/dashboard"
-    subject = f"Reserva confirmada — {room_name}"
+    subject = f"Reserva {'alterada' if changed else 'confirmada'} — {room_name}"
+    lead = (
+        "A sua reserva foi alterada. Estes são os novos dados:"
+        if changed
+        else "A sua reserva foi confirmada!"
+    )
     text_body = (
-        "A sua reserva foi confirmada!\n\n"
+        f"{lead}\n\n"
         f"Espaço: {space_name}\n"
         f"Sala: {room_name}\n"
         f"Data: {date_str}\n"
@@ -200,7 +208,7 @@ def booking_confirmation_email(
     safe_cancel_url = escape(cancel_url, quote=True)
 
     html_body = (
-        "<p>A sua reserva foi confirmada!</p>"
+        f"<p>{escape(lead)}</p>"
         "<ul>"
         f"<li><strong>Espaço:</strong> {safe_space_name}</li>"
         f"<li><strong>Sala:</strong> {safe_room_name}</li>"
