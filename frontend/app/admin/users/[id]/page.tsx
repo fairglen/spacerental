@@ -13,11 +13,12 @@ import { formatBookingCost, formatCurrency, formatHours, STATUS_LABELS } from '@
 import { SUPPORT_CATEGORY_LABELS } from '@/components/help/HelpDialog'
 import { ROLE_LABELS, RoleDialog } from '@/components/admin/users/RoleDialog'
 import { GrantHoursDialog } from '@/components/admin/users/GrantHoursDialog'
+import { ExtendValidityDialog } from '@/components/admin/users/ExtendValidityDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ComplimentaryHoursBody, OrgUser } from '@/types'
+import type { AdminPurchase, ComplimentaryHoursBody, OrgUser } from '@/types'
 
 const PURCHASE_STATUS: Record<'pending' | 'active' | 'cancelled', string> = { pending: 'Por pagar', active: 'Ativo', cancelled: 'Cancelado' }
 
@@ -39,6 +40,7 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
   const qc = useQueryClient()
   const [roleTarget, setRoleTarget] = useState<OrgUser | null>(null)
   const [granting, setGranting] = useState(false)
+  const [extending, setExtending] = useState<AdminPurchase | null>(null)
 
   const enabled = !!session?.accessToken && !!currentOrgId
   const { data, isLoading, isError } = useQuery({
@@ -59,6 +61,10 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
   const grant = useMutation({
     mutationFn: (body: ComplimentaryHoursBody) => adminApi.grantHours(userId, body, api),
     onSuccess: () => { setGranting(false); refresh() },
+  })
+  const extend = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { expires_at: string; reason: string } }) => adminApi.extendPurchase(id, body, api),
+    onSuccess: () => { setExtending(null); refresh() },
   })
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 rounded-xl" /></div>
@@ -106,7 +112,7 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-background border-y border-border">
-                <tr>{['Pack', 'Horas restantes', 'Pago', 'Estado', 'Validade', 'Nota'].map((h) => <th key={h} className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">{h}</th>)}</tr>
+                <tr>{['Pack', 'Horas restantes', 'Pago', 'Estado', 'Validade', 'Nota', ''].map((h, i) => <th key={i} className="text-left px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {purchases.map((p) => (
@@ -115,8 +121,16 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
                     <td className="px-4 py-2 text-foreground">{formatHours(p.hours_remaining)} de {formatHours(p.hours_total)}</td>
                     <td className="px-4 py-2 text-foreground">{p.amount_paid === 0 ? <Badge variant="secondary">Oferta</Badge> : formatCurrency(p.amount_paid)}</td>
                     <td className="px-4 py-2"><Badge variant={p.status === 'active' ? 'default' : 'secondary'}>{PURCHASE_STATUS[p.status]}</Badge></td>
-                    <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">{format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}</td>
-                    <td className="px-4 py-2 text-muted-foreground max-w-xs"><span className="line-clamp-2">{p.admin_note ?? '—'}</span></td>
+                    <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">
+                      {format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}
+                      {p.status === 'active' && parseISO(p.expires_at).getTime() < Date.now() && <span className="block text-xs text-red-600">caducou</span>}
+                    </td>
+                    <td className="px-4 py-2 text-muted-foreground max-w-xs"><span className="line-clamp-2 whitespace-pre-line" title={p.admin_note ?? undefined}>{p.admin_note ?? '—'}</span></td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      {p.status === 'active' && (
+                        <Button size="sm" variant="outline" onClick={() => setExtending(p)} aria-label={`Prolongar validade ${p.package?.name ?? 'Pack'}`}>Prolongar</Button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -180,6 +194,13 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
         error={setRole.isError ? errorMessage(setRole.error, 'Não foi possível alterar o papel. Tenta novamente.') : null}
         onConfirm={(role) => setRole.mutate(role)}
         onClose={() => { setRoleTarget(null); setRole.reset() }}
+      />
+      <ExtendValidityDialog
+        purchase={extending}
+        busy={extend.isPending}
+        error={extend.isError ? errorMessage(extend.error, 'Não foi possível prolongar a validade. Tenta novamente.') : null}
+        onSubmit={(body) => extending && extend.mutate({ id: extending.id, body })}
+        onClose={() => { setExtending(null); extend.reset() }}
       />
       {granting && (
         <GrantHoursDialog

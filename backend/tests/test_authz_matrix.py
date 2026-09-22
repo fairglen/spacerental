@@ -94,6 +94,7 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/admin/users/{{user_id}}"): OPERATOR,
     ("PUT", f"{API}/admin/users/{{user_id}}/role"): OPERATOR,
     ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): OPERATOR,
+    ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"): OPERATOR,
     ("GET", f"{API}/admin/packages"): OPERATOR,
     # C19 inbox; its cross-org cases are in test_support.py.
     ("GET", f"{API}/admin/support/requests"): OPERATOR,
@@ -136,6 +137,10 @@ BODIES: dict[tuple[str, str], dict] = {
     },
     ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"): {"reason": "sweep"},
     ("PUT", f"{API}/admin/users/{{user_id}}/role"): {"role": "admin"},
+    ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"): {
+        "expires_at": "2099-01-01T00:00:00Z",
+        "reason": "sweep",
+    },
     ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): {
         "hours": "1",
         "package_id": str(uuid.UUID(int=3)),
@@ -576,6 +581,33 @@ class TestOperatorCannotTouchAnotherOrgsResources:
         assert resp.status_code == 404, resp.text
         package = await _fresh(db_session, Package, world.package_b.id)
         assert (package.price, package.is_active) == (Decimal("100.00"), True)
+
+    async def test_user_and_purchase(self, client, world, db_session):
+        # A05/A06: B's customer and B's purchase are invisible to A's operator,
+        # whatever the route — and nothing about them changes.
+        headers, org = _as(world.op_a, "owner"), world.org_a.id
+        ids = {"user_id": world.cust_b.id, "purchase_id": world.purchase_b.id}
+        for method, path in (
+            ("GET", f"{API}/admin/users/{{user_id}}"),
+            ("PUT", f"{API}/admin/users/{{user_id}}/role"),
+            ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"),
+            ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"),
+        ):
+            resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
+            assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
+        purchase = await _fresh(db_session, UserPackagePurchase, world.purchase_b.id)
+        assert purchase.expires_at == world.purchase_b.expires_at
+        member = await db_session.scalar(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == world.cust_b.id,
+                OrganizationMember.org_id == world.org_b.id,
+            )
+        )
+        assert member.role is MemberRole.member
+        purchases = await _count(
+            db_session, UserPackagePurchase, UserPackagePurchase.user_id == world.cust_b.id
+        )
+        assert purchases == 1
 
     async def test_filtering_bookings_by_another_orgs_room_leaks_nothing(self, client, world):
         resp = await client.get(

@@ -388,6 +388,13 @@ non-member or a package of another org; 400 for a past `expires_at`.
 purchase time, or `"0.00"` for granted hours). `admin_note` is never returned
 by a customer endpoint.
 
+### PUT /admin/purchases/{purchase_id}/expiry
+"Prolongar validade" (A06). Body: `{ expires_at (tz-aware; later than the
+current expiry and in the future), reason (1–2000) }` → `{ purchase:
+AdminPurchase }`. The reason is appended to `admin_note`, dated. 400 when the
+date does not extend; 409 unless the purchase is `active`; 404 for another
+org's purchase or an unknown id.
+
 ### GET /admin/packages
 List packages for this org.
 

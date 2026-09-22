@@ -305,6 +305,10 @@ export const adminApi = {
   grantHours: (id: string, body: ComplimentaryHoursBody, api: Api): Promise<AdminPurchase> =>
     api.post<{ purchase: AdminPurchase }>(`/admin/users/${id}/complimentary-hours`, body).then(r => normPurchase(r.data.purchase)),
 
+  // "Prolongar validade" (A06): a later expiry and why.
+  extendPurchase: (purchaseId: string, body: { expires_at: string; reason: string }, api: Api): Promise<AdminPurchase> =>
+    api.put<{ purchase: AdminPurchase }>(`/admin/purchases/${purchaseId}/expiry`, body).then(r => normPurchase(r.data.purchase)),
+
   getPackages: (api: Api) =>
     api.get<{ packages: Package[] }>('/admin/packages').then(r => r.data.packages.map(normPackage)),
 

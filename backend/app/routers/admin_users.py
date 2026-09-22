@@ -21,12 +21,14 @@ from app.models.organization import MemberRole, OrganizationMember
 from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.support import SupportRequest
 from app.models.user import User
-from app.schemas.admin_users import ComplimentaryHoursCreate, OrgUserOut, RoleUpdate
+from app.schemas.admin_users import ComplimentaryHoursCreate, ExpiryUpdate, OrgUserOut, RoleUpdate
 from app.schemas.booking import AdminBookingOut
 from app.schemas.package import AdminPurchaseOut
 from app.schemas.support import SupportRequestOut
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
+# A customer's purchases, addressed by their own id (A06).
+purchases_router = APIRouter(prefix="/admin/purchases", tags=["admin-users"])
 
 
 async def _membership(
@@ -233,3 +235,47 @@ async def admin_grant_hours(
         .execution_options(populate_existing=True)
     )
     return {"purchase": AdminPurchaseOut.model_validate(row)}
+
+
+@purchases_router.put("/{purchase_id}/expiry")
+async def admin_extend_purchase(
+    purchase_id: uuid.UUID,
+    body: ExpiryUpdate,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """ "Prolongar validade" (A06): push a purchase's expiry later.
+
+    Extending only — a later date than today's expiry and in the future; a
+    lapsed pack may be brought back this way (that is the usual reason). The
+    reason is appended to the purchase's note, dated, so the row tells its
+    own story until there is an audit log (O05).
+    """
+    purchase = await db.scalar(
+        select(UserPackagePurchase)
+        .options(selectinload(UserPackagePurchase.package))
+        .where(UserPackagePurchase.id == purchase_id, UserPackagePurchase.org_id == org_id)
+        .with_for_update(of=UserPackagePurchase)
+    )
+    if purchase is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+    if purchase.status is not PurchaseStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A {purchase.status.value} purchase cannot be extended",
+        )
+    now = clock.utcnow()
+    if body.expires_at <= now or body.expires_at <= purchase.expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="expires_at must be later than the current expiry and in the future",
+        )
+    line = (
+        f"[{now:%Y-%m-%d}] Validade: {purchase.expires_at:%Y-%m-%d} → "
+        f"{body.expires_at:%Y-%m-%d}. {body.reason}"
+    )
+    purchase.admin_note = f"{purchase.admin_note}\n{line}" if purchase.admin_note else line
+    purchase.expires_at = body.expires_at
+    await db.flush()
+    return {"purchase": AdminPurchaseOut.model_validate(purchase)}

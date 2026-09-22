@@ -671,4 +671,12 @@ describe('adminApi users (A05)', () => {
     expect(await adminApi.grantHours('u1', body, mockApi)).toMatchObject({ amount_paid: 0, hours_remaining: 3 })
     expect(mockApi.post).toHaveBeenCalledWith('/admin/users/u1/complimentary-hours', body)
   })
+
+  it('extendPurchase puts the new expiry and reason, and unwraps (A06)', async () => {
+    const purchase = { id: 'p1', hours_remaining: '7.00', amount_paid: '100.00', expires_at: '2030-04-15T23:59:59Z', admin_note: '[2026-09-22] Validade: 2030-03-01 → 2030-04-15. baixa' }
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { purchase } }) } as any
+    const body = { expires_at: '2030-04-15T23:59:59Z', reason: 'baixa' }
+    expect(await adminApi.extendPurchase('p1', body, mockApi)).toMatchObject({ hours_remaining: 7, amount_paid: 100 })
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/purchases/p1/expiry', body)
+  })
 })

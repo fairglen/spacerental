@@ -1,15 +1,15 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.models.organization import MemberRole
 from app.schemas.booking import _require_timezone
-from app.schemas.bounds import _text
 
-Reason = _text(2000, min_length=1)
+# A reason someone will read later: whitespace alone is not one.
+Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 
 
 class OrgUserOut(BaseModel):
@@ -44,3 +44,15 @@ class ComplimentaryHoursCreate(BaseModel):
     @classmethod
     def _tz(cls, value: datetime | None) -> datetime | None:
         return None if value is None else _require_timezone(value)
+
+
+class ExpiryUpdate(BaseModel):
+    """ "Prolongar validade" (A06): a later expiry and why."""
+
+    expires_at: datetime
+    reason: Reason
+
+    @field_validator("expires_at")
+    @classmethod
+    def _tz(cls, value: datetime) -> datetime:
+        return _require_timezone(value)

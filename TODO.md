@@ -2448,9 +2448,38 @@ pending the PR 2 wrap-up run.
 
 ### A06 — Package purchases: extend validity, see remaining hours
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** "Prolongar validade" (new
-expiry date, reason) and remaining hours per purchase visible to the admin.
-**Validation:** happy/failure/cross-tenant; component test.
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Scope:** "Prolongar validade"
+(new expiry date, reason) and remaining hours per purchase visible to the
+admin. **Validation:** happy/failure/cross-tenant; component test.
+
+**DECISIONS (conservative; each reversible in one commit):**
+- **Extending only.** `PUT /admin/purchases/{id}/expiry` accepts a date later
+  than the current expiry and in the future (400 otherwise). A lapsed pack may
+  be brought back — that is the usual reason. Shortening is refused because it
+  takes something the customer paid for; if ever needed it is a one-line
+  relaxation of the check. Alt: allow any future date.
+- **Only `active` purchases** (409 for `pending`/`cancelled`): an unpaid
+  purchase has nothing to extend and a cancelled one is not a balance.
+- **The reason is appended to `admin_note`, dated** (`[YYYY-MM-DD] Validade:
+  old → new. reason`), so the row tells its own story until O05. The customer
+  sees the new date and never the note.
+- Remaining hours per purchase were already on the A05 customer page
+  (`hours_remaining de hours_total`); A06 adds "caducou" on a lapsed active
+  pack and the "Prolongar" action per active row.
+
+**Evidence (2026-09-22):** `tests/test_admin_purchases.py` — 7 tests (extend a
+live purchase and keep the reason on the note, customer sees the date not the
+note; bring back a lapsed one; refuse shortening and the past (row unchanged);
+409 for cancelled/pending; 422 for a blank reason, a naive datetime, a missing
+date; unknown id 404 and a foreign `org_id` never a hint; a customer 403). S01
+matrix: route classified, and a cross-org sweep (`test_user_and_purchase`)
+proving A's operator gets 404 on B's user and purchase with nothing changed.
+Frontend: `ExtendValidityDialog` — 3 component tests (sends end-of-day ISO +
+reason; refuses a date ≤ current expiry and an empty reason; says "já
+caducou"); 1 API shape test. Playwright `admin-users.spec.ts` extended: after
+granting 3h, "Prolongar" by a year → the note shows in the packs table and
+`GET /packages/me` carries the later date.
 
 ### A07 — Room activate/deactivate with a future-bookings check
 
