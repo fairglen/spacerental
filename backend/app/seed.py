@@ -60,12 +60,32 @@ DEMO_SPACE_LOCATION = {
     "latitude": Decimal("38.755723"),
     "longitude": Decimal("-9.279799"),
 }
-DEMO_SPACE_DESCRIPTION = "Um espaço tranquilo para consultas e trabalho, com salas privadas à hora."
+DEMO_SPACE_DESCRIPTION = (
+    "Um espaço profissional partilhado para profissionais de saúde e bem-estar, "
+    "com gabinetes à hora, conforto, privacidade e flexibilidade."
+)
 # What earlier seeds wrote. Replaced on re-seed; any other text is an
 # operator's own edit and is left alone.
 _PREVIOUS_DEMO_SPACE_DESCRIPTIONS = {
     "Um espaço tranquilo para consultas e trabalho no coração de Lisboa.",
+    "Um espaço tranquilo para consultas e trabalho, com salas privadas à hora.",
 }
+# One short factual line per demo room (W04). Same rule as the space: a
+# description an earlier seed wrote is refreshed, an operator's own text stays.
+DEMO_ROOM_DESCRIPTIONS = {
+    "Sala Calma": "Gabinete tranquilo e acolhedor, preparado para consultas individuais.",
+    "Sala Brisa": (
+        "Gabinete mais amplo, com mesa de trabalho, preparado para consultas com tomada de notas."
+    ),
+    "Sala Névoa": (
+        "Gabinete luminoso, com luz natural, "
+        "preparado para consultas individuais ou pequenos grupos."
+    ),
+}
+
+
+def _previous_demo_room_description(name: str) -> str:
+    return f"Sala privada e confortável — {name}."
 
 
 PLACEHOLDER_PHOTOS_PER_ROOM = 3
@@ -224,7 +244,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
                 space_id=space.id,
                 org_id=org.id,
                 name=room_data["name"],
-                description=f"Sala privada e confortável — {room_data['name']}.",
+                description=DEMO_ROOM_DESCRIPTIONS[room_data["name"]],
                 capacity=6,
                 hourly_rate=room_data["hourly_rate"],
                 color=room_data["color"],
@@ -235,6 +255,8 @@ async def seed_demo_data(session: AsyncSession) -> None:
             await session.flush()
             print(f"Created room: {room.name} ({room.id})")
         else:
+            if room.description == _previous_demo_room_description(room.name):
+                room.description = DEMO_ROOM_DESCRIPTIONS[room.name]
             print(f"Room already exists: {room.name} ({room.id})")
         # Only a room with no photos at all: whatever an operator uploaded,
         # removed or reordered is theirs, and a re-seed must not touch it.
