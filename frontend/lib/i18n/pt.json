@@ -5,12 +5,14 @@
   },
   "hero": {
     "badge": "Disponível à hora ou com pacote de horas",
-    "headline_start": "O teu espaço,",
-    "headline_highlight": "no teu tempo",
-    "description": "Salas privadas para psicólogos, terapeutas e profissionais de saúde. Reserva online em segundos, sem contratos longos.",
+    "headline_start": "O seu espaço,",
+    "headline_highlight": "no seu tempo.",
+    "description": "Gabinetes profissionais para profissionais de saúde e bem-estar, pensados para trabalhar com conforto, privacidade e flexibilidade.",
+    "support": "Um espaço partilhado onde cada profissional mantém a sua autonomia e a sua forma de trabalhar.",
     "cta_primary": "Ver Espaços",
     "cta_primary_rooms": "Ver Salas",
     "cta_secondary": "Saber Mais",
+    "benefit_booking": "Reserva online em segundos",
     "benefit_1": "Sem caução",
     "benefit_2": "Cancelamento até 24h antes",
     "benefit_3": "Pagamento seguro"
@@ -70,6 +72,11 @@
     "error": "Não foi possível carregar as salas.",
     "retry": "Tentar novamente"
   },
+  "theSpace": {
+    "title": "O espaço",
+    "p1": "O FlowSpace é um espaço profissional partilhado, pensado para profissionais de saúde e bem-estar que procuram um lugar onde possam exercer a sua atividade com conforto, privacidade e flexibilidade.",
+    "p2": "Gabinetes cuidados e equipados, num ambiente tranquilo e acolhedor, que permitem a cada profissional trabalhar de forma autónoma, de acordo com as necessidades da sua prática."
+  },
   "navbar": {
     "spaces_link": "Espaços",
     "rooms_link": "Salas",
@@ -89,7 +96,7 @@
   },
   "footer": {
     "my_bookings": "As minhas reservas",
-    "tagline": "Espaços profissionais por hora para psicólogos, terapeutas e outros profissionais de saúde.",
+    "tagline": "Espaços profissionais por hora para profissionais de saúde e bem-estar.",
     "links_heading": "Links",
     "spaces": "Espaços",
     "rooms": "Salas",

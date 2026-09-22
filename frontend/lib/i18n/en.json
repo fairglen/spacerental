@@ -6,11 +6,13 @@
   "hero": {
     "badge": "Available hourly or with an hour package",
     "headline_start": "Your space,",
-    "headline_highlight": "on your time",
-    "description": "Private rooms for psychologists, therapists, and health professionals. Book online in seconds, no long contracts.",
+    "headline_highlight": "on your time.",
+    "description": "Professional consulting rooms for health and wellbeing professionals, designed for comfort, privacy and flexibility.",
+    "support": "A shared space where every professional keeps their autonomy and their own way of working.",
     "cta_primary": "View Spaces",
     "cta_primary_rooms": "View Rooms",
     "cta_secondary": "Learn More",
+    "benefit_booking": "Book online in seconds",
     "benefit_1": "No deposit",
     "benefit_2": "Cancel up to 24h ahead",
     "benefit_3": "Secure payment"
@@ -70,6 +72,11 @@
     "error": "Could not load the rooms.",
     "retry": "Try again"
   },
+  "theSpace": {
+    "title": "The space",
+    "p1": "FlowSpace is a shared professional space for health and wellbeing professionals looking for a place where they can practise with comfort, privacy and flexibility.",
+    "p2": "Well-kept, equipped consulting rooms in a calm, welcoming setting that let each professional work autonomously, according to the needs of their practice."
+  },
   "navbar": {
     "spaces_link": "Spaces",
     "rooms_link": "Rooms",
@@ -89,7 +96,7 @@
   },
   "footer": {
     "my_bookings": "My bookings",
-    "tagline": "Professional spaces by the hour for psychologists, therapists, and other health professionals.",
+    "tagline": "Professional spaces by the hour for health and wellbeing professionals.",
     "links_heading": "Links",
     "spaces": "Spaces",
     "rooms": "Rooms",
