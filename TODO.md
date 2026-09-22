@@ -73,8 +73,9 @@ the app is renamed FlowSpace where people can read it, the static site and the
 app landing take the owner's source copy, the audience becomes "profissionais
 de saúde e bem-estar", and customer/operator-facing Portuguese moves to the
 formal register. Recorded as W01–W07 near the end of this file; the stale
-static-site smoke suite it found first is B49. Commits stay local; the owner
-opens the PR.
+static-site smoke suite it found first is B49. Opened as
+[PR #58](https://github.com/fairglen/spacerental/pull/58) on the owner's
+instruction; the owner reviews and merges.
 
 States used below:
 
@@ -3176,8 +3177,9 @@ file without the constant.
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
 Branch `feat/flowspace-brand-copy` from main `6e9ffa6` (#46, #54, #55, #57 all
-merged, so nothing older was pending). One commit per step, commits stay
-local; the owner opens the PR. Source copy, decisions and the step order come
+merged, so nothing older was pending). One commit per step;
+[PR #58](https://github.com/fairglen/spacerental/pull/58), which the owner
+reviews and merges. Source copy, decisions and the step order come
 from the owner's assignment; anything it did not decide is taken the
 conservative way, recorded under the task and tagged `DECISION:` in the
 commit body. Nothing here touches prices, adds photos or door signs; the two
