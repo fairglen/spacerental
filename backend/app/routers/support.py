@@ -9,12 +9,13 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app import email
-from app.auth import get_current_user, oauth2_scheme
+from app.auth import get_current_user, oauth2_scheme, require_admin
 from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
@@ -23,7 +24,12 @@ from app.models.organization import Organization, OrganizationMember
 from app.models.support import SupportRequest, SupportStatus
 from app.models.user import User
 from app.ratelimit import SUPPORT_TIER, rate_limit
-from app.schemas.support import SupportRequestCreate, SupportRequestReceipt
+from app.schemas.support import (
+    SupportRequestCreate,
+    SupportRequestOut,
+    SupportRequestReceipt,
+    SupportStatusUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,3 +141,62 @@ async def create_support_request(
         ),
     )
     return {"request": SupportRequestReceipt.model_validate(request)}
+
+
+# ─── Operator inbox (C19) ───────────────────────────────────────────────────
+
+admin_router = APIRouter(prefix="/admin/support", tags=["admin-support"])
+
+
+@admin_router.get("/requests")
+async def admin_list_support_requests(
+    org_id: uuid.UUID = Query(...),
+    status_filter: SupportStatus | None = Query(default=None, alias="status"),
+    page: int = Query(default=1, ge=1, le=1_000_000),
+    page_size: int = Query(default=20, ge=1, le=100),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Newest first. A request whose tenant could not be resolved (`org_id`
+    NULL) appears in no organisation's inbox, by design."""
+    where = [SupportRequest.org_id == org_id]
+    if status_filter is not None:
+        where.append(SupportRequest.status == status_filter)
+    total = await db.scalar(select(func.count()).select_from(SupportRequest).where(*where))
+    result = await db.execute(
+        select(SupportRequest)
+        .options(selectinload(SupportRequest.booking).selectinload(Booking.room))
+        .where(*where)
+        .order_by(SupportRequest.created_at.desc(), SupportRequest.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    rows = result.scalars().all()
+    return {
+        "requests": [SupportRequestOut.model_validate(r) for r in rows],
+        "total": total or 0,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@admin_router.put("/requests/{request_id}")
+async def admin_update_support_request(
+    request_id: uuid.UUID,
+    body: SupportStatusUpdate,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(SupportRequest)
+        .options(selectinload(SupportRequest.booking).selectinload(Booking.room))
+        .where(SupportRequest.id == request_id, SupportRequest.org_id == org_id)
+    )
+    request = result.scalar_one_or_none()
+    if request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    request.status = body.status
+    await db.flush()
+    await db.refresh(request)
+    return {"request": SupportRequestOut.model_validate(request)}

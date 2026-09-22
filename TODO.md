@@ -1975,7 +1975,18 @@ catalog guard; Playwright: cancel dialog → help → submit.
 
 ### C19 — Minimal operator inbox for support requests (`/admin/support`)
 
-**Priority: P1. State: QUEUED** (PR 1). **Scope:** `GET /admin/support/requests`
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** 6 real-PG tests (newest first with booking/room and the
+list's fields; status filter and paging; reopen; another org lists nothing and
+gets 403/404 on close; a null-org request is listed for nobody but still
+emailed; a member gets 403); both routes classified OPERATOR in the S01
+matrix. Page: 5 component tests (list columns, message and context shown as
+text — an `<img>` payload renders as text —, close/reopen, status filter,
+empty state) + 2 API shape tests; sidebar entry "Pedidos de ajuda". Vitest
+434. Playwright `admin-support.spec.ts`: the admin sees the visitor's and the
+customer's requests, the customer's with its room and time, opens one, closes
+it. **Scope:** `GET /admin/support/requests`
 and a status toggle (new/closed), admin of that org only; a list page (newest
 first: category, email, excerpt, linked booking, status). Full handling stays
 deferred in **D06**, which this delivers the first slice of. **Dependencies:**

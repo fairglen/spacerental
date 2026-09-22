@@ -213,3 +213,156 @@ class TestAbuse:
         resp = await client.post(URL, json=_body())
         assert resp.status_code == 201, resp.text
         assert await _count(db_session) == 1
+
+
+ADMIN_URL = "/api/v1/admin/support/requests"
+
+
+async def _submit(client, **overrides) -> str:
+    resp = await client.post(URL, json=_body(**overrides))
+    assert resp.status_code == 201, resp.text
+    return resp.json()["request"]["id"]
+
+
+@pytest.fixture
+def enrolls_into_test_org(monkeypatch, test_org):
+    """A visitor's request belongs to the deployment's enrollment org (test_org here)."""
+    monkeypatch.setattr(settings, "CUSTOMER_ENROLLMENT_ORG_SLUG", test_org.slug)
+
+
+class TestOperatorInbox:
+    """C19: the minimal inbox. Full handling stays deferred (D06)."""
+
+    async def test_lists_the_orgs_requests_newest_first_with_what_the_list_needs(
+        self, enrolls_into_test_org, client, emails, db_session, admin_headers, test_org,
+        test_room, auth_headers, test_user, test_member,
+    ):  # fmt: skip
+        booking = await _booking(db_session, test_org, test_room, test_user)
+        first = await _submit(client, contact_email="first@example.com")
+        second = await client.post(
+            URL,
+            json=_body(category="booking", booking_id=str(booking.id), message="x" * 30),
+            headers=auth_headers,
+        )
+        assert second.status_code == 201, second.text
+
+        resp = await client.get(
+            ADMIN_URL, params={"org_id": str(test_org.id)}, headers=admin_headers
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert set(body) == {"requests", "total", "page", "page_size"}
+        assert [r["id"] for r in body["requests"]] == [second.json()["request"]["id"], first]
+        newest = body["requests"][0]
+        assert set(newest) == {
+            "id", "reference", "category", "status", "contact_email", "user_id", "booking_id",
+            "booking", "message", "context", "created_at", "updated_at",
+        }  # fmt: skip
+        assert newest["booking"]["id"] == str(booking.id)
+        assert newest["booking"]["room"]["name"] == test_room.name
+        assert newest["contact_email"] == test_user.email
+        assert body["requests"][1]["booking"] is None
+
+    async def test_filters_by_status_and_pages(
+        self,
+        enrolls_into_test_org,
+        client,
+        emails,
+        db_session,
+        admin_headers,
+        test_org,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(settings, "RATE_LIMIT_SUPPORT_MAX_REQUESTS", 10)
+        ids = [await _submit(client) for _ in range(3)]
+        closed = await client.put(
+            f"{ADMIN_URL}/{ids[0]}",
+            params={"org_id": str(test_org.id)},
+            json={"status": "closed"},
+            headers=admin_headers,
+        )
+        assert closed.status_code == 200, closed.text
+        assert closed.json()["request"]["status"] == "closed"
+
+        only_new = await client.get(
+            ADMIN_URL, params={"org_id": str(test_org.id), "status": "new"}, headers=admin_headers
+        )
+        assert [r["id"] for r in only_new.json()["requests"]] == [ids[2], ids[1]]
+        page = await client.get(
+            ADMIN_URL,
+            params={"org_id": str(test_org.id), "page": 2, "page_size": 2},
+            headers=admin_headers,
+        )
+        assert page.json()["total"] == 3
+        assert [r["id"] for r in page.json()["requests"]] == [ids[0]]
+
+    async def test_reopening_is_allowed(
+        self, enrolls_into_test_org, client, emails, admin_headers, test_org
+    ):
+        request_id = await _submit(client)
+        for target in ("closed", "new"):
+            resp = await client.put(
+                f"{ADMIN_URL}/{request_id}",
+                params={"org_id": str(test_org.id)},
+                json={"status": target},
+                headers=admin_headers,
+            )
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["request"]["status"] == target
+
+    async def test_another_org_sees_nothing_and_cannot_close(
+        self, enrolls_into_test_org, client, emails, db_session, admin_headers, test_org
+    ):
+        from app.auth import create_access_token, hash_password
+        from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
+        from app.models.user import User
+
+        request_id = await _submit(client)
+        other = Organization(name="Other", slug="other", plan=OrgPlan.starter, settings={})
+        op = User(email="other-op@test.com", name="Op", password_hash=hash_password("x" * 12))
+        db_session.add_all([other, op])
+        await db_session.flush()
+        db_session.add(OrganizationMember(org_id=other.id, user_id=op.id, role=MemberRole.owner))
+        await db_session.commit()
+        headers = {
+            "Authorization": "Bearer "
+            + create_access_token({"sub": str(op.id), "email": op.email, "name": op.name})
+        }
+        listed = await client.get(ADMIN_URL, params={"org_id": str(other.id)}, headers=headers)
+        assert listed.status_code == 200
+        assert listed.json()["requests"] == [] and listed.json()["total"] == 0
+        # Claiming ours: not their org. In their own: not their request.
+        claimed = await client.put(
+            f"{ADMIN_URL}/{request_id}", params={"org_id": str(test_org.id)},
+            json={"status": "closed"}, headers=headers,
+        )  # fmt: skip
+        own = await client.put(
+            f"{ADMIN_URL}/{request_id}", params={"org_id": str(other.id)},
+            json={"status": "closed"}, headers=headers,
+        )  # fmt: skip
+        assert (claimed.status_code, own.status_code) == (403, 404)
+        row = await db_session.get(SupportRequest, uuid.UUID(request_id))
+        await db_session.refresh(row)
+        assert row.status is SupportStatus.new
+
+    async def test_a_request_with_no_resolvable_org_is_listed_for_nobody(
+        self, client, emails, db_session, admin_headers, test_org, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "CUSTOMER_ENROLLMENT_ORG_SLUG", None)
+        await _submit(client)
+        row = (await db_session.execute(select(SupportRequest))).scalar_one()
+        assert row.org_id is None
+        listed = await client.get(
+            ADMIN_URL, params={"org_id": str(test_org.id)}, headers=admin_headers
+        )
+        assert listed.json()["total"] == 0
+        # Still emailed, so a person sees it.
+        assert len(emails.sent) == 1
+
+    async def test_a_member_cannot_read_the_inbox(
+        self, client, auth_headers, test_member, test_org
+    ):
+        resp = await client.get(
+            ADMIN_URL, params={"org_id": str(test_org.id)}, headers=auth_headers
+        )
+        assert resp.status_code == 403

@@ -82,6 +82,9 @@ ROUTES: dict[tuple[str, str], str] = {
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
     ("GET", f"{API}/admin/users"): OPERATOR,
     ("GET", f"{API}/admin/packages"): OPERATOR,
+    # C19 inbox; its cross-org cases are in test_support.py.
+    ("GET", f"{API}/admin/support/requests"): OPERATOR,
+    ("PUT", f"{API}/admin/support/requests/{{request_id}}"): OPERATOR,
     ("POST", f"{API}/admin/packages"): OPERATOR,
     ("PUT", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
     # C17 help form: open to visitors by design (whoever cannot sign in needs it
@@ -108,6 +111,7 @@ BODIES: dict[tuple[str, str], dict] = {
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): {"status": "cancelled"},
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
+    ("PUT", f"{API}/admin/support/requests/{{request_id}}"): {"status": "closed"},
 }
 
 _PASSWORD_HASH: str | None = None

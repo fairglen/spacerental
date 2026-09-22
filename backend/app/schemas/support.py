@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 from app.models.support import SupportCategory, SupportStatus
+from app.schemas.booking import BookingOut
 from app.schemas.bounds import _text
 
 SupportMessage = _text(2000, min_length=20)
@@ -57,3 +58,30 @@ class SupportRequestReceipt(BaseModel):
     @property
     def reference(self) -> str:
         return short_reference(self.id)
+
+
+class SupportRequestOut(BaseModel):
+    """One inbox row for the operator (C19). Tenant-scoped by the router."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    category: SupportCategory
+    status: SupportStatus
+    contact_email: str
+    user_id: uuid.UUID | None
+    booking_id: uuid.UUID | None
+    booking: BookingOut | None = None
+    message: str
+    context: dict
+    created_at: datetime
+    updated_at: datetime
+
+    @computed_field
+    @property
+    def reference(self) -> str:
+        return short_reference(self.id)
+
+
+class SupportStatusUpdate(BaseModel):
+    status: SupportStatus

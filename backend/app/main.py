@@ -61,6 +61,7 @@ app.include_router(packages.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
 app.include_router(media.router, prefix=API_PREFIX)
 app.include_router(support.router, prefix=API_PREFIX)
+app.include_router(support.admin_router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
 # No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
 # see app/routers/checkout_stub.py.

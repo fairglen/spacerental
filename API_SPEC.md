@@ -248,6 +248,20 @@ one value: a body that carries one must carry the other (both numbers, or both
 ### DELETE /admin/spaces/:id
 Soft-delete a space.
 
+### GET /admin/support/requests
+The help-form inbox (C19), operator of `org_id` only. Newest first. Query:
+`status?` (`new` | `closed`), `page` (default 1), `page_size` (default 20, max
+100). A request whose tenant could not be resolved appears in no inbox.
+Response: `{ requests: SupportRequest[], total, page, page_size }` where each
+row is `{ id, reference, category, status, contact_email, user_id, booking_id,
+booking: Booking | null, message, context, created_at, updated_at }`.
+
+### PUT /admin/support/requests/:id
+Body: `{ status: "new" | "closed" }` — mark handled, or reopen. `404` for
+another organisation's request. Response: `{ request: SupportRequest }`.
+Answering happens by email (the notification carries `Reply-To`); nothing here
+sends anything. Full handling stays deferred (TODO.md D06).
+
 ### Photos: POST /admin/rooms/:id/images · POST /admin/spaces/:id/images
 Upload ONE photo (`multipart/form-data`, field `file`). Operator of `org_id`
 only; the room/space is looked up inside that org first, so another tenant's id

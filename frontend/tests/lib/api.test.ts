@@ -551,3 +551,23 @@ describe('supportApi (C17)', () => {
     expect(mockApi.post).toHaveBeenCalledWith('/support/requests', body)
   })
 })
+
+// C19: the operator inbox, paginated like the admin bookings list.
+describe('adminApi support inbox (C19)', () => {
+  it('getSupportRequests merges the org param, passes filters and returns the page', async () => {
+    const mockApi = {
+      defaults: { params: { org_id: 'org-1' } },
+      get: vi.fn().mockResolvedValue({ data: { requests: [{ id: 'r1', reference: 'R1' }], total: 1, page: 1, page_size: 20 } }),
+    } as any
+    const page = await adminApi.getSupportRequests({ status: 'new', page: 2 }, mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/support/requests', { params: { org_id: 'org-1', status: 'new', page: 2 } })
+    expect(page.requests[0].reference).toBe('R1')
+    expect(page.total).toBe(1)
+  })
+
+  it('updateSupportRequest puts the status and unwraps the request', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { request: { id: 'r1', status: 'closed' } } }) } as any
+    expect((await adminApi.updateSupportRequest('r1', 'closed', mockApi)).status).toBe('closed')
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/support/requests/r1', { status: 'closed' })
+  })
+})

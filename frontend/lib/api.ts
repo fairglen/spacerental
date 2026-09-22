@@ -3,7 +3,7 @@ import type {
   Space, Room, Booking, Package, UserPackagePurchase, Photo,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
-  SupportRequestBody, SupportRequestReceipt,
+  SupportRequestBody, SupportRequestReceipt, SupportRequestRow, PaginatedSupportRequests,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -280,6 +280,15 @@ export const adminApi = {
   // The FULL list of ids in the order wanted; the first becomes the cover.
   reorderPhotos: (kind: PhotoOwner, id: string, order: string[], api: Api): Promise<Photo[]> =>
     api.put<PhotoOwnerResponse>(`/admin/${kind}/${id}/images/order`, { order }).then(r => photosOf(kind, r.data)),
+
+  // ── Support inbox (C19) ───────────────────────────────────────────────
+  getSupportRequests: (params: Record<string, string | number>, api: Api): Promise<PaginatedSupportRequests> =>
+    api.get<PaginatedSupportRequests>('/admin/support/requests', {
+      params: { ...(api.defaults.params || {}), ...params },
+    }).then(r => ({ ...r.data, requests: r.data.requests.map(row => ({ ...row, booking: row.booking ? normBooking(row.booking) : null })) })),
+
+  updateSupportRequest: (id: string, status: 'new' | 'closed', api: Api): Promise<SupportRequestRow> =>
+    api.put<{ request: SupportRequestRow }>(`/admin/support/requests/${id}`, { status }).then(r => r.data.request),
 
   getAvailability: (roomId: string, api: Api) =>
     api.get<{ rules: AvailabilityRule[] }>(`/admin/rooms/${roomId}/availability`).then(r => r.data.rules),

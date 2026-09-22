@@ -196,6 +196,29 @@ export type SupportRequestReceipt = {
   created_at: string
 }
 
+// One inbox row for the operator (C19).
+export type SupportRequestRow = {
+  id: string
+  reference: string
+  category: SupportCategory
+  status: 'new' | 'closed'
+  contact_email: string
+  user_id: string | null
+  booking_id: string | null
+  booking: Booking | null
+  message: string
+  context: SupportRequestBody['context']
+  created_at: string
+  updated_at: string
+}
+
+export type PaginatedSupportRequests = {
+  requests: SupportRequestRow[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export type AdminStats = {
   total_bookings: number
   total_revenue: number
