@@ -1829,7 +1829,27 @@ checkout still comes up.
 
 ### C15 — Admin: manage photos and every customer-visible room field
 
-**Priority: P1. State: QUEUED** (PR 1). **Scope:** a "Fotografias" section on
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** `PhotoManager` (17 component tests: empty/grid/limit states,
+"Capa" on the first only, reorder by buttons and by drag sending the full
+order, a refused reorder keeps the list and says why, delete behind a confirm
+step, client-side type/size refusal naming the file with no request, several
+files sent one request at a time with a progressbar, every server error mapped
+next to its file while the queue carries on, drop zone, only as many files as
+fit); room edit dialog tests (description, amenities, active; an inactive room
+is listed and can be switched back on; the Fotografias section); 3 API shape
+tests. Vitest 394; admin Playwright spec 6 passed; a live upload → fetch
+(`image/webp`, `nosniff`) → delete against the running stack. **Found and
+fixed here:** the admin rooms page read rooms from the PUBLIC endpoint, which
+hides inactive rooms — so a room an operator switched off vanished from the
+admin and could never be switched back on. It now reads the operator's own
+listing. **Decisions:** (1) never optimistic — the grid always shows the last
+list the server returned; (2) the new-space page reveals the photo step after
+the space is created (photos need an owner) instead of sending the operator to
+find "Editar"; (3) plain `<img>`, not `next/image`, for operator-uploaded files
+on the API's origin. **Limit to know:** deactivating a room here does not yet
+check for future bookings — that check is A07 (PR 2). **Scope:** a "Fotografias" section on
 the admin room edit page and the space new/edit pages: thumbnail grid, first =
 "Capa", drag-to-reorder with move up/down buttons as the keyboard path, delete
 with confirm, upload (button + drop zone, several files, one request at a time,

@@ -1,3 +1,14 @@
+// An uploaded photo (C14). URLs are absolute and ready to use; `thumb_url` is
+// the 480px version for cards. Sizes are null only for a photo carried over
+// from an old external `images` URL.
+export type Photo = {
+  id: string
+  url: string
+  thumb_url: string
+  width: number | null
+  height: number | null
+}
+
 export type Space = {
   id: string
   org_id: string
@@ -11,6 +22,8 @@ export type Space = {
   latitude?: number | null
   longitude?: number | null
   images: string[]
+  // In display order; the first is the cover.
+  photos?: Photo[]
   amenities: string[]
   is_active: boolean
   created_at: string
@@ -26,6 +39,8 @@ export type Room = {
   capacity: number
   hourly_rate: number
   images: string[]
+  // In display order; the first is the cover.
+  photos?: Photo[]
   amenities: string[]
   color: string
   is_active: boolean

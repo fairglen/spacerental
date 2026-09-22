@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type {
-  Space, Room, Booking, Package, UserPackagePurchase,
+  Space, Room, Booking, Package, UserPackagePurchase, Photo,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
 } from '@/types'
@@ -45,17 +45,18 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function normSpace<T extends { latitude?: unknown; longitude?: unknown; rooms?: Room[] }>(s: T): T {
+function normSpace<T extends { latitude?: unknown; longitude?: unknown; rooms?: Room[]; photos?: Photo[] }>(s: T): T {
   return {
     ...s,
     latitude: numOrNull(s.latitude),
     longitude: numOrNull(s.longitude),
+    photos: s.photos ?? [],
     ...(s.rooms ? { rooms: s.rooms.map(normRoom) } : {}),
   } as T
 }
 
-function normRoom<T extends { hourly_rate?: unknown }>(r: T): T {
-  return { ...r, hourly_rate: num(r.hourly_rate) } as T
+function normRoom<T extends { hourly_rate?: unknown; photos?: Photo[] }>(r: T): T {
+  return { ...r, hourly_rate: num(r.hourly_rate), photos: r.photos ?? [] } as T
 }
 
 function normBooking<T extends Booking>(b: T): T {
@@ -200,6 +201,13 @@ export const packagesApi = {
 
 // ─── Admin ───────────────────────────────────────────────────────────────
 
+export type PhotoOwner = 'rooms' | 'spaces'
+type PhotoOwnerResponse = { room?: Room; space?: Space }
+
+function photosOf(kind: PhotoOwner, data: PhotoOwnerResponse): Photo[] {
+  return (kind === 'rooms' ? data.room?.photos : data.space?.photos) ?? []
+}
+
 export const adminApi = {
   getDashboard: (api: Api) =>
     api.get<AdminStats>('/admin/dashboard').then(r => r.data),
@@ -242,6 +250,26 @@ export const adminApi = {
 
   updatePackage: (id: string, data: Partial<Package>, api: Api) =>
     api.put<{ package: Package }>(`/admin/packages/${id}`, data).then(r => normPackage(r.data.package)),
+
+  // ── Photos (C14/C15) ──────────────────────────────────────────────────
+  // Every photo call answers with the updated room or space; the photo manager
+  // only needs the new list, so that is what these return.
+  uploadPhoto: (
+    kind: PhotoOwner, id: string, file: File, api: Api, onProgress?: (percent: number) => void,
+  ): Promise<Photo[]> => {
+    const body = new FormData()
+    body.append('file', file)
+    return api.post<PhotoOwnerResponse>(`/admin/${kind}/${id}/images`, body, {
+      onUploadProgress: (e) => { if (e.total) onProgress?.(Math.round((e.loaded / e.total) * 100)) },
+    }).then(r => photosOf(kind, r.data))
+  },
+
+  deletePhoto: (kind: PhotoOwner, id: string, photoId: string, api: Api): Promise<Photo[]> =>
+    api.delete<PhotoOwnerResponse>(`/admin/${kind}/${id}/images/${photoId}`).then(r => photosOf(kind, r.data)),
+
+  // The FULL list of ids in the order wanted; the first becomes the cover.
+  reorderPhotos: (kind: PhotoOwner, id: string, order: string[], api: Api): Promise<Photo[]> =>
+    api.put<PhotoOwnerResponse>(`/admin/${kind}/${id}/images/order`, { order }).then(r => photosOf(kind, r.data)),
 
   getAvailability: (roomId: string, api: Api) =>
     api.get<{ rules: AvailabilityRule[] }>(`/admin/rooms/${roomId}/availability`).then(r => r.data.rules),

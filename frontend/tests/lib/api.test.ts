@@ -499,3 +499,44 @@ describe('mixed payment shape (C13)', () => {
     expect((await adminApi.getBookings({}, admin)).bookings[0].package_hours_used).toBe(7)
   })
 })
+
+// C14/C15: photo management. Each call answers with the updated entity; the
+// wrapper hands back just its `photos`, which is all the photo manager needs.
+describe('photo management shape (C15)', () => {
+  const photos = [{ id: 'p1', url: 'http://api/media/a.webp', thumb_url: 'http://api/media/a_thumb.webp', width: 1600, height: 1200 }]
+
+  it('uploadPhoto posts multipart to the room or the space and extracts photos', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { room: { id: 'r1', hourly_rate: '11.00', photos } } }) } as any
+    const file = new File(['x'], 'a.jpg', { type: 'image/jpeg' })
+    const onProgress = vi.fn()
+    expect(await adminApi.uploadPhoto('rooms', 'r1', file, mockApi, onProgress)).toEqual(photos)
+    const [url, body, config] = mockApi.post.mock.calls[0]
+    expect(url).toBe('/admin/rooms/r1/images')
+    expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('file')).toBe(file)
+    config.onUploadProgress({ loaded: 50, total: 200 })
+    expect(onProgress).toHaveBeenCalledWith(25)
+
+    const spaceApi = { post: vi.fn().mockResolvedValue({ data: { space: { id: 's1', photos } } }) } as any
+    expect(await adminApi.uploadPhoto('spaces', 's1', file, spaceApi)).toEqual(photos)
+    expect(spaceApi.post.mock.calls[0][0]).toBe('/admin/spaces/s1/images')
+  })
+
+  it('deletePhoto and reorderPhotos extract photos from the updated entity', async () => {
+    const mockApi = {
+      delete: vi.fn().mockResolvedValue({ data: { room: { id: 'r1', photos: [] } } }),
+      put: vi.fn().mockResolvedValue({ data: { space: { id: 's1', photos } } }),
+    } as any
+    expect(await adminApi.deletePhoto('rooms', 'r1', 'p1', mockApi)).toEqual([])
+    expect(mockApi.delete).toHaveBeenCalledWith('/admin/rooms/r1/images/p1')
+    expect(await adminApi.reorderPhotos('spaces', 's1', ['p1'], mockApi)).toEqual(photos)
+    expect(mockApi.put).toHaveBeenCalledWith('/admin/spaces/s1/images/order', { order: ['p1'] })
+  })
+
+  it('an entity without the field yet reads as no photos', async () => {
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { space: { id: 's1' }, rooms: [{ id: 'r1', hourly_rate: '11.00' }] } }) } as any
+    const { space, rooms } = await spacesApi.get('s1', mockApi)
+    expect(space.photos).toEqual([])
+    expect(rooms[0].photos).toEqual([])
+  })
+})

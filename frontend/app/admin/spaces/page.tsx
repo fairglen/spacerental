@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SpaceLocationFields } from '@/components/admin/SpaceLocationFields'
+import { PhotoManager } from '@/components/admin/PhotoManager'
 import { addressLines } from '@/lib/location'
 import {
   locationDefaults, locationFormShape, locationPayload, refineCoordinatePair, type LocationFormValues,
@@ -162,6 +163,22 @@ export default function AdminSpacesPage() {
               </Button>
             </DialogFooter>
           </form>
+          {/* Outside the form: photos save themselves, one request per change. */}
+          {editingSpace && (
+            <div className="mt-6 border-t border-border pt-4">
+              <PhotoManager
+                kind="spaces"
+                entityId={editingSpace.id}
+                entityName={editingSpace.name}
+                photos={editingSpace.photos ?? []}
+                onChange={(photos) => {
+                  setEditingSpace((s) => (s ? { ...s, photos } : s))
+                  qc.invalidateQueries({ queryKey: ['admin', 'spaces'] })
+                  qc.invalidateQueries({ queryKey: ['spaces'] })
+                }}
+              />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
