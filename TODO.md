@@ -3888,7 +3888,25 @@ and on the rooms page.
 
 ### V07 — "Onde estamos" block (static site)
 
-**Priority: P2. State: QUEUED.** **Scope:** the separate "Como chegar" and
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `#localizacao` is now one "Onde estamos" section with the
+app's two-column layout: address (two lines), "Como chegar" (the existing
+Google Maps URL, renamed from "Abrir no Google Maps"), a divider, "Contacto"
+with the mailto, no phone, "Horário" as "Todos os dias, 08:00–22:00"; on the
+right a map frame (min 280px) whose placeholder shows the address and "Ver
+mapa"; `assets/js/where-map.js` mounts the OpenStreetMap iframe on click
+(lazy, referrer-free, bbox in ground distance around the pin with the frame's
+aspect) and swaps the privacy note under it for "Abrir no mapa". The contact
+form stays below under "Envie-nos uma mensagem" with its JS and ids
+untouched; `#contacto` is that form block (every "Reservar"/"Falar
+connosco" button leads there, as before) and the nav's "Como chegar" now
+reads "Onde estamos". Smoke +2 (the block's content and anchors; no iframe
+and no third-party request until the click, then the centred, same-height
+map and the link; stacked below 768px) and the renamed link test: 26
+passed; Code.gs 38. README documents the section and the two data
+attributes. **DECISION:** `#contacto` stays on the form (its meaning for
+every CTA), `#localizacao` on the new section — both resolve. **Scope (as assigned):** the separate "Como chegar" and
 "Contacto" sections of `flowspace-site/index.html` become one "Onde estamos"
 section with the same two-column layout and content: address, "Como chegar"
 (existing Google Maps URL), geral@flowspace.pt, no phone, hours as static text

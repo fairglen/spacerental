@@ -87,14 +87,68 @@ test('"next" advances the gallery, the dots and the announcer follow, and the ar
   await expect(gallery.getByRole('button', { name: 'Fotografia seguinte' })).toBeHidden(); // disabled at the end
 });
 
-test('maps link points at the correct address', async ({ page }) => {
+test('"Como chegar" points at the correct address', async ({ page }) => {
   await page.goto('/');
-  const mapsLink = page.getByRole('link', { name: 'Abrir no Google Maps' });
+  const mapsLink = page.locator('#localizacao').getByRole('link', { name: 'Como chegar' });
   await expect(mapsLink).toHaveAttribute(
     'href',
     'https://www.google.com/maps/search/?api=1&query=Rua+12+de+Julho+de+1997%2C+2745-841+Queluz+%E2%80%94+Massam%C3%A3'
   );
   await expect(mapsLink).toHaveAttribute('target', '_blank');
+});
+
+// V07: one "Onde estamos" section — address, directions, contact, hours and
+// a map that loads only when asked; the contact form still below it.
+test('"Onde estamos" holds the address, the email, the hours and no phone; the map waits to be asked', async ({ page }) => {
+  const thirdParty: string[] = [];
+  page.on('request', (r) => { if (/openstreetmap|google\./.test(r.url())) thirdParty.push(r.url()); });
+  await page.goto('/');
+  const where = page.locator('#localizacao');
+  await expect(where.getByRole('heading', { level: 2 })).toHaveText('Onde estamos');
+  await expect(where.locator('.where-address')).toContainText('2745-841 Queluz');
+  await expect(where.getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', 'mailto:geral@flowspace.pt');
+  await expect(where.locator('a[href^="tel:"]')).toHaveCount(0);
+  await expect(where.locator('.where-line').last()).toHaveText('Todos os dias, 08:00–22:00');
+  // Both anchors resolve: the section, and the form below it.
+  await expect(page.locator('#contacto')).toHaveCount(1);
+  await expect(page.locator('#contacto')).toContainText('Envie-nos uma mensagem');
+  await expect(page.locator('#contacto form#contactForm')).toHaveCount(1);
+  await expect(page.locator('#localizacao #contacto')).toHaveCount(1);
+
+  // No map, no third-party request, until the visitor asks; the placeholder
+  // holds the address and the button at the map's size.
+  await expect(where.locator('iframe')).toHaveCount(0);
+  expect(thirdParty).toEqual([]);
+  const frame = where.locator('.where-map-frame');
+  const before = await frame.boundingBox();
+  expect(before!.height).toBeGreaterThanOrEqual(280);
+  await expect(where.locator('.where-map-placeholder')).toContainText('2745-841 Queluz');
+
+  await where.getByRole('button', { name: 'Ver mapa' }).click();
+  const map = where.locator('iframe');
+  await expect(map).toHaveAttribute('src', /openstreetmap\.org\/export\/embed\.html/);
+  await expect(map).toHaveAttribute('loading', 'lazy');
+  await expect(map).toHaveAttribute('referrerpolicy', 'no-referrer');
+  const src = new URL((await map.getAttribute('src'))!);
+  expect(src.searchParams.get('marker')).toBe('38.755723,-9.279799');
+  const [west, south, east, north] = src.searchParams.get('bbox')!.split(',').map(Number);
+  expect((west + east) / 2).toBeCloseTo(-9.279799, 5);
+  expect((south + north) / 2).toBeCloseTo(38.755723, 5);
+  // The box has the frame's shape on the ground, so the pin is centred.
+  const ratio = ((east - west) * Math.cos((38.755723 * Math.PI) / 180)) / (north - south);
+  expect(ratio).toBeCloseTo(before!.width / before!.height, 1);
+  const after = await frame.boundingBox();
+  expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(2);
+  await expect(where.getByRole('link', { name: 'Abrir no mapa' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=38\.755723/);
+});
+
+test('below 768px "Onde estamos" stacks, the map under the words', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const words = await page.locator('#localizacao .where-details').boundingBox();
+  const map = await page.locator('#localizacao .where-map').boundingBox();
+  expect(map!.y).toBeGreaterThanOrEqual(words!.y + words!.height);
+  expect(Math.abs(map!.x - words!.x)).toBeLessThan(2);
 });
 
 const STUB_URL = 'https://script.google.com/macros/s/TESTDEPLOYMENT/exec';

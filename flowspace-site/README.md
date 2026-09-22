@@ -80,6 +80,20 @@ the HTML changes. The first picture loads eagerly, the rest lazily, all with
 `width`/`height` so the card does not jump. Without JavaScript the card shows
 name, price and tags and no pictures.
 
+## "Onde estamos" and the map
+
+The location, contact and hours sit in one section (`#localizacao`): the
+address, "Como chegar" (the Google Maps search URL), `geral@flowspace.pt`, no
+phone line (there is no number yet), and the hours as static text — "Todos os
+dias, 08:00–22:00", the same as the app's seed. The map on the right is an
+OpenStreetMap embed that `assets/js/where-map.js` mounts **only when the
+visitor presses "Ver mapa"**, so the page makes no third-party request by
+default; the bounding box is built around the pin (the `data-lat`/`data-lng`
+attributes) with the frame's aspect ratio, so the marker is centred. The
+contact form stays below it under "Envie-nos uma mensagem", and `#contacto`
+now points at that form block (every "Reservar" button does). Change the
+address in the HTML and the coordinates in the two data attributes.
+
 ## Deploying to GitHub Pages
 
 `.github/workflows/deploy-flowspace-site.yml` publishes this directory to
@@ -682,11 +696,17 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-24 tests, all passing at time of writing. They assert:
+26 tests, all passing at time of writing. They assert:
 
 - the hero renders one headline with its emphasised word and a lede (structure,
-  not prose — the copy is the owner's to change), and the Google Maps link
-  href is exactly correct;
+  not prose — the copy is the owner's to change) and no pill above it (V04),
+  and the "Como chegar" href is exactly correct;
+- "Onde estamos" holds the address, the mailto, the hours and no phone; both
+  anchors resolve and the form is still there; no iframe and no third-party
+  request until "Ver mapa", then a lazy, referrer-free OpenStreetMap frame
+  whose box is centred on the pin with the frame's shape, at the same height
+  as the placeholder, with "Abrir no mapa" below; the block stacks below
+  768px (V07);
 - every room card has a gallery built from the manifest (one image per listed
   file with its alt, sizes and loading policy, a dot per photo, no prose
   paragraph), and "next", the dots and the arrow keys move it with the live
