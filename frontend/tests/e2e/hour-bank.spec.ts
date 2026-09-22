@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { ADMIN_STORAGE_STATE } from './global-setup'
+import { waitOutPublicRateWindow } from './helpers/rooms'
 
 /**
  * H02: the hour bank. A fresh customer is granted two packs (5h lapsing in a
@@ -35,6 +36,11 @@ async function freeDay(page: Page, roomId: string, from: number): Promise<Date> 
   }
   throw new Error('no fully free day in the next ten')
 }
+
+// help.spec.ts, just before this file, spends most of the public budget (B18).
+test.beforeAll(async () => {
+  await waitOutPublicRateWindow()
+})
 
 test('two packs form one bank: a 12h day draws on both, the balance shows what is left', async ({ page }) => {
   // Four first-time routes on a dev server (admin table, sign-in, dashboard,

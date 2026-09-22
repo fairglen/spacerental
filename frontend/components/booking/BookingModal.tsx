@@ -205,7 +205,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
         <DialogHeader>
           <DialogTitle>Confirmar Reserva</DialogTitle>
           <DialogDescription>
-            Revê a sala, o horário e a forma de pagamento antes de confirmar esta reserva.
+            Reveja a sala, o horário e a forma de pagamento antes de confirmar esta reserva.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">

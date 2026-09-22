@@ -3356,6 +3356,28 @@ Alembic migration for every schema change, never weaken a test or a rate limit.
 reschedule this fixes), C07 (the 24h cancel rule, which stays as it is), C05
 (the API-side validity checks the window joins).
 
+**Integrated verification (2026-09-23, final code state `dd842e7` plus the
+one-word register fix in the evidence commit, stub mode, no credentials,
+isolated stack rebuilt from an empty database):** backend pytest 635 passed
+(598 on main); `alembic upgrade head` → `check` → `downgrade -1` → `upgrade
+head` → `downgrade base` (no tables or enum types left) → `upgrade head` →
+`check` clean through `0011_booking_package_debits`; ruff check + format
+clean; `tsc` clean; Vitest 507 (475 on main); `next build` OK; full app
+Playwright 46 passed (43 on main + `booking-window`, `hour-bank`,
+`admin-reschedule`) on the freshly seeded stack, after the two new
+public-heavy specs were paced at their file boundaries (B18: `booking-window`
+waits before and after, `hour-bank` before) and `admin-reschedule` moved to
+a fresh customer so the seeded admin's packs, which `packages.spec` reads,
+stay as found; flowspace-site smoke not re-run (nothing under
+`flowspace-site/` changes here but the image files; 22/22 on the baseline).
+Screenshots in `pr-screenshots/` (uncommitted): the bank card with two
+packs, the modal breakdown "− 5h (de 2 packs)", the sheet after shortening
+a 9h pack booking. `PR1_DRAFT.md` (uncommitted) has the per-section summary,
+the decisions with reversals, the open questions (Q-H04 prices, Q-V08 real
+photos, H01 granularity, `balance` org scope, hourly growth) and the local
+reproduction commands. Found by the screenshot: the booking modal's
+description still read "Revê…" (informal, missed by W05c) — now "Reveja…".
+
 ### H01 — Booking window: customers book at most 30 days ahead
 
 **Priority: P1. State: IN PROGRESS** — implemented on

@@ -27,7 +27,12 @@ async function sessionToken(page: Page): Promise<string> {
   return session.accessToken
 }
 
+// Six weeks of availability is most of the public budget (B18): start on a
+// fresh window and leave one behind for help.spec.ts, which runs next.
 test.beforeAll(async () => {
+  await waitOutPublicRateWindow()
+})
+test.afterAll(async () => {
   await waitOutPublicRateWindow()
 })
 
