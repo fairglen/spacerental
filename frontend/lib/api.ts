@@ -4,6 +4,7 @@ import type {
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
   SupportRequestBody, SupportRequestReceipt, SupportRequestRow, PaginatedSupportRequests,
+  RoomBlock, AdminBookingPatch,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -251,6 +252,41 @@ export const adminApi = {
 
   updateBooking: (id: string, status: string, api: Api) =>
     api.put<{ booking: Booking }>(`/admin/bookings/${id}`, { status }).then(r => normBooking(r.data.booking)),
+
+  // ── Booking management (A01) ──────────────────────────────────────────
+  // A move answers with `hours` (before/after): a duration change moves no
+  // money, the operator settles it; the calendar shows both numbers.
+  updateBookingDetails: (id: string, body: AdminBookingPatch, api: Api) =>
+    api.put<{ booking: Booking; hours?: { before: string; after: string } }>(`/admin/bookings/${id}`, body)
+      .then(r => ({
+        booking: normBooking(r.data.booking),
+        hours: r.data.hours ? { before: num(r.data.hours.before), after: num(r.data.hours.after) } : undefined,
+      })),
+
+  createManualBooking: (
+    body: { user_id: string; room_id: string; start_time: string; end_time: string; admin_note?: string; notes?: string },
+    api: Api,
+  ) => api.post<{ booking: Booking }>('/admin/bookings', body).then(r => normBooking(r.data.booking)),
+
+  markBookingPaid: (id: string, reason: string, api: Api) =>
+    api.post<{ booking: Booking }>(`/admin/bookings/${id}/mark-paid`, { reason }).then(r => normBooking(r.data.booking)),
+
+  // ── Blocked time (A02) ────────────────────────────────────────────────
+  getBlocks: (roomId: string, params: { from?: string; to?: string }, api: Api) =>
+    api.get<{ blocks: RoomBlock[] }>(`/admin/rooms/${roomId}/blocks`, { params }).then(r => r.data.blocks),
+
+  createBlock: (roomId: string, body: { start_time: string; end_time: string; reason: string }, api: Api) =>
+    api.post<{ block: RoomBlock }>(`/admin/rooms/${roomId}/blocks`, body).then(r => r.data.block),
+
+  updateBlock: (roomId: string, blockId: string, body: Partial<{ start_time: string; end_time: string; reason: string }>, api: Api) =>
+    api.put<{ block: RoomBlock }>(`/admin/rooms/${roomId}/blocks/${blockId}`, body).then(r => r.data.block),
+
+  deleteBlock: (roomId: string, blockId: string, api: Api) =>
+    api.delete(`/admin/rooms/${roomId}/blocks/${blockId}`).then(() => undefined),
+
+  // The org's customers (A03's picker; A05 makes this searchable and paged).
+  getUsers: (api: Api) =>
+    api.get<{ users: User[] }>('/admin/users').then(r => r.data.users),
 
   getPackages: (api: Api) =>
     api.get<{ packages: Package[] }>('/admin/packages').then(r => r.data.packages.map(normPackage)),

@@ -2307,7 +2307,36 @@ directions, cross-tenant, migration round trip with a constraint test.
 
 ### A03 — Admin calendar (`/admin/calendar`)
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** react-big-calendar with
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Evidence (2026-09-22):**
+`BookingSheet` + `MoveConfirm` — 13 component tests (what the sheet shows incl.
+the customer link, mixed/manual payment lines; Confirmar; Marcar como pago
+with a required reason; Cancelar with reason + confirm step; Alterar horário
+sending room/time and reporting `hours` before → after with the settle-outside
+note; a 409 shown inline; Guardar nota; linked support requests; the popover
+describes the move, calls the API only on "Mover", Escape/"Não mover" do
+nothing, a resize names the hour change, a refusal stays inline). 7 API shape
+tests. Playwright `admin-calendar.spec.ts`: day-by-room with a column per
+room; click the seeded booking → cancel from the sheet; a manual booking
+created on an empty 14:00 slot through "Nova reserva" (customer picker, note)
+and shown with its "local" tag; an hour blocked through "Bloquear horário";
+`GET /rooms/{id}/availability` then reports 14:00 and 16:00 taken and 10:00
+free again. Drag-to-move exercised live in Chromium: the popover appears, the
+booking is NOT moved until "Mover" (verified via the API mid-drag), then lands
+where dragged. Vitest 454; `next build` OK (`/admin/calendar` static).
+**Found by running it:** (1) the sheet reset its status line on every fresh
+copy of the same booking — now only when a different booking opens; (2) the
+new-entry dialog kept its first slot's times — now keyed per picked slot.
+**Decisions:** (1) the vertical range is 07:00–22:00 with 08–20 shaded as the
+seed's opening hours, not the rooms' union (the availability rules are per
+room and the page would need one more query per room; queued as a follow-up
+under A03 residuals); (2) the customer picker reads the existing
+`/admin/users`, which lists only customers who already booked — A05 upgrades
+it to members; (3) `resources` are the space's active rooms in the day view,
+and a block shows as a hatched event with a small sheet (remove/close) rather
+than the full booking sheet. **Residuals:** opening-hours union per room;
+keyboard drag alternative is the sheet's "Alterar horário" (as specified).
+**Scope:** react-big-calendar with
 `resources` and its drag-and-drop addon. "Dia por sala" (a column per active
 room) and "Semana" for one room; status shown by colour AND text; cancelled
 hidden behind a toggle; blocks hatched; a right-side sheet per booking with

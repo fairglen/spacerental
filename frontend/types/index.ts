@@ -241,3 +241,24 @@ export type Membership = {
   org_slug: string
   role: 'owner' | 'admin' | 'member'
 }
+
+// A02: a stretch of time the operator took a room out of service.
+export type RoomBlock = {
+  id: string
+  org_id: string
+  room_id: string
+  start_time: string
+  end_time: string
+  reason: string
+  created_by: string | null
+  created_at: string
+}
+
+// A01: what PUT /admin/bookings/:id accepts — any subset.
+export type AdminBookingPatch = {
+  status?: Booking['status']
+  start_time?: string
+  end_time?: string
+  room_id?: string
+  admin_note?: string | null
+}
