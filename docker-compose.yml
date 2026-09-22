@@ -74,7 +74,8 @@ services:
       # without it rather than silently running the stub.
       EMAIL_MODE: ${EMAIL_MODE:-stub}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-EspaçoHora <no-reply@espacohora.pt>}
+      # flowspace.pt must be verified at the email provider before live mode.
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-FlowSpace <no-reply@flowspace.pt>}
       # Where help-form requests go (C17); the public contact address (C09).
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-geral@flowspace.pt}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}

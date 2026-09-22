@@ -1,4 +1,8 @@
 {
+  "brand": {
+    "name": "FlowSpace",
+    "tagline": "Gabinetes profissionais"
+  },
   "hero": {
     "badge": "Disponível à hora ou com pacote de horas",
     "headline_start": "O teu espaço,",
@@ -96,7 +100,7 @@
     "contact_heading": "Contacto",
     "location": "Portugal",
     "location_city": "{city}, Portugal",
-    "copyright": "© {year} EspaçoHora. Todos os direitos reservados."
+    "copyright": "© {year} {brand}. Todos os direitos reservados."
   },
   "location": {
     "heading": "Onde estamos",

@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { useSession } from 'next-auth/react'
 import { Navbar } from '@/components/layout/Navbar'
 import { useOrg } from '@/contexts/OrgContext'
+import { t } from '@/lib/i18n'
 
 vi.mock('next-auth/react', () => ({
   useSession: vi.fn(),
@@ -27,6 +28,13 @@ describe('Navbar component i18n refactor (9.1)', () => {
       setCurrentOrgId: vi.fn(),
       isLoading: false,
     })
+  })
+
+  it('shows the brand from the catalog, not a hard-coded name (W02)', () => {
+    render(<Navbar />)
+
+    expect(screen.getByRole('link', { name: t('brand.name') })).toHaveAttribute('href', '/')
+    expect(screen.queryByText(/espa[cç]ohora/i)).not.toBeInTheDocument()
   })
 
   it('renders nav links in Portuguese', () => {

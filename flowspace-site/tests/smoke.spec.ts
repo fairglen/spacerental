@@ -1,7 +1,7 @@
 /**
  * Optional, standalone smoke test for flowspace-site.
  *
- * This is a manual pre-ship check, NOT part of the EspaçoHora CI pipeline —
+ * This is a manual pre-ship check, NOT part of the app's CI pipeline —
  * it is not registered in frontend/playwright.config.ts or any GitHub
  * Actions workflow. Run it by hand before shipping a change to
  * flowspace-site/, if you want extra confidence beyond the manual checklist

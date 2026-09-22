@@ -24,7 +24,7 @@ export function Footer() {
           <div>
             <div className="flex items-center gap-2 mb-4">
               <Building2 className="h-5 w-5 text-primary-light" />
-              <span className="text-lg font-bold">EspaçoHora</span>
+              <span className="text-lg font-bold">{t('brand.name')}</span>
             </div>
             <p className="text-sm text-gray-400 max-w-xs">
               {t('footer.tagline')}
@@ -82,7 +82,7 @@ export function Footer() {
           </div>
         </div>
         <div className="mt-8 pt-8 border-t border-gray-700 text-center text-sm text-gray-500">
-          {t('footer.copyright', { year: new Date().getFullYear() })}
+          {t('footer.copyright', { year: new Date().getFullYear(), brand: t('brand.name') })}
         </div>
       </div>
     </footer>

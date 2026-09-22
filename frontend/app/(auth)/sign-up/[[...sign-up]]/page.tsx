@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authApi } from '@/lib/api'
 import { safeInternalPath } from '@/lib/navigation'
+import { useT } from '@/lib/i18n'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obrigatório'),
@@ -27,6 +28,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 export default function SignUpPage() {
+  const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
   // Set when arriving from a "Comprar Pack" click while signed out (B12) — the
@@ -70,7 +72,7 @@ export default function SignUpPage() {
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
             <Building2 className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold text-foreground">EspaçoHora</span>
+            <span className="text-xl font-bold text-foreground">{t('brand.name')}</span>
           </Link>
         </div>
         <Card>

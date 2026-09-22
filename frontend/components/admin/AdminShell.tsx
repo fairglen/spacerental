@@ -1,0 +1,98 @@
+'use client'
+import { useSession } from 'next-auth/react'
+import { useRouter, usePathname } from 'next/navigation'
+import { useEffect } from 'react'
+import Link from 'next/link'
+import { LayoutDashboard, Building2, Calendar, CalendarDays, Package, LogOut, LifeBuoy, Users } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useOrg } from '@/contexts/OrgContext'
+import { useT } from '@/lib/i18n'
+
+const navItems = [
+  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/spaces', label: 'Espaços', icon: Building2 },
+  { href: '/admin/calendar', label: 'Calendário', icon: CalendarDays },
+  { href: '/admin/bookings', label: 'Reservas', icon: Calendar },
+  { href: '/admin/packages', label: 'Pacotes', icon: Package },
+  { href: '/admin/users', label: 'Utilizadores', icon: Users },
+  { href: '/admin/support', label: 'Pedidos de ajuda', icon: LifeBuoy },
+]
+
+/**
+ * The admin chrome: session/role gate, sidebar and content area. A client
+ * component, so the page title lives in the server layout that wraps it.
+ */
+export function AdminShell({ children }: { children: React.ReactNode }) {
+  const t = useT()
+  const { status } = useSession()
+  const { currentMembership, memberships, isLoading } = useOrg()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.replace('/sign-in')
+      return
+    }
+    if (status !== 'authenticated' || isLoading) return
+    // Need a membership selected, and it must be admin/owner in the active org.
+    const role = currentMembership?.role
+    const isAdmin = role === 'owner' || role === 'admin'
+    // If memberships have loaded but none grant admin in the active org, bounce.
+    if (memberships.length > 0 && !isAdmin) {
+      router.replace('/dashboard')
+    }
+  }, [status, isLoading, currentMembership, memberships, router])
+
+  if (status === 'loading' || isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        A carregar…
+      </div>
+    )
+  }
+
+  const role = currentMembership?.role
+  const isAdmin = role === 'owner' || role === 'admin'
+  if (!isAdmin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        A redirecionar…
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <aside className="w-56 bg-white border-r border-border flex flex-col">
+        <div className="p-4 border-b border-border">
+          <Link href="/" className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-primary" />
+            <span className="font-bold text-foreground text-sm">{t('brand.name')}</span>
+          </Link>
+          <p className="text-xs text-muted-foreground mt-1">Painel de Admin</p>
+        </div>
+        <nav className="flex-1 p-3 space-y-1">
+          {navItems.map((item) => (
+            <Link key={item.href} href={item.href}
+              className={cn(
+                'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors',
+                pathname === item.href
+                  ? 'bg-accent text-primary font-medium'
+                  : 'text-muted-foreground hover:bg-background hover:text-foreground'
+              )}>
+              <item.icon className="h-4 w-4" />
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="p-3 border-t border-border">
+          <Link href="/" className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground">
+            <LogOut className="h-4 w-4" /> Voltar ao Site
+          </Link>
+        </div>
+      </aside>
+      <main className="flex-1 overflow-auto">{children}</main>
+    </div>
+  )
+}

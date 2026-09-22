@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from fastapi import BackgroundTasks
 
-from app.config import settings
+from app.config import BRAND_NAME, settings
 
 logger = logging.getLogger("app.email")
 
@@ -173,6 +173,12 @@ def _format_datetime_pt(start: datetime, end: datetime) -> tuple[str, str]:
     return date_str, time_str
 
 
+# Every customer email ends the same way; the operator-facing support mail
+# (an internal forward) does not.
+SIGN_OFF_TEXT = f"Até breve,\nA equipa {BRAND_NAME}\n"
+SIGN_OFF_HTML = f"<p>Até breve,<br />A equipa {escape(BRAND_NAME)}</p>"
+
+
 def booking_confirmation_email(
     *,
     to: str,
@@ -199,7 +205,8 @@ def booking_confirmation_email(
         f"Data: {date_str}\n"
         f"Horário: {time_str}\n\n"
         "Pode cancelar esta reserva (até 24 horas antes do início) em:\n"
-        f"{cancel_url}\n"
+        f"{cancel_url}\n\n"
+        f"{SIGN_OFF_TEXT}"
     )
     safe_space_name = escape(space_name)
     safe_room_name = escape(room_name)
@@ -216,6 +223,7 @@ def booking_confirmation_email(
         f"<li><strong>Horário:</strong> {safe_time_str}</li>"
         "</ul>"
         f'<p><a href="{safe_cancel_url}">Cancelar reserva</a></p>'
+        f"{SIGN_OFF_HTML}"
     )
     return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
 
@@ -237,7 +245,8 @@ def booking_cancellation_email(
         f"Sala: {room_name}\n"
         f"Data: {date_str}\n"
         f"Horário: {time_str}\n\n"
-        f"Pode fazer uma nova reserva em:\n{browse_url}\n"
+        f"Pode fazer uma nova reserva em:\n{browse_url}\n\n"
+        f"{SIGN_OFF_TEXT}"
     )
     html_body = (
         "<p>A sua reserva foi cancelada.</p>"
@@ -248,6 +257,7 @@ def booking_cancellation_email(
         f"<li><strong>Horário:</strong> {time_str}</li>"
         "</ul>"
         f'<p><a href="{browse_url}">Fazer nova reserva</a></p>'
+        f"{SIGN_OFF_HTML}"
     )
     return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
 

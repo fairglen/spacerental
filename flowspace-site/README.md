@@ -1,8 +1,8 @@
 # flowspace-site
 
 A real, standalone static marketing site for **flowspace.pt** — a Portuguese
-therapy-room-rental business. This is **not** part of the EspaçoHora SaaS app
-in `frontend/`/`backend/`. It shares no build, no dependency, and no runtime
+therapy-room-rental business. This is **not** part of the FlowSpace app
+in `frontend/`/`backend/` (the app took the same brand in W02). It shares no build, no dependency, and no runtime
 with that app; it just happens to live in the same repository and is styled
 to match its sage-green design system (see `assets/css/tokens.css`, copied
 1:1 from `frontend/tailwind.config.ts`).
@@ -17,7 +17,7 @@ and acceptance criteria, and the plan this was built from for full context.
   contact form, and a Google Apps Script backend that emails submissions to
   `geral@flowspace.pt`.
 - **Isn't**: a Next.js app, a Tailwind build, or anything requiring
-  `npm install` to preview. It isn't wired into any EspaçoHora CI workflow,
+  `npm install` to preview. It isn't wired into any of the app's CI workflows,
   and touching it never runs `backend-tests.yml`/`frontend-tests.yml`/`e2e.yml`.
 - **Isn't** storing submissions anywhere durable — see "Sheet logging" below.
 
@@ -643,7 +643,7 @@ success banner; the entered values must survive so the visitor can retry)
       horizontal scroll, nav collapses to the mobile menu below 768px.
 
 **Visual parity**
-- [ ] Side-by-side against the EspaçoHora SaaS landing page
+- [ ] Side-by-side against the FlowSpace app landing page
       (`frontend/app/page.tsx`) for palette, border radius, and font parity.
 
 ## Optional smoke test

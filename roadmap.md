@@ -1,4 +1,6 @@
-# EspaçoHora roadmap
+# FlowSpace roadmap
+
+(FlowSpace is the product formerly called EspaçoHora; renamed 2026-09-22, TODO.md W02.)
 
 Agreed on 2026-09-09, following the assessment of main (`bc3112b`) and the open PRs.
 

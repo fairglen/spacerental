@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { safeInternalPath } from '@/lib/navigation'
+import { useT } from '@/lib/i18n'
 
 const schema = z.object({
   email: z.string().email('Email inválido'),
@@ -20,6 +21,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 export default function SignInPage() {
+  const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
   // Carried over from Pricing/sign-up when a signed-out visitor picked a
@@ -55,7 +57,7 @@ export default function SignInPage() {
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 text-primary">
             <Building2 className="h-6 w-6" />
-            <span className="text-xl font-bold text-foreground">EspaçoHora</span>
+            <span className="text-xl font-bold text-foreground">{t('brand.name')}</span>
           </Link>
         </div>
         <Card>

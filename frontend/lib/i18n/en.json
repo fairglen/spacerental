@@ -1,4 +1,8 @@
 {
+  "brand": {
+    "name": "FlowSpace",
+    "tagline": "Professional consulting rooms"
+  },
   "hero": {
     "badge": "Available hourly or with an hour package",
     "headline_start": "Your space,",
@@ -96,7 +100,7 @@
     "contact_heading": "Contact",
     "location": "Portugal",
     "location_city": "{city}, Portugal",
-    "copyright": "© {year} EspaçoHora. All rights reserved."
+    "copyright": "© {year} {brand}. All rights reserved."
   },
   "location": {
     "heading": "Where we are",

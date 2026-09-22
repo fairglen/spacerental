@@ -6,7 +6,7 @@ This document captures the *why* behind the architecture, the non-obvious gotcha
 
 ## 1. What this project is
 
-**EspaçoHora** is a multi-tenant SaaS for renting professional spaces (therapy rooms, consultation offices, coworking) by the hour. It started as a POC to evaluate a single physical location in Lisbon and is designed to grow into a platform other space operators can use.
+**FlowSpace** (formerly EspaçoHora — renamed 2026-09-22, W02; internal identifiers such as the repo, package, database, env var and Compose service names deliberately keep the old name) is a multi-tenant SaaS for renting professional spaces (therapy rooms, consultation offices, coworking) by the hour. It started as a POC to evaluate a single physical location in Lisbon and is designed to grow into a platform other space operators can use.
 
 **Status:** WIP / early POC. Hourly/package checkout and email gateways run locally in explicit stub mode; a smart-lock stub foundation and gated weekly series are integrated. Production recovery/durability and the fresh-customer journey remain open. Read `roadmap.md` and `TODO.md` for current scope, evidence and execution holds.
 
