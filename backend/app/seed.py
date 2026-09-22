@@ -89,6 +89,13 @@ def _previous_demo_room_description(name: str) -> str:
     return f"Sala privada e confortável — {name}."
 
 
+# Opening hours the seed writes (V05): every day, 08:00-22:00. Evaluated in
+# UTC like every rule (R01), so the Lisbon wall clock reads 09:00-23:00 in
+# summer. `_PREVIOUS_SEED_RULES` is what earlier seeds wrote (Mon-Sat
+# 08:00-20:00), which a re-seed replaces; anything else is an operator's.
+SEED_RULES = frozenset((day, time(8, 0), time(22, 0), True) for day in range(7))
+_PREVIOUS_SEED_RULES = frozenset((day, time(8, 0), time(20, 0), True) for day in range(6))
+
 # The four illustrated room scenes the marketing site ships (V01): the same
 # four, in this order, for every demo room, until real photos replace them
 # (TODO Q-V08). Each is a 1600x1200 WebP with a 480x360 thumbnail, already
@@ -297,25 +304,32 @@ async def seed_demo_data(session: AsyncSession) -> None:
             print(f"  Seeded {len(SEED_PHOTO_NAMES)} illustration photos for {room.name}")
         created_rooms.append(room)
 
-    # ── Availability Rules (Mon-Sat 08:00-20:00) ──────────────────────────
+    # ── Availability Rules (every day 08:00-22:00, V05) ───────────────────
     for room in created_rooms:
         result = await session.execute(
             select(AvailabilityRule).where(AvailabilityRule.room_id == room.id)
         )
         existing_rules = result.scalars().all()
-        if not existing_rules:
-            for day in range(6):  # 0=Monday to 5=Saturday
-                rule = AvailabilityRule(
-                    room_id=room.id,
-                    day_of_week=day,
-                    open_time=time(8, 0),
-                    close_time=time(20, 0),
-                )
-                session.add(rule)
-            await session.flush()
-            print(f"Created availability rules for room: {room.name}")
+        found = {(r.day_of_week, r.open_time, r.close_time, r.is_active) for r in existing_rules}
+        if found == SEED_RULES:
+            print(f"Availability rules already current for room: {room.name}")
+        elif existing_rules and found != _PREVIOUS_SEED_RULES:
+            # An operator shaped these hours; a re-seed must not undo that.
+            print(f"Availability rules kept as the operator set them: {room.name}")
         else:
-            print(f"Availability rules already exist for room: {room.name}")
+            for rule in existing_rules:
+                await session.delete(rule)
+            for day, open_time, close_time, _ in sorted(SEED_RULES):
+                session.add(
+                    AvailabilityRule(
+                        room_id=room.id,
+                        day_of_week=day,
+                        open_time=open_time,
+                        close_time=close_time,
+                    )
+                )
+            await session.flush()
+            print(f"Seeded availability rules for room: {room.name}")
 
     # ── Packages ──────────────────────────────────────────────────────────
     packages_data = [

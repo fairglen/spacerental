@@ -1,16 +1,17 @@
 """A space has a real location: postcode and coordinates (C10)."""
 
 import uuid
+from datetime import time
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
 from app.auth import create_access_token, hash_password
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
-from app.models.space import Room, Space
+from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
 from app.seed import DEMO_ROOM_DESCRIPTIONS, DEMO_SPACE_DESCRIPTION, seed_demo_data
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 API = "/api/v1"
@@ -394,3 +395,78 @@ class TestSeed:
         assert rooms["Sala Calma"].description == DEMO_ROOM_DESCRIPTIONS["Sala Calma"]
         assert rooms["Sala Brisa"].description == "Texto do operador sobre a Brisa."
         assert await db_session.scalar(select(func.count()).select_from(Room)) == 3
+
+
+class TestSeedOpeningHours:
+    """V05: every demo room is open 08:00-22:00, all seven days."""
+
+    async def _rules(self, db_session) -> dict[str, set[tuple]]:
+        rooms = (await db_session.execute(select(Room))).scalars().all()
+        out = {}
+        for room in rooms:
+            rules = (
+                await db_session.execute(
+                    select(AvailabilityRule).where(AvailabilityRule.room_id == room.id)
+                )
+            ).scalars()
+            out[room.name] = {(r.day_of_week, r.open_time, r.close_time) for r in rules}
+        return out
+
+    async def test_a_fresh_seed_opens_every_day_eight_to_twenty_two(self, db_session):
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        expected = {(day, time(8, 0), time(22, 0)) for day in range(7)}
+        assert all(rules == expected for rules in (await self._rules(db_session)).values())
+        assert len(await self._rules(db_session)) == 3
+
+    async def test_reseeding_replaces_what_earlier_seeds_wrote(self, db_session):
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        room = (await db_session.execute(select(Room).order_by(Room.name))).scalars().first()
+        # The database as the pre-V05 seed left it: Monday-Saturday 08-20.
+        await db_session.execute(
+            delete(AvailabilityRule).where(AvailabilityRule.room_id == room.id)
+        )
+        for day in range(6):
+            db_session.add(
+                AvailabilityRule(
+                    room_id=room.id, day_of_week=day, open_time=time(8, 0), close_time=time(20, 0)
+                )
+            )
+        await db_session.commit()
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        rules = (await self._rules(db_session))[room.name]
+        assert rules == {(day, time(8, 0), time(22, 0)) for day in range(7)}
+
+    async def test_an_operators_own_hours_are_kept(self, db_session):
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        room = (await db_session.execute(select(Room).order_by(Room.name))).scalars().first()
+        await db_session.execute(
+            delete(AvailabilityRule).where(AvailabilityRule.room_id == room.id)
+        )
+        theirs = {(0, time(9, 0), time(13, 0)), (2, time(14, 0), time(18, 0))}
+        for day, open_time, close_time in theirs:
+            db_session.add(
+                AvailabilityRule(
+                    room_id=room.id, day_of_week=day, open_time=open_time, close_time=close_time
+                )
+            )
+        await db_session.commit()
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        assert (await self._rules(db_session))[room.name] == theirs
+
+    async def test_a_second_seed_rewrites_nothing(self, db_session):
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        ids = sorted((await db_session.execute(select(AvailabilityRule.id))).scalars().all())
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        assert (
+            sorted((await db_session.execute(select(AvailabilityRule.id))).scalars().all()) == ids
+        )
+        assert len(ids) == 21

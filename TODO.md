@@ -3800,7 +3800,26 @@ parity test; site smoke.
 
 ### V05 — Opening hours: 08:00–22:00 every day
 
-**Priority: P2. State: QUEUED.** **Scope:** `backend/app/seed.py` gives every
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `seed.py` writes `SEED_RULES` (7 days × 08:00–22:00) and, on
+a re-seed, replaces exactly what earlier seeds wrote (`_PREVIOUS_SEED_RULES`,
+Mon–Sat 08:00–20:00) while leaving an operator's own hours alone — 4 real-PG
+tests in `test_space_location.py::TestSeedOpeningHours` (fresh seed: 21 rules;
+the pre-V05 set is replaced; an operator's kept; a second seed rewrites no
+row). Verified, not rebuilt: the customer calendar's visible range derives
+from the returned slots (B34, `visibleRange`, its unit tests unchanged) and
+the loop stack serves 14 slots 08:00–22:00 UTC after the re-seed. The admin
+calendar (A03) shades 08–22 instead of 08–20 and shows until 23:00 so the
+last hour stays visible in summer; its rooms-union residual stands. The
+e2e specs that skipped Sundays keep doing so (harmless) and `hour-bank`
+counts the 08–20 slots it needs rather than the day's total. Playwright
+`booking`, `week-view`, `admin-calendar`, `hour-bank` 16 passed on the
+re-seeded stack. **Known limitation, recorded (R01):** rules are evaluated in
+UTC, so Lisbon reads 09:00–23:00 in summer. **DECISION:** the re-seed
+replaces only the exact set an earlier seed wrote (any other set is an
+operator's), the same rule W04 applies to descriptions and V01 to photos.
+**Scope (as assigned):** `backend/app/seed.py` gives every
 room 08:00–22:00 on all seven days (idempotent update of existing rules);
 tests pinning 08–20 updated; the customer calendar's visible range follows the
 rules (B34 derived it from the slots — verified, fixed if not). **Known
