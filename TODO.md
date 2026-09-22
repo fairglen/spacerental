@@ -1696,6 +1696,14 @@ shown; real-PG tests for range bounds and the rate tier; week-view E2E green.
 Owner assignment recorded above; branch `feat/customer-mixed-pay-photos-help`,
 one commit per task, in the order C13 → C14 → C15 → C16 → C17 → C18 → C19.
 
+**Integrated verification (2026-09-22, final branch state `2718b05`, stub
+mode, no credentials, isolated stack rebuilt from an empty database):** backend
+pytest 516 passed (427 on main); `alembic upgrade head` → `check` → downgrade →
+upgrade → `downgrade base` (no tables or enum types left) → `upgrade head` →
+`check` clean through `0007_support_requests`; `tsc` clean; Vitest 434 (346 on
+main); `next build` OK; full Playwright 40 passed with the recurrence flag off
+AND 40 passed with it on (CI's configuration); `npm audit` unchanged at 21.
+
 ### C13 — Pack hours first, pay only the extra hours (`mixed` payment)
 
 **Priority: P1. State: IN PROGRESS** — implemented on
