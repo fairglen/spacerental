@@ -552,7 +552,7 @@ success banner; the entered values must survive so the visitor can retry)
 - [ ] `stale_or_future_timestamp` — leave the page open for over an hour, then
       submit. Expect "O formulário esteve aberto demasiado tempo…".
 - [ ] Unconfirmed — go offline (devtools → Network → Offline) and submit.
-      Expect the neutral "Não conseguimos confirmar o envio da tua mensagem…",
+      Expect the neutral "Não conseguimos confirmar o envio da sua mensagem…",
       **not** a hard failure and **not** a success. A hard "failed" on a
       message that did send causes duplicate submissions.
 - [ ] Unconfirmed — with devtools, override the response to non-JSON (or point

@@ -70,7 +70,7 @@
   ];
 
   const CONTACT_FALLBACK =
-    'Escreve-nos para geral@flowspace.pt e respondemos em menos de 24 horas.';
+    'Escreva-nos para geral@flowspace.pt e respondemos em menos de 24 horas.';
 
   const UNAVAILABLE_MESSAGE =
     'O formulário está temporariamente indisponível. ' + CONTACT_FALLBACK;
@@ -81,32 +81,32 @@
   // may well have been delivered, and a hard "failed" here would push the
   // visitor into sending a duplicate. Do not overclaim in either direction.
   const UNCONFIRMED_MESSAGE =
-    'Não conseguimos confirmar o envio da tua mensagem. Aguarda um momento e ' +
-    'tenta novamente. Se o problema persistir, ' +
-    'escreve-nos para geral@flowspace.pt.';
+    'Não conseguimos confirmar o envio da sua mensagem. Aguarde um momento e ' +
+    'tente novamente. Se o problema persistir, ' +
+    'escreva-nos para geral@flowspace.pt.';
 
   // One message per error code Code.gs can return. Reading these at all is
   // only possible because the response is no longer opaque.
   const ERROR_MESSAGES = {
     rate_limited:
-      'Recebemos demasiados pedidos neste momento. Tenta novamente dentro de ' +
-      'alguns minutos ou escreve-nos para geral@flowspace.pt.',
+      'Recebemos demasiados pedidos neste momento. Tente novamente dentro de ' +
+      'alguns minutos ou escreva-nos para geral@flowspace.pt.',
     invalid_email:
-      'O email indicado não foi aceite. Confirma o endereço e tenta novamente.',
+      'O email indicado não foi aceite. Confirme o endereço e tente novamente.',
     invalid_option:
-      'A especialidade ou o interesse selecionado não é válido. Recarrega a ' +
-      'página e volta a escolher uma das opções da lista.',
+      'A especialidade ou o interesse selecionado não é válido. Recarregue a ' +
+      'página e volte a escolher uma das opções da lista.',
     missing_fields:
-      'Faltam dados obrigatórios. Preenche o nome, o email, a especialidade e ' +
+      'Faltam dados obrigatórios. Preencha o nome, o email, a especialidade e ' +
       'o interesse.',
     send_failed:
       'A mensagem não pôde ser entregue por email. ' + CONTACT_FALLBACK,
     invalid_payload:
-      'O pedido não foi aceite. Recarrega a página e tenta novamente.',
+      'O pedido não foi aceite. Recarregue a página e tente novamente.',
     field_too_long:
-      'Um dos campos é demasiado longo. Encurta a mensagem e tenta novamente.',
+      'Um dos campos é demasiado longo. Encurte a mensagem e tente novamente.',
     stale_or_future_timestamp:
-      'O formulário esteve aberto demasiado tempo. Recarrega a página e envia ' +
+      'O formulário esteve aberto demasiado tempo. Recarregue a página e envie ' +
       'novamente.',
   };
 
@@ -304,7 +304,7 @@
 
     const now = Date.now();
     if (now - lastSubmitTime < SUBMIT_COOLDOWN_MS) {
-      showError('Aguarda alguns segundos antes de submeter novamente.');
+      showError('Aguarde alguns segundos antes de submeter novamente.');
       return;
     }
 
