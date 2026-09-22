@@ -193,7 +193,7 @@ class TestDetail:
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert set(body) == {"user", "bookings", "purchases", "support_requests"}
+        assert set(body) == {"user", "bookings", "purchases", "balance", "support_requests"}
         assert body["user"]["email"] == test_user.email and body["user"]["role"] == "member"
         assert len(body["bookings"]) == 1 and body["bookings"][0]["room"]["name"] == test_room.name
         assert len(body["purchases"]) == 1

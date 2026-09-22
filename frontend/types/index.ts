@@ -66,6 +66,9 @@ export type Booking = {
   // Hours paid with pack hours: 0 for hourly, the whole duration for package,
   // in between for mixed. For hourly/mixed `total_amount` is the money charged.
   package_hours_used?: number
+  // H02: which purchases those hours came from. Operator responses only;
+  // present while the booking holds its hours.
+  package_debits?: BookingPackageDebit[]
   notes?: string
   // Set when this booking is one occurrence of a recurring series.
   recurrence_rule_id?: string | null
@@ -126,6 +129,26 @@ export type UserPackagePurchase = {
 // The operator's view of a purchase (A05): plus the private note.
 export type AdminPurchase = UserPackagePurchase & { admin_note: string | null }
 
+// H02: one purchase's share of a booking's pack hours.
+export type BookingPackageDebit = {
+  purchase_id: string
+  hours: number
+  package_name: string | null
+  expires_at: string | null
+}
+
+// H02: the hour bank as one number — every active, unexpired hour the
+// customer holds — and the slice of it that lapses first.
+export type PackageBalance = {
+  hours_available: number
+  hours_expiring_next: { hours: number; expires_at: string } | null
+}
+
+export type MyPackages = {
+  purchases: UserPackagePurchase[]
+  balance: PackageBalance
+}
+
 // One member of the operator's org, as /admin/users lists them (A05).
 export type OrgUser = {
   id: string
@@ -148,6 +171,8 @@ export type OrgUserDetail = {
   user: OrgUser
   bookings: Booking[]
   purchases: AdminPurchase[]
+  // The same bank the customer sees on their packs page (H02).
+  balance: PackageBalance
   support_requests: SupportRequestRow[]
 }
 

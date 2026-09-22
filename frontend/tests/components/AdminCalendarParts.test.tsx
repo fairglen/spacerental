@@ -55,6 +55,22 @@ describe('BookingSheet — what it shows', () => {
     expect(within(sheet).getByDisplayValue('cliente habitual')).toBeInTheDocument()
   })
 
+  it('lists which packs a booking drew on, behind a disclosure (H02)', () => {
+    renderSheet({
+      ...booking, payment_method: 'package', duration_hours: 5, package_hours_used: 5, total_amount: 55,
+      package_debits: [
+        { purchase_id: 'p-soon', hours: 2, package_name: 'Pack 10h', expires_at: '2026-10-03T00:00:00Z' },
+        { purchase_id: 'p-later', hours: 3, package_name: 'Pack 20h', expires_at: '2026-11-21T00:00:00Z' },
+      ],
+    })
+    expect(screen.getByText(/Pack · 5h do pack/)).toBeVisible()
+    const summary = screen.getByText('Ver os 2 packs')
+    expect(summary.closest('details')).not.toHaveAttribute('open')
+    fireEvent.click(summary)
+    expect(screen.getByText('2h · Pack 10h · expira 3 out')).toBeVisible()
+    expect(screen.getByText('3h · Pack 20h · expira 21 nov')).toBeVisible()
+  })
+
   it('shows the pack share of a mixed booking and "Pago no local" for a manual one', () => {
     const { unmount } = render(<QueryClientProvider client={new QueryClient()}><BookingSheet booking={{ ...booking, payment_method: 'mixed', package_hours_used: 1, total_amount: 11 }} rooms={rooms} onClose={vi.fn()} onChanged={vi.fn()} /></QueryClientProvider>)
     expect(screen.getByText(/1h do pack \+ 11,00\s€/)).toBeVisible()

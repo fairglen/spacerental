@@ -498,6 +498,30 @@ describe('BookingModal price breakdown (C13)', () => {
     expect(breakdown()).toHaveTextContent(/A pagar agora\s*0,00\s€/)
   })
 
+  it('the bank spans packs (H02): one line says how many, and the sum is what is left', async () => {
+    // 1h lapsing soon + 4h later cover the 3h block outright: 1 + 2, "de 2 packs".
+    vi.mocked(packagesApi.listMine).mockResolvedValue([
+      purchase(4, { id: 'purchase-later', expires_at: '2027-06-01T00:00:00Z' }),
+      purchase(1, { id: 'purchase-soon', expires_at: '2026-10-01T00:00:00Z' }),
+    ])
+    renderModal()
+
+    expect(await screen.findByRole('radio', { name: /usar horas do pack \(5h disponíveis\)/i })).toBeChecked()
+    expect(breakdown()).toHaveTextContent(/Horas do pack\s*−\s*3h\s*\(de 2 packs\)\s*\(ficam 2h\)/)
+    expect(breakdown()).toHaveTextContent(/A pagar agora\s*0,00\s€/)
+    // Sent as "my pack", the server decides it is a package booking.
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar Reserva/i }))
+    await waitFor(() => expect(bookingsApi.create).toHaveBeenCalled())
+    expect(vi.mocked(bookingsApi.create).mock.calls[0][0]).toMatchObject({ payment_method: 'package' })
+  })
+
+  it('a single pack never says "de 1 packs"', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(5)])
+    renderModal()
+    await screen.findByRole('radio', { name: /usar horas do pack/i })
+    expect(breakdown()).not.toHaveTextContent(/packs\)/)
+  })
+
   it('no usable hours: no breakdown, the plain total as before', async () => {
     renderModal()
     await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())

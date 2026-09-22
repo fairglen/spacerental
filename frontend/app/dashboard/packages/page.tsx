@@ -26,11 +26,14 @@ export default function MyPackagesPage() {
   const highlightId = searchParams.get('packageId')
   const highlightRef = useRef<HTMLDivElement | null>(null)
 
-  const { data: purchases, isLoading } = useQuery({
-    queryKey: ['packages', 'me'],
-    queryFn: () => packagesApi.listMine(api),
+  // The purchases and the bank they form (H02), in one read.
+  const { data: mine, isLoading } = useQuery({
+    queryKey: ['packages', 'me', 'bank'],
+    queryFn: () => packagesApi.myPackages(api),
     enabled: !!session?.accessToken,
   })
+  const purchases = mine?.purchases
+  const balance = mine?.balance
 
   const { data: availablePackages, isLoading: isLoadingAvailable } = useQuery({
     queryKey: ['packages', 'available', currentOrgId],
@@ -51,10 +54,29 @@ export default function MyPackagesPage() {
         <div className="bg-white border-b border-border py-8">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
             <h1 className="text-2xl font-bold text-foreground">Os meus Pacotes</h1>
-            <p className="text-muted-foreground mt-1 text-sm">Horas pré-pagas disponíveis.</p>
+            <p className="text-muted-foreground mt-1 text-sm">Horas pré-pagas disponíveis. As horas de todos os packs formam um só saldo.</p>
           </div>
         </div>
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8 space-y-10">
+          {/* H02: one balance across every pack; the API's number, not a client sum. */}
+          {balance && (
+            <section aria-labelledby="banco-de-horas">
+              <Card className="border-primary/40 bg-accent">
+                <CardContent className="p-5 flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <h2 id="banco-de-horas" className="text-sm font-medium text-muted-foreground">Banco de horas</h2>
+                    <p className="text-2xl font-bold text-foreground">{formatHours(balance.hours_available)} disponíveis</p>
+                  </div>
+                  {balance.hours_expiring_next && (
+                    <p className="text-sm text-muted-foreground">
+                      {formatHours(balance.hours_expiring_next.hours)} expiram a{' '}
+                      {format(parseISO(balance.hours_expiring_next.expires_at), "d 'de' MMM", { locale: pt })}.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+          )}
           <section>
             {isLoading ? (
               <div className="space-y-3">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>

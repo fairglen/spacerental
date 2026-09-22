@@ -5,7 +5,7 @@ import type {
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
   SupportRequestBody, SupportRequestReceipt, SupportRequestRow, PaginatedSupportRequests,
   OrgUser, OrgUserDetail, PaginatedOrgUsers, AdminPurchase, ComplimentaryHoursBody,
-  RoomBlock, AdminBookingPatch,
+  RoomBlock, AdminBookingPatch, PackageBalance, MyPackages,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -68,7 +68,17 @@ function normBooking<T extends Booking>(b: T): T {
     total_amount: num(b.total_amount),
     duration_hours: num(b.duration_hours),
     package_hours_used: num(b.package_hours_used),
+    package_debits: b.package_debits?.map((d) => ({ ...d, hours: num(d.hours) })),
     room: b.room ? normRoom(b.room) : b.room,
+  }
+}
+
+function normBalance(b: PackageBalance): PackageBalance {
+  return {
+    hours_available: num(b.hours_available),
+    hours_expiring_next: b.hours_expiring_next
+      ? { ...b.hours_expiring_next, hours: num(b.hours_expiring_next.hours) }
+      : null,
   }
 }
 
@@ -195,6 +205,13 @@ export const packagesApi = {
   listMine: (api: Api) =>
     api.get<{ purchases: UserPackagePurchase[] }>('/packages/me').then(r => r.data.purchases.map(normPurchase)),
 
+  // H02: the purchases AND the bank they form, for the packs page.
+  myPackages: (api: Api): Promise<MyPackages> =>
+    api.get<MyPackages>('/packages/me').then(r => ({
+      purchases: r.data.purchases.map(normPurchase),
+      balance: normBalance(r.data.balance),
+    })),
+
   purchase: (packageId: string, orgId: string, api: Api) =>
     api.post<PackagePurchaseCheckout>(`/packages/${packageId}/purchase`, { org_id: orgId })
       .then(r => ({
@@ -297,6 +314,7 @@ export const adminApi = {
       ...r.data,
       bookings: r.data.bookings.map(normBooking),
       purchases: r.data.purchases.map(normPurchase),
+      balance: normBalance(r.data.balance),
     })),
 
   setUserRole: (id: string, role: 'admin' | 'member', api: Api): Promise<OrgUser> =>

@@ -3,7 +3,19 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -104,3 +116,48 @@ class UserPackagePurchase(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="package_purchases", lazy="noload")  # noqa: F821
     package: Mapped["Package"] = relationship("Package", back_populates="purchases", lazy="noload")
+
+
+class BookingPackageDebit(Base):
+    """One booking's draw on one purchase (H02).
+
+    The hour bank: a booking's pack share may come from several purchases,
+    soonest-expiring first, and each purchase must get exactly its own hours
+    back when the booking stops holding them. A row exists only while the
+    booking holds its hours (`package_hours.holds_package_hours`): cancelling,
+    a lapsed hold or an operator moving it out of a slot-holding status credits
+    every row and deletes it; reinstating re-debits through the same walk and
+    writes fresh rows. `Booking.package_hours_used` stays as the booking's
+    split for good and equals the sum of these rows while they exist.
+    """
+
+    __tablename__ = "booking_package_debits"
+    __table_args__ = (
+        UniqueConstraint(
+            "booking_id", "purchase_id", name="uq_booking_package_debits_booking_purchase"
+        ),
+        Index("ix_booking_package_debits_purchase_id", "purchase_id"),
+        Index("ix_booking_package_debits_org_id", "org_id"),
+        CheckConstraint("hours > 0", name="ck_booking_package_debits_hours_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4()
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    purchase_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user_package_purchases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    hours: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    purchase: Mapped["UserPackagePurchase"] = relationship("UserPackagePurchase", lazy="noload")

@@ -30,7 +30,7 @@ from app.locks import (
 )
 from app.models.booking import PAID_AT_CHECKOUT, Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember
-from app.models.package import Package
+from app.models.package import BookingPackageDebit, Package, UserPackagePurchase
 from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
 from app.payments import (
@@ -58,6 +58,14 @@ from app.schemas.space import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# The operator's split view (H02): which purchases a booking's pack hours
+# came from. Loaded wherever an operator reads a booking, never for a customer.
+_WITH_DEBITS = (
+    selectinload(Booking.package_debits)
+    .selectinload(BookingPackageDebit.purchase)
+    .selectinload(UserPackagePurchase.package)
+)
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -396,7 +404,7 @@ async def admin_list_bookings(
 
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room), selectinload(Booking.user))
+        .options(selectinload(Booking.room), selectinload(Booking.user), _WITH_DEBITS)
         .where(and_(*filters))
         .order_by(Booking.start_time.desc(), Booking.id.desc())
         .offset((page - 1) * page_size)
@@ -416,7 +424,11 @@ async def _locked_booking(db: AsyncSession, booking_id: uuid.UUID, org_id: uuid.
     """The booking, inside the operator's org, locked for the transaction."""
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
         .where(Booking.id == booking_id, Booking.org_id == org_id)
         .with_for_update(of=Booking)
         .execution_options(populate_existing=True)
@@ -634,7 +646,11 @@ async def admin_update_booking(
     # against the room the booking is in NOW.
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
         .where(Booking.id == booking.id)
         .execution_options(populate_existing=True)
     )
@@ -737,7 +753,11 @@ async def admin_create_booking(
         ) from None
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
         .where(Booking.id == booking.id)
         .execution_options(populate_existing=True)
     )
@@ -836,7 +856,11 @@ async def admin_mark_booking_paid(
         ) from None
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
         .where(Booking.id == booking.id)
         .execution_options(populate_existing=True)
     )

@@ -112,7 +112,11 @@ class TestMyPackages:
         # Start with empty list
         empty = await client.get("/api/v1/packages/me", headers=auth_headers)
         assert empty.status_code == 200
-        assert empty.json() == {"purchases": []}
+        # H02: the bank rides alongside the list; empty means zero, nothing lapsing.
+        assert empty.json() == {
+            "purchases": [],
+            "balance": {"hours_available": "0", "hours_expiring_next": None},
+        }
 
         # Purchase one
         buy = await client.post(

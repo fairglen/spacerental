@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import clock
+from app import clock, package_hours
 from app.auth import get_current_user
 from app.booking_validity import expire_user_holds
 from app.database import get_db
@@ -21,6 +21,7 @@ from app.payments import (
     get_payment_gateway,
 )
 from app.schemas.package import (
+    PackageBalanceOut,
     PackageOut,
     PackagePurchaseBody,
     PackagePurchaseCheckoutOut,
@@ -138,15 +139,24 @@ async def my_packages(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """My package purchases and remaining hours."""
+    """My package purchases and remaining hours, plus the bank they form (H02).
+
+    `balance` sums every active, unexpired purchase the caller holds. It
+    spans organizations the way the purchases list does — the product has
+    one location (C11); a per-org figure is the same sum over the list.
+    """
     # A lapsed mixed hold still has hours debited until something reconciles
     # it (expiry is lazy); the balance shown here must not be short by them.
-    await expire_user_holds(db, user.id, clock.utcnow())
+    now = clock.utcnow()
+    await expire_user_holds(db, user.id, now)
     result = await db.execute(
         select(UserPackagePurchase)
         .options(selectinload(UserPackagePurchase.package))
         .where(UserPackagePurchase.user_id == user.id)
         .order_by(UserPackagePurchase.expires_at.asc())
     )
-    purchases = result.scalars().all()
-    return {"purchases": [UserPackagePurchaseOut.model_validate(p) for p in purchases]}
+    purchases = list(result.scalars().all())
+    return {
+        "purchases": [UserPackagePurchaseOut.model_validate(p) for p in purchases],
+        "balance": PackageBalanceOut.model_validate(package_hours.bank_balance(purchases, now)),
+    }

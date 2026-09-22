@@ -12,18 +12,19 @@ function purchase(id: string, hours: number, overrides: Partial<UserPackagePurch
   }
 }
 
-// Mirrors `create_booking` on the backend (C13): the server decides the real
-// split, this only tells the customer beforehand what it will be.
+// Mirrors `create_booking` on the backend (C13, pooled by H02): the server
+// decides the real split, this only tells the customer beforehand what it
+// will be.
 describe('planPayment', () => {
   it('7h pack, 8h booking: the pack gives 7 and 1 hour is paid', () => {
     expect(planPayment([purchase('a', 7)], 'org-1', 8, NOW)).toEqual({
-      kind: 'partial', purchaseId: 'a', packHours: 7, paidHours: 1, hoursLeftAfter: 0,
+      kind: 'partial', packHours: 7, paidHours: 1, hoursLeftAfter: 0, packsUsed: 1,
     })
   })
 
   it('a pack that covers everything pays for everything', () => {
     expect(planPayment([purchase('a', 10)], 'org-1', 8, NOW)).toEqual({
-      kind: 'full', purchaseId: 'a', packHours: 8, paidHours: 0, hoursLeftAfter: 2,
+      kind: 'full', packHours: 8, paidHours: 0, hoursLeftAfter: 2, packsUsed: 1,
     })
   })
 
@@ -31,18 +32,32 @@ describe('planPayment', () => {
     expect(planPayment([purchase('a', 8)], 'org-1', 8, NOW).kind).toBe('full')
   })
 
-  it('a whole-block pack wins over a sooner-expiring partial one', () => {
+  it('the bank is one balance: 2h + 10h cover 8h, the sooner pack first (H02)', () => {
     const plan = planPayment(
       [purchase('soon', 2, { expires_at: '2026-10-01T00:00:00Z' }), purchase('big', 10)], 'org-1', 8, NOW,
     )
-    expect(plan).toMatchObject({ kind: 'full', purchaseId: 'big' })
+    expect(plan).toEqual({ kind: 'full', packHours: 8, paidHours: 0, hoursLeftAfter: 4, packsUsed: 2 })
   })
 
-  it('otherwise the soonest-expiring pack gives its hours, and only that one', () => {
+  it('3h + 5h pay an 8h block outright, nothing in money (H02)', () => {
     const plan = planPayment(
       [purchase('later', 5), purchase('soon', 3, { expires_at: '2026-10-01T00:00:00Z' })], 'org-1', 8, NOW,
     )
-    expect(plan).toEqual({ kind: 'partial', purchaseId: 'soon', packHours: 3, paidHours: 5, hoursLeftAfter: 0 })
+    expect(plan).toEqual({ kind: 'full', packHours: 8, paidHours: 0, hoursLeftAfter: 0, packsUsed: 2 })
+  })
+
+  it('money starts only when the whole bank is spent: 2h + 10h against 13h', () => {
+    const plan = planPayment(
+      [purchase('soon', 2, { expires_at: '2026-10-01T00:00:00Z' }), purchase('big', 10)], 'org-1', 13, NOW,
+    )
+    expect(plan).toEqual({ kind: 'partial', packHours: 12, paidHours: 1, hoursLeftAfter: 0, packsUsed: 2 })
+  })
+
+  it('counts only the packs the block actually draws on', () => {
+    const plan = planPayment(
+      [purchase('soon', 2, { expires_at: '2026-10-01T00:00:00Z' }), purchase('big', 10)], 'org-1', 2, NOW,
+    )
+    expect(plan).toEqual({ kind: 'full', packHours: 2, paidHours: 0, hoursLeftAfter: 10, packsUsed: 1 })
   })
 
   it.each([

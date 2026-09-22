@@ -2,7 +2,7 @@ import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { Check, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Booking } from '@/types'
-import { formatCurrency, formatHours, STATUS_COLORS, STATUS_LABELS } from '@/lib/utils'
+import { formatCurrency, formatHours, packSplitLines, STATUS_COLORS, STATUS_LABELS } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -42,11 +42,20 @@ export function BookingsTable({
                   <td className="px-4 py-3 text-muted-foreground">{b.user?.email ?? '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground">{b.duration_hours}h</td>
                   <td className="px-4 py-3 font-medium text-foreground">
-                    {formatCurrency(b.total_amount)}
+                    {b.payment_method === 'package' ? formatHours(b.duration_hours) + ' do pack' : formatCurrency(b.total_amount)}
                     {/* C13: the money is only part of a mixed booking's price. */}
                     {b.payment_method === 'mixed' && (
                       <span className="block text-xs font-normal text-muted-foreground">
                         + {formatHours(b.package_hours_used ?? 0)} do pack
+                      </span>
+                    )}
+                    {/* H02: which packs, on hover. */}
+                    {(b.package_debits?.length ?? 0) > 0 && (
+                      <span
+                        className="block text-xs font-normal text-muted-foreground underline decoration-dotted cursor-help"
+                        title={packSplitLines(b.package_debits).join('\n')}
+                      >
+                        {b.package_debits!.length === 1 ? '1 pack' : `de ${b.package_debits!.length} packs`}
                       </span>
                     )}
                   </td>

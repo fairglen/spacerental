@@ -240,7 +240,9 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Horas do pack</span>
                     <span className="font-medium text-foreground">
-                      − {formatHours(plan.packHours)}{' '}
+                      − {formatHours(plan.packHours)}
+                      {/* H02: the bank spans packs; say so when this block does. */}
+                      {plan.packsUsed > 1 && <span className="font-normal text-muted-foreground"> (de {plan.packsUsed} packs)</span>}{' '}
                       <span className="font-normal text-muted-foreground">(ficam {formatHours(plan.hoursLeftAfter)})</span>
                     </span>
                   </div>

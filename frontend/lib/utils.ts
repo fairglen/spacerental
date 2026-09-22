@@ -2,7 +2,7 @@ import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import type { Booking } from '@/types'
+import type { Booking, BookingPackageDebit } from '@/types'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -87,6 +87,19 @@ export function formatBookingCost(
   // A01: arranged with the operator; the amount is the slot's value, not a charge.
   if (b.payment_method === 'manual') return 'Pago no local'
   return formatCurrency(b.total_amount)
+}
+
+/**
+ * The operator's per-pack split of a booking's hours (H02): one line per
+ * purchase, "2h · Pack 10h · expira 3 out". Empty when the booking holds no
+ * hours or the response did not carry the split.
+ */
+export function packSplitLines(debits: BookingPackageDebit[] | undefined): string[] {
+  return (debits ?? []).map((d) => {
+    const parts = [formatHours(d.hours), d.package_name ?? 'Pack']
+    if (d.expires_at) parts.push(`expira ${format(parseISO(d.expires_at), 'd MMM', { locale: pt })}`)
+    return parts.join(' · ')
+  })
 }
 
 /** "10h", "7,5h" — a whole number of hours has no fraction, a real fraction

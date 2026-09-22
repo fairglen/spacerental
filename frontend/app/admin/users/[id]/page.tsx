@@ -70,7 +70,7 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 rounded-xl" /></div>
   if (isError || !data) return <div className="p-8"><p role="alert" className="text-sm text-red-600">Não foi possível carregar este utilizador. <Link href="/admin/users" className="underline">Voltar à lista</Link>.</p></div>
 
-  const { user, bookings, purchases, support_requests } = data
+  const { user, bookings, purchases, balance, support_requests } = data
   const isSelf = session?.user?.id === user.id
   const canChangeRole = !isSelf && user.role !== 'owner'
   const activePacks = packages.filter((p) => p.is_active)
@@ -105,7 +105,16 @@ function UserDetail({ userId, currentOrgId }: { userId: string; currentOrgId: st
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Packs e horas</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base">Packs e horas</CardTitle>
+          {/* H02: the same bank the customer sees on their packs page. */}
+          <p data-testid="user-hour-bank" className="text-sm text-muted-foreground">
+            Banco de horas: <span className="font-semibold text-foreground">{formatHours(balance.hours_available)} disponíveis</span>
+            {balance.hours_expiring_next && (
+              <> · {formatHours(balance.hours_expiring_next.hours)} expiram a {format(parseISO(balance.hours_expiring_next.expires_at), "d 'de' MMM", { locale: pt })}.</>
+            )}
+          </p>
+        </CardHeader>
         <CardContent className="p-0">
           {purchases.length === 0 ? (
             <p className="px-6 pb-6 text-sm text-muted-foreground">Sem packs.</p>

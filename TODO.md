@@ -3418,7 +3418,67 @@ customer cannot reach day N+1, the admin can create there.
 
 ### H02 — Hour bank: packs pooled, purchase history kept
 
-**Priority: P1. State: QUEUED.** Today a booking points at ONE purchase
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/booking-rules-hour-bank`, committed locally; DONE only once merged.
+**Evidence (2026-09-22):** 13 real-PG tests in `tests/test_hour_bank.py`
+(A=2h + B=10h: a 5h block draws 2 and 3, no money, confirmed at once, the
+deprecated link stays NULL; 13h draws 12 from the packs and charges one hour
+— Checkout "1h Sala A (12h pagas com o pack)"; `package` is all-or-nothing
+across the bank with the balances untouched on refusal; an expired pack is
+not in the bank; two concurrent 7h blocks against the 12h bank take exactly 12
+between them, no purchase goes negative, each booking's rows add up to its
+share; cancel restores 2 to A and 3 to B exactly and deletes the rows while
+`package_hours_used` stays 5 for the record; a lapsed hold restores each
+purchase; reinstating after A's hours went elsewhere re-debits the 5h from B
+and the response shows the split; reinstating is refused, nothing moved, when
+the bank cannot cover it; `GET /packages/me` sums the bank and names what
+lapses first while pending/cancelled purchases stay out of it and the
+history keeps all four rows; the admin user page shows the same balance; an
+empty bank; the operator list carries `package_debits` and the customer list
+does not; the migration's backfill SQL, run against a real schema, gives each
+hour-holding pre-H02 booking one row, none to a cancelled or hourly one, and
+rewrites no balance; the downgrade's link recovery picks the purchase drawn
+on most and leaves an existing link alone). Re-specified for the owner's
+pooled rule (not weakened): `test_the_sooner_expiring_pack_is_spent_first…`
+(was "a whole-block pack wins", C13 decision 6) and
+`test_packs_are_pooled_soonest_expiring_first_before_any_money` (was "the
+soonest pack pays the partial share"); three others now read the debit rows
+instead of the deprecated link; two shape pins gain `balance`. Migration
+`0011_booking_package_debits` round trip: upgrade → check → downgrade -1 →
+upgrade → downgrade base (no tables, no enum types left) → upgrade head →
+check clean. Full backend 621 passed. Frontend:
+`planPayment` pooled (14 unit tests incl. 2h+10h→8h, 3h+5h→8h outright,
+2h+10h→13h = 12 + 1h money, `packsUsed` counts only packs drawn on);
+BookingModal "Horas do pack − 3h (de 2 packs) (ficam 2h)" and never "de 1
+packs" (2 tests, 30 in the file); packs page "Banco de horas — 12h
+disponíveis · 2h expiram a 3 de out." above the unchanged history, empty bank,
+the API's number wins over a client sum (3 tests); admin bookings table "5h
+do pack" + "de 2 packs" with the split as a hover title, mixed keeps
+"+ 2h do pack", no split when none (3 tests); admin sheet "Ver os 2 packs"
+disclosure listing "2h · Pack 10h · expira 3 out" (1 test); admin user page
+"Banco de horas: 3h disponíveis"; `lib/api.ts` `packagesApi.myPackages` and
+`getUser` balance/split shape tests (3). tsc clean. Playwright
+`hour-bank.spec.ts`: a fresh customer granted 5h (lapsing in a month) + 15h,
+books a whole 08–20 day with "my pack" → `package`, confirmed, 12h, no
+checkout; `/packages/me` shows 8h available and 8h expiring next; the admin
+table row reads "12h do pack · de 2 packs" with "5h · … / 7h · …" behind it;
+the customer's dashboard card reads "12h do pack" and the packs page bank
+"8h disponíveis · 8h expiram a …" with "0h restantes de 5h" / "8h restantes
+de 15h"; the operator's cancel puts 5 and 7 back (20h, 5h next). Vitest 500
+(493 on the loaded machine — the seven that timed out pass in isolation and
+are re-run in the branch's final verification); tsc clean. **DECISIONS:**
+(1) the backfill writes a row only for bookings that still hold their hours
+(`pending`/`confirmed`/`completed`); a cancelled/expired/paid-unfulfilled
+booking already had its hours credited by the old code, so a row for it
+would be a phantom debit a later reinstate would credit twice. Alternative:
+a row for every linked booking. Reverse: drop the status filter in
+`BACKFILL_SQL`. (2) `balance` on `GET /packages/me` spans organizations,
+like the purchases list it rides with (one location, C11); `planPayment`
+keeps filtering by org. Alternative: an `org_id` query parameter. (3) The
+downgrade recovers `package_purchase_id` from the largest debit so the
+pre-H02 code can credit one purchase; other draws stay spent (lossy, stated
+in the migration). (4) The bank card's expiry reads "d 'de' MMM." — date-fns
+`pt` abbreviates without the dot the assignment's text carries. **Scope (as assigned):** Today a booking points at ONE purchase
 (`package_purchase_id`) and `redeem_up_to` debits only the soonest-expiring
 pack, so with 2h left in pack A and 10h in pack B a 5h booking takes 2h from A
 and charges 3h in money instead of taking 3h from B. **Wanted:** the customer

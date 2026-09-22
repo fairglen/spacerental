@@ -141,20 +141,32 @@ what comes back:
   block. Nothing is written when it fails.
 - `mixed` — "use my pack and pay the rest". A request, not an instruction: the
   server alone decides the method stored, the pack share and the amount, and
-  ignores any such numbers in the body.
-  - One purchase can cover the whole block → a plain `package` booking
-    (confirmed, no `checkout_url`), exactly as above.
-  - Otherwise the soonest-expiring purchase that still has hours gives what it
-    has (one purchase per booking). Those hours are debited NOW, the booking is
-    `pending` with `package_hours_used` set, `total_amount` is the money for the
-    remaining hours only, and `checkout_url` charges just that. The Checkout
-    description reads e.g. `1h Sala Calma (7h pagas com o pack)`.
-  - No usable hours at all → a plain `hourly` booking.
-  The reserved hours go back to the same purchase whenever the hold ends
-  without being paid (backing out of Checkout, the hold expiring, a cancel) and
-  are taken again if the hold is resumed. Confirmation changes nothing about
-  them. Expiry is lazy: a lapsed hold's hours return the next time that
-  customer's bookings, packs or a new booking are read, or the slot is touched.
+  ignores any such numbers in the body. Since H02 the caller's purchases form
+  ONE hour bank (every `active`, unexpired purchase in the room's org),
+  drawn on soonest-expiring first, one `booking_package_debits` row per
+  purchase touched:
+  - The bank covers the whole block → a plain `package` booking (confirmed,
+    no `checkout_url`), exactly as above, even when that takes several
+    purchases.
+  - Otherwise the bank gives everything it has — `min(duration, bank)`. Those
+    hours are debited NOW, the booking is `pending` with `package_hours_used`
+    set, `total_amount` is the money for the remaining hours only, and
+    `checkout_url` charges just that. The Checkout description reads e.g.
+    `1h Sala Calma (7h pagas com o pack)`.
+  - An empty bank → a plain `hourly` booking.
+  The reserved hours go back, each to the purchase it came from, whenever the
+  hold ends without being paid (backing out of Checkout, the hold expiring, a
+  cancel) and are taken again — from whatever the bank holds then — if the
+  hold is resumed. Confirmation changes nothing about them. Expiry is lazy: a
+  lapsed hold's hours return the next time that customer's bookings, packs or
+  a new booking are read, or the slot is touched. `package` is the same walk
+  all-or-nothing: `409` and nothing debited when the bank cannot cover the
+  block.
+
+  `Booking.package_purchase_id` is **deprecated** (H02): no longer written,
+  kept nullable for one release. `package_hours_used` stays the booking's
+  pack share for good; the per-purchase split is the operator's
+  `package_debits` (below).
 
 Body: `{ room_id, start_time, end_time, notes?, payment_method? }`
 Response: `{ booking: Booking, checkout_url: string | null }`
@@ -228,8 +240,15 @@ Body: `{ org_id }`
 Response: `{ purchase: UserPackagePurchase, checkout_url: string }`
 
 ### GET /packages/me
-My package purchases and remaining hours.
-Response: `{ purchases: UserPackagePurchase[] }`
+My package purchases and remaining hours, plus the hour bank they form (H02).
+Response: `{ purchases: UserPackagePurchase[], balance: PackageBalance }` with
+`PackageBalance = { hours_available, hours_expiring_next: { hours, expires_at }
+| null }`: `hours_available` sums every `active`, unexpired purchase the
+caller holds (across organizations, like the list — the product has one
+location); `hours_expiring_next` is the slice that lapses first (purchases
+lapsing at the same instant are added together), `null` when the bank is
+empty. Lazy hold expiry runs first, so a lapsed mixed hold's hours are back in
+the number.
 
 ---
 
@@ -368,8 +387,11 @@ platform (known limitation). A moved confirmed booking gets the confirmation
 email again with the line "A tua reserva foi alterada" and a new access code.
 Response: `{ booking: AdminBooking, hours? }`.
 
-`AdminBooking` = `Booking` + `admin_note: string | null`. **`admin_note` is
-never returned by a customer endpoint.**
+`AdminBooking` = `Booking` + `admin_note: string | null` +
+`package_debits: [{ purchase_id, hours, package_name, expires_at }]` (H02: the
+purchases the booking's pack hours are currently drawn from, soonest-expiring
+first; empty when it holds no hours). **Neither is returned by a customer
+endpoint.**
 Body: `{ status: "confirmed"|"cancelled" }`
 
 ### GET /admin/users
@@ -382,9 +404,11 @@ Response: `{ users: OrgUser[], total, page, page_size }` where
 
 ### GET /admin/users/{user_id}
 One member of this org: `{ user: OrgUser, bookings: AdminBooking[] (newest
-first, ≤200, with `room`), purchases: AdminPurchase[] (with `package`),
-support_requests: SupportRequest[] (≤50) }`. Everything is scoped to this
-org. A person who is not a member → 404, identical to an unknown id.
+first, ≤200, with `room` and `package_debits`), purchases: AdminPurchase[]
+(with `package`), balance: PackageBalance (the same hour bank the customer
+sees, over this org's purchases), support_requests: SupportRequest[] (≤50) }`.
+Everything is scoped to this org. A person who is not a member → 404,
+identical to an unknown id.
 `AdminPurchase` = `UserPackagePurchase` + `admin_note: string | null`.
 
 ### PUT /admin/users/{user_id}/role

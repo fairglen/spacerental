@@ -15,7 +15,7 @@ import pytest_asyncio
 from app import package_hours
 from app.models.booking import Booking, PaymentMethod
 from app.models.organization import Organization, OrgPlan
-from app.models.package import Package, PurchaseStatus, UserPackagePurchase
+from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
 from sqlalchemy import func, select, text
 
 
@@ -341,7 +341,9 @@ class TestRedeemConcurrency:
         async with session_factory() as first, session_factory() as second:
             winner = await package_hours.redeem_hours(first, **args)
             assert winner is not None
-            assert winner.hours_remaining == Decimal("0.00")
+            # H02: a walk returns its draws; one purchase, drained.
+            assert [(p.id, taken) for p, taken in winner] == [(purchase.id, Decimal("2.00"))]
+            assert winner[0][0].hours_remaining == Decimal("0.00")
 
             contender = asyncio.create_task(package_hours.redeem_hours(second, **args))
             await asyncio.sleep(0.3)
@@ -735,11 +737,19 @@ class TestLinkedPurchase:
         created = await _book_with_package(client, auth_headers, test_room)
         assert created.status_code == 201, created.text
 
-        booking = await db_session.execute(
-            select(Booking).where(Booking.id == uuid.UUID(created.json()["booking"]["id"]))
+        booking_id = uuid.UUID(created.json()["booking"]["id"])
+        debits = (
+            (
+                await db_session.execute(
+                    select(BookingPackageDebit).where(BookingPackageDebit.booking_id == booking_id)
+                )
+            )
+            .scalars()
+            .all()
         )
-        # Soonest-expiring hours are spent first so nothing lapses unused.
-        assert booking.scalar_one().package_purchase_id == soon.id
+        # Soonest-expiring hours are spent first so nothing lapses unused; the
+        # debit row (H02) is what records where they came from.
+        assert [(d.purchase_id, d.hours) for d in debits] == [(soon.id, Decimal("2.00"))]
 
         await db_session.refresh(soon)
         await db_session.refresh(later)

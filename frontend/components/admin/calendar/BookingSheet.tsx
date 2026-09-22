@@ -8,7 +8,7 @@ import { X } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { adminBookingErrorMessage } from '@/lib/adminBookingErrors'
-import { formatBookingCost, formatHours, STATUS_COLORS, STATUS_LABELS, isUnpaidHold } from '@/lib/utils'
+import { formatBookingCost, formatHours, packSplitLines, STATUS_COLORS, STATUS_LABELS, isUnpaidHold } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -136,6 +136,17 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
           <dd className="text-foreground">
             {/* "Pago no local" already says the method; do not say it twice. */}
             {booking.payment_method === 'manual' ? formatBookingCost(booking) : `${PAYMENT_LABELS[booking.payment_method]} · ${formatBookingCost(booking)}`}
+            {/* H02: which packs the hours came from, on demand. */}
+            {(booking.package_debits?.length ?? 0) > 0 && (
+              <details className="mt-1 text-xs text-muted-foreground">
+                <summary className="cursor-pointer">
+                  {booking.package_debits!.length === 1 ? 'Ver o pack' : `Ver os ${booking.package_debits!.length} packs`}
+                </summary>
+                <ul className="mt-1 list-disc pl-4">
+                  {packSplitLines(booking.package_debits).map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </details>
+            )}
           </dd>
           <dt className="text-muted-foreground">Código</dt>
           <dd className="font-mono text-foreground">{booking.access_code ?? '—'}</dd>

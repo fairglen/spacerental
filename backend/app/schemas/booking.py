@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator, 
 
 from app.models.booking import BookingStatus, PaymentMethod
 from app.schemas.bounds import Notes, before_latest_instant
+from app.schemas.package import BookingPackageDebitOut
 from app.schemas.space import RoomOut
 from app.schemas.user import UserOut
 
@@ -103,9 +104,12 @@ class BookingCheckoutOut(BaseModel):
 
 
 class AdminBookingOut(BookingOut):
-    """What an operator sees: the customer's view plus the private note (A01)."""
+    """What an operator sees: the customer's view plus the private note (A01)
+    and, for a booking paid with pack hours, which purchases gave what (H02).
+    Empty when the booking holds no hours (or the route did not load them)."""
 
     admin_note: str | None = None
+    package_debits: list[BookingPackageDebitOut] = []
 
 
 class BookingStatusUpdate(BaseModel):

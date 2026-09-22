@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MyPackagesPage from '@/app/dashboard/packages/page'
 import { packagesApi } from '@/lib/api'
-import type { Package, UserPackagePurchase } from '@/types'
+import type { MyPackages, Package, UserPackagePurchase } from '@/types'
 
 let searchParams = new URLSearchParams()
 
@@ -24,7 +24,7 @@ vi.mock('@/lib/hooks/useApi', () => ({ useApi: () => ({}) }))
 vi.mock('@/contexts/OrgContext', () => ({ useOrg: () => ({ currentOrgId: 'org-1', memberships: [], currentMembership: null, setCurrentOrgId: vi.fn(), isLoading: false }) }))
 
 vi.mock('@/lib/api', () => ({
-  packagesApi: { listMine: vi.fn(), list: vi.fn(), purchase: vi.fn() },
+  packagesApi: { listMine: vi.fn(), myPackages: vi.fn(), list: vi.fn(), purchase: vi.fn() },
   createAuthenticatedApi: vi.fn(() => ({})),
 }))
 
@@ -48,6 +48,21 @@ const activePurchase: UserPackagePurchase = {
   package: pack10,
 }
 
+/** The page reads purchases and the bank together (H02); build both from a list. */
+function mine(purchases: UserPackagePurchase[], balance?: MyPackages['balance']) {
+  const spendable = purchases
+    .filter((p) => p.status === 'active' && new Date(p.expires_at).getTime() > Date.now() && p.hours_remaining > 0)
+    .sort((a, b) => new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime())
+  const first = spendable[0]
+  vi.mocked(packagesApi.myPackages).mockResolvedValue({
+    purchases,
+    balance: balance ?? {
+      hours_available: spendable.reduce((sum, p) => sum + p.hours_remaining, 0),
+      hours_expiring_next: first ? { hours: first.hours_remaining, expires_at: first.expires_at } : null,
+    },
+  })
+}
+
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -64,7 +79,7 @@ beforeEach(() => {
 
 describe('Dashboard packages page — buy section (B12)', () => {
   it('lists owned purchases and offers a buy button per available package', async () => {
-    vi.mocked(packagesApi.listMine).mockResolvedValue([activePurchase])
+    mine([activePurchase])
     vi.mocked(packagesApi.list).mockResolvedValue([pack10, pack20])
     renderPage()
 
@@ -75,7 +90,7 @@ describe('Dashboard packages page — buy section (B12)', () => {
 
   it('highlights the package carried over from sign-up via ?packageId', async () => {
     searchParams = new URLSearchParams('packageId=pkg-20h')
-    vi.mocked(packagesApi.listMine).mockResolvedValue([])
+    mine([])
     vi.mocked(packagesApi.list).mockResolvedValue([pack10, pack20])
     renderPage()
 
@@ -86,7 +101,7 @@ describe('Dashboard packages page — buy section (B12)', () => {
 
 describe('Packages page hours formatting (B30)', () => {
   it('renders whole hours without a decimal and fractions with a comma', async () => {
-    vi.mocked(packagesApi.listMine).mockResolvedValue([
+    mine([
       { ...activePurchase, id: 'whole', hours_remaining: 10, amount_paid: 100, hours_used: 0 },
       { ...activePurchase, id: 'frac', hours_remaining: 7.5, amount_paid: 100, hours_used: 2.5 },
     ])
@@ -95,5 +110,41 @@ describe('Packages page hours formatting (B30)', () => {
     expect(await screen.findByText(/10h restantes de 10h/)).toBeVisible()
     expect(screen.getByText(/7,5h restantes de 10h/)).toBeVisible()
     expect(screen.queryByText(/10\.0h/)).toBeNull()
+  })
+})
+
+describe('Packages page — the hour bank (H02)', () => {
+  it('shows one balance across packs and the slice that lapses first, then the history', async () => {
+    mine([
+      { ...activePurchase, id: 'later', hours_remaining: 10, hours_used: 0, expires_at: '2027-03-01T00:00:00Z' },
+      { ...activePurchase, id: 'soon', hours_remaining: 2, hours_used: 8, expires_at: '2026-10-03T00:00:00Z' },
+    ])
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    renderPage()
+
+    const bank = await screen.findByRole('region', { name: /banco de horas/i })
+    expect(bank).toHaveTextContent(/12h disponíveis/)
+    expect(bank).toHaveTextContent(/2h expiram a 3 de out\./)
+    // The purchase history stays exactly as it was, below the bank.
+    const history = screen.getByText(/10h restantes de 10h/)
+    expect(bank.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(/2h restantes de 10h/)).toBeVisible()
+  })
+
+  it('says the bank is empty and names nothing as expiring when there is nothing to spend', async () => {
+    mine([{ ...activePurchase, hours_remaining: 0, hours_used: 10 }])
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    renderPage()
+    const bank = await screen.findByRole('region', { name: /banco de horas/i })
+    expect(bank).toHaveTextContent(/0h disponíveis/)
+    expect(bank).not.toHaveTextContent(/expira/)
+  })
+
+  it('trusts the API balance over its own sum', async () => {
+    // A lapsed hold's hours the client cannot see yet: the server's number wins.
+    mine([activePurchase], { hours_available: 9, hours_expiring_next: { hours: 9, expires_at: activePurchase.expires_at } })
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    renderPage()
+    expect(await screen.findByRole('region', { name: /banco de horas/i })).toHaveTextContent(/9h disponíveis/)
   })
 })

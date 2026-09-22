@@ -154,13 +154,14 @@ async def _expire_lapsed_holds(db: AsyncSession, now: datetime, *scope) -> int:
             *scope,
         )
         .values(status=BookingStatus.expired)
-        .returning(Booking.package_purchase_id, Booking.package_hours_used)
+        .returning(Booking.id, Booking.package_hours_used)
         .execution_options(synchronize_session=False)
     )
     lapsed = result.all()
-    for purchase_id, hours in lapsed:
-        if purchase_id is not None and hours > 0:
-            await package_hours.credit_hours(db, purchase_id=purchase_id, hours=hours)
+    for booking_id, hours in lapsed:
+        if hours > 0:
+            # Every purchase the hold drew on gets its own hours back (H02).
+            await package_hours.release_debits(db, booking_id)
     return len(lapsed)
 
 
