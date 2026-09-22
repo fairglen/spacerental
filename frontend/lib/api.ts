@@ -3,6 +3,7 @@ import type {
   Space, Room, Booking, Package, UserPackagePurchase, Photo,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
+  SupportRequestBody, SupportRequestReceipt,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -197,6 +198,15 @@ export const packagesApi = {
         purchase: normPurchase(r.data.purchase),
         checkout_url: r.data.checkout_url,
       })),
+}
+
+// ─── Support (C17) ───────────────────────────────────────────────────────
+
+export const supportApi = {
+  // Works signed out (apiClient) and signed in (an authenticated instance,
+  // which is what attaches the customer's identity and their booking).
+  create: (body: SupportRequestBody, api: Api = apiClient) =>
+    api.post<{ request: SupportRequestReceipt }>('/support/requests', body).then(r => r.data.request),
 }
 
 // ─── Admin ───────────────────────────────────────────────────────────────

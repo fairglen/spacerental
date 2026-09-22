@@ -84,6 +84,10 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/admin/packages"): OPERATOR,
     ("POST", f"{API}/admin/packages"): OPERATOR,
     ("PUT", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
+    # C17 help form: open to visitors by design (whoever cannot sign in needs it
+    # most). A signed-in sender is identified from their token; someone else's
+    # booking, a bad token, throttling and the honeypot are in test_support.py.
+    ("POST", f"{API}/support/requests"): PUBLIC,
     ("POST", f"{API}/webhooks/stripe"): WEBHOOK,
     ("GET", "/checkout/stub/{session_id}"): STUB,
     ("POST", "/checkout/stub/{session_id}/pay"): STUB,

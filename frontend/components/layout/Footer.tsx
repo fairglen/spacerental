@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { Building2, MapPin, Mail } from 'lucide-react'
 import { useT } from '@/lib/i18n'
+import { useHelp } from '@/components/help/HelpProvider'
 import { CONTACT_EMAIL, contactMailto } from '@/lib/contact'
 import { useSingleSpace } from '@/lib/hooks/useSingleSpace'
 import { SpaceModeText } from '@/components/spaces/SpaceModeText'
@@ -10,6 +11,7 @@ import { SpaceModeText } from '@/components/spaces/SpaceModeText'
 export function Footer() {
   const t = useT()
   const { status } = useSession()
+  const { openHelp } = useHelp()
   // The footer names a city only when there is exactly one space to name;
   // nothing is shown until that is known, so a place never appears and changes.
   const { mode, space } = useSingleSpace()
@@ -45,6 +47,11 @@ export function Footer() {
                 <Link href="/#precos" className="hover:text-white transition-colors">
                   {t('footer.pricing')}
                 </Link>
+              </li>
+              <li>
+                <button type="button" onClick={() => openHelp()} className="hover:text-white transition-colors">
+                  {t('footer.help')}
+                </button>
               </li>
               <li>
                 {status === 'authenticated' ? (

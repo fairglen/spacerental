@@ -36,6 +36,9 @@ services:
       RATE_LIMIT_TRUST_FORWARDED_FOR: ${RATE_LIMIT_TRUST_FORWARDED_FOR:-false}
       RATE_LIMIT_UPLOAD_MAX_REQUESTS: ${RATE_LIMIT_UPLOAD_MAX_REQUESTS:-30}
       RATE_LIMIT_UPLOAD_WINDOW_SECONDS: ${RATE_LIMIT_UPLOAD_WINDOW_SECONDS:-60}
+      # The public help form (C17): every accepted request emails a person.
+      RATE_LIMIT_SUPPORT_MAX_REQUESTS: ${RATE_LIMIT_SUPPORT_MAX_REQUESTS:-5}
+      RATE_LIMIT_SUPPORT_WINDOW_SECONDS: ${RATE_LIMIT_SUPPORT_WINDOW_SECONDS:-3600}
       # ── Room and space photos (C14) ──────────────────────────────────────
       # "local" is the only storage today: processed photos live in the `media`
       # volume below and the API serves them read-only at /media. Any other
@@ -72,6 +75,8 @@ services:
       EMAIL_MODE: ${EMAIL_MODE:-stub}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-EspaçoHora <no-reply@espacohora.pt>}
+      # Where help-form requests go (C17); the public contact address (C09).
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-geral@flowspace.pt}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       # Local process-memory access codes. Live startup is gated until durable
       # identifiers and retry state ship (roadmap O04), even with credentials.

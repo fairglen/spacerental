@@ -39,6 +39,28 @@ which it clears.
 
 ## Public Endpoints
 
+### POST /support/requests
+The help form ("Ajuda"). Public; a Bearer token is optional, but one that is
+present and invalid is a `401` (an expired session is reported, not silently
+filed as an anonymous request).
+Body: `{ category: "technical" | "booking" | "payment" | "package" | "other",
+message (20–2000 chars), contact_email?, booking_id?, context?, website? }`
+- `contact_email` is required for a visitor and IGNORED for a signed-in
+  customer, whose account address is used.
+- `booking_id` is honoured only for the signed-in customer's OWN booking;
+  someone else's is a `404` identical to a missing one. A visitor's is ignored.
+- `context` is a whitelist — `page_url`, `viewport`, `user_agent`,
+  `app_version`, `timestamp` — each bounded; anything else is dropped.
+- `website` is a honeypot: a non-empty value is answered exactly like a success
+  and nothing is stored or sent.
+Stores a `support_requests` row (status `new`; `org_id` from the booking, else
+the customer's only organisation, else `CUSTOMER_ENROLLMENT_ORG_SLUG`, else
+null) and emails `SUPPORT_EMAIL` with `Reply-To` = the customer and subject
+`[Ajuda] <categoria> — #<reference>`. A mail failure does not lose the request.
+Throttled tightly (`RATE_LIMIT_SUPPORT_*`, default 5/hour per client) → `429`.
+Response `201`: `{ request: { id, reference, status, created_at } }` — never the
+message: a public endpoint does not reflect what it was sent.
+
 ### GET /spaces
 List all active spaces (public). Each space carries its location: `address`,
 `postal_code`, `city`, `latitude`, `longitude` (any of them may be `null`).

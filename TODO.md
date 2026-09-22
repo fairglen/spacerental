@@ -1897,7 +1897,33 @@ shows a photo and "next" advances.
 
 ### C17 — Help / report a problem: support requests, dialog and email
 
-**Priority: P1. State: QUEUED** (PR 1). **Scope:** "Ajuda" in the navbar (signed
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** 18 real-PG tests in `tests/test_support.py` (stored row and
+receipt shape; email to `SUPPORT_EMAIL` = `geral@flowspace.pt` with Reply-To
+the customer and subject "[Ajuda] Pagamento — #REF"; the message is never
+echoed and is escaped in the HTML part; email required when signed out; bounds
+incl. NUL and an unknown category; a visitor's `booking_id` ignored; unknown
+context keys dropped; signed-in identity from the token not the body; own
+booking attached and sets the org; someone else's booking = 404 identical to a
+missing one; a bad token is 401, not an anonymous request; honeypot answers
+like success and stores nothing; 5/hour → 429; a mail failure keeps the row).
+Route classified PUBLIC in the S01 matrix. Migration `0007_support_requests`
+round trip clean (downgrade drops its enum types too). Full backend 508.
+Frontend: `HelpProvider` (one shared dialog, presets per opener) + `HelpDialog`
+— 10 component tests (signed-out validation and success with the reference,
+context captured, "O que enviamos" collapsed, failure keeps the message,
+honeypot hidden from people; signed-in read-only email, upcoming bookings only,
+presets from props; the provider opens it from anywhere). "Ajuda" in the
+navbar (desktop + mobile, signed in and out) and footer. Vitest 420.
+Playwright `help.spec.ts`: a visitor submits from the navbar → reference and
+"Respondemos por email"; the row lands with the enrollment org resolved.
+**Decisions:** (1) a present-but-invalid token is a 401, not a silent
+anonymous request (an expired session must not drop the booking link);
+(2) `org_id` resolves booking → the customer's only org → the enrollment org →
+null, and a null-org row is emailed but listed for no tenant; (3) the app
+version is baked in at build time from `NEXT_PUBLIC_APP_VERSION` or the git
+commit. **Scope:** "Ajuda" in the navbar (signed
 in and out) and footer opens a dialog (not a floating widget): Assunto
 (Problema técnico / Reserva / Pagamento / Pack / Outro), Mensagem (20–2000),
 Email (prefilled and read-only when signed in), optional upcoming booking, a

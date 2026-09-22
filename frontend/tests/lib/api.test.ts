@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, createAuthenticatedApi } from '@/lib/api'
+import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, supportApi, createAuthenticatedApi } from '@/lib/api'
 
 describe('spacesApi.list', () => {
   it('extracts spaces array from wrapped response', async () => {
@@ -538,5 +538,16 @@ describe('photo management shape (C15)', () => {
     const { space, rooms } = await spacesApi.get('s1', mockApi)
     expect(space.photos).toEqual([])
     expect(rooms[0].photos).toEqual([])
+  })
+})
+
+// C17: the help form. The receipt is wrapped and carries no message back.
+describe('supportApi (C17)', () => {
+  it('posts the request and unwraps the receipt', async () => {
+    const receipt = { id: '3f9a12bc-0000-0000-0000-000000000000', reference: '3F9A12BC', status: 'new', created_at: '2026-09-22T10:00:00Z' }
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { request: receipt } }) } as any
+    const body = { category: 'technical' as const, message: 'x'.repeat(20), contact_email: 'a@b.pt', context: {}, website: '' }
+    expect(await supportApi.create(body, mockApi)).toEqual(receipt)
+    expect(mockApi.post).toHaveBeenCalledWith('/support/requests', body)
   })
 })

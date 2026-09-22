@@ -28,6 +28,7 @@ from app.config import settings
 AUTH_TIER = "auth"
 PUBLIC_TIER = "public"
 UPLOAD_TIER = "upload"
+SUPPORT_TIER = "support"
 
 _TIER_ATTR = "__rate_limit_tier__"
 
@@ -40,7 +41,7 @@ def rate_limit(tier: str) -> Callable[[F], F]:
     The marker is read by `RateLimitMiddleware` while resolving the route, i.e.
     before the endpoint (and its dependencies) is ever called.
     """
-    if tier not in (AUTH_TIER, PUBLIC_TIER, UPLOAD_TIER):
+    if tier not in (AUTH_TIER, PUBLIC_TIER, UPLOAD_TIER, SUPPORT_TIER):
         raise ValueError(f"Unknown rate limit tier: {tier!r}")
 
     def decorator(func: F) -> F:
@@ -70,6 +71,11 @@ def tier_limits(tier: str) -> tuple[int, int]:
         return (
             settings.RATE_LIMIT_UPLOAD_MAX_REQUESTS,
             settings.RATE_LIMIT_UPLOAD_WINDOW_SECONDS,
+        )
+    if tier == SUPPORT_TIER:
+        return (
+            settings.RATE_LIMIT_SUPPORT_MAX_REQUESTS,
+            settings.RATE_LIMIT_SUPPORT_WINDOW_SECONDS,
         )
     raise ValueError(f"Unknown rate limit tier: {tier!r}")
 

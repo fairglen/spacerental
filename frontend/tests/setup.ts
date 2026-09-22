@@ -65,3 +65,12 @@ vi.mock('next-auth/react', () => ({
 vi.mock('@/lib/hooks/useSingleSpace', () => ({
   useSingleSpace: vi.fn(() => ({ mode: 'multi', space: null, spaces: [], retry: vi.fn() })),
 }))
+
+// The help dialog is opened through one provider (C17). Navbar, Footer and the
+// booking screens ask it for `openHelp`; outside <HelpProvider> that is a
+// no-op here, so screens not about help render without the whole dialog
+// tree. Tests about help render the real provider or mock this themselves.
+vi.mock('@/components/help/HelpProvider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/help/HelpProvider')>()),
+  useHelp: vi.fn(() => ({ openHelp: vi.fn() })),
+}))

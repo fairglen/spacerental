@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # and re-encodes an image of up to 8 MB.
     RATE_LIMIT_UPLOAD_MAX_REQUESTS: int = 30
     RATE_LIMIT_UPLOAD_WINDOW_SECONDS: int = 60
+    # Support tier: the public help form (C17). Tight, because every accepted
+    # request writes a row and sends an email to a person: 5 an hour per client.
+    RATE_LIMIT_SUPPORT_MAX_REQUESTS: int = 5
+    RATE_LIMIT_SUPPORT_WINDOW_SECONDS: int = 3600
 
     # ── Media (room and space photos, C14) ───────────────────────────────
     # "local" writes processed photos under MEDIA_ROOT and the API serves them
@@ -75,6 +79,9 @@ class Settings(BaseSettings):
     EMAIL_MODE: str = "stub"
     RESEND_API_KEY: str | None = None
     EMAIL_FROM_ADDRESS: str = "EspaçoHora <no-reply@espacohora.pt>"
+    # Where help-form requests are sent (C17). The public contact address, the
+    # same one the frontend shows (frontend/lib/contact.ts, C09).
+    SUPPORT_EMAIL: str = "geral@flowspace.pt"
     # Base URL used to build links inside outgoing emails (e.g. "cancel this
     # booking"). This is handed to the user's mail client, so localhost is
     # correct here — unlike backend-to-backend calls (CLAUDE.md §6.3).

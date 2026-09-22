@@ -168,6 +168,34 @@ export type AvailabilityRule = {
   is_active: boolean
 }
 
+// The help form (C17).
+export type SupportCategory = 'technical' | 'booking' | 'payment' | 'package' | 'other'
+
+export type SupportRequestBody = {
+  category: SupportCategory
+  message: string
+  // Required when signed out; ignored (the account's address is used) when signed in.
+  contact_email?: string
+  booking_id?: string
+  context: {
+    page_url?: string
+    viewport?: string
+    user_agent?: string
+    app_version?: string
+    timestamp?: string
+  }
+  // Honeypot: always empty from a real form.
+  website: string
+}
+
+// What the sender gets back: a reference to quote, never the message.
+export type SupportRequestReceipt = {
+  id: string
+  reference: string
+  status: 'new' | 'closed'
+  created_at: string
+}
+
 export type AdminStats = {
   total_bookings: number
   total_revenue: number
