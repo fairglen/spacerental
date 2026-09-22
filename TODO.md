@@ -2230,6 +2230,18 @@ or refund is ever created by an operator action (O02 owns money movement; O05
 owns the audit trail — neither is started here). **Links:** B46 (operators had
 no action on a confirmed booking) and B43 are answered by A01/A03.
 
+**Integrated verification (2026-09-22, final branch state `a48e81b`, stub
+mode, no credentials, isolated stack rebuilt from an empty database):** backend
+pytest 595 passed (516 at PR 1's HEAD); `alembic upgrade head` → `check` →
+`downgrade -1` → `upgrade head` → `downgrade base` (no tables or enum types
+left) → `upgrade head` → `check` clean through `0010_purchase_amount_paid`;
+`tsc` clean; Vitest 471 (434 at PR 1's HEAD); `next build` OK; full Playwright
+43 passed with the recurrence flag off AND 43 passed with it on (PR 1's 40 plus
+`admin-calendar`, `admin-users`, `admin-room-active`); `npm audit` unchanged at
+21. Section 3's own end-of-section Playwright run had failed for an
+environment reason (the loop stack's backend container was gone); this final
+run on a fresh stack covers it.
+
 ### A01 — Operator booking management API
 
 **Priority: P1. State: IN PROGRESS** — implemented on
