@@ -60,7 +60,9 @@ export type Booking = {
   // was taken meanwhile (kept visible; refunds are O02).
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'expired' | 'paid_unfulfilled'
   // `mixed` (C13): part of the block came out of a pack, the rest was paid.
-  payment_method: 'hourly' | 'package' | 'mixed'
+  // `manual` (A01): paid or arranged outside the platform; set by an operator
+  // only. Customers may SEE it ("Pago no local") but never send it.
+  payment_method: 'hourly' | 'package' | 'mixed' | 'manual'
   // Hours paid with pack hours: 0 for hourly, the whole duration for package,
   // in between for mixed. For hourly/mixed `total_amount` is the money charged.
   package_hours_used?: number
@@ -69,6 +71,8 @@ export type Booking = {
   recurrence_rule_id?: string | null
   // C03: deadline of an unpaid checkout hold; null/absent when it never expires.
   hold_expires_at?: string | null
+  // A01: the operator's private note. Present only in admin responses.
+  admin_note?: string | null
   // Door code for a confirmed booking; null until the lock gateway issues
   // one (or when it could not). Never present for pending/cancelled rows.
   access_code?: string | null

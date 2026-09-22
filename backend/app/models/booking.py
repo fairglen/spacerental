@@ -43,6 +43,10 @@ class PaymentMethod(StrEnum):
     # rest is paid at Checkout (`total_amount`). Always 0 < pack share < duration:
     # a pack that covers everything is a `package` booking, none is `hourly`.
     mixed = "mixed"
+    # A01: paid or arranged outside the platform (cash, transfer, courtesy).
+    # Set only by an operator — creating a booking for a customer, or marking
+    # an unpaid hold as paid. The customer API never accepts it.
+    manual = "manual"
 
 
 # The methods that take money at Checkout: they start as an unpaid `pending`
@@ -104,6 +108,9 @@ class Booking(Base):
         server_default="hourly",
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # A01: the operator's private note ("pago em dinheiro", "pediu a sala mais
+    # silenciosa"). Never returned by a customer-facing endpoint.
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # NULL for a one-off booking; set for every occurrence expanded from a
     # series. SET NULL rather than CASCADE: a rule is retired by flipping
     # `is_active`, and should it ever be deleted outright the occurrences that

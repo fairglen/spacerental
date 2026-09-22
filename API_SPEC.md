@@ -304,8 +304,40 @@ Body: `{ rules: [{ day_of_week, open_time, close_time }] }`
 All bookings for org.
 Query: `?status=&room_id=&from=&to=`
 
+### POST /admin/bookings
+A booking the operator makes for a customer, paid or arranged outside the
+platform (A01). Body: `{ user_id, room_id, start_time, end_time, admin_note?,
+notes? }`. The customer must be a member of `org_id` and the room in it (else
+`404`); the same validity and conflict checks as a customer booking (`400`,
+`409`), but no 24h rule. Created `confirmed` with `payment_method: "manual"`,
+an access code and the confirmation email. `total_amount` is the slot's value
+for the record; nothing is charged. Response `201`: `{ booking: AdminBooking }`.
+
+### POST /admin/bookings/:id/mark-paid
+Body: `{ reason }` (required). A `pending` or `expired` `hourly`/`mixed` hold
+the customer paid some other way (cash, MB WAY): becomes `confirmed` with
+`payment_method: "manual"`, an access code and the confirmation email; the
+reason is appended to `admin_note`. The open Checkout Session is expired at the
+provider and the row loses its session id, so a late
+`checkout.session.completed` cannot double-confirm it. An expired hold's slot
+is re-checked (`409` if taken); a lapsed `mixed` hold's pack hours are taken
+again (`409` if gone). `409` for anything that is not an unpaid hourly/mixed
+hold. Response: `{ booking: AdminBooking }`.
+
 ### PUT /admin/bookings/:id
-Update booking status.
+Any combination of (A01): a status change (`status`), a move (`start_time`,
+`end_time`, `room_id` — the room must be in the same org, else `404`) and a
+private note (`admin_note`). Omitted fields are unchanged; an empty body is
+`422`. A move passes the same validity and conflict checks as a customer
+booking (`400`/`409`) with NO 24h rule for operators, and moves NO money: a
+changed duration recomputes nothing about `total_amount`; the response carries
+`hours: { before, after }` and the operator settles the difference outside the
+platform (known limitation). A moved confirmed booking gets the confirmation
+email again with the line "A tua reserva foi alterada" and a new access code.
+Response: `{ booking: AdminBooking, hours? }`.
+
+`AdminBooking` = `Booking` + `admin_note: string | null`. **`admin_note` is
+never returned by a customer endpoint.**
 Body: `{ status: "confirmed"|"cancelled" }`
 
 ### GET /admin/users

@@ -80,6 +80,10 @@ ROUTES: dict[tuple[str, str], str] = {
     ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"): OPERATOR,
     ("GET", f"{API}/admin/bookings"): OPERATOR,
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
+    # A01: operator booking management; cross-org cases in
+    # test_admin_booking_management.py.
+    ("POST", f"{API}/admin/bookings"): OPERATOR,
+    ("POST", f"{API}/admin/bookings/{{booking_id}}/mark-paid"): OPERATOR,
     ("GET", f"{API}/admin/users"): OPERATOR,
     ("GET", f"{API}/admin/packages"): OPERATOR,
     # C19 inbox; its cross-org cases are in test_support.py.
@@ -109,6 +113,13 @@ BODIES: dict[tuple[str, str], dict] = {
     ("PUT", f"{API}/admin/rooms/{{room_id}}/images/order"): {"order": []},
     ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): {"order": []},
     ("PUT", f"{API}/admin/bookings/{{booking_id}}"): {"status": "cancelled"},
+    ("POST", f"{API}/admin/bookings"): {
+        "user_id": str(uuid.UUID(int=1)),
+        "room_id": str(uuid.UUID(int=2)),
+        "start_time": "2030-01-07T10:00:00Z",
+        "end_time": "2030-01-07T11:00:00Z",
+    },
+    ("POST", f"{API}/admin/bookings/{{booking_id}}/mark-paid"): {"reason": "sweep"},
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
     ("PUT", f"{API}/admin/support/requests/{{request_id}}"): {"status": "closed"},

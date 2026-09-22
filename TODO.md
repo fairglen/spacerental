@@ -2232,7 +2232,34 @@ no action on a confirmed booking) and B43 are answered by A01/A03.
 
 ### A01 — Operator booking management API
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** `PUT /admin/bookings/{id}`
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Evidence (2026-09-22):** 23
+real-PG tests in `tests/test_admin_booking_management.py` — reschedule (paid
+booking moved, one "alterada" email with the new Lisbon time, `hours`
+before/after; a longer duration moves no money and mints no session; move to
+another room; another org's room = 404; no 24h rule but the same past/closed/
+conflict checks; another org's admin = 404 and nothing moves; a plain status
+change still works); manual booking (confirmed with code and email; the
+customer must be a member; same conflicts; the customer API rejects `manual`
+with 422; another org = 404); mark-paid (pending hourly → confirmed `manual`,
+session expired at the provider, reason appended to the note; a late webhook
+after it stays single-confirmed with no second email; a mixed hold keeps its
+pack share; confirmed/package/cancelled → 409; empty reason 422; another org
+404); admin note (set by the operator, never in `/bookings/me` nor the
+resume-checkout response, a customer cannot write it, the operator list shows
+it); admin cancel restores pack hours and frees the slot through the shared
+ledger rule. Routes classified in the S01 matrix. Migration
+`0008_admin_booking_tools` round trip clean. Full backend 541. Frontend: types
++ "Pago no local" label (Vitest 435). **Found on the way (would have shipped
+a real bug):** narrowing the customer schema to a `Literal` of strings made the
+router's enum identity checks always true, so every customer booking took the
+pack path — caught by C13's tests; the router now converts at the boundary.
+**Known limitation (by the owner's instruction):** a duration change on a paid
+booking creates no charge or credit; `hours` is returned and the operator
+settles it with the customer outside the platform. **Decision:** mark-paid
+clears the row's session id after expiring the session, which is what makes a
+late webhook unable to match it (the webhook looks up by session id).
+**Scope:** `PUT /admin/bookings/{id}`
 also accepts `start_time`/`end_time`/`room_id` (same org; same validity and
 conflict checks as a customer booking, EXCLUDE race included; no 24h rule for
 admins); a duration change on a paid booking moves no money — old and new hour
