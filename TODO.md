@@ -3730,7 +3730,27 @@ as fotos" opens the gallery.
 
 ### V02 — Static site: room cards with photo galleries and a manifest
 
-**Priority: P2. State: QUEUED.** `flowspace-site/index.html` "Salas" cards
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `assets/js/room-gallery.js` (vanilla, ~150 lines) reads
+`assets/img/room-photos/manifest.json` and fills each `.room-gallery[data-room]`
+with the app's carousel semantics (region "<sala> — fotografias", a
+"diapositivo" per photo, "Fotografia anterior/seguinte", a dot `tablist`,
+arrow keys, a polite live region that speaks only after a move, no
+autoplay; scroll-snap, swipes followed silently); CSS in `site.css` bleeds
+the 4:3 frame to the card's edges; the three `.desc` paragraphs are gone,
+the intro sentence, names, prices and tags stay; the script tag sits next to
+the form's. Smoke spec +2 (structural: three cards, each a gallery with one
+image per manifest entry, alt "<sala> — fotografia N de 4", width/height,
+eager then lazy, a dot each, no `p.desc`, price and tags present; "next"
+moves to photo 2 and the announcer says so, the previous button is hidden at
+the start, ArrowLeft comes back, the last dot hides "next"): 24 passed.
+README: a "Room photos" section documenting the manifest as the one place
+real photos go. **DECISION:** the manifest is fetched over HTTP and the
+galleries are built by the script (no-JS visitors see name, price and tags
+and no pictures) — the alternative, four static `<img>` tags per card, would
+make real photos an HTML edit in three places instead of a manifest edit.
+**Scope (as assigned):** `flowspace-site/index.html` "Salas" cards
 have name, price, a description paragraph and tags. **Scope:** each card gets
 a photo carousel at the top (vanilla JS in `assets/js/room-gallery.js`,
 scroll-snap, prev/next, dots as a tablist, no autoplay, the app's aria,

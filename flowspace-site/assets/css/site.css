@@ -323,10 +323,128 @@ section.alt {
   margin: 0 0 0.75rem;
 }
 
-.room-card p.desc {
-  color: var(--color-muted);
-  font-size: 0.95rem;
-  margin: 0 0 1rem;
+/* Room card photo gallery (V02): the frame bleeds to the card's edges, above
+   the name; native scroll-snap does the swiping. */
+.room-gallery {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  margin: -1.75rem -1.75rem 1.25rem;
+  border-radius: var(--radius) var(--radius) 0 0;
+  overflow: hidden;
+  background: var(--color-accent-bg);
+}
+
+.room-gallery:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.room-gallery-track {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.room-gallery-track::-webkit-scrollbar {
+  display: none;
+}
+
+.room-gallery-slide {
+  flex: 0 0 100%;
+  height: 100%;
+  scroll-snap-align: center;
+}
+
+.room-gallery-slide img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-gallery-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-foreground);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.room-gallery-btn.prev { left: 0.5rem; }
+.room-gallery-btn.next { right: 0.5rem; }
+
+.room-gallery:hover .room-gallery-btn,
+.room-gallery:focus-within .room-gallery-btn,
+.room-gallery-btn:focus-visible {
+  opacity: 1;
+}
+
+.room-gallery-btn:disabled {
+  display: none;
+}
+
+.room-gallery-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+}
+
+/* A dark pill behind the dots: white dots alone vanish on a light picture. */
+.room-gallery-dots {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.room-gallery-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.room-gallery-dot span {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  transition: width 0.15s, background 0.15s;
+}
+
+.room-gallery-dot[aria-selected="true"] span {
+  width: 0.75rem;
+  background: #fff;
+}
+
+.room-gallery-dot:focus-visible span {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-gallery-track { scroll-behavior: auto; }
 }
 
 .tag-list {
@@ -663,4 +781,16 @@ section.alt {
     align-items: flex-start;
     text-align: left;
   }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
