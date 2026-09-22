@@ -77,6 +77,23 @@ static-site smoke suite it found first is B49. Opened as
 [PR #58](https://github.com/fairglen/spacerental/pull/58) on the owner's
 instruction; the owner reviews and merges.
 
+**Booking rules, hour bank, photos and "Onde estamos" (2026-09-22, after
+#58):** by explicit owner assignment, delivered unattended on two stacked
+branches that become two PRs. **PR 1** `feat/booking-rules-hour-bank` (from
+main `08e2916`): H01–H03 — a 30-day booking window for customers, pack hours
+pooled into one bank with per-purchase debits, and the two real causes of the
+admin "Alterar horário" failure. **PR 2** `feat/photos-mosaic-map-contacts`
+(from the finished PR 1 branch): V01–V07 — the four illustrated room scenes as
+a photo mosaic in the app and as card galleries on the static site, photos
+instead of room descriptions, no hero pill, 08:00–22:00 every day, and one
+"Onde estamos" block (location, contact, hours, centred map) on both sites.
+Recorded as the H-series and V-series near the end of this file. Out of scope:
+refunds, recurring bookings (code stays, flag off), half/full-day products,
+and any price change — the 12€/15€/18€ on the static site versus 11€/h in the
+app is queued as Q-H04, untouched. Decisions the owner did not give are taken
+the conservative way, recorded under the task and tagged `DECISION:` in the
+commit body. Commits stay local; the owner reviews and opens the PRs.
+
 States used below:
 
 - **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
@@ -3326,6 +3343,254 @@ per room as an open item. Not touched here: no price changes in W01–W05.
 
 **Priority: P3. State: QUEUED — owner decision.** The source copy asks for a
 review of the price list. Not touched here.
+
+## Booking rules, hour bank, admin fix (H-series) — owner assignment 2026-09-22 (PR 1)
+
+Branch `feat/booking-rules-hour-bank` from main `08e2916` (#58 merged). One
+commit per task, in the order H01 → H02 → H03; the owner opens the PR. Backend-
+heavy and money-touching, so it stays separate from PR 2's photos and copy.
+Binding as always: tenant scoping, `require_admin` per org, wrapped responses
+extracted in `lib/api.ts`, Decimal money, formal-register Portuguese, an
+Alembic migration for every schema change, never weaken a test or a rate limit.
+**Links:** C13 (mixed payment and the ledger this extends), A01 (the admin
+reschedule this fixes), C07 (the 24h cancel rule, which stays as it is), C05
+(the API-side validity checks the window joins).
+
+### H01 — Booking window: customers book at most 30 days ahead
+
+**Priority: P1. State: QUEUED.** Customers may cancel only up to 24h before
+start (C07, kept) and — new — may book at most `BOOKING_MAX_ADVANCE_DAYS`
+(default 30) days ahead. Admins have no window either way (cancel already;
+the new rule must not touch the admin endpoints).
+**Scope:** `BOOKING_MAX_ADVANCE_DAYS` in `config.py`, `docker-compose.yml`,
+`.env.example`, exposed to the frontend as `NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS`
+(the API stays authoritative). Customer `POST /bookings`: a `start_time` later
+than now + N days → 400 "start_time is beyond the booking window".
+`GET /rooms/{id}/availability`: slots beyond the window come back
+`available: false` with an additive `reason: "beyond_window"`; `reason:
+"past"` / `"booked"` / `"blocked"` are added where the code already knows it
+(existing shape untouched); the `date` param is capped at the window (400
+beyond it) so a client cannot fan out requests for months. Calendar: › is
+disabled once the visible day/week passes the window, slots beyond it are
+styled like past ones (disabled, not "Ocupado") with a visible hint "Reservas
+abertas até <data>"; BookingModal maps the new 400 to Portuguese; the
+dashboard cancel dialog already explains the 24h rule (C07) — verified, not
+rebuilt. **Validation:** real-PG boundary tests at exactly N days for a
+customer (rejected) and an admin (accepted); availability reasons incl. the
+capped date; component test for the disabled › and the hint; Playwright: the
+customer cannot reach day N+1, the admin can create there.
+
+### H02 — Hour bank: packs pooled, purchase history kept
+
+**Priority: P1. State: QUEUED.** Today a booking points at ONE purchase
+(`package_purchase_id`) and `redeem_up_to` debits only the soonest-expiring
+pack, so with 2h left in pack A and 10h in pack B a 5h booking takes 2h from A
+and charges 3h in money instead of taking 3h from B. **Wanted:** the customer
+sees one balance (the sum of all active, unexpired packs), bookings draw it
+down across packs soonest-expiring first, and money kicks in only when the
+bank is empty. Purchase history (which packs, when, how many hours, expiry) is
+kept exactly as today.
+
+**Decision (the owner's, recorded before implementation):**
+1. New table `booking_package_debits` (id, org_id, booking_id FK, purchase_id
+   FK, hours Numeric > 0, created_at); unique (booking_id, purchase_id).
+   `Booking.package_hours_used` stays as the cached total (= the sum of its
+   debits; check constraint kept). `Booking.package_purchase_id` is
+   deprecated: no longer written, kept nullable for one release; the migration
+   backfills one debit row per existing booking that has it and hours > 0.
+2. `package_hours.redeem_up_to` walks active unexpired purchases
+   soonest-expiring first (same `FOR UPDATE` re-validation under lock as
+   today) and debits from as many as needed, one debit row each, until `hours`
+   is covered or the bank is empty. `redeem_hours` = the same walk with the
+   all-or-nothing requirement. Cancellation / hold expiry / admin status
+   changes (`settle_status_change`) credit each debit back to its own purchase
+   (unconditional, as `credit_hours` is today) and delete the debit rows;
+   reinstating re-debits through the same walk.
+3. `GET /packages/me` gains a `balance` object `{hours_available,
+   hours_expiring_next: {hours, expires_at}}` alongside the purchases list;
+   the admin user page shows the same.
+4. `mixed` split: pack share = min(duration, bank balance); money = the rest.
+
+**Scope (frontend):** "Os meus packs" gets a top card "Banco de horas — 12h
+disponíveis" with the soonest expiry ("2h expiram a 3 de out."), then the
+purchase history list as today (remaining/total each). BookingModal's
+breakdown uses the bank total; when the bank spans several packs one line
+"Horas do pack − 5h (de 2 packs)". Dashboard rows unchanged in format ("5h do
+pack + 11,00 €"). Admin bookings sheet/table show hours from pack (total) and,
+on hover or expand, the per-pack split. **Validation (real PG):** A=2h +
+B=10h, book 5h → debits 2 and 3, 0 money; book 13h → 12 from packs + 1h money;
+cancel restores 2 to A and 3 to B exactly; hold expiry does the same; two
+concurrent bookings against A+B cannot overdraw the sum; reinstating after
+cancel re-debits from whatever is available; an expired pack is excluded from
+the bank; migration backfill: existing pack/mixed bookings get a debit row
+equal to `package_hours_used` and the sums match before/after. Component tests
+for the bank card and the breakdown; Playwright: two purchases for the
+customer, book 12h across them, dashboard shows the split and the bank shows
+8h left.
+
+### H03 — Admin "Alterar horário" fails: two real causes, fixed
+
+**Priority: P1. State: QUEUED.** Reproduced with the seeded stack, then fixed:
+(a) Shrinking a booking that used pack hours (09:00–18:00 paid with 9h of
+pack, moved to 09:00–15:00): `admin_update_booking` recomputes
+`duration_hours` but not `package_hours_used`, so
+`ck_bookings_package_hours_used_within_duration` fires at flush → 500. Fix: on
+a move, settle the pack share to the new duration through the H02 ledger —
+shrinking credits the surplus back (reverse debit order, so soonest-expiring
+hours stay spent); growing debits the extra from the bank if available and
+reports any uncovered hours in the existing `hours` response object as
+`uncovered` (no money movement, as today). Money paid never changes here. Any
+remaining constraint violation at flush → 409 with detail, never a 500.
+(b) `_validate_slot` rejects `start < now`, so any edit to a booking that has
+already started fails with "start_time cannot be in the past" even when only
+the end changes. Fix: for admins the past-start rule applies only when the
+START is moved to a time earlier than both `now` and the original start;
+keeping the original start (even in the past) and changing the end/room is
+allowed; the new end must still be > now. The customer path stays strict.
+(c) The sheet's "Alterar horário" form shows a generic error; it now shows the
+API `detail` mapped to Portuguese (past start, outside hours, conflict, pack
+settle failure) and keeps the form values so the operator can adjust.
+**Validation (real PG):** both reproductions as failing tests first; shrink of
+a pack booking credits back; grow debits; in-progress end change succeeds;
+moving the start earlier than now still rejected; conflict with another
+booking still 409; component test for the error mapping; Playwright: the admin
+shortens the seeded pack booking from the calendar sheet without error and the
+customer's bank shows the returned hours.
+
+### Q-H04 — Price mismatch: the static site says 12/15/18 €/h, the app 11 €/h
+
+**Priority: P3. State: QUEUED — owner decision.** `flowspace-site/index.html`
+prices the rooms at 12€, 15€ and 18€ per hour (and "12–18€/hora" in the
+pricing block); the app's seed and the landing price every room at 11,00 €/h.
+Recorded by the H/V assignment; nothing changed. Links W06/W07.
+
+## Photos, room copy, map and contacts (V-series) — owner assignment 2026-09-22 (PR 2)
+
+Branch `feat/photos-mosaic-map-contacts`, created from the finished PR 1
+branch. One commit per task, V01 → V07, on BOTH the app and the static site.
+**Photos:** the four illustrated room scenes in
+`flowspace-site/assets/img/room-photos/` (`sala-01..04.svg` source,
+`sala-01..04.webp` 1600×1200, `sala-01..04-thumb.webp` 480×360; twelve files,
+verified present and committed in the docs commit) are used on both sites,
+the same four for every room. No other placeholders are generated and no real
+photos are asked for: replacing the illustrations is Q-V08. **Links:** C16
+(the carousel and the seeded placeholders this replaces), C15 (the admin room
+form), C10 (the space location and map), C09 (the contact address), A03 (the
+admin calendar's opening-hours residual), R01 (rules still evaluated in UTC).
+
+### V01 — Room photo mosaic and gallery (app), seeded illustration photos
+
+**Priority: P1. State: QUEUED.** The booking area (`SpaceRoomsView`, above
+"Disponibilidade — <sala>") shows the card-size 4:3 carousel left-aligned in a
+wide container. **Scope:** a `PhotoMosaic` for the selected room spanning the
+content width. ≥1024px: 2 columns × 2 rows, the first photo spanning both rows
+on the left (½ width), the others a 2×2 on the right; overall aspect ~2:1; 8px
+gaps; 12px outer radius; `object-fit: cover`; width/height on every `<img>`.
+By count: 5+ → big + 4; 4 → big + 3 (one right cell spans two rows); 3 → big +
+2 stacked; 2 → two halves; 1 → single 2:1 hero; 0 → the existing placeholder
+at the same size. Bottom-right "Mostrar todas as fotos" (only when > 1) opens a
+full-screen gallery dialog: the existing `PhotoCarousel` at `size='full'` with
+counter, arrows, keyboard, Escape/close, focus trap, body scroll lock and a
+thumbnail strip on desktop — the project's Radix Dialog, no new dependency.
+<1024px: the existing carousel at full content width (frame fills the
+container; counter pill instead of dots); a tap opens the same gallery. Alt
+"<sala> — fotografia N de M"; the container is a `region` labelled "<sala> —
+fotografias". Room CARDS keep the compact carousel (dots fixed if they overlap
+the image edge). Seed: the Pillow gradient generator goes; at seed time
+`sala-0N.webp` + `sala-0N-thumb.webp` are copied from
+`flowspace-site/assets/img/room-photos/` (path resolved from the repo root,
+overridable with `SEED_PHOTOS_DIR`; the directory is mounted into the backend
+container in `docker-compose.yml` so the seed works in Compose and natively)
+into `MEDIA_ROOT` and registered as each room's photos (same four, same order,
+all three rooms) in the existing `{id, url, thumb_url, width, height}` shape;
+idempotent: re-seeding replaces, never duplicates. **Validation:** component
+tests for 0/1/2/3/4/5+ layouts, gallery open/close, keyboard; seed tests;
+Playwright: select a room, mosaic at 1280px, carousel at 390px, "Mostrar todas
+as fotos" opens the gallery.
+
+### V02 — Static site: room cards with photo galleries and a manifest
+
+**Priority: P2. State: QUEUED.** `flowspace-site/index.html` "Salas" cards
+have name, price, a description paragraph and tags. **Scope:** each card gets
+a photo carousel at the top (vanilla JS in `assets/js/room-gallery.js`,
+scroll-snap, prev/next, dots as a tablist, no autoplay, the app's aria,
+keyboard; CSS in `site.css`; no dependency). Each card shows the four SVGs in
+order via `<img>` with width/height, alt "<sala> — fotografia N de 4", first
+eager, rest lazy; SVGs served directly. `assets/img/room-photos/manifest.json`
+({room slug: [files]}) is what the gallery JS reads, so real photos later are
+a manifest edit — documented in the README. `.desc` paragraphs removed (V03);
+name, price, tags kept. **Validation:** the smoke spec, structurally (cards
+have a gallery; next advances the counter/dots).
+
+### V03 — Room copy: photos instead of descriptions
+
+**Priority: P2. State: QUEUED.** **Scope:** `RoomCard` and the selected-room
+header stop rendering `room.description`; the field stays in the model, API
+and admin form, relabelled in admin "Notas internas (não visíveis ao
+cliente)" and noted in API_SPEC. Static site: `.desc` removed (V02); the
+"Salas" intro sentence stays. Tests that assert on description text become
+structural. **Validation:** component tests; site smoke.
+
+### V04 — Remove the hero pill
+
+**Priority: P2. State: QUEUED.** **Scope:** the "Disponível à hora …" badge
+goes from both heroes: app i18n key `hero.badge` (PT and EN, deleted, not
+emptied) and its render in `Hero.tsx`; static site `<span class="hero-badge">`.
+Hero tests updated structurally. **Validation:** Vitest incl. the catalog
+parity test; site smoke.
+
+### V05 — Opening hours: 08:00–22:00 every day
+
+**Priority: P2. State: QUEUED.** **Scope:** `backend/app/seed.py` gives every
+room 08:00–22:00 on all seven days (idempotent update of existing rules);
+tests pinning 08–20 updated; the customer calendar's visible range follows the
+rules (B34 derived it from the slots — verified, fixed if not). **Known
+limitation, recorded not fixed:** rules are evaluated in UTC (R01), so the
+displayed local range is shifted by one hour in summer. **Validation:** seed
+tests; the Playwright specs that walk the day.
+
+### V06 — "Onde estamos" block (app): location, contact and hours
+
+**Priority: P1. State: QUEUED.** One component on the landing page
+(single-space mode) and the rooms/booking page header. **Scope:** two columns
+at ≥768px, stacked below. LEFT (40%): "Onde estamos"; space name; address
+lines; "Como chegar" (existing directions URL); divider; "Contacto": the email
+(mailto, from the single contact constant), no phone line — an optional
+`CONTACT_PHONE` setting exposed to the frontend, empty by default, rendered
+only when set, left empty; "Horário": derived from the space's rooms'
+availability rules (union across rooms) grouped into ranges — "Todos os dias
+08:00–22:00" when every day is the same, else "Seg–Sex 08:00–20:00 · Sáb
+09:00–13:00", "Encerrado" for days with no rule, and a note "horário por sala
+no calendário" when rooms differ; times shown in Europe/Lisbon (display
+only). RIGHT (60%): the map filling the column height (min 280px), the marker
+centred: OSM bbox symmetric around (lat, lng) with the frame's aspect (≈
+±0.006° lat, width scaled by aspect/cos(lat)); click-to-load ("Ver mapa")
+kept, the placeholder shows the address and the button at the same size so
+the layout does not jump; "Abrir no mapa" below. Footer keeps the short
+address line. **Validation:** component tests for the hours grouping
+(all-days-same, Mon–Fri + Sat, closed day, differing rooms), phone absent,
+placeholder before click, bbox centred; Playwright: the block on the landing
+and on the rooms page.
+
+### V07 — "Onde estamos" block (static site)
+
+**Priority: P2. State: QUEUED.** **Scope:** the separate "Como chegar" and
+"Contacto" sections of `flowspace-site/index.html` become one "Onde estamos"
+section with the same two-column layout and content: address, "Como chegar"
+(existing Google Maps URL), geral@flowspace.pt, no phone, hours as static text
+"Todos os dias, 08:00–22:00", and an OSM embed iframe centred the same way,
+lazy-loaded on click so the site stays free of third-party requests by
+default. The contact FORM stays below under its own "Envie-nos uma mensagem"
+heading (JS/IDs untouched — the Apps Script depends on them). `#contacto` and
+`#localizacao` still resolve. **Validation:** the smoke spec, structurally.
+
+### Q-V08 — Replace the illustrations with real room photos
+
+**Priority: P3. State: QUEUED — owner.** The four illustrated scenes are
+stand-ins used on both sites for every room. When real photos exist: the app
+takes them through the admin photo manager (C15) per room; the static site
+takes them as a `manifest.json` edit plus the files (V02). No code change
+expected.
 
 ## Deferred scope
 
