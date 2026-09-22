@@ -3256,6 +3256,14 @@ each surface with only identifiers, EN strings or history left; every test
 that pinned prose updated with its assertion intact. **Reversal recipe:**
 revert the six commits of this task (SHAs recorded in `PR_DRAFT.md`) — no
 other commit depends on them.
+**DECISION (2026-09-22):** CLAUDE.md/AGENTS.md had no literal "informal tu"
+sentence to replace; the register rule is added under §9 Frontend next to
+the "All UI copy is Portuguese" rule, worded as the owner gave it. The six
+commits: (a) static site `04a448e`, (b) landing + auth `94bae62`, (c)
+customer dashboard/booking/errors `83961a3`, (d) emails `fe2b77c`, (e)
+admin UI `0355cab`, (f) this rule — revert them in reverse order to restore
+"tu" everywhere; W01–W04 do not depend on them (the source hero/"O espaço"
+copy is formal by the owner's text and stays either way).
 
 ### W06 — Per-room pricing (business)
 

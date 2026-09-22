@@ -315,6 +315,7 @@ Useful queries:
 - No `any` types. If you need to escape the type system, comment why.
 - Use shadcn-style component primitives from `components/ui/` — don't add a second UI library.
 - All UI copy is **Portuguese** (this is a Portugal-targeted product). Don't mix English in.
+- Customer- and operator-facing Portuguese uses the formal register: 3rd-person verb forms and 'o seu/a sua'; never write 'você'. English catalog is unaffected. (W05, 2026-09-22 — the informal "tu" it replaced can be restored by reverting that task's six commits.)
 - Use `useSession()` for auth state, never reach into cookies directly.
 - API calls go through `lib/api.ts` — don't call `axios` or `fetch` directly from components.
 - Currency formatting via `formatCurrency()`, dates via `date-fns` with `locale: pt`.
