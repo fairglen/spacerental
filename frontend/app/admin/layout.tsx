@@ -3,7 +3,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 import Link from 'next/link'
-import { LayoutDashboard, Building2, Calendar, CalendarDays, Package, LogOut, LifeBuoy } from 'lucide-react'
+import { LayoutDashboard, Building2, Calendar, CalendarDays, Package, LogOut, LifeBuoy, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useOrg } from '@/contexts/OrgContext'
 
@@ -13,6 +13,7 @@ const navItems = [
   { href: '/admin/calendar', label: 'Calendário', icon: CalendarDays },
   { href: '/admin/bookings', label: 'Reservas', icon: Calendar },
   { href: '/admin/packages', label: 'Pacotes', icon: Package },
+  { href: '/admin/users', label: 'Utilizadores', icon: Users },
   { href: '/admin/support', label: 'Pedidos de ajuda', icon: LifeBuoy },
 ]
 

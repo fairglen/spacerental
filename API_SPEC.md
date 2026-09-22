@@ -357,7 +357,36 @@ never returned by a customer endpoint.**
 Body: `{ status: "confirmed"|"cancelled" }`
 
 ### GET /admin/users
-All users who have booked in this org.
+The org's members (A05), searchable and paged.
+Query: `q` (name or email, case-insensitive, ≤200 chars), `page` (≥1),
+`page_size` (1–100, default 20).
+Response: `{ users: OrgUser[], total, page, page_size }` where
+`OrgUser = { id, email, name, role: "owner"|"admin"|"member", joined_at, bookings_count, created_at }`.
+`bookings_count` counts the member's bookings in this org only.
+
+### GET /admin/users/{user_id}
+One member of this org: `{ user: OrgUser, bookings: AdminBooking[] (newest
+first, ≤200, with `room`), purchases: AdminPurchase[] (with `package`),
+support_requests: SupportRequest[] (≤50) }`. Everything is scoped to this
+org. A person who is not a member → 404, identical to an unknown id.
+`AdminPurchase` = `UserPackagePurchase` + `admin_note: string | null`.
+
+### PUT /admin/users/{user_id}/role
+Body: `{ role: "admin" | "member" }` — per org. Response `{ user: OrgUser }`.
+409 when the target is yourself or an owner; 422 for `owner`; 404 for a
+non-member.
+
+### POST /admin/users/{user_id}/complimentary-hours
+Complimentary hours (A05): a purchase of `hours` of `package_id` at 0,00 €
+with a reason. Body: `{ hours (0 < h ≤ 999, 2 dp), package_id, reason
+(1–2000), expires_at? (tz-aware, future; default now + the package's
+`validity_days`) }`. → 201 `{ purchase: AdminPurchase }` with
+`amount_paid: "0.00"`, `admin_note = reason`, `status: "active"`. 404 for a
+non-member or a package of another org; 400 for a past `expires_at`.
+
+`UserPackagePurchase` now carries `amount_paid` (the package's price at
+purchase time, or `"0.00"` for granted hours). `admin_note` is never returned
+by a customer endpoint.
 
 ### GET /admin/packages
 List packages for this org.
@@ -477,6 +506,7 @@ type UserPackagePurchase = {
   hours_total: number
   hours_used: number
   hours_remaining: number
+  amount_paid: number      // the package's price at purchase time; 0 for granted hours (A05)
   status: "pending" | "active" | "cancelled"
   purchased_at: string
   expires_at: string

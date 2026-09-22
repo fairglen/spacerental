@@ -7,7 +7,7 @@ const NOW = new Date('2026-09-22T12:00:00Z')
 function purchase(id: string, hours: number, overrides: Partial<UserPackagePurchase> = {}): UserPackagePurchase {
   return {
     id, user_id: 'u', package_id: 'p', org_id: 'org-1', hours_total: 10, hours_used: 10 - hours,
-    hours_remaining: hours, status: 'active', purchased_at: '2026-01-01T00:00:00Z',
+    hours_remaining: hours, amount_paid: 100, status: 'active', purchased_at: '2026-01-01T00:00:00Z',
     expires_at: '2027-01-01T00:00:00Z', ...overrides,
   }
 }

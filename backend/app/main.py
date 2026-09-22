@@ -11,6 +11,7 @@ from app.media import LocalMediaStorage, get_media_storage
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.routers import (
     admin,
+    admin_users,
     auth,
     bookings,
     checkout_stub,
@@ -64,6 +65,7 @@ app.include_router(media.router, prefix=API_PREFIX)
 app.include_router(support.router, prefix=API_PREFIX)
 app.include_router(support.admin_router, prefix=API_PREFIX)
 app.include_router(room_blocks.router, prefix=API_PREFIX)
+app.include_router(admin_users.router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
 # No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
 # see app/routers/checkout_stub.py.

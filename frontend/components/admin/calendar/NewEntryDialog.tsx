@@ -41,10 +41,14 @@ export function NewEntryDialog({ slot, rooms, onClose, onCreated }: NewEntryDial
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  // The org's customers, searched by name or email.
-  const { data: users = [] } = useQuery({ queryKey: ['admin', 'users', 'picker'], queryFn: () => adminApi.getUsers(api), enabled: !!slot })
+  // The org's members, searched server-side by name or email (A05).
   const needle = search.trim().toLowerCase()
-  const matches = needle ? users.filter((u) => u.name.toLowerCase().includes(needle) || u.email.toLowerCase().includes(needle)).slice(0, 8) : []
+  const { data: found } = useQuery({
+    queryKey: ['admin', 'users', 'picker', needle],
+    queryFn: () => adminApi.getUsers({ q: needle, page_size: 8 }, api),
+    enabled: !!slot && needle.length > 0 && !userId,
+  })
+  const matches = needle && !userId ? found?.users ?? [] : []
 
   const createBooking = useMutation({
     mutationFn: () => adminApi.createManualBooking({ user_id: userId, room_id: roomId, start_time: fromLocal(date, start), end_time: fromLocal(date, end), admin_note: note.trim() || undefined }, api),
@@ -103,7 +107,7 @@ export function NewEntryDialog({ slot, rooms, onClose, onCreated }: NewEntryDial
                     ))}
                   </ul>
                 )}
-                {needle && matches.length === 0 && !userId && <p className="mt-1 text-xs text-muted-foreground">Nenhum cliente com esse nome ou email já reservou aqui.</p>}
+                {needle && found && matches.length === 0 && !userId && <p className="mt-1 text-xs text-muted-foreground">Nenhum cliente com esse nome ou email.</p>}
               </div>
               <div>
                 <Label htmlFor="new-note">Nota interna (opcional)</Label>

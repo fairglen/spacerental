@@ -90,6 +90,10 @@ ROUTES: dict[tuple[str, str], str] = {
     ("POST", f"{API}/admin/bookings"): OPERATOR,
     ("POST", f"{API}/admin/bookings/{{booking_id}}/mark-paid"): OPERATOR,
     ("GET", f"{API}/admin/users"): OPERATOR,
+    # A05; per-org role and complimentary-hours cases in test_admin_users.py.
+    ("GET", f"{API}/admin/users/{{user_id}}"): OPERATOR,
+    ("PUT", f"{API}/admin/users/{{user_id}}/role"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): OPERATOR,
     ("GET", f"{API}/admin/packages"): OPERATOR,
     # C19 inbox; its cross-org cases are in test_support.py.
     ("GET", f"{API}/admin/support/requests"): OPERATOR,
@@ -131,6 +135,12 @@ BODIES: dict[tuple[str, str], dict] = {
         "reason": "sweep",
     },
     ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"): {"reason": "sweep"},
+    ("PUT", f"{API}/admin/users/{{user_id}}/role"): {"role": "admin"},
+    ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): {
+        "hours": "1",
+        "package_id": str(uuid.UUID(int=3)),
+        "reason": "sweep",
+    },
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
     ("PUT", f"{API}/admin/support/requests/{{request_id}}"): {"status": "closed"},
@@ -608,7 +618,14 @@ class TestOperatorListsAreScoped:
         bookings = (await get("bookings"))["bookings"]
         assert [b["id"] for b in bookings] == [str(world.booking_a.id)]
         assert [p["id"] for p in (await get("packages"))["packages"]] == [str(world.package_a.id)]
-        assert [u["id"] for u in (await get("users"))["users"]] == [str(world.cust_a.id)]
+        # A05: the users list is the org's members, operator included — and
+        # nobody from org B.
+        assert {u["id"] for u in (await get("users"))["users"]} == {
+            str(world.cust_a.id),
+            str(world.cust_a2.id),
+            str(world.op_a.id),
+            str(world.dual.id),
+        }
         assert await get("dashboard") == {
             "total_bookings": 1,
             "total_revenue": 11.0,

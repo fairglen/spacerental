@@ -55,7 +55,6 @@ from app.schemas.space import (
     SpaceOut,
     SpaceUpdate,
 )
-from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -805,23 +804,6 @@ async def admin_mark_booking_paid(
 
 
 # ─── Users ────────────────────────────────────────────────────────────────────
-
-
-@router.get("/users")
-async def admin_list_users(
-    org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all users who have booked in this org."""
-    result = await db.execute(
-        select(User)
-        .join(Booking, Booking.user_id == User.id)
-        .where(Booking.org_id == org_id)
-        .distinct()
-    )
-    users = result.scalars().all()
-    return {"users": [UserOut.model_validate(u) for u in users]}
 
 
 # ─── Packages ─────────────────────────────────────────────────────────────────

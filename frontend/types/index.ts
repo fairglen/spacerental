@@ -113,11 +113,49 @@ export type UserPackagePurchase = {
   hours_total: number
   hours_used: number
   hours_remaining: number
+  // What was paid, at purchase time: the pack's price, or 0 for hours the
+  // operator granted (A05).
+  amount_paid: number
   // Hours only become spendable once Stripe confirms the payment.
   status: 'pending' | 'active' | 'cancelled'
   purchased_at: string
   expires_at: string
   package?: Package
+}
+
+// The operator's view of a purchase (A05): plus the private note.
+export type AdminPurchase = UserPackagePurchase & { admin_note: string | null }
+
+// One member of the operator's org, as /admin/users lists them (A05).
+export type OrgUser = {
+  id: string
+  email: string
+  name: string
+  role: 'owner' | 'admin' | 'member'
+  joined_at: string
+  bookings_count: number
+  created_at: string
+}
+
+export type PaginatedOrgUsers = {
+  users: OrgUser[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export type OrgUserDetail = {
+  user: OrgUser
+  bookings: Booking[]
+  purchases: AdminPurchase[]
+  support_requests: SupportRequestRow[]
+}
+
+export type ComplimentaryHoursBody = {
+  hours: number
+  package_id: string
+  reason: string
+  expires_at?: string
 }
 
 // POST /bookings and POST /packages/{id}/purchase both return the created

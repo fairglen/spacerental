@@ -2358,9 +2358,9 @@ queued as a new item. Reviewed against the API as it is on
 
 | Area | What the operator cannot do today | Priority | Disposition |
 |---|---|---|---|
-| Users | See one customer's bookings, packs and help requests in one place; the list has no search or pages and lists only people who already booked | P1 | **A05** (this PR) |
-| Users | Promote/demote an org admin from the UI (`promote_admin.py` is a script; no demote at all; no "cannot demote yourself" rule) | P1 | **A05** (this PR) |
-| Users | Grant complimentary hours | P1 | **A05** (this PR): a purchase row at 0,00 € with a reason, so reports still add up |
+| Users | See one customer's bookings, packs and help requests in one place; the list has no search or pages and lists only people who already booked | P1 | **A05** (this PR) — done: `/admin/users` (members, search, pages) and `/admin/users/{id}` |
+| Users | Promote/demote an org admin from the UI (`promote_admin.py` is a script; no demote at all; no "cannot demote yourself" rule) | P1 | **A05** (this PR) — done: `PUT /admin/users/{id}/role`, self and owner refused |
+| Users | Grant complimentary hours | P1 | **A05** (this PR) — done: a purchase row at 0,00 € with a reason, so reports still add up |
 | Users | Deactivate/ban a customer, or reset their password | P3 | **Q-A08** queued: needs a policy on what happens to their future bookings; no self-service reset exists either |
 | Packages | Extend a purchase's expiry; see remaining hours per purchase; see a customer's purchase history | P1 | **A06** (this PR) |
 | Packages | Refund/cancel a purchase, or move hours between purchases | P3 | O02 (money) — not here |
@@ -2388,14 +2388,63 @@ with a priority and whether PR 2 delivers it or it is queued.
 
 ### A05 — Users: list, customer page, admin role, complimentary hours
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** `/admin/users` searchable and
-paginated; a user page with bookings, package purchases and support requests;
-"Tornar admin / Remover admin" per org with confirm (cannot demote yourself);
-"Atribuir horas": a package purchase of N hours at 0,00 € with a reason — policy:
-complimentary hours are a purchase row with amount 0 and a note, so reports
-still add up. **Links:** `promote_admin.py` (script only today), D05
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Scope:** `/admin/users`
+searchable and paginated; a user page with bookings, package purchases and
+support requests; "Tornar admin / Remover admin" per org with confirm (cannot
+demote yourself); "Atribuir horas": a package purchase of N hours at 0,00 €
+with a reason. **Links:** `promote_admin.py` (script only today), D05
 (pagination). **Validation:** per endpoint happy/failure/cross-tenant; UI
 confirm-step tests.
+
+**Policy (recorded):** complimentary hours are a purchase row with
+`amount_paid = 0` and an `admin_note`, not a separate balance. The customer's
+packs page, the redemption ledger, cancellation credits and any revenue report
+treat them exactly like a bought pack; `amount_paid` is what tells them apart.
+`user_package_purchases.amount_paid` is new (migration `0010`): a paid purchase
+copies the package's price at purchase time, and existing rows are backfilled
+from their package's current price (all of them were bought through checkout —
+granting did not exist before this migration).
+
+**DECISIONS (conservative; each reversible in one commit):**
+- **The users list is the org's members, not "people who booked".** The old
+  `GET /admin/users` listed customers with at least one booking; the admin
+  audit (A04) called that out. Members with zero bookings (just signed up,
+  granted hours only) are the ones an operator most needs to find. The
+  operator's own account and other admins appear too, with their role. Alt:
+  keep "booked only" — reverse by adding a join on bookings to the list query.
+- **`role` accepts `admin` and `member` only; an owner is untouchable here**
+  (422 for `owner`, 409 when the target is an owner, 409 for yourself).
+  Ownership transfer is a different decision (billing, deletion) and stays
+  out. Alt: allow owner→admin by another owner — a two-line change.
+- **A granted purchase's expiry defaults to `now + package.validity_days`;**
+  an explicit `expires_at` (future, tz-aware) overrides it. The hours are
+  bounded 0 < h ≤ 999 (the column's ceiling) and the reason is required
+  (1–2000 chars). The purchase is `active` at once (nothing to pay).
+- **The `admin_note` is the reason verbatim** (no "granted by X" suffix — who
+  did it belongs to the audit log, O05). The note never reaches a customer
+  endpoint (`UserPackagePurchaseOut` does not carry it; `AdminPurchaseOut`
+  does). Customer endpoints do expose `amount_paid` (it is their own money).
+
+**Evidence (2026-09-22):** `tests/test_admin_users.py` — 15 tests (list:
+members incl. the operator, search by name/email case-insensitive, paging,
+`bookings_count`, tenant isolation; detail: bookings with room, purchases with
+package, support requests, non-member and other-org 404; role: promote,
+demote, self 409, owner 409, `owner` 422, other org 403/404; complimentary
+hours: 201 with `amount_paid == "0"`, note, default and explicit expiry,
+active and spendable, bounds 422/400, unknown/foreign package 404, non-member
+404; a paid purchase records `amount_paid == package.price`). S01 matrix and
+S19 allowlists extended for the four routes (`ORG_USER_FIELDS`). Frontend:
+`RoleDialog` + `GrantHoursDialog` — 6 component tests (confirm step before a
+role changes, destructive demote, cancel/errors; what "Atribuir horas" sends,
+refuses without a reason or with 0 hours, explicit date as end of day); 4 API
+shape tests; the calendar's customer picker now searches server-side.
+Playwright `admin-users.spec.ts`: register a customer → search in
+`/admin/users` → open → "Atribuir horas" 3h with a reason → the packs table
+shows "3h de 3h · Oferta · reason" → `GET /packages/me` as the customer shows
+`active`, `hours_remaining 3.00`, `amount_paid 0.00`, no `admin_note` → "Tornar
+admin" opens the confirm and cancels cleanly. Migration `0010` round trip
+pending the PR 2 wrap-up run.
 
 ### A06 — Package purchases: extend validity, see remaining hours
 

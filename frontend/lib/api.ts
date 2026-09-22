@@ -4,6 +4,7 @@ import type {
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
   SupportRequestBody, SupportRequestReceipt, SupportRequestRow, PaginatedSupportRequests,
+  OrgUser, OrgUserDetail, PaginatedOrgUsers, AdminPurchase, ComplimentaryHoursBody,
   RoomBlock, AdminBookingPatch,
 } from '@/types'
 
@@ -81,6 +82,7 @@ function normPurchase<T extends UserPackagePurchase>(p: T): T {
     hours_total: num(p.hours_total),
     hours_used: num(p.hours_used),
     hours_remaining: num(p.hours_remaining),
+    amount_paid: num(p.amount_paid),
     package: p.package ? normPackage(p.package) : p.package,
   }
 }
@@ -284,9 +286,24 @@ export const adminApi = {
   deleteBlock: (roomId: string, blockId: string, api: Api) =>
     api.delete(`/admin/rooms/${roomId}/blocks/${blockId}`).then(() => undefined),
 
-  // The org's customers (A03's picker; A05 makes this searchable and paged).
-  getUsers: (api: Api) =>
-    api.get<{ users: User[] }>('/admin/users').then(r => r.data.users),
+  // ── Users (A05) ──────────────────────────────────────────────────────
+  // The org's members, searchable (`q`) and paged; the calendar's customer
+  // picker uses the same call with a short page.
+  getUsers: (params: { q?: string; page?: number; page_size?: number }, api: Api): Promise<PaginatedOrgUsers> =>
+    api.get<PaginatedOrgUsers>('/admin/users', { params }).then(r => r.data),
+
+  getUser: (id: string, api: Api): Promise<OrgUserDetail> =>
+    api.get<OrgUserDetail>(`/admin/users/${id}`).then(r => ({
+      ...r.data,
+      bookings: r.data.bookings.map(normBooking),
+      purchases: r.data.purchases.map(normPurchase),
+    })),
+
+  setUserRole: (id: string, role: 'admin' | 'member', api: Api): Promise<OrgUser> =>
+    api.put<{ user: OrgUser }>(`/admin/users/${id}/role`, { role }).then(r => r.data.user),
+
+  grantHours: (id: string, body: ComplimentaryHoursBody, api: Api): Promise<AdminPurchase> =>
+    api.post<{ purchase: AdminPurchase }>(`/admin/users/${id}/complimentary-hours`, body).then(r => normPurchase(r.data.purchase)),
 
   getPackages: (api: Api) =>
     api.get<{ packages: Package[] }>('/admin/packages').then(r => r.data.packages.map(normPackage)),
