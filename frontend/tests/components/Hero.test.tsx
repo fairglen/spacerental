@@ -14,6 +14,15 @@ describe('Hero structure', () => {
       expect(screen.getByText(t(key))).toBeInTheDocument()
     }
   })
+
+  it('opens with the headline: nothing sits above it any more (V04)', () => {
+    const { container } = render(<Hero />)
+    const h1 = screen.getByRole('heading', { level: 1 })
+    // The first text the hero renders is the headline itself.
+    const firstText = container.textContent!.trim()
+    expect(firstText.startsWith(h1.textContent!.trim())).toBe(true)
+    expect(container.querySelector('.rounded-full.bg-accent')).toBeNull()
+  })
 })
 
 describe('Hero navigation', () => {

@@ -26,6 +26,9 @@ test('hero renders one headline with its emphasised word and a lede', async ({ p
   await expect(h1).not.toBeEmpty();
   await expect(h1.locator('em')).not.toBeEmpty();
   await expect(page.locator('.hero p.lede').first()).not.toBeEmpty();
+  // V04: the headline is the first thing in the hero; no pill above it.
+  await expect(page.locator('.hero .hero-badge')).toHaveCount(0);
+  await expect(page.locator('.hero-content > :first-child')).toHaveJSProperty('tagName', 'H1');
 });
 
 // V02: every room card carries a photo gallery built from the manifest —

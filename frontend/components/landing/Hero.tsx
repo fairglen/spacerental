@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
-import { ArrowRight, Clock } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { useT } from '@/lib/i18n'
 import { SpaceModeText } from '@/components/spaces/SpaceModeText'
 
@@ -17,10 +17,6 @@ export function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-sm text-primary">
-              <Clock className="h-3.5 w-3.5" />
-              <span>{t('hero.badge')}</span>
-            </div>
             <h1 className="text-5xl md:text-6xl font-bold text-foreground leading-tight mb-6">
               {t('hero.headline_start')}{' '}
               <span className="text-primary italic">{t('hero.headline_highlight')}</span>

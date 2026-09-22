@@ -3784,7 +3784,15 @@ structural. **Validation:** component tests; site smoke.
 
 ### V04 — Remove the hero pill
 
-**Priority: P2. State: QUEUED.** **Scope:** the "Disponível à hora …" badge
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `hero.badge` deleted from `pt.json` and `en.json` (the parity
+test keeps both catalogs equal), its render and the `Clock` import gone from
+`Hero.tsx`; the static site's `<span class="hero-badge">` and its CSS rule
+gone. Tests, structural: the hero's first text is the headline and no pill
+element exists (Hero.test.tsx +1); the site hero has no `.hero-badge` and
+its first child is the `<h1>` (smoke +assertions). Vitest targeted 21; site
+smoke 24. **Scope (as assigned):** the "Disponível à hora …" badge
 goes from both heroes: app i18n key `hero.badge` (PT and EN, deleted, not
 emptied) and its render in `Hero.tsx`; static site `<span class="hero-badge">`.
 Hero tests updated structurally. **Validation:** Vitest incl. the catalog
