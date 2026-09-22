@@ -43,27 +43,38 @@ type Page = import('@playwright/test').Page;
  * is not there. A silent no-op would leave the test running against the
  * unmodified file — still green, but proving nothing.
  */
-function replaceOnce(source: string, needle: string, replacement: string): string {
-  if (!source.includes(needle)) {
+function replaceOnce(source: string, needle: string | RegExp, replacement: string): string {
+  const present = typeof needle === 'string' ? source.includes(needle) : needle.test(source);
+  if (!present) {
     throw new Error(`contact-form.js no longer contains \`${needle}\` — update this test.`);
   }
   return source.replace(needle, replacement);
 }
 
 /**
- * contact-form.js ships with the placeholder APPS_SCRIPT_URL until a human
- * pastes the deployed /exec URL in (see the README runbook). To exercise a
- * configured form we rewrite that constant in the served script rather than
- * adding a test-only override hook to the production file. The request
- * deadline is rewritten the same way, so the timeout test does not have to
- * wait out the real 15s.
+ * The committed APPS_SCRIPT_URL is whatever is deployed right now — the
+ * placeholder before the first deploy, the real /exec URL after it (B49: the
+ * suite must not care which). To exercise a configured or an unconfigured
+ * form we rewrite that constant in the served script rather than adding a
+ * test-only override hook to the production file. The request deadline is
+ * rewritten the same way, so the timeout test does not have to wait out the
+ * real 15s.
  */
+const APPS_SCRIPT_URL_DECLARATION = /const APPS_SCRIPT_URL = '[^']*';/;
+
+test('the script rewrite still fails loudly when the constant is gone', () => {
+  expect(() => replaceOnce('var somethingElse = 1;', APPS_SCRIPT_URL_DECLARATION, 'x')).toThrow(
+    /no longer contains/
+  );
+  expect(replaceOnce("const APPS_SCRIPT_URL = 'https://x/exec';", APPS_SCRIPT_URL_DECLARATION, 'ok')).toBe('ok');
+});
+
 async function serveWithUrl(page: Page, url: string, opts: { timeoutMs?: number } = {}) {
   await page.route('**/assets/js/contact-form.js', async (route) => {
     const response = await route.fetch();
     let body = replaceOnce(
       await response.text(),
-      "const APPS_SCRIPT_URL = 'PASTE_DEPLOYED_URL_HERE';",
+      APPS_SCRIPT_URL_DECLARATION,
       `const APPS_SCRIPT_URL = '${url}';`
     );
     if (opts.timeoutMs !== undefined) {
@@ -280,6 +291,8 @@ test('the placeholder Apps Script URL disables the form instead of faking succes
 }) => {
   const requests: string[] = [];
   page.on('request', (request) => requests.push(request.url()));
+  // Served with the pre-deploy placeholder whatever the file holds today.
+  await serveWithUrl(page, 'PASTE_DEPLOYED_URL_HERE');
 
   await page.goto('/');
 
