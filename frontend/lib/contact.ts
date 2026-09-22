@@ -9,6 +9,13 @@
  */
 export const CONTACT_EMAIL = 'geral@flowspace.pt'
 
+/**
+ * An optional phone number for "Onde estamos" (V06). Empty by default — there
+ * is no number yet — and rendered only when set: NEXT_PUBLIC_CONTACT_PHONE,
+ * which Compose fills from CONTACT_PHONE in .env.
+ */
+export const CONTACT_PHONE = (process.env.NEXT_PUBLIC_CONTACT_PHONE ?? '').trim()
+
 export function contactMailto(subject?: string): string {
   const base = `mailto:${CONTACT_EMAIL}`
   return subject ? `${base}?subject=${encodeURIComponent(subject)}` : base

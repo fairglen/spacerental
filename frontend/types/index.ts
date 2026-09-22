@@ -44,6 +44,8 @@ export type Room = {
   amenities: string[]
   color: string
   is_active: boolean
+  // Present on the public space detail (V06); absent elsewhere.
+  availability_rules?: OpeningWindow[]
 }
 
 export type Booking = {
@@ -228,6 +230,14 @@ export type AvailabilitySlot = {
   end: string
   available: boolean
   reason?: SlotReason | null
+}
+
+// A room's public opening window (V06): weekday 0 = Monday, UTC times as the
+// API sends them ("08:00:00").
+export type OpeningWindow = {
+  day_of_week: number
+  open_time: string
+  close_time: string
 }
 
 export type AvailabilityRule = {

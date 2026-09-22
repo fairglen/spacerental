@@ -69,6 +69,23 @@ describe('map URLs', () => {
     expect(south).toBeLessThan(north)
   })
 
+  it('gives the box the frame\'s shape, in ground distance, so the marker is centred (V06)', () => {
+    const bbox = (aspect: number) => new URL(mapEmbedUrl(38.755723, -9.279799, aspect)).searchParams.get('bbox')!.split(',').map(Number)
+    const [west, south, east, north] = bbox(2)
+    expect(north - south).toBeCloseTo(0.012, 6)
+    // Width in degrees × cos(lat) ≈ height × aspect: the box is 2:1 on the ground.
+    expect(((east - west) * Math.cos((38.755723 * Math.PI) / 180)) / (north - south)).toBeCloseTo(2, 3)
+    const [w1, , e1] = bbox(1)
+    expect(e1 - w1).toBeLessThan(east - west)
+    // Symmetric around the point either way.
+    expect((w1 + e1) / 2).toBeCloseTo(-9.279799, 6)
+  })
+
+  it('falls back to a sane shape for a frame that has not been laid out', () => {
+    expect(mapEmbedUrl(38.75, -9.28, 0)).toBe(mapEmbedUrl(38.75, -9.28))
+    expect(mapEmbedUrl(38.75, -9.28, Number.NaN)).toBe(mapEmbedUrl(38.75, -9.28))
+  })
+
   it('keeps the box on the globe at the edges', () => {
     const [west, south, east, north] = new URL(mapEmbedUrl(90, 180)).searchParams.get('bbox')!.split(',').map(Number)
     expect(north).toBeLessThanOrEqual(90)

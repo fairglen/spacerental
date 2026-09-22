@@ -113,6 +113,8 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required — copy .env.example to .env}
       NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: ${RECURRING_BOOKINGS_ENABLED:-false}
       NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS: ${BOOKING_MAX_ADVANCE_DAYS:-30}
+      # Optional phone line in "Onde estamos" (V06); empty = no line.
+      NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
       INTERNAL_API_URL: http://backend:8000/api/v1
     depends_on:

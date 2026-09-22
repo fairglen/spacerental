@@ -253,6 +253,14 @@ the customer and in the admin table) until refunds exist (O02).
 BOOKING_HOLD_MINUTES=1 docker compose up -d backend
 ```
 
+"Onde estamos" (landing page in single-space mode, and the top of the rooms
+page) shows the address, "Como chegar", the contact email, the opening hours
+derived from the rooms' availability rules (union across rooms, on the Lisbon
+clock — evaluated in UTC until R01) and a click-to-load OpenStreetMap frame
+centred on the pin. `CONTACT_PHONE` in `.env` (Compose hands it to the
+frontend as `NEXT_PUBLIC_CONTACT_PHONE`) adds a phone line when set; it is
+empty by default and no line is rendered.
+
 A customer may book at most `BOOKING_MAX_ADVANCE_DAYS` days ahead (default
 30, H01): a later `start_time` is refused, `GET /rooms/{id}/availability`
 reports those hours with `reason: "beyond_window"` (and `"past"`, `"booked"`,

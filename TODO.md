@@ -3829,7 +3829,43 @@ tests; the Playwright specs that walk the day.
 
 ### V06 — "Onde estamos" block (app): location, contact and hours
 
-**Priority: P1. State: QUEUED.** One component on the landing page
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally; DONE only once merged.
+**Evidence (2026-09-23):** backend: the public `GET /spaces/{id}` carries each
+room's active `availability_rules` (`{day_of_week, open_time, close_time}`,
+never the rule id) — 1 real-PG test (an inactive rule stays out; the list
+endpoint carries none) and the S19 allowlist names the field and the
+window's fields. Frontend: `lib/openingHours` (10 unit tests: all days the
+same → "Todos os dias 08:00–22:00"; Mon–Fri + Sat + closed Sun → "Seg–Sex …",
+"Sáb …", "Dom Encerrado"; only consecutive days fold; union across rooms with
+`differsByRoom`; identical rooms do not differ; a lunch break becomes the
+day's outer span; the Lisbon clock reads an hour later in summer; no rules →
+"Encerrado"); `mapEmbedUrl` takes the frame's aspect and builds the box in
+ground distance around the pin (3 unit tests); `WhereWeAre` replaces
+`SpaceLocation` (14 component tests: labelled section with the name and the
+address lines; directions link; the one mailto and no `tel:` line, a phone
+line only when `NEXT_PUBLIC_CONTACT_PHONE` is set; the four hours cases;
+the placeholder holds the address and the button at the map's size and no
+third-party request leaves; the iframe is lazy, referrer-free, titled,
+centred on the point, then "Abrir o mapa completo"; no map column without
+coordinates; partial and empty locations). `SpaceCards` (landing) and
+`SpaceRoomsView` (rooms page header) render it with the space's rooms.
+`CONTACT_PHONE` in `.env.example`/Compose → `NEXT_PUBLIC_CONTACT_PHONE`,
+empty. Catalog keys `location.contact/hours/hours_per_room` (PT/EN). Vitest
+targeted 39 + 25 + 10; tsc clean. Playwright `single-space.spec.ts`
+extended: the block on the landing with the mailto, no `tel:`, "Todos os
+dias …" hours, a ≥280px placeholder, the map's bbox centred on the pin and
+the frame's size unchanged after loading, the full-map link; the block again
+on the rooms page. **DECISIONS:** (1) opening windows travel on the public
+room shape rather than a new endpoint — one read, already cached by the
+landing and the rooms page. (2) The hours are the union of the rooms'
+windows per day, and two windows on one day fold into the day's outer span
+("Seg 08:00–20:00" for 08–12 + 14–20); the per-room note covers the
+difference. (3) The line under the map is always there (the privacy note
+before the click, the full-map link after) so the frame never changes
+height. (4) The phone is a frontend env value (`CONTACT_PHONE` →
+`NEXT_PUBLIC_CONTACT_PHONE`), not a backend setting: nothing server-side
+uses it. **Scope (as assigned):** One component on the landing page
 (single-space mode) and the rooms/booking page header. **Scope:** two columns
 at ≥768px, stacked below. LEFT (40%): "Onde estamos"; space name; address
 lines; "Como chegar" (existing directions URL); divider; "Contacto": the email

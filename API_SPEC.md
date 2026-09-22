@@ -67,6 +67,10 @@ List all active spaces (public). Each space carries its location: `address`,
 Response: `{ spaces: Space[] }`
 
 ### GET /spaces/:id
+Each room carries `availability_rules: [{ day_of_week, open_time, close_time }]`
+(V06): its active opening windows, weekday 0 = Monday, times in UTC like every
+rule (R01). "Onde estamos" derives the space's hours from their union. The
+list endpoint (`GET /spaces`) does not load rooms.
 Space detail with rooms.
 Response: `{ space: Space, rooms: Room[] }`
 
@@ -501,6 +505,7 @@ type Room = {
   capacity: number
   hourly_rate: number
   images: string[]
+  availability_rules?: { day_of_week: number; open_time: string; close_time: string }[]  // on GET /spaces/:id (V06)
   amenities: string[]
   color: string
   is_active: boolean

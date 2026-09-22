@@ -46,6 +46,35 @@ class TestGetSpace:
         assert body["rooms"][0]["id"] == str(test_room.id)
         assert body["rooms"][0]["name"] == "Sala A"
 
+    async def test_get_space_carries_each_rooms_active_opening_windows(
+        self, client, db_session, test_space, test_room
+    ):
+        """V06: "Onde estamos" derives the hours from the rooms' rules, so the
+        public detail carries them — active ones only, weekday + times."""
+        from datetime import time
+
+        from app.models.space import AvailabilityRule
+
+        db_session.add(
+            AvailabilityRule(
+                room_id=test_room.id,
+                day_of_week=6,
+                open_time=time(9, 0),
+                close_time=time(13, 0),
+                is_active=False,
+            )
+        )
+        await db_session.commit()
+        resp = await client.get(f"/api/v1/spaces/{test_space.id}")
+        windows = resp.json()["rooms"][0]["availability_rules"]
+        # conftest's room: Monday-Saturday 08-20; the inactive Sunday rule stays out.
+        assert [(w["day_of_week"], w["open_time"], w["close_time"]) for w in windows] == [
+            (day, "08:00:00", "20:00:00") for day in range(6)
+        ]
+        # The public list of spaces does not load rooms' rules (nor rooms).
+        listed = (await client.get("/api/v1/spaces")).json()["spaces"]
+        assert "availability_rules" not in listed[0]
+
     async def test_get_space_404(self, client):
         random_id = uuid.uuid4()
         resp = await client.get(f"/api/v1/spaces/{random_id}")

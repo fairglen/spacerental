@@ -116,7 +116,10 @@
     "map_privacy": "The map comes from OpenStreetMap and only loads when you ask for it.",
     "map_title": "Map of {name}",
     "map_title_generic": "Location map",
-    "open_full_map": "Open the full map"
+    "open_full_map": "Open the full map",
+    "contact": "Contact",
+    "hours": "Opening hours",
+    "hours_per_room": "Hours vary by room; see the calendar."
   },
   "roomCard": {
     "capacity_one": "Up to {count} person",
