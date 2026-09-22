@@ -47,6 +47,8 @@ class UserPackagePurchaseOut(BaseModel):
     hours_total: Decimal
     hours_used: Decimal
     hours_remaining: Decimal
+    # 0,00 for complimentary hours (A05); the package's price when bought.
+    amount_paid: Decimal = Decimal(0)
     status: PurchaseStatus
     purchased_at: datetime
     expires_at: datetime
@@ -66,3 +68,9 @@ class PackagePurchaseCheckoutOut(BaseModel):
 
     purchase: UserPackagePurchaseOut
     checkout_url: str
+
+
+class AdminPurchaseOut(UserPackagePurchaseOut):
+    """The operator's view: plus the private note (A05)."""
+
+    admin_note: str | None = None

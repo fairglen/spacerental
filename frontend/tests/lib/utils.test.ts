@@ -86,3 +86,11 @@ describe('cancellationEligibility for checkout holds (C03)', () => {
     expect(STATUS_COLORS.paid_unfulfilled).toBeTruthy()
   })
 })
+
+// A01: a booking the operator settled outside the platform.
+describe('formatBookingCost for manual bookings', () => {
+  it('says it was paid on site rather than showing an amount', async () => {
+    const { formatBookingCost } = await import('@/lib/utils')
+    expect(formatBookingCost({ payment_method: 'manual', duration_hours: 2, total_amount: 22 })).toBe('Pago no local')
+  })
+})

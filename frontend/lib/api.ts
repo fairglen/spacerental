@@ -4,6 +4,8 @@ import type {
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
   SupportRequestBody, SupportRequestReceipt, SupportRequestRow, PaginatedSupportRequests,
+  OrgUser, OrgUserDetail, PaginatedOrgUsers, AdminPurchase, ComplimentaryHoursBody,
+  RoomBlock, AdminBookingPatch,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -80,6 +82,7 @@ function normPurchase<T extends UserPackagePurchase>(p: T): T {
     hours_total: num(p.hours_total),
     hours_used: num(p.hours_used),
     hours_remaining: num(p.hours_remaining),
+    amount_paid: num(p.amount_paid),
     package: p.package ? normPackage(p.package) : p.package,
   }
 }
@@ -251,6 +254,60 @@ export const adminApi = {
 
   updateBooking: (id: string, status: string, api: Api) =>
     api.put<{ booking: Booking }>(`/admin/bookings/${id}`, { status }).then(r => normBooking(r.data.booking)),
+
+  // ── Booking management (A01) ──────────────────────────────────────────
+  // A move answers with `hours` (before/after): a duration change moves no
+  // money, the operator settles it; the calendar shows both numbers.
+  updateBookingDetails: (id: string, body: AdminBookingPatch, api: Api) =>
+    api.put<{ booking: Booking; hours?: { before: string; after: string } }>(`/admin/bookings/${id}`, body)
+      .then(r => ({
+        booking: normBooking(r.data.booking),
+        hours: r.data.hours ? { before: num(r.data.hours.before), after: num(r.data.hours.after) } : undefined,
+      })),
+
+  createManualBooking: (
+    body: { user_id: string; room_id: string; start_time: string; end_time: string; admin_note?: string; notes?: string },
+    api: Api,
+  ) => api.post<{ booking: Booking }>('/admin/bookings', body).then(r => normBooking(r.data.booking)),
+
+  markBookingPaid: (id: string, reason: string, api: Api) =>
+    api.post<{ booking: Booking }>(`/admin/bookings/${id}/mark-paid`, { reason }).then(r => normBooking(r.data.booking)),
+
+  // ── Blocked time (A02) ────────────────────────────────────────────────
+  getBlocks: (roomId: string, params: { from?: string; to?: string }, api: Api) =>
+    api.get<{ blocks: RoomBlock[] }>(`/admin/rooms/${roomId}/blocks`, { params }).then(r => r.data.blocks),
+
+  createBlock: (roomId: string, body: { start_time: string; end_time: string; reason: string }, api: Api) =>
+    api.post<{ block: RoomBlock }>(`/admin/rooms/${roomId}/blocks`, body).then(r => r.data.block),
+
+  updateBlock: (roomId: string, blockId: string, body: Partial<{ start_time: string; end_time: string; reason: string }>, api: Api) =>
+    api.put<{ block: RoomBlock }>(`/admin/rooms/${roomId}/blocks/${blockId}`, body).then(r => r.data.block),
+
+  deleteBlock: (roomId: string, blockId: string, api: Api) =>
+    api.delete(`/admin/rooms/${roomId}/blocks/${blockId}`).then(() => undefined),
+
+  // ── Users (A05) ──────────────────────────────────────────────────────
+  // The org's members, searchable (`q`) and paged; the calendar's customer
+  // picker uses the same call with a short page.
+  getUsers: (params: { q?: string; page?: number; page_size?: number }, api: Api): Promise<PaginatedOrgUsers> =>
+    api.get<PaginatedOrgUsers>('/admin/users', { params }).then(r => r.data),
+
+  getUser: (id: string, api: Api): Promise<OrgUserDetail> =>
+    api.get<OrgUserDetail>(`/admin/users/${id}`).then(r => ({
+      ...r.data,
+      bookings: r.data.bookings.map(normBooking),
+      purchases: r.data.purchases.map(normPurchase),
+    })),
+
+  setUserRole: (id: string, role: 'admin' | 'member', api: Api): Promise<OrgUser> =>
+    api.put<{ user: OrgUser }>(`/admin/users/${id}/role`, { role }).then(r => r.data.user),
+
+  grantHours: (id: string, body: ComplimentaryHoursBody, api: Api): Promise<AdminPurchase> =>
+    api.post<{ purchase: AdminPurchase }>(`/admin/users/${id}/complimentary-hours`, body).then(r => normPurchase(r.data.purchase)),
+
+  // "Prolongar validade" (A06): a later expiry and why.
+  extendPurchase: (purchaseId: string, body: { expires_at: string; reason: string }, api: Api): Promise<AdminPurchase> =>
+    api.put<{ purchase: AdminPurchase }>(`/admin/purchases/${purchaseId}/expiry`, body).then(r => normPurchase(r.data.purchase)),
 
   getPackages: (api: Api) =>
     api.get<{ packages: Package[] }>('/admin/packages').then(r => r.data.packages.map(normPackage)),

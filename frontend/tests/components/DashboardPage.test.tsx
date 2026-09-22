@@ -245,13 +245,13 @@ describe('Dashboard — packs summary (B30)', () => {
     vi.mocked(packagesApi.listMine).mockResolvedValue([
       {
         id: 'p-1', user_id: 'user-1', package_id: 'pkg-10', org_id: 'org-1',
-        hours_total: 10, hours_used: 2.5, hours_remaining: 7.5, status: 'active',
+        hours_total: 10, hours_used: 2.5, hours_remaining: 7.5, amount_paid: 100, status: 'active',
         purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
         package: { id: 'pkg-10', org_id: 'org-1', name: 'Pack 10h', hours: 10, price: 100, validity_days: 365, is_active: true },
       },
       {
         id: 'p-2', user_id: 'user-1', package_id: 'pkg-20', org_id: 'org-1',
-        hours_total: 20, hours_used: 0, hours_remaining: 20, status: 'pending',
+        hours_total: 20, hours_used: 0, hours_remaining: 20, amount_paid: 100, status: 'pending',
         purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
       },
     ])
@@ -354,7 +354,7 @@ describe('Dashboard — unpaid holds (C03)', () => {
 
 describe('Dashboard — packs summary counts only spendable packs (review)', () => {
   const purchase = (id: string, overrides: Record<string, unknown>) => ({
-    id, user_id: 'user-1', package_id: 'pkg', org_id: 'org-1', hours_total: 10, hours_used: 0, hours_remaining: 10,
+    id, user_id: 'user-1', package_id: 'pkg', org_id: 'org-1', hours_total: 10, hours_used: 0, hours_remaining: 10, amount_paid: 100,
     status: 'active' as const, purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
     package: { id: 'pkg', org_id: 'org-1', name: 'Pack 10h', hours: 10, price: 100, validity_days: 365, is_active: true },
     ...overrides,
@@ -364,7 +364,7 @@ describe('Dashboard — packs summary counts only spendable packs (review)', () 
     vi.mocked(bookingsApi.listMine).mockResolvedValue([])
     vi.mocked(packagesApi.listMine).mockResolvedValue([
       purchase('p-expired', { expires_at: '2020-01-01T00:00:00Z' }),
-      purchase('p-empty', { hours_remaining: 0, hours_used: 10 }),
+      purchase('p-empty', { hours_remaining: 0, amount_paid: 100, hours_used: 10 }),
     ])
     renderPage()
     await screen.findByText(/ainda não tens/i)

@@ -96,16 +96,22 @@ class TestRegister:
         assert "registado" in loser.json()["detail"]
 
         winner = next(r for r in responses if r.status_code == 201)
-        assert await db_session.scalar(
-            select(func.count()).select_from(User).where(User.email == "race@user.com")
-        ) == 1
+        assert (
+            await db_session.scalar(
+                select(func.count()).select_from(User).where(User.email == "race@user.com")
+            )
+            == 1
+        )
         user_row = await db_session.scalar(select(User).where(User.email == "race@user.com"))
         assert str(user_row.id) == winner.json()["user"]["id"]
-        assert await db_session.scalar(
-            select(func.count())
-            .select_from(OrganizationMember)
-            .where(OrganizationMember.user_id == user_row.id)
-        ) == 1
+        assert (
+            await db_session.scalar(
+                select(func.count())
+                .select_from(OrganizationMember)
+                .where(OrganizationMember.user_id == user_row.id)
+            )
+            == 1
+        )
 
 
 class TestLogin:
@@ -198,20 +204,28 @@ class TestDefaultOrgSlug:
             assert r.status_code == 201, r.text
 
         orgs = (
-            await db_session.execute(
-                select(Organization).where(Organization.slug.like("concurrent-ops%"))
+            (
+                await db_session.execute(
+                    select(Organization).where(Organization.slug.like("concurrent-ops%"))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         slugs = sorted(o.slug for o in orgs)
         assert slugs == ["concurrent-ops", "concurrent-ops-1"]
 
         memberships = (
-            await db_session.execute(
-                select(OrganizationMember)
-                .join(User, User.id == OrganizationMember.user_id)
-                .where(User.email.in_(["concurrent-a@user.com", "concurrent-b@user.com"]))
+            (
+                await db_session.execute(
+                    select(OrganizationMember)
+                    .join(User, User.id == OrganizationMember.user_id)
+                    .where(User.email.in_(["concurrent-a@user.com", "concurrent-b@user.com"]))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         # No partial rows: each operator got exactly one owner membership,
         # each pointing at one of the two distinct orgs created above.
         assert len(memberships) == 2

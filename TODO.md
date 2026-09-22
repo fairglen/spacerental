@@ -2230,9 +2230,48 @@ or refund is ever created by an operator action (O02 owns money movement; O05
 owns the audit trail — neither is started here). **Links:** B46 (operators had
 no action on a confirmed booking) and B43 are answered by A01/A03.
 
+**Integrated verification (2026-09-22, final branch state `a48e81b`, stub
+mode, no credentials, isolated stack rebuilt from an empty database):** backend
+pytest 595 passed (516 at PR 1's HEAD); `alembic upgrade head` → `check` →
+`downgrade -1` → `upgrade head` → `downgrade base` (no tables or enum types
+left) → `upgrade head` → `check` clean through `0010_purchase_amount_paid`;
+`tsc` clean; Vitest 471 (434 at PR 1's HEAD); `next build` OK; full Playwright
+43 passed with the recurrence flag off AND 43 passed with it on (PR 1's 40 plus
+`admin-calendar`, `admin-users`, `admin-room-active`); `npm audit` unchanged at
+21. Section 3's own end-of-section Playwright run had failed for an
+environment reason (the loop stack's backend container was gone); this final
+run on a fresh stack covers it.
+
 ### A01 — Operator booking management API
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** `PUT /admin/bookings/{id}`
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Evidence (2026-09-22):** 23
+real-PG tests in `tests/test_admin_booking_management.py` — reschedule (paid
+booking moved, one "alterada" email with the new Lisbon time, `hours`
+before/after; a longer duration moves no money and mints no session; move to
+another room; another org's room = 404; no 24h rule but the same past/closed/
+conflict checks; another org's admin = 404 and nothing moves; a plain status
+change still works); manual booking (confirmed with code and email; the
+customer must be a member; same conflicts; the customer API rejects `manual`
+with 422; another org = 404); mark-paid (pending hourly → confirmed `manual`,
+session expired at the provider, reason appended to the note; a late webhook
+after it stays single-confirmed with no second email; a mixed hold keeps its
+pack share; confirmed/package/cancelled → 409; empty reason 422; another org
+404); admin note (set by the operator, never in `/bookings/me` nor the
+resume-checkout response, a customer cannot write it, the operator list shows
+it); admin cancel restores pack hours and frees the slot through the shared
+ledger rule. Routes classified in the S01 matrix. Migration
+`0008_admin_booking_tools` round trip clean. Full backend 541. Frontend: types
++ "Pago no local" label (Vitest 435). **Found on the way (would have shipped
+a real bug):** narrowing the customer schema to a `Literal` of strings made the
+router's enum identity checks always true, so every customer booking took the
+pack path — caught by C13's tests; the router now converts at the boundary.
+**Known limitation (by the owner's instruction):** a duration change on a paid
+booking creates no charge or credit; `hours` is returned and the operator
+settles it with the customer outside the platform. **Decision:** mark-paid
+clears the row's session id after expiring the session, which is what makes a
+late webhook unable to match it (the webhook looks up by session id).
+**Scope:** `PUT /admin/bookings/{id}`
 also accepts `start_time`/`end_time`/`room_id` (same org; same validity and
 conflict checks as a customer booking, EXCLUDE race included; no 24h rule for
 admins); a duration change on a paid booking moves no money — old and new hour
@@ -2253,7 +2292,24 @@ sent once; enum + column migration round trip.
 
 ### A02 — Blocked time (`room_blocks`)
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** `room_blocks` (org_id,
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Evidence (2026-09-22):** 18
+real-PG tests in `tests/test_room_blocks.py` (CRUD with `created_by`; windowed
+listing; bounds incl. naive datetimes, empty reason, > 31 days; a block may
+start in the past but not end there; another org's admin → 403/404 on every
+verb, a member → 403; the public calendar hides the hours; a customer cannot
+book into, across or over a block but can at its edge; an operator cannot move
+or create a booking into one; a reinstated booking cannot land on one; a block
+over a held booking → 409 listing it; cancelled/expired bookings do not stand
+in the way; moving/extending a block is checked too; the EXCLUDE constraint
+refuses overlapping blocks and the API reports the race as 409). Routes
+classified in the S01 matrix incl. its cross-org room sweep. Migration
+`0009_room_blocks` round trip clean; `room_blocks_no_overlap` verified present
+after migration (invisible to `alembic check`, like the bookings one). Full
+backend 563. **Decision:** blocks enter `has_conflicting_booking`, the ONE
+conflict check every booking path already uses, rather than each path
+checking separately. A 31-day cap per block (create several) is a technical
+bound, not a product rule. **Scope:** `room_blocks` (org_id,
 room_id, start, end, reason, created_by) with the bookings' overlap EXCLUDE
 pattern; blocks count as unavailable in `/rooms/{id}/availability` and in every
 booking conflict check (customer and admin); CRUD under
@@ -2263,7 +2319,36 @@ directions, cross-tenant, migration round trip with a constraint test.
 
 ### A03 — Admin calendar (`/admin/calendar`)
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** react-big-calendar with
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Evidence (2026-09-22):**
+`BookingSheet` + `MoveConfirm` — 13 component tests (what the sheet shows incl.
+the customer link, mixed/manual payment lines; Confirmar; Marcar como pago
+with a required reason; Cancelar with reason + confirm step; Alterar horário
+sending room/time and reporting `hours` before → after with the settle-outside
+note; a 409 shown inline; Guardar nota; linked support requests; the popover
+describes the move, calls the API only on "Mover", Escape/"Não mover" do
+nothing, a resize names the hour change, a refusal stays inline). 7 API shape
+tests. Playwright `admin-calendar.spec.ts`: day-by-room with a column per
+room; click the seeded booking → cancel from the sheet; a manual booking
+created on an empty 14:00 slot through "Nova reserva" (customer picker, note)
+and shown with its "local" tag; an hour blocked through "Bloquear horário";
+`GET /rooms/{id}/availability` then reports 14:00 and 16:00 taken and 10:00
+free again. Drag-to-move exercised live in Chromium: the popover appears, the
+booking is NOT moved until "Mover" (verified via the API mid-drag), then lands
+where dragged. Vitest 454; `next build` OK (`/admin/calendar` static).
+**Found by running it:** (1) the sheet reset its status line on every fresh
+copy of the same booking — now only when a different booking opens; (2) the
+new-entry dialog kept its first slot's times — now keyed per picked slot.
+**Decisions:** (1) the vertical range is 07:00–22:00 with 08–20 shaded as the
+seed's opening hours, not the rooms' union (the availability rules are per
+room and the page would need one more query per room; queued as a follow-up
+under A03 residuals); (2) the customer picker reads the existing
+`/admin/users`, which lists only customers who already booked — A05 upgrades
+it to members; (3) `resources` are the space's active rooms in the day view,
+and a block shows as a hatched event with a small sheet (remove/close) rather
+than the full booking sheet. **Residuals:** opening-hours union per room;
+keyboard drag alternative is the sheet's "Alterar horário" (as specified).
+**Scope:** react-big-calendar with
 `resources` and its drag-and-drop addon. "Dia por sala" (a column per active
 room) and "Semana" for one room; status shown by colour AND text; cancelled
 hidden behind a toggle; blocks hatched; a right-side sheet per booking with
@@ -2277,33 +2362,172 @@ booking, block an hour, and the customer calendar shows both unavailable.
 
 ### A04 — Operator capability audit ("god mode")
 
-**Priority: P1. State: QUEUED** (PR 2, docs). **Scope:** walk the customer
+**Priority: P1. State: DONE (docs, 2026-09-22)** — the walk of the customer
+journey below; each state an operator may need to change and cannot today,
+with a priority and whether PR 2 delivers it (A01–A03, A05–A07) or it is
+queued as a new item. Reviewed against the API as it is on
+`feat/admin-calendar-tools` after A03.
+
+| Area | What the operator cannot do today | Priority | Disposition |
+|---|---|---|---|
+| Users | See one customer's bookings, packs and help requests in one place; the list has no search or pages and lists only people who already booked | P1 | **A05** (this PR) — done: `/admin/users` (members, search, pages) and `/admin/users/{id}` |
+| Users | Promote/demote an org admin from the UI (`promote_admin.py` is a script; no demote at all; no "cannot demote yourself" rule) | P1 | **A05** (this PR) — done: `PUT /admin/users/{id}/role`, self and owner refused |
+| Users | Grant complimentary hours | P1 | **A05** (this PR) — done: a purchase row at 0,00 € with a reason, so reports still add up |
+| Users | Deactivate/ban a customer, or reset their password | P3 | **Q-A08** queued: needs a policy on what happens to their future bookings; no self-service reset exists either |
+| Packages | Extend a purchase's expiry; see remaining hours per purchase; see a customer's purchase history | P1 | **A06** (this PR) |
+| Packages | Refund/cancel a purchase, or move hours between purchases | P3 | O02 (money) — not here |
+| Rooms | Activate/deactivate with a check for future confirmed bookings | P1 | **A07** (this PR); C15 already exposes the flag without the check |
+| Rooms | Opening hours: the editor covers one window per weekday; a lunch break (two windows) or a one-off closure has no UI (blocks cover the latter, A02) | P2 | **Q-A09** queued: multi-window rules in the editor |
+| Rooms | Delete a room outright (only deactivate) | P3 | deliberately absent: bookings reference it |
+| Bookings | Reschedule/move, create for a customer, mark as paid, private note, block time | P1 | **A01, A02, A03** (this PR) |
+| Bookings | Refund a paid booking after an operator cancel | — | O02; the calendar's cancel says "nada é devolvido aqui" |
+| Bookings | Change a booking's customer (re-assign) | P3 | **Q-A10** queued; workaround: cancel + manual booking |
+| Payments | See the Stripe Checkout Session id / payment status for a booking or purchase; a link into the Stripe dashboard | P2 | **Q-A11** queued: read-only exposure of `stripe_checkout_session_id` in admin responses (customer responses must never carry it) |
+| Payments | Reconcile revenue vs. refunds | — | O03 |
+| Support | Answer from the inbox, assign, history | P2 | D06 (C19 is the first slice) |
+| Settings | Contact/support email, hold expiry, enrollment org, rate limits are env vars; no per-org settings UI | P2 | **Q-A12** queued: an org settings page over `organizations.settings` (JSONB, unused today) for the values that are per-tenant (support email, hold minutes); env stays for deployment-wide ones |
+| Settings | Access codes: see/revoke a customer's door code by hand | P2 | O04 (durable lock state first) |
+| Spaces | Deactivate a space with active future bookings | P2 | **Q-A13** queued: same check as A07, at space level |
+| Audit | Who did what (every table above) | P2 | O05 |
+
+New queued items from this audit (recorded, not started): Q-A08 customer
+deactivation/reset, Q-A09 multi-window opening hours, Q-A10 re-assign a
+booking, Q-A11 payment session visibility, Q-A12 per-org settings page,
+Q-A13 space deactivation check. **Scope:** walk the customer
 journey and list every state an operator may need to change and cannot today
 (users, packages, rooms, bookings, payments, support requests, settings), each
 with a priority and whether PR 2 delivers it or it is queued.
 
 ### A05 — Users: list, customer page, admin role, complimentary hours
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** `/admin/users` searchable and
-paginated; a user page with bookings, package purchases and support requests;
-"Tornar admin / Remover admin" per org with confirm (cannot demote yourself);
-"Atribuir horas": a package purchase of N hours at 0,00 € with a reason — policy:
-complimentary hours are a purchase row with amount 0 and a note, so reports
-still add up. **Links:** `promote_admin.py` (script only today), D05
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Scope:** `/admin/users`
+searchable and paginated; a user page with bookings, package purchases and
+support requests; "Tornar admin / Remover admin" per org with confirm (cannot
+demote yourself); "Atribuir horas": a package purchase of N hours at 0,00 €
+with a reason. **Links:** `promote_admin.py` (script only today), D05
 (pagination). **Validation:** per endpoint happy/failure/cross-tenant; UI
 confirm-step tests.
 
+**Policy (recorded):** complimentary hours are a purchase row with
+`amount_paid = 0` and an `admin_note`, not a separate balance. The customer's
+packs page, the redemption ledger, cancellation credits and any revenue report
+treat them exactly like a bought pack; `amount_paid` is what tells them apart.
+`user_package_purchases.amount_paid` is new (migration `0010`): a paid purchase
+copies the package's price at purchase time, and existing rows are backfilled
+from their package's current price (all of them were bought through checkout —
+granting did not exist before this migration).
+
+**DECISIONS (conservative; each reversible in one commit):**
+- **The users list is the org's members, not "people who booked".** The old
+  `GET /admin/users` listed customers with at least one booking; the admin
+  audit (A04) called that out. Members with zero bookings (just signed up,
+  granted hours only) are the ones an operator most needs to find. The
+  operator's own account and other admins appear too, with their role. Alt:
+  keep "booked only" — reverse by adding a join on bookings to the list query.
+- **`role` accepts `admin` and `member` only; an owner is untouchable here**
+  (422 for `owner`, 409 when the target is an owner, 409 for yourself).
+  Ownership transfer is a different decision (billing, deletion) and stays
+  out. Alt: allow owner→admin by another owner — a two-line change.
+- **A granted purchase's expiry defaults to `now + package.validity_days`;**
+  an explicit `expires_at` (future, tz-aware) overrides it. The hours are
+  bounded 0 < h ≤ 999 (the column's ceiling) and the reason is required
+  (1–2000 chars). The purchase is `active` at once (nothing to pay).
+- **The `admin_note` is the reason verbatim** (no "granted by X" suffix — who
+  did it belongs to the audit log, O05). The note never reaches a customer
+  endpoint (`UserPackagePurchaseOut` does not carry it; `AdminPurchaseOut`
+  does). Customer endpoints do expose `amount_paid` (it is their own money).
+
+**Evidence (2026-09-22):** `tests/test_admin_users.py` — 15 tests (list:
+members incl. the operator, search by name/email case-insensitive, paging,
+`bookings_count`, tenant isolation; detail: bookings with room, purchases with
+package, support requests, non-member and other-org 404; role: promote,
+demote, self 409, owner 409, `owner` 422, other org 403/404; complimentary
+hours: 201 with `amount_paid == "0"`, note, default and explicit expiry,
+active and spendable, bounds 422/400, unknown/foreign package 404, non-member
+404; a paid purchase records `amount_paid == package.price`). S01 matrix and
+S19 allowlists extended for the four routes (`ORG_USER_FIELDS`). Frontend:
+`RoleDialog` + `GrantHoursDialog` — 6 component tests (confirm step before a
+role changes, destructive demote, cancel/errors; what "Atribuir horas" sends,
+refuses without a reason or with 0 hours, explicit date as end of day); 4 API
+shape tests; the calendar's customer picker now searches server-side.
+Playwright `admin-users.spec.ts`: register a customer → search in
+`/admin/users` → open → "Atribuir horas" 3h with a reason → the packs table
+shows "3h de 3h · Oferta · reason" → `GET /packages/me` as the customer shows
+`active`, `hours_remaining 3.00`, `amount_paid 0.00`, no `admin_note` → "Tornar
+admin" opens the confirm and cancels cleanly. Migration `0010` round trip
+pending the PR 2 wrap-up run.
+
 ### A06 — Package purchases: extend validity, see remaining hours
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** "Prolongar validade" (new
-expiry date, reason) and remaining hours per purchase visible to the admin.
-**Validation:** happy/failure/cross-tenant; component test.
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Scope:** "Prolongar validade"
+(new expiry date, reason) and remaining hours per purchase visible to the
+admin. **Validation:** happy/failure/cross-tenant; component test.
+
+**DECISIONS (conservative; each reversible in one commit):**
+- **Extending only.** `PUT /admin/purchases/{id}/expiry` accepts a date later
+  than the current expiry and in the future (400 otherwise). A lapsed pack may
+  be brought back — that is the usual reason. Shortening is refused because it
+  takes something the customer paid for; if ever needed it is a one-line
+  relaxation of the check. Alt: allow any future date.
+- **Only `active` purchases** (409 for `pending`/`cancelled`): an unpaid
+  purchase has nothing to extend and a cancelled one is not a balance.
+- **The reason is appended to `admin_note`, dated** (`[YYYY-MM-DD] Validade:
+  old → new. reason`), so the row tells its own story until O05. The customer
+  sees the new date and never the note.
+- Remaining hours per purchase were already on the A05 customer page
+  (`hours_remaining de hours_total`); A06 adds "caducou" on a lapsed active
+  pack and the "Prolongar" action per active row.
+
+**Evidence (2026-09-22):** `tests/test_admin_purchases.py` — 7 tests (extend a
+live purchase and keep the reason on the note, customer sees the date not the
+note; bring back a lapsed one; refuse shortening and the past (row unchanged);
+409 for cancelled/pending; 422 for a blank reason, a naive datetime, a missing
+date; unknown id 404 and a foreign `org_id` never a hint; a customer 403). S01
+matrix: route classified, and a cross-org sweep (`test_user_and_purchase`)
+proving A's operator gets 404 on B's user and purchase with nothing changed.
+Frontend: `ExtendValidityDialog` — 3 component tests (sends end-of-day ISO +
+reason; refuses a date ≤ current expiry and an empty reason; says "já
+caducou"); 1 API shape test. Playwright `admin-users.spec.ts` extended: after
+granting 3h, "Prolongar" by a year → the note shows in the packs table and
+`GET /packages/me` carries the later date.
 
 ### A07 — Room activate/deactivate with a future-bookings check
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** activate/deactivate from the
-room page; deactivating a room with future confirmed bookings → 409 listing
-them. **Validation:** happy/409/cross-tenant; component test.
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Scope:** activate/deactivate
+from the room page; deactivating a room with future confirmed bookings → 409
+listing them. **Validation:** happy/409/cross-tenant; component test.
+
+**DECISIONS (conservative; each reversible in one commit):**
+- **The check lives in `PUT /admin/rooms/{id}`** (the field the edit form
+  already sent), not in a new endpoint — so the "Sala ativa" checkbox cannot
+  bypass it. The room page gets a dedicated "Desativar / Ativar" button with a
+  confirm step, and the same 409 is shown in the edit form as a one-line
+  message.
+- **"Future bookings" = rows that still hold a slot** (`holds_slot`:
+  `confirmed`, and `pending` while its hold is alive) ending after now. A
+  lapsed hold, a cancelled/expired booking, and anything already over do not
+  block. Alt: `confirmed` only — a live unpaid hold would then be confirmable
+  by webhook on a room that is off.
+- **The 409 lists the soonest 20 with the true `total`**, with the customer's
+  name/email, so the operator can go move or cancel them in the calendar.
+  Only `is_active: true → false` is checked; other edits on a room with future
+  bookings save normally; reactivating is always allowed.
+
+**Evidence (2026-09-22):** `tests/test_room_activation.py` — 5 tests (no future
+bookings → inactive and off the public space page, with past and cancelled
+rows ignored; refused with the future bookings listed soonest-first incl. a
+live pending hold and excluding a lapsed one, room untouched and still public;
+other fields still save; reactivation always allowed and bookable again; the
+list is capped at 20 while `total` is 25). Cross-org 404 is covered by the
+S01 matrix sweep on `PUT /admin/rooms/{room_id}`. Frontend:
+`RoomActiveDialog` — 3 page tests (confirm step sends only `is_active`; a
+409 renders the list with "por pagar" and "e mais N" and offers no confirm;
+reactivate from the card). Playwright `admin-room-active.spec.ts`: a manual
+booking 20 days out → "Desativar" refused with the booking listed → cancel it
+→ off, gone from `GET /spaces/{id}` → on again, back.
 
 ## Security hardening (S-series)
 

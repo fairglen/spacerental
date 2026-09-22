@@ -75,7 +75,7 @@ function purchase(hours: number, overrides: Partial<UserPackagePurchase> = {}): 
     org_id: 'org-1',
     hours_total: 10,
     hours_used: 10 - hours,
-    hours_remaining: hours,
+    hours_remaining: hours, amount_paid: 100,
     status: 'active',
     purchased_at: new Date('2026-01-01T00:00:00Z').toISOString(),
     expires_at: new Date('2027-01-01T00:00:00Z').toISOString(),

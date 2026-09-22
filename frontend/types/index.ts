@@ -60,7 +60,9 @@ export type Booking = {
   // was taken meanwhile (kept visible; refunds are O02).
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'expired' | 'paid_unfulfilled'
   // `mixed` (C13): part of the block came out of a pack, the rest was paid.
-  payment_method: 'hourly' | 'package' | 'mixed'
+  // `manual` (A01): paid or arranged outside the platform; set by an operator
+  // only. Customers may SEE it ("Pago no local") but never send it.
+  payment_method: 'hourly' | 'package' | 'mixed' | 'manual'
   // Hours paid with pack hours: 0 for hourly, the whole duration for package,
   // in between for mixed. For hourly/mixed `total_amount` is the money charged.
   package_hours_used?: number
@@ -69,6 +71,8 @@ export type Booking = {
   recurrence_rule_id?: string | null
   // C03: deadline of an unpaid checkout hold; null/absent when it never expires.
   hold_expires_at?: string | null
+  // A01: the operator's private note. Present only in admin responses.
+  admin_note?: string | null
   // Door code for a confirmed booking; null until the lock gateway issues
   // one (or when it could not). Never present for pending/cancelled rows.
   access_code?: string | null
@@ -109,11 +113,49 @@ export type UserPackagePurchase = {
   hours_total: number
   hours_used: number
   hours_remaining: number
+  // What was paid, at purchase time: the pack's price, or 0 for hours the
+  // operator granted (A05).
+  amount_paid: number
   // Hours only become spendable once Stripe confirms the payment.
   status: 'pending' | 'active' | 'cancelled'
   purchased_at: string
   expires_at: string
   package?: Package
+}
+
+// The operator's view of a purchase (A05): plus the private note.
+export type AdminPurchase = UserPackagePurchase & { admin_note: string | null }
+
+// One member of the operator's org, as /admin/users lists them (A05).
+export type OrgUser = {
+  id: string
+  email: string
+  name: string
+  role: 'owner' | 'admin' | 'member'
+  joined_at: string
+  bookings_count: number
+  created_at: string
+}
+
+export type PaginatedOrgUsers = {
+  users: OrgUser[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export type OrgUserDetail = {
+  user: OrgUser
+  bookings: Booking[]
+  purchases: AdminPurchase[]
+  support_requests: SupportRequestRow[]
+}
+
+export type ComplimentaryHoursBody = {
+  hours: number
+  package_id: string
+  reason: string
+  expires_at?: string
 }
 
 // POST /bookings and POST /packages/{id}/purchase both return the created
@@ -236,4 +278,25 @@ export type Membership = {
   org_name: string
   org_slug: string
   role: 'owner' | 'admin' | 'member'
+}
+
+// A02: a stretch of time the operator took a room out of service.
+export type RoomBlock = {
+  id: string
+  org_id: string
+  room_id: string
+  start_time: string
+  end_time: string
+  reason: string
+  created_by: string | null
+  created_at: string
+}
+
+// A01: what PUT /admin/bookings/:id accepts — any subset.
+export type AdminBookingPatch = {
+  status?: Booking['status']
+  start_time?: string
+  end_time?: string
+  room_id?: string
+  admin_note?: string | null
 }

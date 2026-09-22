@@ -40,6 +40,8 @@ PACKAGE_FIELDS = {
     "updated_at",
 }  # fmt: skip
 USER_FIELDS = {"id", "email", "name", "avatar_url", "created_at"}
+# The operator's members list (A05): the membership, never the account.
+ORG_USER_FIELDS = {"id", "email", "name", "role", "joined_at", "bookings_count", "created_at"}
 SLOT_FIELDS = {"start", "end", "available"}
 
 
@@ -259,7 +261,9 @@ class TestWhatAnOperatorSees:
         headers, org = _headers(admin_user, "owner"), {"org_id": str(test_org.id)}
         users = await client.get(f"{API}/admin/users", params=org, headers=headers)
         bookings = await client.get(f"{API}/admin/bookings", params=org, headers=headers)
-        assert [set(user) for user in users.json()["users"]] == [USER_FIELDS]
+        rows = users.json()["users"]
+        assert {u["id"] for u in rows} >= {str(test_user.id), str(admin_user.id)}
+        assert [set(user) for user in rows] == [ORG_USER_FIELDS] * len(rows)
         nested = [b["user"] for b in bookings.json()["bookings"] if b["user"] is not None]
         assert nested, "the operator list is expected to name the customer"
         assert [set(user) for user in nested] == [USER_FIELDS]
