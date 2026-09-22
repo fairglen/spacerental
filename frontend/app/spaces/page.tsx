@@ -17,7 +17,7 @@ function SpacesList({ spaces }: { spaces: Space[] }) {
       <div className="bg-white border-b border-border py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h1 className="text-3xl font-bold text-foreground">Todos os Espaços</h1>
-          <p className="text-muted-foreground mt-2">Encontra a sala perfeita para a tua prática.</p>
+          <p className="text-muted-foreground mt-2">Encontre a sala perfeita para a sua prática.</p>
         </div>
       </div>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
@@ -85,7 +85,7 @@ export default function SpacesPage() {
       {mode === 'multi' && <SpacesList spaces={spaces} />}
       {mode === 'empty' && (
         <Notice testId="spaces-empty">
-          <p>Ainda não há salas disponíveis. Volta em breve.</p>
+          <p>Ainda não há salas disponíveis. Volte em breve.</p>
         </Notice>
       )}
       {mode === 'error' && (

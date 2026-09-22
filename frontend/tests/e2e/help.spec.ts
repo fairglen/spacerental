@@ -83,7 +83,7 @@ test('a customer opens the help dialog from the cancel dialog and submits about 
     await expect(cancelDialog).toBeVisible()
     await expect(cancelDialog.getByRole('button', { name: /Sim, cancelar/ })).toBeEnabled()
     await expect(cancelDialog).not.toContainText(/reembols/i)
-    await cancelDialog.getByRole('button', { name: /Fala connosco/ }).click()
+    await cancelDialog.getByRole('button', { name: /Fale connosco/ }).click()
 
     const help = customer.getByRole('dialog', { name: /Ajuda/ })
     await expect(help).toBeVisible()

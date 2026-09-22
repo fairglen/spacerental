@@ -142,7 +142,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
               Resumo do pedido de reserva semanal recorrente e do que falta para ficar confirmada.
             </DialogDescription>
           </DialogHeader>
-          <p role="status">{mutation.data.bookings.length} reservas pendentes. O espaço precisa de confirmar a série e combinar o pagamento contigo. Ainda não tens acesso confirmado.</p>
+          <p role="status">{mutation.data.bookings.length} reservas pendentes. O espaço precisa de confirmar a série e combinar o pagamento consigo. Ainda não tem acesso confirmado.</p>
           <DialogFooter><Button onClick={onClose}>Fechar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
@@ -163,7 +163,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
           <DialogHeader>
             <DialogTitle>Reserva confirmada</DialogTitle>
             <DialogDescription>
-              As horas foram descontadas do teu pack. Não há nada a pagar agora.
+              As horas foram descontadas do seu pack. Não há nada a pagar agora.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-lg bg-accent p-4 space-y-2 text-sm">
@@ -181,7 +181,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
             </div>
             <div className="flex justify-between border-t border-primary-light pt-2">
               <span className="text-muted-foreground">Horas usadas</span>
-              <span className="font-semibold text-foreground">{formatHours(booked.duration_hours)} do teu pack</span>
+              <span className="font-semibold text-foreground">{formatHours(booked.duration_hours)} do seu pack</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Horas restantes</span>
@@ -297,7 +297,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
 
                 {untilBeforeStart && (
                   <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                    Escolhe uma data final entre a primeira reserva e o limite de 104 semanas.
+                    Escolha uma data final entre a primeira reserva e o limite de 104 semanas.
                   </p>
                 )}
 
@@ -352,7 +352,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
           )}
           {isUnauthenticated && (
             <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-              Precisas de estar autenticado para reservar.{' '}
+              Precisa de estar autenticado para reservar.{' '}
               <Link href={signInHref(pathname)} className="font-medium underline" onClick={onClose}>
                 Entrar na conta
               </Link>
@@ -367,7 +367,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
                     <li key={c}>{format(new Date(c), "d 'de' MMMM 'de' yyyy, HH:mm", { locale: pt })}</li>
                   ))}
                 </ul>
-                <p>Escolhe outras datas ou horário para a série.</p>
+                <p>Escolha outras datas ou horário para a série.</p>
               </div>
             ) : (
               <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">

@@ -116,7 +116,7 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
                 Disponibilidade — {calendarRoom.name}
               </h3>
               <p data-testid="calendar-help" className="text-sm text-muted-foreground mb-3">
-                Clica numa hora livre para reservar 1 hora, ou arrasta para reservar várias seguidas.
+                Clique numa hora livre para reservar 1 hora, ou arraste para reservar várias seguidas.
               </p>
               <ContactNote roomName={calendarRoom.name} className="mb-4" />
               <BookingCalendar room={calendarRoom} onSlotSelect={handleSlotSelect} />

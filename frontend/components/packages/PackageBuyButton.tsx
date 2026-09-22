@@ -15,9 +15,9 @@ interface PackageBuyButtonProps {
 }
 
 function errorMessage(error: unknown): string {
-  if (statusOf(error) === 403) return 'A tua conta não tem acesso a este pacote.'
+  if (statusOf(error) === 403) return 'A sua conta não tem acesso a este pacote.'
   if (statusOf(error) === 404) return 'Este pacote já não está disponível.'
-  return 'Erro ao iniciar a compra. Tenta novamente.'
+  return 'Erro ao iniciar a compra. Tente novamente.'
 }
 
 /**
@@ -50,7 +50,7 @@ export function PackageBuyButton({ pkg, label = 'Comprar Pack', variant = 'defau
   if (statusOf(mutation.error) === 401 || (status === 'authenticated' && !session?.accessToken)) {
     return (
       <div className={className}>
-        <p role="alert" className="text-sm text-amber-700 mb-2">A tua sessão deixou de ser válida. Volta a entrar para continuar a compra.</p>
+        <p role="alert" className="text-sm text-amber-700 mb-2">A sua sessão deixou de ser válida. Volte a entrar para continuar a compra.</p>
         <Link href={`/sign-in?packageId=${encodeURIComponent(pkg.id)}`} onClick={() => queryClient.clear()} className="text-primary font-medium underline">
           Entrar e continuar a compra
         </Link>

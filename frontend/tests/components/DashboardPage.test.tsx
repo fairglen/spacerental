@@ -122,7 +122,7 @@ describe('Dashboard — payment return notice (B25)', () => {
     expect(notice.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
     expect(replace).toHaveBeenCalledWith('/dashboard', expect.anything())
     fireEvent.click(screen.getByRole('button', { name: /fechar/i }))
-    await screen.findByText('Não tens reservas futuras.')
+    await screen.findByText('Não tem reservas futuras.')
     expect(screen.queryByRole('status')).toBeNull()
   })
 
@@ -140,7 +140,7 @@ describe('Dashboard — payment return notice (B25)', () => {
 
   it('shows nothing without the param', async () => {
     renderPage()
-    await screen.findByText('Não tens reservas futuras.')
+    await screen.findByText('Não tem reservas futuras.')
     expect(screen.queryByRole('status')).toBeNull()
     expect(replace).not.toHaveBeenCalled()
   })
@@ -269,9 +269,9 @@ describe('Dashboard — packs summary (B30)', () => {
     vi.mocked(bookingsApi.listMine).mockResolvedValue([])
     vi.mocked(packagesApi.listMine).mockResolvedValue([])
     renderPage()
-    await screen.findByText(/ainda não tens/i)
+    await screen.findByText(/ainda não tem/i)
     const summary = screen.getByRole('region', { name: /packs/i })
-    expect(summary).toHaveTextContent(/ainda não tens/i)
+    expect(summary).toHaveTextContent(/ainda não tem/i)
     expect(summary.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
   })
 })
@@ -367,7 +367,7 @@ describe('Dashboard — packs summary counts only spendable packs (review)', () 
       purchase('p-empty', { hours_remaining: 0, amount_paid: 100, hours_used: 10 }),
     ])
     renderPage()
-    await screen.findByText(/ainda não tens/i)
+    await screen.findByText(/ainda não tem/i)
     expect(screen.queryByText('Pack 10h')).toBeNull()
   })
 
@@ -400,7 +400,7 @@ describe('Dashboard — cancellations route to the help dialog (C18)', () => {
     const confirm = within(dialog).getByRole('button', { name: /Sim, cancelar/i })
     expect(confirm.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(dialog.textContent).not.toMatch(/reembols|devolv|refund/i)
-    fireEvent.click(within(dialog).getByRole('button', { name: /Fala connosco/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: /Fale connosco/ }))
     expect(openHelp).toHaveBeenCalledWith({ category: 'payment', bookingId: 'b-paid' })
   })
 
@@ -427,7 +427,7 @@ describe('Dashboard — cancellations route to the help dialog (C18)', () => {
     renderPage()
     expect(await screen.findByRole('button', { name: /^Cancelar$/ })).toBeDisabled()
     expect(screen.getByText(/24 horas/)).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: /Precisas de cancelar\? Fala connosco/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Precisa de cancelar\? Fale connosco/ }))
     expect(openHelp).toHaveBeenCalledWith({ category: 'booking', bookingId: 'b-soon' })
   })
 
@@ -435,6 +435,6 @@ describe('Dashboard — cancellations route to the help dialog (C18)', () => {
     vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-ok' })])
     renderPage()
     await screen.findByRole('button', { name: /^Cancelar$/ })
-    expect(screen.queryByRole('button', { name: /Precisas de cancelar/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Precisa de cancelar/ })).toBeNull()
   })
 })

@@ -15,10 +15,10 @@ describe('cancellationErrorMessage (C07)', () => {
     expect(cancellationErrorMessage(httpError(400, 'Booking is already completed'))).toMatch(/já terminou/)
   })
   it('maps 403, 404, 401 and 429', () => {
-    expect(cancellationErrorMessage(httpError(403))).toMatch(/não é tua/i)
+    expect(cancellationErrorMessage(httpError(403))).toMatch(/não é sua/i)
     expect(cancellationErrorMessage(httpError(404))).toMatch(/não encontr/i)
     expect(cancellationErrorMessage(httpError(401))).toMatch(/sessão/i)
-    expect(cancellationErrorMessage(httpError(429))).toMatch(/tentativas|aguarda/i)
+    expect(cancellationErrorMessage(httpError(429))).toMatch(/tentativas|aguarde/i)
   })
   it('distinguishes a network failure from a server rejection', () => {
     expect(cancellationErrorMessage(new Error('Network Error'))).toMatch(/ligação/i)
@@ -57,7 +57,7 @@ describe('bookingErrorMessage (B31)', () => {
   it('maps an expired session, a non-member, throttling and a payment start failure', () => {
     expect(bookingErrorMessage(httpError(401), 'hourly')).toMatch(/sessão/i)
     expect(bookingErrorMessage(httpError(403, 'You are not a member of this organization'), 'hourly')).toMatch(/inscrit/i)
-    expect(bookingErrorMessage(httpError(429), 'hourly')).toMatch(/aguarda/i)
+    expect(bookingErrorMessage(httpError(429), 'hourly')).toMatch(/aguarde/i)
     expect(bookingErrorMessage(httpError(502, 'Could not start the payment session'), 'hourly')).toMatch(/pagamento/i)
   })
   it('names a network failure and keeps the generic fallback for the rest', () => {

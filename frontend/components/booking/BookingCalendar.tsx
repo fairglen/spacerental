@@ -170,12 +170,12 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       }
       if (resolution.kind === 'taken') {
         setSelectionError(
-          `A hora ${format(resolution.from, 'HH:mm', { locale: pt })}–${format(resolution.to, 'HH:mm', { locale: pt })} já está reservada. Escolhe um intervalo livre.`,
+          `A hora ${format(resolution.from, 'HH:mm', { locale: pt })}–${format(resolution.to, 'HH:mm', { locale: pt })} já está reservada. Escolha um intervalo livre.`,
         )
         return
       }
       if (resolution.kind === 'past') {
-        setSelectionError('Essa hora já passou. Escolhe um horário a partir de agora.')
+        setSelectionError('Essa hora já passou. Escolha um horário a partir de agora.')
         return
       }
       if (resolution.kind === 'closed') {
@@ -184,7 +184,7 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       }
       // 'none': nothing bookable under the selection at all (closed day or
       // hours outside every open window).
-      setSelectionError('Esse período está fora do horário de funcionamento. Escolhe uma hora a verde.')
+      setSelectionError('Esse período está fora do horário de funcionamento. Escolha uma hora a verde.')
     },
     [allSlots, onSlotSelect]
   )
@@ -212,8 +212,8 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       {isClosed && (
         <p role="status" className="mb-3 text-sm text-foreground bg-accent rounded-lg px-3 py-2">
           {view === 'week'
-            ? 'Fechado nesta semana. Usa as setas para ver outra semana.'
-            : 'Fechado neste dia. Usa as setas para ver outro dia.'}
+            ? 'Fechado nesta semana. Use as setas para ver outra semana.'
+            : 'Fechado neste dia. Use as setas para ver outro dia.'}
         </p>
       )}
       <div className="h-[600px] [&_.rbc-today]:bg-accent [&_.rbc-selected]:bg-primary/20 [&_.rbc-event]:bg-muted-foreground [&_.rbc-toolbar-label]:font-semibold [&_.rbc-toolbar-label]:text-foreground">
