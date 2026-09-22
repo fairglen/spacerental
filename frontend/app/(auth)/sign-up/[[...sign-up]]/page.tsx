@@ -58,7 +58,7 @@ export default function SignUpPage() {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.detail || 'Erro ao criar conta.')
       } else {
-        setError('Erro de ligação. Tenta novamente.')
+        setError('Erro de ligação. Tente novamente.')
       }
     }
     finally {
@@ -78,18 +78,18 @@ export default function SignUpPage() {
         <Card>
           <CardHeader className="text-center pb-2">
             <CardTitle>Criar conta</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Cria uma conta de cliente para reservar salas e comprar packs de horas</p>
+            <p className="text-sm text-muted-foreground mt-1">Crie uma conta de cliente para reservar salas e comprar packs de horas</p>
           </CardHeader>
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
                 <Label htmlFor="name">Nome</Label>
-                <Input id="name" {...register('name')} className="mt-1" placeholder="O teu nome" autoComplete="name" />
+                <Input id="name" {...register('name')} className="mt-1" placeholder="O seu nome" autoComplete="name" />
                 {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>}
               </div>
               <div>
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...register('email')} className="mt-1" placeholder="tu@exemplo.pt" autoComplete="email" />
+                <Input id="email" type="email" {...register('email')} className="mt-1" placeholder="nome@exemplo.pt" autoComplete="email" />
                 {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
               </div>
               <div>
@@ -109,7 +109,7 @@ export default function SignUpPage() {
               </Button>
             </form>
             <p className="text-center text-sm text-muted-foreground mt-4">
-              Já tens conta?{' '}
+              Já tem conta?{' '}
               <Link
                 href={
                   packageId

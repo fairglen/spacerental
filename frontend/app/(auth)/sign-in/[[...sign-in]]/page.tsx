@@ -69,7 +69,7 @@ export default function SignInPage() {
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...register('email')} className="mt-1" placeholder="tu@exemplo.pt" autoComplete="email" />
+                <Input id="email" type="email" {...register('email')} className="mt-1" placeholder="nome@exemplo.pt" autoComplete="email" />
                 {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
               </div>
               <div>
@@ -83,7 +83,7 @@ export default function SignInPage() {
               </Button>
             </form>
             <p className="text-center text-sm text-muted-foreground mt-4">
-              Não tens conta?{' '}
+              Ainda não tem conta?{' '}
               <Link
                 href={
                   packageId
