@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '@/app/dashboard/page'
 import { bookingsApi, packagesApi } from '@/lib/api'
@@ -24,6 +24,8 @@ vi.mock('next-auth/react', () => ({
 }))
 
 vi.mock('@/lib/hooks/useApi', () => ({ useApi: () => ({}) }))
+const openHelp = vi.fn()
+vi.mock('@/components/help/HelpProvider', () => ({ useHelp: () => ({ openHelp }) }))
 vi.mock('@/contexts/OrgContext', () => ({
   useOrg: () => ({ currentOrgId: 'org-1', memberships: [], currentMembership: null, setCurrentOrgId: vi.fn(), isLoading: false }),
 }))
@@ -376,5 +378,63 @@ describe('Dashboard — packs summary counts only spendable packs (review)', () 
     const summary = await screen.findByRole('region', { name: /packs/i })
     await waitFor(() => expect(summary).toHaveTextContent(/não foi possível/i))
     expect(summary.querySelector('a[href="/dashboard/packages"]')).not.toBeNull()
+  })
+})
+
+// C18: money questions after a cancellation go to a person, through the help
+// dialog; inside the 24h window the customer can ask for an exception there
+// instead of hitting a dead end. The dashboard itself says nothing about money.
+describe('Dashboard — cancellations route to the help dialog (C18)', () => {
+  it.each([
+    ['an hourly booking', { payment_method: 'hourly' as const }],
+    ['a mixed booking', { payment_method: 'mixed' as const, package_hours_used: 2, total_amount: 11 }],
+  ])('a cancellable %s keeps self-service cancel and adds one muted line to the help dialog', async (_label, extra) => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-paid', ...extra })])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: /Sim, cancelar/i })).toBeEnabled()
+    const line = within(dialog).getByText(/Questões sobre o valor pago\?/)
+    expect(line.className).toMatch(/muted/)
+    // Below the buttons, and no claim either way about the money.
+    const confirm = within(dialog).getByRole('button', { name: /Sim, cancelar/i })
+    expect(confirm.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(dialog.textContent).not.toMatch(/reembols|devolv|refund/i)
+    fireEvent.click(within(dialog).getByRole('button', { name: /Fala connosco/ }))
+    expect(openHelp).toHaveBeenCalledWith({ category: 'payment', bookingId: 'b-paid' })
+  })
+
+  it('a package booking gets no money line: nothing was paid for it', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-pack', payment_method: 'package' })])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByText(/valor pago/)).toBeNull()
+  })
+
+  it('an unpaid hold gets no money line either', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-hold', status: 'pending', hold_expires_at: new Date(Date.now() + 600_000).toISOString() }),
+    ])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
+    expect(within(await screen.findByRole('dialog')).queryByText(/valor pago/)).toBeNull()
+  })
+
+  it('inside the 24h window, Cancel stays disabled with its reason and offers the help dialog instead', async () => {
+    const soon = new Date(Date.now() + 3 * 3_600_000)
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-soon', start_time: soon.toISOString() })])
+    renderPage()
+    expect(await screen.findByRole('button', { name: /^Cancelar$/ })).toBeDisabled()
+    expect(screen.getByText(/24 horas/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /Precisas de cancelar\? Fala connosco/ }))
+    expect(openHelp).toHaveBeenCalledWith({ category: 'booking', bookingId: 'b-soon' })
+  })
+
+  it('a booking that can be cancelled does not show the exception link', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-ok' })])
+    renderPage()
+    await screen.findByRole('button', { name: /^Cancelar$/ })
+    expect(screen.queryByRole('button', { name: /Precisas de cancelar/ })).toBeNull()
   })
 })

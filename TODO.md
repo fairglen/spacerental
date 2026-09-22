@@ -1942,7 +1942,24 @@ submits → success state with the reference.
 
 ### C18 — Cancellations and the contact note route to the help dialog
 
-**Priority: P1. State: QUEUED** (PR 1). **Scope:** (a) the C12 contact note's
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/customer-mixed-pay-photos-help`, committed locally. **Evidence
+(2026-09-22):** dashboard component tests — a cancellable hourly or mixed
+booking keeps self-service cancel and gets one muted line below the buttons
+("Questões sobre o valor pago? Fala connosco" → help, Assunto "Pagamento",
+booking preselected), the dialog says nothing about refunds; a package booking
+and an unpaid hold get no money line (nothing was paid for them); inside the
+24h window Cancel stays disabled with C07's reason and "Precisas de cancelar?
+Fala connosco" opens help on "Reserva" with the booking; the link is absent
+when cancel is allowed. Contact note tests: "Fala connosco" opens help on
+"Reserva", the address stays visible, no bare mailto. Catalog guard refuses
+"cancelamento gratuito"/"free cancellation"/refund wording; PT+EN hero pill
+and hourly-plan feature now read "Cancelamento até 24h antes" / "Cancel up to
+24h ahead". Vitest 427. Playwright `help.spec.ts` (2): a signed-in customer
+opens help from the cancel dialog of a paid booking, sees Assunto "Pagamento"
+and the booking preselected, submits, gets a reference. **Decision (the
+owner's default (a), kept):** >24h self-service cancel stays open for
+money-paid bookings; only the muted line was added. **Scope:** (a) the C12 contact note's
 "Fala connosco" opens the help dialog with Assunto "Reserva" instead of a bare
 mailto; (b) the dashboard cancel dialog: for still-cancellable bookings keep
 self-service cancel (C07 behaviour, pack hours restored as today) and add one

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { useHelp } from '@/components/help/HelpProvider'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -78,6 +79,12 @@ export default function DashboardPage() {
     setCancelId(null)
     cancelMutation.reset()
   }
+
+  const { openHelp } = useHelp()
+  const cancelling = (bookings ?? []).find((b) => b.id === cancelId) ?? null
+  // Money went out for it (hourly/mixed, past the unpaid hold): the one case
+  // where "what about what I paid?" is a real question — for a person (C18).
+  const paidMoney = !!cancelling && cancelling.payment_method !== 'package' && !isUnpaidHold(cancelling)
 
   // "Pagar agora" / "Tentar pagar de novo" (C03): resume or retry the hold's
   // Checkout on the same booking row, then leave for the payment page.
@@ -264,6 +271,16 @@ export default function DashboardPage() {
                             {!eligibility.eligible && eligibility.reason && (
                               <span className="text-[11px] text-muted-foreground text-right max-w-[11rem]">{eligibility.reason}</span>
                             )}
+                            {/* Inside the 24h window the rule still holds; a person can make an exception (C18). */}
+                            {!eligibility.eligible && b.status === 'confirmed' && !isPast(parseISO(b.start_time)) && (
+                              <button
+                                type="button"
+                                onClick={() => openHelp({ category: 'booking', bookingId: b.id })}
+                                className="text-[11px] font-medium text-primary underline underline-offset-2 text-right"
+                              >
+                                Precisas de cancelar? Fala connosco
+                              </button>
+                            )}
                           </div>
                         )
                       })()}
@@ -330,6 +347,19 @@ export default function DashboardPage() {
               {cancelMutation.isPending ? 'A cancelar...' : 'Sim, cancelar'}
             </Button>
           </DialogFooter>
+          {paidMoney && (
+            // Says nothing about whether money comes back: a person answers that.
+            <p className="text-xs text-muted-foreground">
+              Questões sobre o valor pago?{' '}
+              <button
+                type="button"
+                onClick={() => { closeCancelDialog(); openHelp({ category: 'payment', bookingId: cancelling.id }) }}
+                className="font-medium text-primary underline underline-offset-2"
+              >
+                Fala connosco
+              </button>
+            </p>
+          )}
         </DialogContent>
       </Dialog>
     </>
