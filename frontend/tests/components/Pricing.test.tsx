@@ -99,12 +99,12 @@ describe('Pricing renders what the API says (C06)', () => {
     expect(morning).toHaveTextContent('70,00')
     expect(morning).toHaveTextContent('8 horas')
     expect(morning).toHaveTextContent('90 dias')
-    // 8h × 11 € = 88 € → saves 18 €
-    expect(morning).toHaveTextContent(/18,00/)
+    // 8h × 11 € = 88 € → saves 18 €, on the savings line
+    expect(morning).toHaveTextContent(/Poupe .*18,00/)
     const monthly = (await screen.findByRole('heading', { name: 'Pack Mensal' })).closest('.rounded-xl') as HTMLElement
     expect(monthly).toHaveTextContent('330,00')
     // 30h × 11 € = 330 € → no saving, so no savings line at all
-    expect(monthly).not.toHaveTextContent(/Poupa/)
+    expect(monthly).not.toHaveTextContent(/Poup/)
     // No stale hard-coded packs survive.
     expect(screen.queryByText(/Pack 10 Horas|Pack 20 Horas/)).toBeNull()
   })

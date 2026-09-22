@@ -62,7 +62,7 @@ export function cancellationEligibility(
   if (booking.status === 'completed') return { eligible: false, reason: 'Reserva já concluída.' }
   if (booking.status === 'expired') return { eligible: false, reason: 'A reserva expirou sem pagamento.' }
   if (booking.status === 'paid_unfulfilled') {
-    return { eligible: false, reason: 'O espaço vai contactar-te sobre este pagamento.' }
+    return { eligible: false, reason: 'O espaço vai contactá-lo sobre este pagamento.' }
   }
   // Nothing was paid for an unpaid hold, so letting it go is always allowed (C03).
   if (isUnpaidHold(booking)) return { eligible: true }

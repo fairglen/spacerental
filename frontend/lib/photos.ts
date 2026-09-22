@@ -9,11 +9,11 @@ export const MAX_PHOTOS = 10
 export const ACCEPTED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 export const PHOTO_MESSAGES = {
-  type: 'Formato não suportado. Usa JPEG, PNG ou WebP.',
+  type: 'Formato não suportado. Use JPEG, PNG ou WebP.',
   size: 'A imagem tem mais de 8 MB.',
-  limit: 'Já tens o máximo de 10 fotografias. Apaga uma primeiro.',
-  throttled: 'Demasiados envios seguidos. Aguarda um momento e tenta de novo.',
-  generic: 'Não foi possível enviar a fotografia. Tenta novamente.',
+  limit: 'Já tem o máximo de 10 fotografias. Apague uma primeiro.',
+  throttled: 'Demasiados envios seguidos. Aguarde um momento e tente de novo.',
+  generic: 'Não foi possível enviar a fotografia. Tente novamente.',
 } as const
 
 /** Why this file cannot be uploaded, or null if it can be tried. */

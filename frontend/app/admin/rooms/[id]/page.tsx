@@ -161,7 +161,7 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-foreground">Salas — {space?.name ?? '...'}</h1>
-        <p className="text-muted-foreground text-sm mt-1">Gere as salas deste espaço.</p>
+        <p className="text-muted-foreground text-sm mt-1">Gira as salas deste espaço.</p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
@@ -244,7 +244,7 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
         room={togglingRoom}
         busy={toggleActive.isPending}
         inUse={toggleActive.isError ? roomInUseOf(toggleActive.error) : null}
-        error={toggleActive.isError ? 'Não foi possível alterar a sala. Tenta novamente.' : null}
+        error={toggleActive.isError ? 'Não foi possível alterar a sala. Tente novamente.' : null}
         onConfirm={(is_active) => togglingRoom && toggleActive.mutate({ id: togglingRoom.id, is_active })}
         onClose={() => { setTogglingRoom(null); toggleActive.reset() }}
       />
@@ -308,8 +308,8 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
             {updateRoom.isError && (
               <p role="alert" className="text-sm text-red-600">
                 {roomInUseOf(updateRoom.error)
-                  ? `Ainda há ${roomInUseOf(updateRoom.error)!.total} reserva(s) marcada(s) nesta sala; não pode ser desativada. Move-as ou cancela-as no calendário primeiro.`
-                  : 'Não foi possível guardar a sala. Tenta novamente.'}
+                  ? `Ainda há ${roomInUseOf(updateRoom.error)!.total} reserva(s) marcada(s) nesta sala; não pode ser desativada. Mova-as ou cancele-as no calendário primeiro.`
+                  : 'Não foi possível guardar a sala. Tente novamente.'}
               </p>
             )}
             <DialogFooter>
@@ -338,7 +338,7 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
           <DialogHeader>
             <DialogTitle>Horários — {availabilityRoom?.name}</DialogTitle>
             <DialogDescription>
-              Define os dias e horas em que esta sala está disponível. Isto substitui todas as regras existentes.
+              Defina os dias e horas em que esta sala está disponível. Isto substitui todas as regras existentes.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

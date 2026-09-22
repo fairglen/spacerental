@@ -219,6 +219,12 @@ a {
   margin: 0 0 2rem;
 }
 
+/* The support line sits under the subtitle as a second, quieter paragraph. */
+.hero p.lede-support {
+  font-size: 1.05rem;
+  margin-top: -1rem;
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
@@ -258,6 +264,10 @@ section.alt {
   text-align: center;
   color: var(--color-muted);
   font-size: 1.1rem;
+}
+
+.prose + .prose {
+  margin-top: 1.25rem;
 }
 
 /* ---------- Cards / grid ---------- */

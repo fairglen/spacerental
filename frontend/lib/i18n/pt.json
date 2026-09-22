@@ -1,12 +1,18 @@
 {
+  "brand": {
+    "name": "FlowSpace",
+    "tagline": "Gabinetes profissionais"
+  },
   "hero": {
     "badge": "Disponível à hora ou com pacote de horas",
-    "headline_start": "O teu espaço,",
-    "headline_highlight": "no teu tempo",
-    "description": "Salas privadas para psicólogos, terapeutas e profissionais de saúde. Reserva online em segundos, sem contratos longos.",
+    "headline_start": "O seu espaço,",
+    "headline_highlight": "no seu tempo.",
+    "description": "Gabinetes profissionais para profissionais de saúde e bem-estar, pensados para trabalhar com conforto, privacidade e flexibilidade.",
+    "support": "Um espaço partilhado onde cada profissional mantém a sua autonomia e a sua forma de trabalhar.",
     "cta_primary": "Ver Espaços",
     "cta_primary_rooms": "Ver Salas",
     "cta_secondary": "Saber Mais",
+    "benefit_booking": "Reserva online em segundos",
     "benefit_1": "Sem caução",
     "benefit_2": "Cancelamento até 24h antes",
     "benefit_3": "Pagamento seguro"
@@ -16,7 +22,7 @@
     "section_description": "Sem surpresas. Sem contratos. Sem taxas escondidas.",
     "hourly_plan_name": "Hora a Hora",
     "hourly_plan_unit": "/ hora",
-    "hourly_plan_desc": "Sem compromisso. Paga apenas o que usas.",
+    "hourly_plan_desc": "Sem compromisso. Pague apenas o que usa.",
     "hourly_plan_feature_1": "Reserva instantânea",
     "hourly_plan_feature_2": "Cancelamento até 24h antes",
     "hourly_plan_feature_3": "Sem mensalidade",
@@ -26,37 +32,37 @@
     "pack_hours_unit": "{hours} horas",
     "pack_validity": "Válido {days} dias",
     "pack_prepaid_feature": "{hours}h pré-pagas",
-    "pack_savings": "Poupas {amount} face ao preço à hora",
+    "pack_savings": "Poupe {amount} face ao preço à hora",
     "best_value_badge": "Melhor valor",
     "loading": "A carregar preços…",
     "error": "Não foi possível carregar os packs.",
     "retry": "Tentar novamente",
-    "no_packs": "De momento não há packs disponíveis. Podes reservar à hora."
+    "no_packs": "De momento não há packs disponíveis. Pode reservar à hora."
   },
   "howItWorks": {
     "section_title": "Como Funciona",
     "section_description": "De zero a sala reservada em menos de 2 minutos.",
-    "step_1_title": "Regista-te",
-    "step_1_desc": "Cria a tua conta em segundos com o teu e-mail.",
-    "step_2_title": "Escolhe o espaço",
-    "step_2_title_rooms": "Escolhe a sala",
-    "step_2_desc": "Consulta as salas disponíveis e as suas comodidades.",
-    "step_3_title": "Reserva o horário",
-    "step_3_desc": "Seleciona a data e hora no calendário e confirma a reserva.",
-    "step_4_title": "Acede ao espaço",
-    "step_4_desc": "Recebe as instruções de acesso e começa a trabalhar."
+    "step_1_title": "Registe-se",
+    "step_1_desc": "Crie a sua conta em segundos com o seu e-mail.",
+    "step_2_title": "Escolha o espaço",
+    "step_2_title_rooms": "Escolha a sala",
+    "step_2_desc": "Consulte as salas disponíveis e as suas comodidades.",
+    "step_3_title": "Reserve o horário",
+    "step_3_desc": "Selecione a data e hora no calendário e confirme a reserva.",
+    "step_4_title": "Aceda ao espaço",
+    "step_4_desc": "Receba as instruções de acesso e comece a trabalhar."
   },
   "valueProps": {
     "privacy_title": "Privacidade Total",
     "privacy_desc": "Cada sala é completamente isolada e insonorizada para sessões confidenciais.",
     "booking_title": "Reserva Online",
-    "booking_desc": "Reserva a tua sala em segundos, a qualquer hora, sem telefonemas.",
+    "booking_desc": "Reserve a sua sala em segundos, a qualquer hora, sem telefonemas.",
     "flexibility_title": "Máxima Flexibilidade",
-    "flexibility_desc": "À hora ou com um pacote de horas pré-pagas. Tu escolhes."
+    "flexibility_desc": "À hora ou com um pacote de horas pré-pagas. A escolha é sua."
   },
   "spaceCards": {
     "section_title": "Espaços Disponíveis",
-    "section_description": "Salas preparadas para a tua prática profissional.",
+    "section_description": "Salas preparadas para a sua prática profissional.",
     "cta_detail": "Ver Disponibilidade",
     "empty_state": "Ainda não há espaços disponíveis.",
     "cta_all": "Ver Todos os Espaços",
@@ -65,6 +71,11 @@
     "rooms_cta_all": "Ver Todas as Salas",
     "error": "Não foi possível carregar as salas.",
     "retry": "Tentar novamente"
+  },
+  "theSpace": {
+    "title": "O espaço",
+    "p1": "O FlowSpace é um espaço profissional partilhado, pensado para profissionais de saúde e bem-estar que procuram um lugar onde possam exercer a sua atividade com conforto, privacidade e flexibilidade.",
+    "p2": "Gabinetes cuidados e equipados, num ambiente tranquilo e acolhedor, que permitem a cada profissional trabalhar de forma autónoma, de acordo com as necessidades da sua prática."
   },
   "navbar": {
     "spaces_link": "Espaços",
@@ -85,7 +96,7 @@
   },
   "footer": {
     "my_bookings": "As minhas reservas",
-    "tagline": "Espaços profissionais por hora para psicólogos, terapeutas e outros profissionais de saúde.",
+    "tagline": "Espaços profissionais por hora para profissionais de saúde e bem-estar.",
     "links_heading": "Links",
     "spaces": "Espaços",
     "rooms": "Salas",
@@ -96,14 +107,14 @@
     "contact_heading": "Contacto",
     "location": "Portugal",
     "location_city": "{city}, Portugal",
-    "copyright": "© {year} EspaçoHora. Todos os direitos reservados."
+    "copyright": "© {year} {brand}. Todos os direitos reservados."
   },
   "location": {
     "heading": "Onde estamos",
     "address_label": "Morada",
     "directions": "Como chegar",
     "show_map": "Ver mapa",
-    "map_privacy": "O mapa vem do OpenStreetMap e só é carregado quando o pedires.",
+    "map_privacy": "O mapa vem do OpenStreetMap e só é carregado quando o pedir.",
     "map_title": "Mapa de {name}",
     "map_title_generic": "Mapa da localização",
     "open_full_map": "Abrir o mapa completo"
@@ -119,7 +130,7 @@
   },
   "contactNote": {
     "lead": "Somos flexíveis.",
-    "body": "Precisas de um horário fixo todas as semanas, de um acordo diferente, ou tens dúvidas?",
-    "cta": "Fala connosco"
+    "body": "Precisa de um horário fixo todas as semanas, de um acordo diferente, ou tem dúvidas?",
+    "cta": "Fale connosco"
   }
 }

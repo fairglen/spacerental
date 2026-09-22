@@ -38,12 +38,12 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
 
 function submitErrorMessage(error: unknown): string {
   switch (statusOf(error)) {
-    case 401: return 'A tua sessão expirou. Entra de novo, ou envia sem sessão iniciada com o teu email.'
-    case 404: return 'Essa reserva já não existe. Escolhe outra ou envia sem reserva.'
-    case 422: return 'Verifica os campos: a mensagem precisa de 20 a 2000 caracteres e o email de ser válido.'
-    case 429: return 'Demasiados pedidos seguidos. Aguarda um momento e tenta de novo.'
-    case undefined: return 'Sem ligação ao servidor. Verifica a internet e tenta novamente.'
-    default: return 'Não foi possível enviar o pedido. Tenta novamente daqui a pouco.'
+    case 401: return 'A sua sessão expirou. Entre de novo, ou envie sem sessão iniciada com o seu email.'
+    case 404: return 'Essa reserva já não existe. Escolha outra ou envie sem reserva.'
+    case 422: return 'Verifique os campos: a mensagem precisa de 20 a 2000 caracteres e o email de ser válido.'
+    case 429: return 'Demasiados pedidos seguidos. Aguarde um momento e tente de novo.'
+    case undefined: return 'Sem ligação ao servidor. Verifique a internet e tente novamente.'
+    default: return 'Não foi possível enviar o pedido. Tente novamente daqui a pouco.'
   }
 }
 
@@ -85,9 +85,9 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
   function validate(): boolean {
     const next: typeof errors = {}
     const trimmed = message.trim()
-    if (trimmed.length < MIN_MESSAGE) next.message = `Escreve pelo menos ${MIN_MESSAGE} caracteres.`
+    if (trimmed.length < MIN_MESSAGE) next.message = `Escreva pelo menos ${MIN_MESSAGE} caracteres.`
     else if (trimmed.length > MAX_MESSAGE) next.message = `No máximo ${MAX_MESSAGE} caracteres.`
-    if (!signedIn && !EMAIL_PATTERN.test(email.trim())) next.email = 'Indica um email válido para te respondermos.'
+    if (!signedIn && !EMAIL_PATTERN.test(email.trim())) next.email = 'Indique um email válido para lhe respondermos.'
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -117,8 +117,8 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
           <DialogTitle id="help-title">Ajuda</DialogTitle>
           <DialogDescription id="help-description">
             {mutation.isSuccess
-              ? 'O teu pedido foi enviado.'
-              : 'Conta-nos o que se passa. Respondemos por email, normalmente no mesmo dia útil.'}
+              ? 'O seu pedido foi enviado.'
+              : 'Conte-nos o que se passa. Respondemos por email, normalmente no mesmo dia útil.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -126,7 +126,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
           <div className="space-y-3">
             <p role="status" className="rounded-lg bg-accent p-4 text-sm text-foreground">
               Referência <strong>#{mutation.data.reference}</strong>. Respondemos por email
-              {signedIn ? ` para ${session?.user?.email}` : ` para ${email.trim()}`}. Guarda a referência se quiseres perguntar por ele.
+              {signedIn ? ` para ${session?.user?.email}` : ` para ${email.trim()}`}. Guarde a referência se quiser perguntar por ele.
             </p>
             <DialogFooter>
               <Button onClick={() => onOpenChange(false)}>Fechar</Button>
@@ -202,7 +202,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
                 aria-invalid={!!errors.email}
                 aria-describedby={errors.email ? 'help-email-error' : undefined}
                 className={signedIn ? 'mt-1 bg-accent/50' : 'mt-1'}
-                placeholder="o-teu@email.pt"
+                placeholder="o-seu@email.pt"
                 autoComplete="email"
               />
               {errors.email && <p id="help-email-error" role="alert" className="mt-1 text-xs text-red-600">{errors.email}</p>}
@@ -217,9 +217,9 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer">O que enviamos com o pedido</summary>
               <p className="mt-1">
-                Para percebermos o problema, o pedido leva o endereço da página onde estás, o tamanho do ecrã,
-                o browser que usas, a versão da app ({APP_VERSION}) e a hora do envio
-                {signedIn ? ', e o identificador de utilizador da tua conta' : ''}. Nada mais: sem capturas de ecrã.
+                Para percebermos o problema, o pedido leva o endereço da página onde está, o tamanho do ecrã,
+                o browser que usa, a versão da app ({APP_VERSION}) e a hora do envio
+                {signedIn ? ', e o identificador de utilizador da sua conta' : ''}. Nada mais: sem capturas de ecrã.
               </p>
             </details>
 

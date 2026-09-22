@@ -34,7 +34,7 @@ function OrgBookings({ currentOrgId }: { currentOrgId: string | null }) {
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold text-foreground mb-2">Todas as Reservas</h1>
-      <p className="text-muted-foreground text-sm mb-8">Gere e acompanha todas as reservas.</p>
+      <p className="text-muted-foreground text-sm mb-8">Gira e acompanhe todas as reservas.</p>
       {isLoading ? <Skeleton className="h-96 rounded-xl" /> : (
         <BookingsTable
           bookings={data?.bookings ?? []}

@@ -77,7 +77,7 @@ export default function AdminSpacesPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Espaços</h1>
-          <p className="text-muted-foreground text-sm mt-1">Gere os teus espaços e salas.</p>
+          <p className="text-muted-foreground text-sm mt-1">Gira os seus espaços e salas.</p>
         </div>
         <Link href="/admin/spaces/new"><Button className="gap-2"><Plus className="h-4 w-4" /> Novo Espaço</Button></Link>
       </div>
@@ -117,7 +117,7 @@ export default function AdminSpacesPage() {
           <DialogHeader>
             <DialogTitle>Editar Espaço</DialogTitle>
             <DialogDescription>
-              Atualiza o nome, a descrição e a morada deste espaço visíveis aos clientes.
+              Atualize o nome, a descrição e a morada deste espaço visíveis aos clientes.
             </DialogDescription>
           </DialogHeader>
           <form

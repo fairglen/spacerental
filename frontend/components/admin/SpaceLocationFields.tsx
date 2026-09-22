@@ -83,8 +83,8 @@ export function SpaceLocationFields({ register, setValue, errors, idPrefix }: Sp
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        Podes copiar as coordenadas de uma app de mapas: toca e mantém o dedo (ou clica com o botão direito) no
-        local e copia os números. Se colares o par num dos campos, preenchemos os dois. Sem coordenadas, os
+        Pode copiar as coordenadas de uma app de mapas: toque e mantenha o dedo (ou clique com o botão direito) no
+        local e copie os números. Se colar o par num dos campos, preenchemos os dois. Sem coordenadas, os
         clientes veem só a morada, sem mapa.
       </p>
     </div>

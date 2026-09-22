@@ -241,7 +241,7 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
     expect(done).toBeVisible()
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveTextContent('Sala Calma')
-    expect(dialog).toHaveTextContent(/3h do (teu )?pack/)
+    expect(dialog).toHaveTextContent(/3h do (seu )?pack/)
     await waitFor(() => expect(dialog).toHaveTextContent(/2h/))
     expect(screen.getByRole('link', { name: /minhas reservas/i })).toHaveAttribute('href', '/dashboard')
     expect(onClose).not.toHaveBeenCalled()

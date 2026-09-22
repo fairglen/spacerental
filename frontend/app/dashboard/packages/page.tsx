@@ -61,7 +61,7 @@ export default function MyPackagesPage() {
             ) : (purchases ?? []).length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
-                  <p>Não tens pacotes de horas.</p>
+                  <p>Não tem pacotes de horas.</p>
                 </CardContent>
               </Card>
             ) : (

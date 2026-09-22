@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { test, expect } from '@playwright/test'
 import { openSpaceRooms, preferDayView, useDayView } from './helpers/rooms'
+import pt from '../../lib/i18n/pt.json'
 
 test.use({ timezoneId: 'UTC' })
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
@@ -32,7 +33,7 @@ test.describe('Authentication', () => {
 
   test('landing page loads', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByText(/O teu espaço/i)).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(pt.hero.headline_start)
   })
 
   test('fresh customer signs up, selects multiple hours, pays and sees confirmation', async ({ page }) => {

@@ -26,12 +26,12 @@ function withClient(ui: React.ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
-// C18: "Fala connosco" opens the help dialog preset to "Reserva"; the address
+// C18: "Fale connosco" opens the help dialog preset to "Reserva"; the address
 // stays visible as plain text so it can still be copied, but it is no longer a
 // bare mailto.
 function expectContactLink(scope: HTMLElement, _roomName: string) {
   openHelp.mockClear()
-  fireEvent.click(within(scope).getByRole('button', { name: /Fala connosco/ }))
+  fireEvent.click(within(scope).getByRole('button', { name: /Fale connosco/ }))
   expect(openHelp).toHaveBeenCalledWith({ category: 'booking' })
   expect(within(scope).getByText(CONTACT_EMAIL)).toBeInTheDocument()
   expect(within(scope).queryByRole('link', { name: CONTACT_EMAIL })).toBeNull()
@@ -83,8 +83,8 @@ describe('contact note on the booking page', () => {
     withClient(<SpacePage params={{ id: 's-1' }} />)
     fireEvent.click(await screen.findByRole('button', { name: /Reservar Esta Sala/i }))
     const help = await screen.findByTestId('calendar-help')
-    expect(help.textContent).toMatch(/clica/i)
-    expect(help.textContent).toMatch(/arrasta/i)
+    expect(help.textContent).toMatch(/clique/i)
+    expect(help.textContent).toMatch(/arraste/i)
     expect(help.textContent).not.toMatch(/m[êe]s/i)
     expect(help.textContent!.split(/[.!?](?:\s|$)/).filter(Boolean)).toHaveLength(1)
   })

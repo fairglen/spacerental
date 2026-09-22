@@ -1,8 +1,8 @@
 name: Deploy flowspace-site
 
 # NOTE: path-filtered to flowspace-site/** so this workflow only runs for
-# changes to the standalone FlowSpace marketing site, not the EspaçoHora SaaS
-# app in frontend/ or backend/. See TODO.md F01 and frontend-tests.yml's note
+# changes to the standalone FlowSpace marketing site, not the FlowSpace app
+# in frontend/ or backend/. See TODO.md F01 and frontend-tests.yml's note
 # on path-filter/required-check interaction (TODO.md T4) if this is ever made
 # a required status check.
 

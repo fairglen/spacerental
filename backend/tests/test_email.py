@@ -11,11 +11,12 @@ from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
-from app.config import settings
+from app.config import BRAND_NAME, settings
 from app.email import (
     EmailNotConfiguredError,
     booking_cancellation_email,
     booking_confirmation_email,
+    support_request_email,
     validate_email_settings,
 )
 from app.models.booking import Booking, BookingStatus, PaymentMethod
@@ -70,6 +71,34 @@ class TestEmailContentTemplates:
         assert "quinta-feira" in message.text_body
         assert f"{settings.FRONTEND_URL}/dashboard" in message.text_body
         assert f"{settings.FRONTEND_URL}/dashboard" in message.html_body
+
+    def test_customer_emails_sign_off_with_the_brand_and_the_support_forward_does_not(self):
+        """W02: the customer sees "A equipa FlowSpace"; the internal forward has no sign-off."""
+        start = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)
+        end = start + timedelta(hours=2)
+        kwargs = {
+            "to": "c@example.com",
+            "space_name": "E",
+            "room_name": "R",
+            "start_time": start,
+            "end_time": end,
+        }
+        for message in (booking_confirmation_email(**kwargs), booking_cancellation_email(**kwargs)):
+            assert f"A equipa {BRAND_NAME}" in message.text_body
+            assert f"A equipa {BRAND_NAME}" in message.html_body
+            assert "EspaçoHora" not in message.text_body + message.html_body
+        forward = support_request_email(
+            request_id=uuid.uuid4(),
+            category="other",
+            message="m",
+            contact_email="c@example.com",
+            context={},
+            user_id=None,
+            booking_id=None,
+        )
+        assert "A equipa" not in forward.text_body
+        assert "Responda a este email" in forward.text_body  # W05d: formal register
+        assert "Responde a este email" not in forward.text_body + forward.html_body
 
     def test_cancellation_email_is_portuguese(self):
         start = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)

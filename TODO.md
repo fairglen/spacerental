@@ -67,6 +67,16 @@ a decision was not given, the most conservative option that keeps existing
 behaviour is taken, recorded under the task and tagged `DECISION:` in the
 commit body. Commits stay local; the owner reviews and merges.
 
+**Brand and copy revision (2026-09-22):** by explicit owner assignment on
+`feat/flowspace-brand-copy` (from main `6e9ffa6`, after #55 and #57 merged):
+the app is renamed FlowSpace where people can read it, the static site and the
+app landing take the owner's source copy, the audience becomes "profissionais
+de saúde e bem-estar", and customer/operator-facing Portuguese moves to the
+formal register. Recorded as W01–W07 near the end of this file; the stale
+static-site smoke suite it found first is B49. Opened as
+[PR #58](https://github.com/fairglen/spacerental/pull/58) on the owner's
+instruction; the owner reviews and merges.
+
 States used below:
 
 - **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
@@ -3141,6 +3151,181 @@ palette matches frontend/tailwind.config.ts; manual checklist in
 flowspace-site/README.md passes; GitHub Pages deploy workflow succeeds.
 Explicitly out of scope now: Google Sheets submission logging (future
 follow-up, not half-built).
+Copy revision of the published page (hero, "O espaço", audience, brand line)
+is W01 below; the deploy workflow publishes it on the merge to main.
+
+### B49 — The flowspace-site smoke suite is stale since the real Apps Script URL landed
+
+**Priority: P2. State: IN PROGRESS** on `feat/flowspace-brand-copy` (found as
+the W-series baseline, 2026-09-22). **Evidence:** `0fc2c10` — the rewrite matches
+`const APPS_SCRIPT_URL = '…';` whatever it holds; the placeholder test serves the
+placeholder explicitly; a new test pins that a script without the constant still
+throws. 22 passed on the committed file (3/21 before). `flowspace-site/tests/smoke.spec.ts`
+rewrites the served `contact-form.js` by replacing the literal
+`const APPS_SCRIPT_URL = 'PASTE_DEPLOYED_URL_HERE';`. #43 (`cced0f4`)
+committed the deployed `/exec` URL in its place, so `replaceOnce` throws
+"contact-form.js no longer contains …" and 18 of the 21 tests fail before
+the page loads (only the hero, maps-link and one guard test pass). Not a
+product bug: the site and the form are fine; the suite is a manual pre-ship
+check that no CI runs (README "Optional smoke test"). **Fix:** match the
+declaration whatever URL it holds (a pattern on `const APPS_SCRIPT_URL =
+'…';`), still failing loudly when the constant is absent, so the suite is
+independent of which URL is committed. Test-only; no production file changes.
+**Acceptance:** 22/22 on the committed file (the 21 existing tests plus the
+new needle test), and the needle still throws on a
+file without the constant.
+
+## Brand and copy revision (W-series) — owner assignment 2026-09-22
+
+Branch `feat/flowspace-brand-copy` from main `6e9ffa6` (#46, #54, #55, #57 all
+merged, so nothing older was pending). One commit per step;
+[PR #58](https://github.com/fairglen/spacerental/pull/58), which the owner
+reviews and merges. Source copy, decisions and the step order come
+from the owner's assignment; anything it did not decide is taken the
+conservative way, recorded under the task and tagged `DECISION:` in the
+commit body. Nothing here touches prices, adds photos or door signs; the two
+business items the source raised are W06/W07, queued for the owner.
+
+**Integrated verification (2026-09-22, final branch state `297dc4c`, stub mode,
+no credentials, isolated stack rebuilt from an empty database):** backend
+pytest 598 passed (596 on main); `alembic check` clean at
+`0010_purchase_amount_paid` (no schema change in this branch); ruff clean;
+`tsc` clean; Vitest 475 (471 on main); `next build` OK; full app Playwright
+43 passed on the freshly seeded stack (auth, booking, help, locale and
+week-view specs re-pointed at the catalogs / formal strings); flowspace-site
+smoke 22 passed (3/21 on main, B49) and Code.gs 38 passed; `npm audit`
+unchanged at 21. Screenshots and the before/after copy tables are in
+`PR_DRAFT.md` (uncommitted).
+
+**Baked-in decisions (each reversible on its own commit):** BRAND — the app is
+called FlowSpace wherever a customer or operator can read it; internal
+identifiers (repo, npm/Python package names, DB names, env var names, Compose
+service names, storage keys, migration files) keep their names. AUDIENCE —
+"profissionais de saúde e bem-estar" replaces "psicólogos, terapeutas e
+profissionais de saúde" / "psicólogos e psiquiatras" wherever the audience is
+named, PT and EN. TERMINOLOGY — "gabinete(s)" appears only where the source
+copy uses it (brand line, hero subtitle, "O espaço"); the product object stays
+"Sala/Salas" everywhere in the UI. REGISTER — customer- and operator-facing
+Portuguese moves to the formal register ("o seu/a sua", 3rd-person verbs,
+never "você"), done last as W05 with one commit per surface.
+
+### W01 — Static site copy (`flowspace-site/`)
+
+**Priority: P2. State: IN PROGRESS** — `727988e` (copy) + `04a448e` (register,
+W05a). **Evidence (2026-09-22):** preview renders; site smoke 22 passed; Code.gs
+38 passed; heading order h1→h2→h3 intact; room cards, form options and Code.gs
+untouched. Conversion line "Reserva à hora, sem contratos nem compromissos."
+(DECISION: no online-booking promise — the site's only conversion path is the
+contact form, B32). No OG/Twitter tags existed and none were added. Links F01
+(this is the published page).
+**Scope:** `index.html` H1 → "O seu espaço, no seu tempo." keeping the `<em>`
+on "espaço"; hero lede → the source subtitle + support line, keeping the
+hero badge and one conversion line; "O espaço" → the two source paragraphs;
+audience wording in `<title>`, meta description and footer tagline; the brand
+line "FlowSpace · Gabinetes profissionais" as the `<title>` suffix on both
+pages; no layout, dependency or logo changes; `Code.gs` only if it names the
+audience. `smoke.spec.ts` loosens its two H1 string pins to structure.
+**Validation:** `python3 -m http.server` preview renders; the site smoke suite
+green; `node --test flowspace-site/tests/code-gs.test.mjs` green. The Pages
+workflow deploys on the merge to main (paths filter) — nothing to do now.
+
+### W02 — App brand: EspaçoHora → FlowSpace
+
+**Priority: P2. State: IN PROGRESS** — `d8ac677`. **Evidence (2026-09-22):**
+`grep -ri espaçohora/espacohora` leaves only the three "formerly" notes, this
+file's history, the `espacohora.*` storage-key identifiers (kept: renaming them
+resets every visitor's saved locale/calendar view) and a negative test
+assertion; Navbar/Footer tests prove the brand comes from `brand.name`;
+test_email pins the customer sign-off and its absence from the support
+forward; titles on the dev stack "FlowSpace · Gabinetes profissionais",
+"Salas · FlowSpace", "Entrar · FlowSpace", "Criar conta · FlowSpace",
+"Painel de Admin · FlowSpace" (admin chrome moved to
+`components/admin/AdminShell.tsx` so a server layout carries the title);
+`/icon.svg` linked. **Scope:** every customer/operator-visible
+"EspaçoHora" in `frontend/` (Navbar, Footer, admin layout, sign-in/sign-up,
+root metadata, i18n copyright) reads a single `brand.name` catalog key; the
+`<title>` pattern becomes "<page> · FlowSpace" with the new audience in the
+description; the static site's `favicon.svg` becomes the app favicon; email
+sender default `FlowSpace <no-reply@flowspace.pt>` in `config.py`,
+`docker-compose.yml`, `.env.example` (comment: verify the domain at the
+provider before live mode); email templates gain the brand sign-off; the stub
+checkout page and README/CLAUDE.md/AGENTS.md/roadmap say FlowSpace with a
+one-line "formerly EspaçoHora" note. Not renamed: repo, package names, DB and
+env var names, Compose services, workflow names, migrations, storage keys.
+**Validation:** LocaleSwitcher test updated; a component test that the
+Navbar/Footer brand comes from the catalog; no case-insensitive
+"espacohora"/"espaçohora" left outside git history, the "formerly" note and
+identifier names; email tests green.
+
+### W03 — App landing copy
+
+**Priority: P2. State: IN PROGRESS** — `55001d8` (+ `94bae62` register, W05b).
+**Evidence (2026-09-22):** Hero test asserts headline/subtitle/support/pills from
+the catalog; TheSpace test asserts a labelled `#o-espaco` region with an H2 and
+two paragraphs; LocaleSwitcher and the auth/locale Playwright specs compare
+against the catalogs; i18n parity + B32 promise checks green; screenshots in
+`PR_DRAFT.md`. DECISION: "O espaço" sits after the rooms section and before
+"Como funciona" because "Onde estamos" is rendered inside SpaceCards. The old
+subtitle's online-booking sentence survives as a fourth pill. **Scope:** Hero
+H1/subtitle/support line
+from the source, pills and both CTAs kept; a new "O espaço" section (two
+source paragraphs, same visual language, no image); audience wording in the
+value props, "Como funciona", pricing subtitle and footer tagline; EN catalog
+translated for every changed/added key. Landing pricing and feature claims
+untouched. **Validation:** Hero/Footer component tests assert structure and
+links; `i18nCatalogs` parity and B32 promise checks green.
+
+### W04 — Seed and demo content
+
+**Priority: P3. State: IN PROGRESS** — `a92782c`. **Evidence (2026-09-22):**
+`TestSeed` real-PG tests: fresh seed writes the new texts, a re-seed refreshes
+seed-written texts and keeps an operator's own, no duplicates (35 passed in
+`test_space_location.py`); re-seeding the running dev stack rewrote existing
+rows, read back through `/api/v1/spaces`. Room lines use only facts the
+marketing site states per room. **Scope:** demo space description →
+one sentence consistent with "O espaço"; each room description → a short
+factual line; names, capacities, prices and hours unchanged; the seed keeps
+updating rows it wrote before (previous-text sets, as the location does).
+**Validation:** the `TestSeed` real-PG tests extended for the description
+rewrite; no test pins the old text.
+
+### W05 — Formal register on every customer- and operator-facing surface
+
+**Priority: P2. State: IN PROGRESS** — six commits, see the DECISION below.
+**Evidence (2026-09-22):** marker grep per surface leaves only third-person
+statements about a room/photo/series ("volta a aparecer", "aguarda
+confirmação"), EN strings and identifiers; every prose pin updated with its
+assertion intact (ContactNote, DashboardPage, BookingModal, HelpDialog,
+httpError, PhotoManager, AdminUsersParts, help/week-view Playwright specs);
+test_email pins "Responda a este email". Done last, one commit per surface so it
+can be reverted alone: (a) static site, (b) app landing + auth pages, (c)
+customer dashboard, booking dialogs and errors, (d) emails, (e) admin UI, (f)
+the CLAUDE.md/AGENTS.md rule. Informal → formal ("tu/teu/tua/tens/podes/clica/
+regista-te/reserva (imp.)" → "o seu/a sua/tem/pode/clique/registe-se/
+reserve"), same sentence length, meaning and placeholders; "Olá, {name}"
+stays; EN untouched; "você" never written. **Validation:** a marker grep after
+each surface with only identifiers, EN strings or history left; every test
+that pinned prose updated with its assertion intact. **Reversal recipe:**
+revert the six commits of this task (SHAs recorded in `PR_DRAFT.md`) — no
+other commit depends on them.
+**DECISION (2026-09-22):** CLAUDE.md/AGENTS.md had no literal "informal tu"
+sentence to replace; the register rule is added under §9 Frontend next to
+the "All UI copy is Portuguese" rule, worded as the owner gave it. The six
+commits: (a) static site `04a448e`, (b) landing + auth `94bae62`, (c)
+customer dashboard/booking/errors `83961a3`, (d) emails `fe2b77c`, (e)
+admin UI `0355cab`, (f) this rule — revert them in reverse order to restore
+"tu" everywhere; W01–W04 do not depend on them (the source hero/"O espaço"
+copy is formal by the owner's text and stays either way).
+
+### W06 — Per-room pricing (business)
+
+**Priority: P3. State: QUEUED — owner decision.** The source copy lists prices
+per room as an open item. Not touched here: no price changes in W01–W05.
+
+### W07 — Price review (business)
+
+**Priority: P3. State: QUEUED — owner decision.** The source copy asks for a
+review of the price list. Not touched here.
 
 ## Deferred scope
 

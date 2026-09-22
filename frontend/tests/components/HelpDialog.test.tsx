@@ -108,7 +108,7 @@ describe('HelpDialog — signed out', () => {
     await user.type(within(dialog()).getByLabelText(/Mensagem/), MESSAGE)
     await user.click(within(dialog()).getByRole('button', { name: /^Enviar$/ }))
 
-    expect(await within(dialog()).findByRole('alert')).toHaveTextContent(/aguarda/i)
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent(/aguarde/i)
     expect(within(dialog()).getByLabelText(/Mensagem/)).toHaveValue(MESSAGE)
     expect(within(dialog()).getByRole('button', { name: /^Enviar$/ })).toBeEnabled()
   })

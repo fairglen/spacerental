@@ -9,7 +9,7 @@ from app.auth import create_access_token, hash_password
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.space import Room, Space
 from app.models.user import User
-from app.seed import seed_demo_data
+from app.seed import DEMO_ROOM_DESCRIPTIONS, DEMO_SPACE_DESCRIPTION, seed_demo_data
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -364,3 +364,33 @@ class TestSeed:
             filter(None, [space.name, space.description, space.address, space.city])
         )
         assert "Lisboa" not in customer_facing and "Lisbon" not in customer_facing
+
+    async def test_reseeding_refreshes_descriptions_it_wrote_and_keeps_an_operators_own(
+        self, db_session
+    ):
+        """W04: the seed rewrites its own earlier text but never an operator's edit."""
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        space = (await db_session.execute(select(Space))).scalar_one()
+        rooms = {r.name: r for r in (await db_session.execute(select(Room))).scalars()}
+        assert space.description == DEMO_SPACE_DESCRIPTION
+        assert {n: r.description for n, r in rooms.items()} == DEMO_ROOM_DESCRIPTIONS
+        for text in (space.description, *DEMO_ROOM_DESCRIPTIONS.values()):
+            assert "coworking" not in text.lower() and "psic" not in text.lower()
+
+        # The texts earlier seeds wrote, plus one the operator typed themselves.
+        space.description = (
+            "Um espaço tranquilo para consultas e trabalho, com salas privadas à hora."
+        )
+        rooms["Sala Calma"].description = "Sala privada e confortável — Sala Calma."
+        rooms["Sala Brisa"].description = "Texto do operador sobre a Brisa."
+        await db_session.commit()
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        for obj in (space, *rooms.values()):
+            await db_session.refresh(obj)
+        assert space.description == DEMO_SPACE_DESCRIPTION
+        assert rooms["Sala Calma"].description == DEMO_ROOM_DESCRIPTIONS["Sala Calma"]
+        assert rooms["Sala Brisa"].description == "Texto do operador sobre a Brisa."
+        assert await db_session.scalar(select(func.count()).select_from(Room)) == 3

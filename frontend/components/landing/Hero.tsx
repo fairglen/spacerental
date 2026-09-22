@@ -25,8 +25,11 @@ export function Hero() {
               {t('hero.headline_start')}{' '}
               <span className="text-primary italic">{t('hero.headline_highlight')}</span>
             </h1>
-            <p className="text-xl text-muted-foreground mb-8 max-w-xl">
+            <p className="text-xl text-muted-foreground mb-4 max-w-xl">
               {t('hero.description')}
+            </p>
+            <p className="text-lg text-muted-foreground mb-8 max-w-xl">
+              {t('hero.support')}
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <Link href="/spaces">
@@ -41,7 +44,10 @@ export function Hero() {
                 </Button>
               </Link>
             </div>
-            <div className="mt-10 flex items-center gap-6 text-sm text-muted-foreground">
+            <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-primary" /> {t('hero.benefit_booking')}
+              </div>
               <div className="flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-primary" /> {t('hero.benefit_1')}
               </div>

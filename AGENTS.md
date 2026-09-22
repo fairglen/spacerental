@@ -6,7 +6,7 @@ This document captures the *why* behind the architecture, the non-obvious gotcha
 
 ## 1. What this project is
 
-**EspaçoHora** is a multi-tenant SaaS for renting professional spaces (therapy rooms, consultation offices, coworking) by the hour. It started as a POC to evaluate a single physical location in Lisbon and is designed to grow into a platform other space operators can use.
+**FlowSpace** (formerly EspaçoHora — renamed 2026-09-22, W02; internal identifiers such as the repo, package, database, env var and Compose service names deliberately keep the old name) is a multi-tenant SaaS for renting professional spaces (therapy rooms, consultation offices, coworking) by the hour. It started as a POC to evaluate a single physical location in Lisbon and is designed to grow into a platform other space operators can use.
 
 **Status:** WIP / early POC. Hourly/package checkout and email gateways run locally in explicit stub mode; a smart-lock stub foundation and gated weekly series are integrated. Production recovery/durability and the fresh-customer journey remain open. Read `roadmap.md` and `TODO.md` for current scope, evidence and execution holds.
 
@@ -315,6 +315,7 @@ Useful queries:
 - No `any` types. If you need to escape the type system, comment why.
 - Use shadcn-style component primitives from `components/ui/` — don't add a second UI library.
 - All UI copy is **Portuguese** (this is a Portugal-targeted product). Don't mix English in.
+- Customer- and operator-facing Portuguese uses the formal register: 3rd-person verb forms and 'o seu/a sua'; never write 'você'. English catalog is unaffected. (W05, 2026-09-22 — the informal "tu" it replaced can be restored by reverting that task's six commits.)
 - Use `useSession()` for auth state, never reach into cookies directly.
 - API calls go through `lib/api.ts` — don't call `axios` or `fetch` directly from components.
 - Currency formatting via `formatCurrency()`, dates via `date-fns` with `locale: pt`.

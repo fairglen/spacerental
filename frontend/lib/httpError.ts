@@ -58,12 +58,12 @@ export function cancellationErrorMessage(error: unknown): string {
     if (detail.includes('already completed')) return 'Esta reserva já terminou e não pode ser cancelada.'
     return 'Não foi possível cancelar esta reserva.'
   }
-  if (status === 401) return 'A tua sessão expirou. Entra de novo para cancelar a reserva.'
-  if (status === 403) return 'Esta reserva não é tua, por isso não a podes cancelar.'
+  if (status === 401) return 'A sua sessão expirou. Entre de novo para cancelar a reserva.'
+  if (status === 403) return 'Esta reserva não é sua, por isso não a pode cancelar.'
   if (status === 404) return 'Reserva não encontrada. Pode já ter sido removida.'
-  if (status === 429) return 'Demasiadas tentativas. Aguarda um momento e tenta de novo.'
-  if (status === undefined) return 'Sem ligação ao servidor. Verifica a internet e tenta novamente.'
-  return 'Não foi possível cancelar a reserva. Tenta novamente daqui a pouco.'
+  if (status === 429) return 'Demasiadas tentativas. Aguarde um momento e tente de novo.'
+  if (status === undefined) return 'Sem ligação ao servidor. Verifique a internet e tente novamente.'
+  return 'Não foi possível cancelar a reserva. Tente novamente daqui a pouco.'
 }
 
 export type BookingPaymentMethod = 'hourly' | 'package' | 'mixed'
@@ -83,32 +83,32 @@ export function bookingErrorMessage(error: unknown, method: BookingPaymentMethod
       }
       // Retrying an expired mixed hold needs the same pack hours again (C13).
       if (detail.includes('package no longer has')) {
-        return 'O teu pack já não tem as horas que esta reserva tinha guardadas. Faz uma nova reserva para veres o novo valor.'
+        return 'O seu pack já não tem as horas que esta reserva tinha guardadas. Faça uma nova reserva para ver o novo valor.'
       }
       const slotTaken = detail.includes('time slot') || detail.includes('horário') || detail.includes('reservado')
       return method !== 'hourly' && !slotTaken
-        ? 'O teu pack já não tem horas suficientes para esta reserva.'
-        : 'Este horário já está reservado. Escolhe outro intervalo no calendário.'
+        ? 'O seu pack já não tem horas suficientes para esta reserva.'
+        : 'Este horário já está reservado. Escolha outro intervalo no calendário.'
     }
     case 400:
-      if (detail.includes('past')) return 'Essa hora já passou. Escolhe um horário a partir de agora.'
+      if (detail.includes('past')) return 'Essa hora já passou. Escolha um horário a partir de agora.'
       if (detail.includes('opening hours')) {
         return 'O horário escolhido está fora do horário de funcionamento da sala.'
       }
-      return 'O horário escolhido não é válido. Volta a selecionar as horas no calendário.'
+      return 'O horário escolhido não é válido. Volte a selecionar as horas no calendário.'
     case 401:
-      return 'A tua sessão expirou. Entra de novo para concluir a reserva.'
+      return 'A sua sessão expirou. Entre de novo para concluir a reserva.'
     case 403:
-      return 'A tua conta ainda não está inscrita neste espaço. Contacta o espaço para te inscrever.'
+      return 'A sua conta ainda não está inscrita neste espaço. Contacte o espaço para se inscrever.'
     case 404:
       return 'Esta sala já não está disponível para reservas.'
     case 429:
-      return 'Demasiados pedidos seguidos. Aguarda um momento e tenta de novo.'
+      return 'Demasiados pedidos seguidos. Aguarde um momento e tente de novo.'
     case 502:
-      return 'Não foi possível iniciar o pagamento. Tenta novamente daqui a pouco.'
+      return 'Não foi possível iniciar o pagamento. Tente novamente daqui a pouco.'
     case undefined:
-      return 'Sem ligação ao servidor. Verifica a internet e tenta novamente.'
+      return 'Sem ligação ao servidor. Verifique a internet e tente novamente.'
     default:
-      return 'Erro ao criar reserva. Tenta novamente.'
+      return 'Erro ao criar reserva. Tente novamente.'
   }
 }

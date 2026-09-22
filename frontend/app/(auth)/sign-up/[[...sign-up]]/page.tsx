@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authApi } from '@/lib/api'
 import { safeInternalPath } from '@/lib/navigation'
+import { useT } from '@/lib/i18n'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obrigatório'),
@@ -27,6 +28,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 export default function SignUpPage() {
+  const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
   // Set when arriving from a "Comprar Pack" click while signed out (B12) — the
@@ -47,7 +49,7 @@ export default function SignUpPage() {
       setAccountCreated(true)
       const result = await signIn('credentials', { email: data.email, password: data.password, redirect: false })
       if (!result?.ok || result.error) {
-        setError('A conta foi criada, mas não foi possível iniciar sessão. Usa o link Entrar abaixo.')
+        setError('A conta foi criada, mas não foi possível iniciar sessão. Use o link Entrar abaixo.')
         return
       }
       router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : callbackUrl ?? '/dashboard')
@@ -56,7 +58,7 @@ export default function SignUpPage() {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.detail || 'Erro ao criar conta.')
       } else {
-        setError('Erro de ligação. Tenta novamente.')
+        setError('Erro de ligação. Tente novamente.')
       }
     }
     finally {
@@ -70,24 +72,24 @@ export default function SignUpPage() {
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
             <Building2 className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold text-foreground">EspaçoHora</span>
+            <span className="text-xl font-bold text-foreground">{t('brand.name')}</span>
           </Link>
         </div>
         <Card>
           <CardHeader className="text-center pb-2">
             <CardTitle>Criar conta</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Cria uma conta de cliente para reservar salas e comprar packs de horas</p>
+            <p className="text-sm text-muted-foreground mt-1">Crie uma conta de cliente para reservar salas e comprar packs de horas</p>
           </CardHeader>
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
                 <Label htmlFor="name">Nome</Label>
-                <Input id="name" {...register('name')} className="mt-1" placeholder="O teu nome" autoComplete="name" />
+                <Input id="name" {...register('name')} className="mt-1" placeholder="O seu nome" autoComplete="name" />
                 {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>}
               </div>
               <div>
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...register('email')} className="mt-1" placeholder="tu@exemplo.pt" autoComplete="email" />
+                <Input id="email" type="email" {...register('email')} className="mt-1" placeholder="nome@exemplo.pt" autoComplete="email" />
                 {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
               </div>
               <div>
@@ -97,17 +99,17 @@ export default function SignUpPage() {
               </div>
               <div>
                 <Label htmlFor="confirmPassword">Confirmar password</Label>
-                <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="mt-1" placeholder="Repete a password" autoComplete="new-password" />
+                <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="mt-1" placeholder="Repita a password" autoComplete="new-password" />
                 {errors.confirmPassword && <p className="text-xs text-red-500 mt-1">{errors.confirmPassword.message}</p>}
               </div>
-              {accountCreated && <p role="status" className="text-sm">Conta criada. Se a sessão não iniciou, usa o link Entrar abaixo.</p>}
+              {accountCreated && <p role="status" className="text-sm">Conta criada. Se a sessão não iniciou, use o link Entrar abaixo.</p>}
               {error && <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading || accountCreated}>
                 {loading ? 'A criar conta...' : 'Criar Conta'}
               </Button>
             </form>
             <p className="text-center text-sm text-muted-foreground mt-4">
-              Já tens conta?{' '}
+              Já tem conta?{' '}
               <Link
                 href={
                   packageId

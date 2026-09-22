@@ -106,7 +106,7 @@ export default function DashboardPage() {
         <div className="bg-white border-b border-border py-8">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
             <h1 className="text-2xl font-bold text-foreground">Olá, {session?.user?.name ?? 'Bem-vindo'} 👋</h1>
-            <p className="text-muted-foreground mt-1">As tuas reservas e pacotes num só lugar.</p>
+            <p className="text-muted-foreground mt-1">As suas reservas e pacotes num só lugar.</p>
           </div>
         </div>
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
@@ -130,7 +130,7 @@ export default function DashboardPage() {
                 ) : (
                   <>
                     <span className="font-semibold">Pagamento não concluído.</span> Não foi cobrado nada.
-                    Se era uma reserva, o seu estado atual aparece abaixo; se era um pack, podes voltar a comprá-lo em{' '}
+                    Se era uma reserva, o seu estado atual aparece abaixo; se era um pack, pode voltar a comprá-lo em{' '}
                     <Link href="/dashboard/packages" className="font-medium underline">Os meus packs</Link>.
                   </>
                 )}
@@ -145,10 +145,10 @@ export default function DashboardPage() {
               </button>
             </div>
           )}
-          <section aria-label="Os teus packs" className="mb-8 rounded-xl border border-border bg-white p-4">
+          <section aria-label="Os seus packs" className="mb-8 rounded-xl border border-border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Package className="h-4 w-4 text-primary" /> Os teus packs
+                <Package className="h-4 w-4 text-primary" /> Os seus packs
               </h2>
               <Link href="/dashboard/packages" className="text-sm font-medium text-primary hover:underline">
                 {activePacks.length > 0 ? 'Ver e comprar packs' : 'Ver packs'}
@@ -156,13 +156,13 @@ export default function DashboardPage() {
             </div>
             {purchasesFailed ? (
               <p className="mt-2 text-sm text-red-700">
-                Não foi possível carregar os teus packs. Tenta de novo mais tarde ou abre a página dos packs.
+                Não foi possível carregar os seus packs. Tente de novo mais tarde ou abra a página dos packs.
               </p>
             ) : purchases === undefined ? (
               <Skeleton className="mt-3 h-5 w-48" />
             ) : activePacks.length === 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">
-                Ainda não tens packs de horas. Um pack fica mais barato do que pagar à hora.
+                Ainda não tem packs de horas. Um pack fica mais barato do que pagar à hora.
               </p>
             ) : (
               <ul className="mt-2 divide-y divide-border text-sm">
@@ -192,7 +192,7 @@ export default function DashboardPage() {
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
                 <Calendar className="h-10 w-10 mx-auto mb-3 text-primary-light" />
-                <p>Não tens reservas futuras.</p>
+                <p>Não tem reservas futuras.</p>
                 <Button className="mt-4" asChild><a href="/spaces">Reservar uma sala</a></Button>
               </CardContent>
             </Card>
@@ -213,17 +213,17 @@ export default function DashboardPage() {
                         </p>
                         {isUnpaidHold(b) && b.hold_expires_at && (
                           <p className="text-xs text-amber-800 mt-1">
-                            Horário reservado até às {format(parseISO(b.hold_expires_at), 'HH:mm', { locale: pt })}. Paga para confirmar.
+                            Horário reservado até às {format(parseISO(b.hold_expires_at), 'HH:mm', { locale: pt })}. Pague para confirmar.
                           </p>
                         )}
                         {b.status === 'expired' && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            O tempo para pagar terminou e o horário ficou livre. Podes tentar de novo se ainda estiver disponível.
+                            O tempo para pagar terminou e o horário ficou livre. Pode tentar de novo se ainda estiver disponível.
                           </p>
                         )}
                         {b.status === 'paid_unfulfilled' && (
                           <p className="text-xs text-orange-800 mt-1">
-                            Pagamento recebido, mas o horário já não está disponível. O espaço vai contactar-te.
+                            Pagamento recebido, mas o horário já não está disponível. O espaço vai contactá-lo.
                           </p>
                         )}
                         {b.status === 'confirmed' && (
@@ -235,7 +235,7 @@ export default function DashboardPage() {
                           ) : (
                             <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                               <KeyRound className="h-3 w-3" />
-                              Código de acesso ainda não disponível. Contacta o espaço se não o tiveres antes da reserva.
+                              Código de acesso ainda não disponível. Contacte o espaço se não o tiver antes da reserva.
                             </p>
                           )
                         )}
@@ -278,7 +278,7 @@ export default function DashboardPage() {
                                 onClick={() => openHelp({ category: 'booking', bookingId: b.id })}
                                 className="text-[11px] font-medium text-primary underline underline-offset-2 text-right"
                               >
-                                Precisas de cancelar? Fala connosco
+                                Precisa de cancelar? Fale connosco
                               </button>
                             )}
                           </div>
@@ -325,9 +325,9 @@ export default function DashboardPage() {
           <DialogHeader>
             <DialogTitle>Cancelar reserva</DialogTitle>
             <DialogDescription>
-              Tens a certeza que queres cancelar esta reserva? Esta ação não pode ser desfeita.
+              Tem a certeza de que quer cancelar esta reserva? Esta ação não pode ser desfeita.
               Os cancelamentos são aceites até {CANCELLATION_WINDOW_HOURS} horas antes do início; as horas
-              pagas com um pack voltam ao teu saldo.
+              pagas com um pack voltam ao seu saldo.
             </DialogDescription>
           </DialogHeader>
           {cancelMutation.isError && (
@@ -356,7 +356,7 @@ export default function DashboardPage() {
                 onClick={() => { closeCancelDialog(); openHelp({ category: 'payment', bookingId: cancelling.id }) }}
                 className="font-medium text-primary underline underline-offset-2"
               >
-                Fala connosco
+                Fale connosco
               </button>
             </p>
           )}

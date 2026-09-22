@@ -125,8 +125,8 @@ test('week view: drag two hours → stub checkout → Confirmado; the toolbar ha
   await expect(dialog.getByRole('heading', { name: /Confirmar Reserva/i })).toBeVisible({ timeout: 10000 })
   await expect(dialog.getByText('Duração', { exact: true }).locator('..')).toContainText('2h')
   await expect(dialog.getByText('Horário', { exact: true }).locator('..')).toContainText(`${String(hour).padStart(2, '0')}:00 – ${String(hour + 2).padStart(2, '0')}:00`)
-  // The note's "Fala connosco" opens the help dialog since C18; the address stays visible.
-  await expect(dialog.getByRole('note').getByRole('button', { name: /Fala connosco/ })).toBeVisible()
+  // The note's "Fale connosco" opens the help dialog since C18; the address stays visible.
+  await expect(dialog.getByRole('note').getByRole('button', { name: /Fale connosco/ })).toBeVisible()
   await expect(dialog.getByRole('note')).toContainText('geral@flowspace.pt')
 
   const hourly = dialog.getByRole('radio', { name: /^Pagar /i })

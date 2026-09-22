@@ -1,4 +1,6 @@
-# EspaçoHora — Space Rental Platform
+# FlowSpace — Space Rental Platform
+
+> Formerly EspaçoHora: the product was renamed FlowSpace on 2026-09-22 (W02) to match the marketing site and `geral@flowspace.pt`. Internal identifiers (repo, package, database, env var and Compose service names) keep their old names on purpose.
 
 > **Early proof of concept.** Hourly checkout, prepaid packs, admin tools and local email/access-code flows are implemented. The product is not production-ready: payment recovery, durable notifications/access and other outcome gates remain open. See [roadmap.md](roadmap.md) for the agreed outcome order and [TODO.md](TODO.md) for executable tasks; roadmap delivery has resumed with customer enrollment (C01).
 
@@ -414,5 +416,5 @@ legacy accounts; ordinary new customers use signup.
 
 This repo also contains an unrelated static marketing site for the real
 flowspace.pt business in `flowspace-site/`, fully decoupled from the
-EspaçoHora SaaS app (no shared build, no shared server). See
-`flowspace-site/README.md`.
+FlowSpace app in `frontend/`/`backend/` (no shared build, no shared server;
+they share the brand since W02). See `flowspace-site/README.md`.

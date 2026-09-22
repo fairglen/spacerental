@@ -170,8 +170,8 @@ function OrgCalendar() {
   }, [])
 
   if (spacesLoading) return <div className="p-8"><Skeleton className="h-[70vh] rounded-xl" /></div>
-  if (spacesError) return <div className="p-8"><p role="alert" className="text-sm text-red-600">Não foi possível carregar os espaços. Recarrega a página.</p></div>
-  if (!space) return <div className="p-8"><p className="text-sm text-muted-foreground">Ainda não há espaços ativos. Cria um em Espaços.</p></div>
+  if (spacesError) return <div className="p-8"><p role="alert" className="text-sm text-red-600">Não foi possível carregar os espaços. Recarregue a página.</p></div>
+  if (!space) return <div className="p-8"><p className="text-sm text-muted-foreground">Ainda não há espaços ativos. Crie um em Espaços.</p></div>
 
   const loading = bookingsQuery.isLoading || blockQueries.some((q) => q.isLoading)
   const failed = bookingsQuery.isError || blockQueries.some((q) => q.isError)
@@ -181,7 +181,7 @@ function OrgCalendar() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Calendário</h1>
-          <p className="text-sm text-muted-foreground">Arrasta para mover; clica numa reserva para ver e alterar; clica num espaço vazio para reservar ou bloquear.</p>
+          <p className="text-sm text-muted-foreground">Arraste para mover; clique numa reserva para ver e alterar; clique num espaço vazio para reservar ou bloquear.</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           {activeSpaces.length > 1 && (
@@ -279,7 +279,7 @@ function OrgCalendar() {
         <span><span className="mr-1 inline-block h-3 w-3 rounded-sm align-middle" style={{ backgroundColor: STATUS_BG.pending }} /> ⏳ pendente / a aguardar pagamento</span>
         <span><span className="mr-1 inline-block h-3 w-3 rounded-sm align-middle" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #9CA3AF 0 3px, #D1D5DB 3px 6px)' }} /> ⛔ bloqueio</span>
         <span>pack · pack+ · local = como foi paga</span>
-        {!wide && <span>Arrastar para mover está disponível em ecrãs largos; aqui usa "Alterar horário" na reserva.</span>}
+        {!wide && <span>Arrastar para mover está disponível em ecrãs largos; aqui use "Alterar horário" na reserva.</span>}
       </div>
 
       <div className="mt-2 flex gap-2">

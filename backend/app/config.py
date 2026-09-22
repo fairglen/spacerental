@@ -1,6 +1,10 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+# The name people see (emails, the stub checkout page). Formerly EspaçoHora;
+# internal identifiers (package, DB, env vars, service names) keep their names.
+BRAND_NAME = "FlowSpace"
+
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://spacerental:spacerental@localhost:5432/spacerental"
@@ -78,7 +82,9 @@ class Settings(BaseSettings):
     # letting the stub run in production.
     EMAIL_MODE: str = "stub"
     RESEND_API_KEY: str | None = None
-    EMAIL_FROM_ADDRESS: str = "EspaçoHora <no-reply@espacohora.pt>"
+    # Live mode requires flowspace.pt to be verified at the email provider
+    # before this sender is accepted; the stub only logs it.
+    EMAIL_FROM_ADDRESS: str = "FlowSpace <no-reply@flowspace.pt>"
     # Where help-form requests are sent (C17). The public contact address, the
     # same one the frontend shows (frontend/lib/contact.ts, C09).
     SUPPORT_EMAIL: str = "geral@flowspace.pt"

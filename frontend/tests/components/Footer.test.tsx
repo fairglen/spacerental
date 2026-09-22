@@ -17,6 +17,15 @@ describe('Footer navigation', () => {
     }
   })
 
+  it('names the brand from the catalog in the wordmark and the copyright line (W02)', () => {
+    render(<Footer />)
+    expect(screen.getByText(t('brand.name'))).toBeInTheDocument()
+    expect(
+      screen.getByText(t('footer.copyright', { year: new Date().getFullYear(), brand: t('brand.name') }))
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/espa[cç]ohora/i)).not.toBeInTheDocument()
+  })
+
   it('links the contact address from the single source (C09)', () => {
     render(<Footer />)
     expect(screen.getByRole('link', { name: CONTACT_EMAIL })).toHaveAttribute('href', `mailto:${CONTACT_EMAIL}`)

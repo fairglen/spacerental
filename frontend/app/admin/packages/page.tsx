@@ -78,7 +78,7 @@ export default function AdminPackagesPage() {
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold text-foreground mb-2">Pacotes de Horas</h1>
-      <p className="text-muted-foreground text-sm mb-8">Cria e gere os pacotes de horas disponíveis.</p>
+      <p className="text-muted-foreground text-sm mb-8">Crie e gira os pacotes de horas disponíveis.</p>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           {isLoading ? <Skeleton className="h-48 rounded-xl" /> : (

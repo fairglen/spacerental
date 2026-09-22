@@ -34,6 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import clock, package_hours
+from app.config import BRAND_NAME
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, get_lock_gateway
@@ -81,7 +82,7 @@ def _render_page(session_id: str, session: dict) -> str:
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Finalizar pagamento (modo teste) — EspaçoHora</title>
+<title>Finalizar pagamento (modo teste) — {BRAND_NAME}</title>
 <style>
   body {{
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

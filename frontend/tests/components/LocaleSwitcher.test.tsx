@@ -3,6 +3,8 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { LocaleSwitcher } from '@/components/layout/LocaleSwitcher'
 import { Hero } from '@/components/landing/Hero'
 import { setLocale } from '@/lib/i18n'
+import pt from '@/lib/i18n/pt.json'
+import en from '@/lib/i18n/en.json'
 
 const STORAGE_KEY = 'espacohora.locale'
 
@@ -28,18 +30,18 @@ describe('LocaleSwitcher (9.2)', () => {
       </>
     )
 
-    expect(screen.getByText('O teu espaço,')).toBeInTheDocument()
+    expect(screen.getByText(pt.hero.headline_start)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'EN' }))
 
-    expect(screen.getByText('Your space,')).toBeInTheDocument()
-    expect(screen.queryByText('O teu espaço,')).not.toBeInTheDocument()
+    expect(screen.getByText(en.hero.headline_start)).toBeInTheDocument()
+    expect(screen.queryByText(pt.hero.headline_start)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'PT' })).toHaveAttribute('aria-pressed', 'false')
 
     // Toggling back to PT is equally immediate.
     fireEvent.click(screen.getByRole('button', { name: 'PT' }))
-    expect(screen.getByText('O teu espaço,')).toBeInTheDocument()
+    expect(screen.getByText(pt.hero.headline_start)).toBeInTheDocument()
   })
 
   it('writes the choice to localStorage under the documented key', () => {

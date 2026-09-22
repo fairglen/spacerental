@@ -1,8 +1,8 @@
 # flowspace-site
 
 A real, standalone static marketing site for **flowspace.pt** — a Portuguese
-therapy-room-rental business. This is **not** part of the EspaçoHora SaaS app
-in `frontend/`/`backend/`. It shares no build, no dependency, and no runtime
+therapy-room-rental business. This is **not** part of the FlowSpace app
+in `frontend/`/`backend/` (the app took the same brand in W02). It shares no build, no dependency, and no runtime
 with that app; it just happens to live in the same repository and is styled
 to match its sage-green design system (see `assets/css/tokens.css`, copied
 1:1 from `frontend/tailwind.config.ts`).
@@ -17,7 +17,7 @@ and acceptance criteria, and the plan this was built from for full context.
   contact form, and a Google Apps Script backend that emails submissions to
   `geral@flowspace.pt`.
 - **Isn't**: a Next.js app, a Tailwind build, or anything requiring
-  `npm install` to preview. It isn't wired into any EspaçoHora CI workflow,
+  `npm install` to preview. It isn't wired into any of the app's CI workflows,
   and touching it never runs `backend-tests.yml`/`frontend-tests.yml`/`e2e.yml`.
 - **Isn't** storing submissions anywhere durable — see "Sheet logging" below.
 
@@ -488,7 +488,7 @@ covered by `tests/code-gs.test.mjs`, see Testing).
 
 **Content and navigation**
 - [ ] Every section's content matches `index.html` verbatim against the spec
-      (hero headline/subheading, "O espaço" paragraph, the three room cards'
+      (hero headline/subheading, the two "O espaço" paragraphs, the three room cards'
       names/prices/descriptions/amenities, the four "Como funciona" steps,
       the three pricing cards, the address, and the footer copyright line).
 - [ ] Nav anchors (`#espaco`, `#salas`, `#como-funciona`, `#precos`,
@@ -552,7 +552,7 @@ success banner; the entered values must survive so the visitor can retry)
 - [ ] `stale_or_future_timestamp` — leave the page open for over an hour, then
       submit. Expect "O formulário esteve aberto demasiado tempo…".
 - [ ] Unconfirmed — go offline (devtools → Network → Offline) and submit.
-      Expect the neutral "Não conseguimos confirmar o envio da tua mensagem…",
+      Expect the neutral "Não conseguimos confirmar o envio da sua mensagem…",
       **not** a hard failure and **not** a success. A hard "failed" on a
       message that did send causes duplicate submissions.
 - [ ] Unconfirmed — with devtools, override the response to non-JSON (or point
@@ -643,7 +643,7 @@ success banner; the entered values must survive so the visitor can retry)
       horizontal scroll, nav collapses to the mobile menu below 768px.
 
 **Visual parity**
-- [ ] Side-by-side against the EspaçoHora SaaS landing page
+- [ ] Side-by-side against the FlowSpace app landing page
       (`frontend/app/page.tsx`) for palette, border radius, and font parity.
 
 ## Optional smoke test
@@ -662,9 +662,14 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-21 tests, all passing at time of writing. They assert:
+22 tests, all passing at time of writing. They assert:
 
-- the hero copy renders, and the Google Maps link href is exactly correct;
+- the hero renders one headline with its emphasised word and a lede (structure,
+  not prose — the copy is the owner's to change), and the Google Maps link
+  href is exactly correct;
+- the script rewrite the suite relies on matches whatever `APPS_SCRIPT_URL` is
+  committed (placeholder or deployed URL) and still fails loudly if the
+  constant disappears (B49);
 - a mocked `{"result":"success"}` shows the success banner, clears the form,
   and that the request went out as `Content-Type: text/plain;charset=utf-8` —
   the simple-request property that makes the response readable at all;
@@ -687,10 +692,13 @@ The config's `webServer` starts `python3 -m http.server` against
 - field errors set `aria-invalid` on their controls and clear it once fixed;
 - the menu toggle's `aria-label`/`aria-expanded`/`aria-controls` behave.
 
-Because the committed `APPS_SCRIPT_URL` is the placeholder, the spec rewrites
-that constant in the served script via `page.route()` rather than adding a
-test-only override hook to the production file, and stubs the endpoint so no
-real request leaves the machine.
+The spec rewrites the `APPS_SCRIPT_URL` constant in the served script via
+`page.route()` — to the stub URL for the configured-form tests and to the
+placeholder for the unconfigured-form test — rather than adding a test-only
+override hook to the production file, and stubs the endpoint so no real
+request leaves the machine. It matches the declaration whatever the file
+holds (today the deployed `/exec` URL from #43, before that the placeholder),
+so the suite does not depend on which is committed (B49).
 
 **What these tests cannot prove:** that a real deployment's response is
 readable cross-origin. Playwright fulfils intercepted requests below the
