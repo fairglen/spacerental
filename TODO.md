@@ -3764,7 +3764,18 @@ have a gallery; next advances the counter/dots).
 
 ### V03 — Room copy: photos instead of descriptions
 
-**Priority: P2. State: QUEUED.** **Scope:** `RoomCard` and the selected-room
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `RoomCard` no longer renders `room.description` (the selected
+-room header never did); the admin room forms (new and edit) label the field
+"Notas internas (não visíveis ao cliente)"; API_SPEC says so on the create
+body and the `Room` type. The static site's `.desc` went with V02 and its
+intro sentence stays. Tests: a `RoomCard` component test (name, amenities
+rendered, the description not); the admin rooms test types into the relabelled
+field and asserts no "Descrição" label; the site smoke asserts no `p.desc`.
+The seed still writes the W04 room lines into `description` — now internal
+notes; left as they are (harmless, and W04's re-seed rule still holds).
+**Scope (as assigned):** `RoomCard` and the selected-room
 header stop rendering `room.description`; the field stays in the model, API
 and admin form, relabelled in admin "Notas internas (não visíveis ao
 cliente)" and noted in API_SPEC. Static site: `.desc` removed (V02); the

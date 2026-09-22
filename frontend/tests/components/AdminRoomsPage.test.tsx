@@ -143,14 +143,15 @@ describe('AdminRoomsPage availability rules (B11)', () => {
 
 // C15: everything a customer sees about a room is editable here.
 describe('AdminRoomsPage — every customer-visible field, and photos (C15)', () => {
-  it('edits description, amenities and whether the room is active', async () => {
+  it('edits the internal notes (the old description, V03), amenities and whether the room is active', async () => {
     vi.mocked(adminApi.updateRoom).mockResolvedValue(room)
     const user = userEvent.setup()
     renderPage()
 
     await user.click((await screen.findAllByRole('button', { name: /Editar/i }))[0])
     const dialog = await screen.findByRole('dialog')
-    await user.type(within(dialog).getByLabelText(/Descrição/), 'Luz natural')
+    expect(within(dialog).queryByLabelText(/^Descrição/)).toBeNull()
+    await user.type(within(dialog).getByLabelText(/Notas internas \(não visíveis ao cliente\)/), 'Luz natural')
     await user.type(within(dialog).getByLabelText(/Comodidades/), 'WiFi, Marquesa')
     await user.click(within(dialog).getByRole('checkbox', { name: /Sala ativa/ }))
     await user.click(within(dialog).getByRole('button', { name: /Guardar/i }))

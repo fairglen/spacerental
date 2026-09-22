@@ -209,8 +209,8 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
                 {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>}
               </div>
               <div>
-                <Label>Descrição</Label>
-                <Input {...register('description')} className="mt-1" placeholder="Breve descrição..." />
+                <Label htmlFor="new-room-description">Notas internas (não visíveis ao cliente)</Label>
+                <Input id="new-room-description" {...register('description')} className="mt-1" placeholder="ex: chave no armário 2" />
               </div>
               <div>
                 <Label>Capacidade (pessoas)</Label>
@@ -290,7 +290,7 @@ export default function AdminRoomsPage({ params }: { params: { id: string } }) {
               </div>
             </div>
             <div>
-              <Label htmlFor="edit-room-description">Descrição</Label>
+              <Label htmlFor="edit-room-description">Notas internas (não visíveis ao cliente)</Label>
               <Input id="edit-room-description" {...editForm.register('description')} className="mt-1" />
             </div>
             <div>

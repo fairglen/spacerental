@@ -338,6 +338,10 @@ never build these URLs: they arrive ready-made in `photos`.
 ### POST /admin/spaces/:id/rooms
 Add a room to a space.
 Body: `{ name, description, capacity, hourly_rate, color, amenities?, images? }`
+`description` is the operator's **internal note** since V03 ("Notas internas
+(não visíveis ao cliente)" in the admin): it is still returned by the public
+room endpoints for compatibility but no customer screen renders it — the
+photos say what the room is like.
 
 ### PUT /admin/rooms/:id
 Update a room. `is_active: false` switches it off for customers (A07) — but
@@ -493,7 +497,7 @@ type Room = {
   space_id: string
   org_id: string
   name: string
-  description: string
+  description: string          // operator's internal note (V03); not rendered to customers
   capacity: number
   hourly_rate: number
   images: string[]
