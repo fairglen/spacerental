@@ -186,3 +186,49 @@ describe('AdminRoomsPage — every customer-visible field, and photos (C15)', ()
     expect(within(dialog).getByLabelText(/adicionar fotografias/i)).toBeEnabled()
   })
 })
+
+// A07: switching a room off asks first, sends only `is_active`, and a 409
+// turns into the list of bookings in the way.
+describe('AdminRoomsPage activate/deactivate (A07)', () => {
+  it('deactivates after a confirm step, sending only is_active', async () => {
+    vi.mocked(adminApi.updateRoom).mockResolvedValue({ ...room, is_active: false })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Desativar Sala Calma' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Desativar sala' })).toBeInTheDocument()
+    expect(adminApi.updateRoom).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar: desativar' }))
+    await waitFor(() => expect(adminApi.updateRoom).toHaveBeenCalledWith('room-1', { is_active: false }, expect.anything()))
+  })
+
+  it('a 409 lists the future bookings and offers no confirm', async () => {
+    vi.mocked(adminApi.updateRoom).mockRejectedValue({
+      response: { status: 409, data: { detail: { message: 'Room has future bookings', total: 22, bookings: [
+        { id: 'b1', start_time: '2030-01-07T10:00:00Z', end_time: '2030-01-07T12:00:00Z', status: 'confirmed', customer_email: 'ana@example.com', customer_name: 'Ana' },
+        { id: 'b2', start_time: '2030-01-08T10:00:00Z', end_time: '2030-01-08T11:00:00Z', status: 'pending', customer_email: 'rui@example.com', customer_name: null },
+      ] } } },
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Desativar Sala Calma' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar: desativar' }))
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert).toHaveTextContent('Ainda há 22 reservas marcadas')
+    expect(alert).toHaveTextContent('Ana')
+    expect(alert).toHaveTextContent('rui@example.com · por pagar')
+    expect(alert).toHaveTextContent('e mais 20')
+    expect(within(dialog).queryByRole('button', { name: /Confirmar/ })).not.toBeInTheDocument()
+  })
+
+  it('reactivates a switched-off room from its card', async () => {
+    vi.mocked(adminApi.updateRoom).mockResolvedValue({ ...closedRoom, is_active: true })
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ativar Sala Fechada' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar: ativar' }))
+    await waitFor(() => expect(adminApi.updateRoom).toHaveBeenCalledWith('room-2', { is_active: true }, expect.anything()))
+  })
+})

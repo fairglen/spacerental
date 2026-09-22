@@ -310,7 +310,12 @@ Add a room to a space.
 Body: `{ name, description, capacity, hourly_rate, color, amenities?, images? }`
 
 ### PUT /admin/rooms/:id
-Update a room.
+Update a room. `is_active: false` switches it off for customers (A07) — but
+not while bookings still hold future slots in it: then **409** with
+`detail = { message, total, bookings: [{ id, start_time, end_time, status,
+customer_email, customer_name }] }` (soonest first, at most 20; `total` is the
+true count) and the room stays active. Move or cancel them first.
+`is_active: true` is always accepted.
 
 ### POST /admin/rooms/:id/availability
 Set availability rules for a room.

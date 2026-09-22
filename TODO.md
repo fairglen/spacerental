@@ -2483,9 +2483,39 @@ granting 3h, "Prolongar" by a year → the note shows in the packs table and
 
 ### A07 — Room activate/deactivate with a future-bookings check
 
-**Priority: P1. State: QUEUED** (PR 2). **Scope:** activate/deactivate from the
-room page; deactivating a room with future confirmed bookings → 409 listing
-them. **Validation:** happy/409/cross-tenant; component test.
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-calendar-tools`, committed locally. **Scope:** activate/deactivate
+from the room page; deactivating a room with future confirmed bookings → 409
+listing them. **Validation:** happy/409/cross-tenant; component test.
+
+**DECISIONS (conservative; each reversible in one commit):**
+- **The check lives in `PUT /admin/rooms/{id}`** (the field the edit form
+  already sent), not in a new endpoint — so the "Sala ativa" checkbox cannot
+  bypass it. The room page gets a dedicated "Desativar / Ativar" button with a
+  confirm step, and the same 409 is shown in the edit form as a one-line
+  message.
+- **"Future bookings" = rows that still hold a slot** (`holds_slot`:
+  `confirmed`, and `pending` while its hold is alive) ending after now. A
+  lapsed hold, a cancelled/expired booking, and anything already over do not
+  block. Alt: `confirmed` only — a live unpaid hold would then be confirmable
+  by webhook on a room that is off.
+- **The 409 lists the soonest 20 with the true `total`**, with the customer's
+  name/email, so the operator can go move or cancel them in the calendar.
+  Only `is_active: true → false` is checked; other edits on a room with future
+  bookings save normally; reactivating is always allowed.
+
+**Evidence (2026-09-22):** `tests/test_room_activation.py` — 5 tests (no future
+bookings → inactive and off the public space page, with past and cancelled
+rows ignored; refused with the future bookings listed soonest-first incl. a
+live pending hold and excluding a lapsed one, room untouched and still public;
+other fields still save; reactivation always allowed and bookable again; the
+list is capped at 20 while `total` is 25). Cross-org 404 is covered by the
+S01 matrix sweep on `PUT /admin/rooms/{room_id}`. Frontend:
+`RoomActiveDialog` — 3 page tests (confirm step sends only `is_active`; a
+409 renders the list with "por pagar" and "e mais N" and offers no confirm;
+reactivate from the card). Playwright `admin-room-active.spec.ts`: a manual
+booking 20 days out → "Desativar" refused with the booking listed → cancel it
+→ off, gone from `GET /spaces/{id}` → on again, back.
 
 ## Security hardening (S-series)
 

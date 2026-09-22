@@ -14,6 +14,7 @@ from app.booking_validity import (
     MAX_BOOKING_DURATION,
     expire_stale_holds,
     has_conflicting_booking,
+    holds_slot,
     is_lost_slot_race,
     is_within_open_hours,
 )
@@ -247,12 +248,59 @@ async def admin_update_room(
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    if room.is_active and changes.get("is_active") is False:
+        # A07: a room with bookings still holding future slots cannot go
+        # inactive — the operator moves or cancels them first. The 409 lists
+        # them (soonest first, capped) with the total, so the UI can show the
+        # way out instead of a bare refusal.
+        pending = await _future_slot_holders(db, room_id)
+        if pending["total"]:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=pending)
+
+    for field, value in changes.items():
         setattr(room, field, value)
 
     await db.flush()
     await db.refresh(room)
     return {"room": RoomOut.model_validate(room)}
+
+
+_DEACTIVATE_LIST_CAP = 20
+
+
+async def _future_slot_holders(db: AsyncSession, room_id: uuid.UUID) -> dict:
+    now = clock.utcnow()
+    where = (Booking.room_id == room_id, Booking.end_time > now, holds_slot(now))
+    total = await db.scalar(select(func.count()).select_from(Booking).where(*where)) or 0
+    rows = (
+        (
+            await db.execute(
+                select(Booking)
+                .options(selectinload(Booking.user))
+                .where(*where)
+                .order_by(Booking.start_time.asc())
+                .limit(_DEACTIVATE_LIST_CAP)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "message": "Room has future bookings",
+        "total": total,
+        "bookings": [
+            {
+                "id": str(b.id),
+                "start_time": b.start_time.isoformat(),
+                "end_time": b.end_time.isoformat(),
+                "status": b.status.value,
+                "customer_email": b.user.email if b.user else None,
+                "customer_name": b.user.name if b.user else None,
+            }
+            for b in rows
+        ],
+    }
 
 
 @router.get("/rooms/{room_id}/availability")
