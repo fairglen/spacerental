@@ -303,14 +303,14 @@ def support_request_email(
     text_body = (
         f"Novo pedido de ajuda #{reference}\n\n{message}\n\n"
         + "\n".join(f"{name}: {value}" for name, value in facts)
-        + "\n\nResponde a este email para falar com o cliente.\n"
+        + "\n\nResponda a este email para falar com o cliente.\n"
     )
     html_body = (
         f"<p>Novo pedido de ajuda <strong>#{escape(reference)}</strong></p>"
         f'<p style="white-space:pre-wrap">{escape(message)}</p>'
         "<ul>"
         + "".join(f"<li><strong>{escape(n)}:</strong> {escape(str(v))}</li>" for n, v in facts)
-        + "</ul><p>Responde a este email para falar com o cliente.</p>"
+        + "</ul><p>Responda a este email para falar com o cliente.</p>"
     )
     return EmailMessage(
         to=settings.SUPPORT_EMAIL,

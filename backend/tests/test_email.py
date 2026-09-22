@@ -97,6 +97,8 @@ class TestEmailContentTemplates:
             booking_id=None,
         )
         assert "A equipa" not in forward.text_body
+        assert "Responda a este email" in forward.text_body  # W05d: formal register
+        assert "Responde a este email" not in forward.text_body + forward.html_body
 
     def test_cancellation_email_is_portuguese(self):
         start = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)
