@@ -1,8 +1,7 @@
 /*
- * "Onde estamos" map (V07). The map is a third-party embed, so it is never
- * loaded on render: the placeholder shows the address and a "Ver mapa" button
- * at the map's size, and the OpenStreetMap iframe mounts only when asked for —
- * no request leaves for openstreetmap.org without that intent. The bounding
+ * "Onde estamos" map (V07, reworked in L04). The OpenStreetMap iframe is
+ * mounted as soon as the script runs, lazily loaded and referrer-free (the
+ * privacy page says openstreetmap.org receives the request). The bounding
  * box is built in ground distance around the pin with the frame's aspect
  * ratio, so the marker sits in the middle of the frame.
  */
@@ -39,30 +38,26 @@
     var lat = parseFloat(map.getAttribute('data-lat'));
     var lng = parseFloat(map.getAttribute('data-lng'));
     var frame = map.querySelector('.where-map-frame');
-    var button = map.querySelector('[data-map-show]');
     var note = map.querySelector('[data-map-note]');
-    if (!frame || !button || isNaN(lat) || isNaN(lng)) return;
+    if (!frame || isNaN(lat) || isNaN(lng)) return;
 
-    button.addEventListener('click', function () {
-      var aspect = frame.clientHeight > 0 ? frame.clientWidth / frame.clientHeight : DEFAULT_ASPECT;
-      var iframe = document.createElement('iframe');
-      iframe.setAttribute('title', 'Mapa da localização');
-      iframe.setAttribute('src', embedUrl(lat, lng, aspect));
-      iframe.setAttribute('loading', 'lazy');
-      iframe.setAttribute('referrerpolicy', 'no-referrer');
-      frame.innerHTML = '';
-      frame.appendChild(iframe);
-      if (note) {
-        // The same line under the map, so nothing moves: the link replaces the note.
-        var link = document.createElement('a');
-        link.setAttribute('href', fullMapUrl(lat, lng));
-        link.setAttribute('target', '_blank');
-        link.setAttribute('rel', 'noopener');
-        link.textContent = 'Abrir no mapa';
-        note.textContent = '';
-        note.appendChild(link);
-      }
-    });
+    var aspect = frame.clientHeight > 0 ? frame.clientWidth / frame.clientHeight : DEFAULT_ASPECT;
+    var iframe = document.createElement('iframe');
+    iframe.setAttribute('title', 'Mapa da localização');
+    iframe.setAttribute('src', embedUrl(lat, lng, aspect));
+    iframe.setAttribute('loading', 'lazy');
+    iframe.setAttribute('referrerpolicy', 'no-referrer');
+    frame.innerHTML = '';
+    frame.appendChild(iframe);
+    if (note) {
+      var link = document.createElement('a');
+      link.setAttribute('href', fullMapUrl(lat, lng));
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener');
+      link.textContent = 'Abrir o mapa completo';
+      note.textContent = '';
+      note.appendChild(link);
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { WhereWeAre } from '@/components/spaces/WhereWeAre'
 import type { OpeningWindow } from '@/types'
 
@@ -15,8 +15,10 @@ const w = (day: number, open: string, close: string): OpeningWindow => ({ day_of
 const allWeek = (open: string, close: string) => Array.from({ length: 7 }, (_, d) => w(d, open, close))
 const rooms = [{ availability_rules: allWeek('08:00:00', '22:00:00') }]
 
-// "Onde estamos" (V06): address, directions, contact, hours and a map that
-// loads only when asked — one block for the landing page and the rooms page.
+// "Onde estamos" (V06, reworked in L04): hours, email, address and the
+// directions button, one line each with its icon and no labels or divider;
+// the map on the right, loaded on render — one block for the landing page
+// and the rooms page.
 describe('WhereWeAre', () => {
   describe('the words', () => {
     it('is a labelled section with the space name, the street, then postcode and city', () => {
@@ -26,6 +28,27 @@ describe('WhereWeAre', () => {
       const address = within(section).getByRole('group', { name: /morada/i })
       expect(address).toHaveTextContent('R. 12 de Julho de 1997 5, Loja 1')
       expect(address).toHaveTextContent('2745-841 Queluz')
+      // Two lines: the street, then postcode and city.
+      expect(within(address).getByText('R. 12 de Julho de 1997 5, Loja 1').className).toContain('block')
+      expect(within(address).getByText('2745-841 Queluz').className).toContain('block')
+    })
+
+    it('lists hours, then email, then the address, each with an icon, and the directions button right under the address (L04)', () => {
+      render(<WhereWeAre space={full} rooms={rooms} />)
+      const items = Array.from(screen.getByTestId('where-lines').querySelectorAll(':scope > li'))
+      expect(items).toHaveLength(3)
+      expect(items[0]).toHaveTextContent('Todos os dias 08:00–22:00')
+      expect(items[1]).toHaveTextContent('geral@flowspace.pt')
+      expect(items[2]).toHaveTextContent('2745-841 Queluz')
+      for (const item of items) expect(item.querySelector('svg')).not.toBeNull()
+      // No divider, no uppercase labels ("Contacto", "Horário") any more.
+      const section = screen.getByRole('region', { name: /onde estamos/i })
+      expect(section.querySelector('hr')).toBeNull()
+      expect(within(section).queryByRole('heading', { level: 3 })).toBeNull()
+      expect(within(section).queryByText(/^(Contacto|Horário)$/)).toBeNull()
+      const directions = screen.getByRole('link', { name: /como chegar/i })
+      expect(items[2].compareDocumentPosition(directions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(directions.compareDocumentPosition(screen.getByTestId('map-frame')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
     it('opens directions to the coordinates in a new tab, without leaking the opener', () => {
@@ -89,20 +112,20 @@ describe('WhereWeAre', () => {
   })
 
   describe('the map', () => {
-    it('makes no third-party request until asked, and the placeholder holds the address and the button at the map\'s size', () => {
+    it('is on the page from the first render: no "Ver mapa" step, no placeholder, no privacy sentence (L04)', () => {
       const { container } = render(<WhereWeAre space={full} rooms={rooms} />)
-      expect(container.querySelector('iframe')).toBeNull()
-      expect(container.querySelector('img')).toBeNull()
-      const button = screen.getByRole('button', { name: /ver mapa/i })
-      expect(button).toBeVisible()
-      const placeholder = button.parentElement!
-      expect(placeholder).toHaveTextContent('R. 12 de Julho de 1997 5, Loja 1 · 2745-841 Queluz')
-      expect(screen.getByTestId('map-frame').className).toMatch(/min-h-\[280px\]/)
+      expect(container.querySelector('iframe')).not.toBeNull()
+      expect(screen.queryByRole('button', { name: /ver mapa/i })).toBeNull()
+      expect(screen.queryByText(/só é carregado quando o pedir/i)).toBeNull()
+      // 16:10 with a floor of 240px on a phone; the column's height from md.
+      const frame = screen.getByTestId('map-frame')
+      expect(frame.className).toMatch(/aspect-\[16\/10\]/)
+      expect(frame.className).toMatch(/min-h-\[240px\]/)
+      expect(frame.className).toMatch(/md:min-h-\[280px\]/)
     })
 
-    it('mounts a lazy, referrer-free, titled OpenStreetMap frame centred on the point, then offers the full map', () => {
+    it('is a lazy, referrer-free, titled OpenStreetMap frame centred on the point, with the full map offered under it', () => {
       const { container } = render(<WhereWeAre space={full} rooms={rooms} />)
-      fireEvent.click(screen.getByRole('button', { name: /ver mapa/i }))
       const frame = container.querySelector('iframe')
       expect(frame).not.toBeNull()
       const src = new URL(frame!.getAttribute('src')!)
@@ -114,13 +137,12 @@ describe('WhereWeAre', () => {
       expect(frame).toHaveAttribute('loading', 'lazy')
       expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
       expect(frame!.getAttribute('title')).toMatch(/Espaço Calmo/)
-      expect(screen.queryByRole('button', { name: /ver mapa/i })).toBeNull()
       expect(screen.getByRole('link', { name: /abrir o mapa completo/i })).toHaveAttribute('href', expect.stringContaining('openstreetmap.org/?mlat=38.755723'))
     })
 
     it('has no map column without coordinates, and searches by address instead', () => {
       const { container } = render(<WhereWeAre space={{ ...full, latitude: null, longitude: null }} rooms={rooms} />)
-      expect(screen.queryByRole('button', { name: /ver mapa/i })).toBeNull()
+      expect(screen.queryByTestId('map-frame')).toBeNull()
       expect(container.querySelector('iframe')).toBeNull()
       const href = screen.getByRole('link', { name: /como chegar/i }).getAttribute('href')!
       expect(href.startsWith('https://www.google.com/maps/search/?api=1&query=')).toBe(true)
@@ -128,8 +150,8 @@ describe('WhereWeAre', () => {
     })
 
     it('treats one coordinate alone as no coordinates', () => {
-      render(<WhereWeAre space={{ ...full, longitude: null }} rooms={rooms} />)
-      expect(screen.queryByRole('button', { name: /ver mapa/i })).toBeNull()
+      const { container } = render(<WhereWeAre space={{ ...full, longitude: null }} rooms={rooms} />)
+      expect(container.querySelector('iframe')).toBeNull()
     })
   })
 

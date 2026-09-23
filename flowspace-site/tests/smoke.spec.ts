@@ -18,17 +18,101 @@
  */
 import { test, expect } from '@playwright/test';
 
-test('hero renders one headline with its emphasised word and a lede', async ({ page }) => {
+test('hero renders one headline with its emphasised half, a lede, two CTAs and four benefits', async ({ page }) => {
   await page.goto('/');
-  // Structure, not prose (W01): one H1 with an <em> inside it, followed by a lede.
+  // Structure, not prose (W01; the words are pinned to the app's catalog by
+  // copy-parity.test.mjs): one H1 with an <em> inside it, a lede and a
+  // support line, two calls to action, four benefits with a dot each (L02).
   const h1 = page.locator('h1');
   await expect(h1).toHaveCount(1);
   await expect(h1).not.toBeEmpty();
   await expect(h1.locator('em')).not.toBeEmpty();
-  await expect(page.locator('.hero p.lede').first()).not.toBeEmpty();
+  await expect(page.locator('.hero p.lede')).toHaveCount(2);
+  await expect(page.locator('.hero p.lede-support')).not.toBeEmpty();
+  await expect(page.locator('.hero-actions a.btn')).toHaveCount(2);
+  const benefits = page.locator('.hero-benefits li');
+  await expect(benefits).toHaveCount(4);
+  for (const item of await benefits.all()) {
+    await expect(item).not.toBeEmpty();
+    expect(await item.evaluate((el) => getComputedStyle(el, '::before').width)).toBe('8px');
+  }
   // V04: the headline is the first thing in the hero; no pill above it.
   await expect(page.locator('.hero .hero-badge')).toHaveCount(0);
   await expect(page.locator('.hero-content > :first-child')).toHaveJSProperty('tagName', 'H1');
+});
+
+// L02: the hero carries the whole message; no "O espaço" section, and every
+// nav and footer anchor still lands on a section that exists.
+test('there is no "O espaço" section and every nav anchor resolves', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#espaco')).toHaveCount(0);
+  await expect(page.locator('a[href="#espaco"]')).toHaveCount(0);
+  const desktop = await page.locator('.nav-links a').allTextContents();
+  expect(desktop.map((t) => t.trim())).toEqual(['Salas', 'Como funciona', 'Preços', 'Onde estamos']);
+  await expect(page.locator('.nav-actions a.btn')).toHaveText('Reservar sala');
+  const anchors = await page.locator('.nav-links a, .nav-mobile a, .site-footer a[href^="#"]').evaluateAll((links) =>
+    links.map((a) => a.getAttribute('href')!),
+  );
+  expect(anchors.length).toBeGreaterThan(0);
+  for (const href of new Set(anchors)) {
+    await expect(page.locator(href), `${href} has no section`).toHaveCount(1);
+  }
+});
+
+// L03: the layout is the app's — its container, its columns at 1280px, one
+// column at 390px with the same stacking order and no sideways scroll.
+test('at 1280px the grids have the app\'s columns inside an 80rem container', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+  const columnsOf = (selector: string) =>
+    page.locator(selector).evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+  expect(await columnsOf('#salas .grid')).toBe(3);
+  expect(await columnsOf('#como-funciona .grid')).toBe(4);
+  expect(await columnsOf('#precos .grid')).toBe(3);
+  expect(await columnsOf('.footer-grid')).toBe(3);
+  const container = await page.locator('#salas .container').boundingBox();
+  // max-w-7xl with lg:px-8 — the content box is 1280 − 2 × 32 = 1216 wide.
+  expect(container!.width).toBe(1280);
+  expect(await page.locator('#salas .container').evaluate((el) => getComputedStyle(el).paddingLeft)).toBe('32px');
+  // Section heads are centred with the app's heading scale (text-3xl font-bold).
+  const h2 = page.locator('#como-funciona .section-head h2');
+  expect(await h2.evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el).fontWeight, getComputedStyle(el).textAlign])).toEqual(['30px', '700', 'center']);
+  // Buttons: the app's rounded-lg, h-10 / h-12.
+  expect(await page.locator('.hero-actions .btn-lg').first().evaluate((el) => [getComputedStyle(el).height, getComputedStyle(el).borderRadius])).toEqual(['48px', '8px']);
+  // The room card: photos, then name and price on one line, then the tags.
+  const card = page.locator('.room-card').first();
+  const order = await card.evaluate((el) => Array.from(el.children).map((c) => c.className));
+  expect(order).toEqual(['room-gallery', 'room-head', 'tag-list']);
+});
+
+test('at 390px everything stacks in one column and nothing scrolls sideways', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const columnsOf = (selector: string) =>
+    page.locator(selector).evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+  for (const selector of ['#salas .grid', '#como-funciona .grid', '#precos .grid', '.footer-grid', '.where-grid']) {
+    expect(await columnsOf(selector), selector).toBe(1);
+  }
+  expect(await page.locator('#salas .container').evaluate((el) => getComputedStyle(el).paddingLeft)).toBe('16px');
+  // The two CTAs stack, like the app's `flex-col sm:flex-row`.
+  const [first, second] = await page.locator('.hero-actions .btn').all();
+  expect((await second.boundingBox())!.y).toBeGreaterThan((await first.boundingBox())!.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // Sections in order: hero, rooms, how it works, pricing, where we are, footer.
+  const tops = await Promise.all(
+    ['.hero', '#salas', '#como-funciona', '#precos', '#localizacao', '.site-footer'].map(async (sel) => (await page.locator(sel).boundingBox())!.y),
+  );
+  expect([...tops].sort((a, b) => a - b)).toEqual(tops);
+});
+
+// L02: on a phone the benefits wrap under the CTAs instead of overflowing.
+test('below 768px the four benefits wrap and nothing scrolls sideways', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.locator('.hero-benefits li')).toHaveCount(4);
+  const rows = new Set((await page.locator('.hero-benefits li').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top))));
+  expect(rows.size).toBeGreaterThan(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 // V02: every room card carries a photo gallery built from the manifest —
@@ -97,58 +181,75 @@ test('"Como chegar" points at the correct address', async ({ page }) => {
   await expect(mapsLink).toHaveAttribute('target', '_blank');
 });
 
-// V07: one "Onde estamos" section — address, directions, contact, hours and
-// a map that loads only when asked; the contact form still below it.
-test('"Onde estamos" holds the address, the email, the hours and no phone; the map waits to be asked', async ({ page }) => {
-  const thirdParty: string[] = [];
-  page.on('request', (r) => { if (/openstreetmap|google\./.test(r.url())) thirdParty.push(r.url()); });
+// V07, reworked in L04: one "Onde estamos" section — hours, email and the
+// address one line each with an icon, the directions button under the
+// address, no labels or divider, and a map that is on the page from the
+// start; the contact form still below it.
+test('"Onde estamos" lists hours, email and address with icons, then "Como chegar"; the map is there without a click', async ({ page }) => {
   await page.goto('/');
   const where = page.locator('#localizacao');
   await expect(where.getByRole('heading', { level: 2 })).toHaveText('Onde estamos');
-  await expect(where.locator('.where-address')).toContainText('2745-841 Queluz');
-  await expect(where.getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', 'mailto:geral@flowspace.pt');
+  const lines = where.locator('.where-lines > li');
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0)).toHaveText('Todos os dias, 08:00–22:00');
+  await expect(lines.nth(1).getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', 'mailto:geral@flowspace.pt');
+  await expect(lines.nth(2).locator('.where-address')).toContainText('2745-841 Queluz');
+  for (const line of await lines.all()) await expect(line.locator('svg')).toHaveCount(1);
   await expect(where.locator('a[href^="tel:"]')).toHaveCount(0);
-  await expect(where.locator('.where-line').last()).toHaveText('Todos os dias, 08:00–22:00');
+  await expect(where.locator('.where-divider, .where-label, hr')).toHaveCount(0);
+  await expect(where.getByText(/^(Contacto|Horário|Morada)$/)).toHaveCount(0);
+  // "Como chegar" is the first thing after the address.
+  const directions = where.getByRole('link', { name: 'Como chegar' });
+  expect(await directions.evaluate((el) => el.previousElementSibling!.className)).toBe('where-lines');
   // Both anchors resolve: the section, and the form below it.
   await expect(page.locator('#contacto')).toHaveCount(1);
   await expect(page.locator('#contacto')).toContainText('Envie-nos uma mensagem');
   await expect(page.locator('#contacto form#contactForm')).toHaveCount(1);
   await expect(page.locator('#localizacao #contacto')).toHaveCount(1);
 
-  // No map, no third-party request, until the visitor asks; the placeholder
-  // holds the address and the button at the map's size.
-  await expect(where.locator('iframe')).toHaveCount(0);
-  expect(thirdParty).toEqual([]);
-  const frame = where.locator('.where-map-frame');
-  const before = await frame.boundingBox();
-  expect(before!.height).toBeGreaterThanOrEqual(280);
-  await expect(where.locator('.where-map-placeholder')).toContainText('2745-841 Queluz');
-
-  await where.getByRole('button', { name: 'Ver mapa' }).click();
+  // The map is mounted on load — no button, no placeholder, no privacy
+  // sentence — as a lazy, referrer-free frame centred on the pin with the
+  // frame's shape, and the full map offered under it.
+  await expect(where.getByRole('button', { name: 'Ver mapa' })).toHaveCount(0);
+  await expect(where.locator('.where-map-placeholder')).toHaveCount(0);
+  await expect(where).not.toContainText('só é carregado quando o pedir');
   const map = where.locator('iframe');
+  await expect(map).toHaveCount(1);
   await expect(map).toHaveAttribute('src', /openstreetmap\.org\/export\/embed\.html/);
   await expect(map).toHaveAttribute('loading', 'lazy');
   await expect(map).toHaveAttribute('referrerpolicy', 'no-referrer');
+  await expect(map).toHaveAttribute('title', 'Mapa da localização');
   const src = new URL((await map.getAttribute('src'))!);
   expect(src.searchParams.get('marker')).toBe('38.755723,-9.279799');
   const [west, south, east, north] = src.searchParams.get('bbox')!.split(',').map(Number);
   expect((west + east) / 2).toBeCloseTo(-9.279799, 5);
   expect((south + north) / 2).toBeCloseTo(38.755723, 5);
-  // The box has the frame's shape on the ground, so the pin is centred.
+  const frame = await where.locator('.where-map-frame').boundingBox();
+  expect(frame!.height).toBeGreaterThanOrEqual(280);
+  // The box has the frame's shape on the ground, so the pin is centred. The
+  // frame is measured when the script runs, before the web font settles the
+  // words column's height, so the shapes agree to within a few percent.
   const ratio = ((east - west) * Math.cos((38.755723 * Math.PI) / 180)) / (north - south);
-  expect(ratio).toBeCloseTo(before!.width / before!.height, 1);
-  const after = await frame.boundingBox();
-  expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(2);
-  await expect(where.getByRole('link', { name: 'Abrir no mapa' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=38\.755723/);
+  expect(Math.abs(ratio / (frame!.width / frame!.height) - 1)).toBeLessThan(0.1);
+  await expect(where.getByRole('link', { name: 'Abrir o mapa completo' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=38\.755723/);
 });
 
-test('below 768px "Onde estamos" stacks, the map under the words', async ({ page }) => {
+test('below 768px "Onde estamos" stacks, the words first and the map under them at 16:10, at least 240px tall', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   const words = await page.locator('#localizacao .where-details').boundingBox();
   const map = await page.locator('#localizacao .where-map').boundingBox();
   expect(map!.y).toBeGreaterThanOrEqual(words!.y + words!.height);
   expect(Math.abs(map!.x - words!.x)).toBeLessThan(2);
+  const frame = await page.locator('#localizacao .where-map-frame').boundingBox();
+  expect(frame!.height).toBeGreaterThanOrEqual(240);
+  expect(frame!.width / frame!.height).toBeLessThanOrEqual(1.6 + 0.01);
+});
+
+test('the privacy page says the map is an OpenStreetMap embed', async ({ page }) => {
+  await page.goto('/privacidade.html');
+  await expect(page.locator('main')).toContainText('OpenStreetMap');
+  await expect(page.locator('main')).toContainText('openstreetmap.org');
 });
 
 const STUB_URL = 'https://script.google.com/macros/s/TESTDEPLOYMENT/exec';
