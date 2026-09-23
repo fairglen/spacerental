@@ -63,53 +63,68 @@ test.describe('single-space mode', () => {
     await expect(page).toHaveURL(/\/$/)
   })
 
-  test('the location is on the landing page and on the rooms page; the map waits to be asked', async ({ page }) => {
-    const thirdParty: string[] = []
-    page.on('request', (r) => { if (/openstreetmap|google\./.test(r.url())) thirdParty.push(r.url()) })
+  test('the location is on the landing page and on the rooms page: hours, email, address, directions, and the map on load (L04)', async ({ page }) => {
+    // The same block on both pages: three icon lines in this order, the
+    // directions button under the address, no labels or divider, and the
+    // OpenStreetMap frame there without a click, centred on the pin.
+    const checkBlock = async (where: ReturnType<typeof page.getByRole>) => {
+      await expect(where).toBeVisible({ timeout: 15000 })
+      const lines = where.getByTestId('where-lines').locator(':scope > li')
+      await expect(lines).toHaveCount(3)
+      await expect(lines.nth(0)).toHaveText('Todos os dias 08:00–22:00')
+      await expect(lines.nth(1).getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', /^mailto:/)
+      await expect(lines.nth(2).getByRole('group', { name: /morada/i }).getByText('2745-841 Queluz')).toBeVisible()
+      for (const line of await lines.all()) await expect(line.locator('svg')).toHaveCount(1)
+      await expect(where.locator('a[href^="tel:"]')).toHaveCount(0)
+      await expect(where.locator('hr')).toHaveCount(0)
+      await expect(where.getByText(/^(Contacto|Horário)$/)).toHaveCount(0)
+      const directions = where.getByRole('link', { name: /como chegar/i })
+      await expect(directions).toHaveAttribute('href', /destination=38\.755723,-9\.279799/)
+      await expect(directions).toHaveAttribute('target', '_blank')
+      expect(await directions.evaluate((el) => el.previousElementSibling!.getAttribute('data-testid'))).toBe('where-lines')
+      await expect(where.getByRole('button', { name: /ver mapa/i })).toHaveCount(0)
+      await expect(where).not.toContainText('só é carregado quando o pedir')
+      const frame = where.locator('iframe')
+      await expect(frame).toHaveCount(1)
+      await expect(frame).toHaveAttribute('src', /openstreetmap\.org\/export\/embed/)
+      await expect(frame).toHaveAttribute('loading', 'lazy')
+      await expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
+      const src = new URL((await frame.getAttribute('src'))!)
+      const [west, south, east, north] = src.searchParams.get('bbox')!.split(',').map(Number)
+      expect((west + east) / 2).toBeCloseTo(-9.279799, 5)
+      expect((south + north) / 2).toBeCloseTo(38.755723, 5)
+      expect((await where.getByTestId('map-frame').boundingBox())!.height).toBeGreaterThanOrEqual(280)
+      await expect(where.getByRole('link', { name: /abrir o mapa completo/i })).toBeVisible()
+    }
 
     await page.goto('/')
-    const where = page.getByRole('region', { name: /onde estamos/i })
-    await expect(where).toBeVisible({ timeout: 15000 })
-    // The address group (the map placeholder repeats the address at its size).
-    await expect(where.getByRole('group', { name: /morada/i }).getByText('2745-841 Queluz')).toBeVisible()
-    const directions = where.getByRole('link', { name: /como chegar/i })
-    await expect(directions).toHaveAttribute('href', /destination=38\.755723,-9\.279799/)
-    await expect(directions).toHaveAttribute('target', '_blank')
-    await expect(page.locator('iframe')).toHaveCount(0)
-    expect(thirdParty).toEqual([])
-
-    // V06: one block — contact, hours (the seed's 08–22 every day, read as
-    // the wall clock it is, whatever the season: R01), no phone line, and the
-    // map placeholder holds its size.
-    await expect(where.getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', /^mailto:/)
-    await expect(where.locator('a[href^="tel:"]')).toHaveCount(0)
-    await expect(where.getByTestId('opening-hours')).toHaveText('Todos os dias 08:00–22:00')
-    const mapFrame = where.getByTestId('map-frame')
-    const before = await mapFrame.boundingBox()
-    expect(before!.height).toBeGreaterThanOrEqual(280)
-
-    await where.getByRole('button', { name: /ver mapa/i }).click()
-    const frame = where.locator('iframe')
-    await expect(frame).toHaveAttribute('src', /openstreetmap\.org\/export\/embed/)
-    const src = new URL((await frame.getAttribute('src'))!)
-    const [west, south, east, north] = src.searchParams.get('bbox')!.split(',').map(Number)
-    expect((west + east) / 2).toBeCloseTo(-9.279799, 5)
-    expect((south + north) / 2).toBeCloseTo(38.755723, 5)
-    const after = await mapFrame.boundingBox()
-    expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(2)
-    expect(Math.abs(after!.width - before!.width)).toBeLessThanOrEqual(2)
-    await expect(where.getByRole('link', { name: /abrir o mapa completo/i })).toBeVisible()
+    await checkBlock(page.getByRole('region', { name: /onde estamos/i }))
 
     await page.goto('/spaces')
-    const whereRooms = page.getByRole('region', { name: /onde estamos/i })
-    await expect(whereRooms).toBeVisible({ timeout: 15000 })
-    await expect(whereRooms.getByRole('group', { name: /morada/i }).getByText('2745-841 Queluz')).toBeVisible()
-    await expect(whereRooms.getByTestId('opening-hours')).toHaveText(/Todos os dias/)
+    await checkBlock(page.getByRole('region', { name: /onde estamos/i }))
     // Nothing customer-facing still places the seeded space in Lisbon.
     await expect(page.getByText(/Lisboa|Lisbon/)).toHaveCount(0)
     await page.goto('/')
     await expect(page.getByTestId('footer-location')).toContainText('Queluz')
     await expect(page.getByText(/Lisboa|Lisbon/)).toHaveCount(0)
+  })
+
+  test('on a phone the words come first and the map sits under them at 16:10, at least 240px tall (L04)', async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto('/')
+      const where = page.getByRole('region', { name: /onde estamos/i })
+      await expect(where).toBeVisible({ timeout: 15000 })
+      const words = (await where.getByTestId('where-lines').boundingBox())!
+      const frame = (await where.getByTestId('map-frame').boundingBox())!
+      expect(frame.y).toBeGreaterThanOrEqual(words.y + words.height)
+      expect(frame.height).toBeGreaterThanOrEqual(240)
+      expect(frame.width / frame.height).toBeLessThanOrEqual(1.6 + 0.01)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    } finally {
+      await context.close()
+    }
   })
 
   // R01: the rules are the door's clock. In a Lisbon-zoned browser the first

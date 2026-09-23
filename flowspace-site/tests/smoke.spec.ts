@@ -181,58 +181,75 @@ test('"Como chegar" points at the correct address', async ({ page }) => {
   await expect(mapsLink).toHaveAttribute('target', '_blank');
 });
 
-// V07: one "Onde estamos" section — address, directions, contact, hours and
-// a map that loads only when asked; the contact form still below it.
-test('"Onde estamos" holds the address, the email, the hours and no phone; the map waits to be asked', async ({ page }) => {
-  const thirdParty: string[] = [];
-  page.on('request', (r) => { if (/openstreetmap|google\./.test(r.url())) thirdParty.push(r.url()); });
+// V07, reworked in L04: one "Onde estamos" section — hours, email and the
+// address one line each with an icon, the directions button under the
+// address, no labels or divider, and a map that is on the page from the
+// start; the contact form still below it.
+test('"Onde estamos" lists hours, email and address with icons, then "Como chegar"; the map is there without a click', async ({ page }) => {
   await page.goto('/');
   const where = page.locator('#localizacao');
   await expect(where.getByRole('heading', { level: 2 })).toHaveText('Onde estamos');
-  await expect(where.locator('.where-address')).toContainText('2745-841 Queluz');
-  await expect(where.getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', 'mailto:geral@flowspace.pt');
+  const lines = where.locator('.where-lines > li');
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0)).toHaveText('Todos os dias, 08:00–22:00');
+  await expect(lines.nth(1).getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', 'mailto:geral@flowspace.pt');
+  await expect(lines.nth(2).locator('.where-address')).toContainText('2745-841 Queluz');
+  for (const line of await lines.all()) await expect(line.locator('svg')).toHaveCount(1);
   await expect(where.locator('a[href^="tel:"]')).toHaveCount(0);
-  await expect(where.locator('.where-line').last()).toHaveText('Todos os dias, 08:00–22:00');
+  await expect(where.locator('.where-divider, .where-label, hr')).toHaveCount(0);
+  await expect(where.getByText(/^(Contacto|Horário|Morada)$/)).toHaveCount(0);
+  // "Como chegar" is the first thing after the address.
+  const directions = where.getByRole('link', { name: 'Como chegar' });
+  expect(await directions.evaluate((el) => el.previousElementSibling!.className)).toBe('where-lines');
   // Both anchors resolve: the section, and the form below it.
   await expect(page.locator('#contacto')).toHaveCount(1);
   await expect(page.locator('#contacto')).toContainText('Envie-nos uma mensagem');
   await expect(page.locator('#contacto form#contactForm')).toHaveCount(1);
   await expect(page.locator('#localizacao #contacto')).toHaveCount(1);
 
-  // No map, no third-party request, until the visitor asks; the placeholder
-  // holds the address and the button at the map's size.
-  await expect(where.locator('iframe')).toHaveCount(0);
-  expect(thirdParty).toEqual([]);
-  const frame = where.locator('.where-map-frame');
-  const before = await frame.boundingBox();
-  expect(before!.height).toBeGreaterThanOrEqual(280);
-  await expect(where.locator('.where-map-placeholder')).toContainText('2745-841 Queluz');
-
-  await where.getByRole('button', { name: 'Ver mapa' }).click();
+  // The map is mounted on load — no button, no placeholder, no privacy
+  // sentence — as a lazy, referrer-free frame centred on the pin with the
+  // frame's shape, and the full map offered under it.
+  await expect(where.getByRole('button', { name: 'Ver mapa' })).toHaveCount(0);
+  await expect(where.locator('.where-map-placeholder')).toHaveCount(0);
+  await expect(where).not.toContainText('só é carregado quando o pedir');
   const map = where.locator('iframe');
+  await expect(map).toHaveCount(1);
   await expect(map).toHaveAttribute('src', /openstreetmap\.org\/export\/embed\.html/);
   await expect(map).toHaveAttribute('loading', 'lazy');
   await expect(map).toHaveAttribute('referrerpolicy', 'no-referrer');
+  await expect(map).toHaveAttribute('title', 'Mapa da localização');
   const src = new URL((await map.getAttribute('src'))!);
   expect(src.searchParams.get('marker')).toBe('38.755723,-9.279799');
   const [west, south, east, north] = src.searchParams.get('bbox')!.split(',').map(Number);
   expect((west + east) / 2).toBeCloseTo(-9.279799, 5);
   expect((south + north) / 2).toBeCloseTo(38.755723, 5);
-  // The box has the frame's shape on the ground, so the pin is centred.
+  const frame = await where.locator('.where-map-frame').boundingBox();
+  expect(frame!.height).toBeGreaterThanOrEqual(280);
+  // The box has the frame's shape on the ground, so the pin is centred. The
+  // frame is measured when the script runs, before the web font settles the
+  // words column's height, so the shapes agree to within a few percent.
   const ratio = ((east - west) * Math.cos((38.755723 * Math.PI) / 180)) / (north - south);
-  expect(ratio).toBeCloseTo(before!.width / before!.height, 1);
-  const after = await frame.boundingBox();
-  expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(2);
-  await expect(where.getByRole('link', { name: 'Abrir no mapa' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=38\.755723/);
+  expect(Math.abs(ratio / (frame!.width / frame!.height) - 1)).toBeLessThan(0.1);
+  await expect(where.getByRole('link', { name: 'Abrir o mapa completo' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=38\.755723/);
 });
 
-test('below 768px "Onde estamos" stacks, the map under the words', async ({ page }) => {
+test('below 768px "Onde estamos" stacks, the words first and the map under them at 16:10, at least 240px tall', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   const words = await page.locator('#localizacao .where-details').boundingBox();
   const map = await page.locator('#localizacao .where-map').boundingBox();
   expect(map!.y).toBeGreaterThanOrEqual(words!.y + words!.height);
   expect(Math.abs(map!.x - words!.x)).toBeLessThan(2);
+  const frame = await page.locator('#localizacao .where-map-frame').boundingBox();
+  expect(frame!.height).toBeGreaterThanOrEqual(240);
+  expect(frame!.width / frame!.height).toBeLessThanOrEqual(1.6 + 0.01);
+});
+
+test('the privacy page says the map is an OpenStreetMap embed', async ({ page }) => {
+  await page.goto('/privacidade.html');
+  await expect(page.locator('main')).toContainText('OpenStreetMap');
+  await expect(page.locator('main')).toContainText('openstreetmap.org');
 });
 
 const STUB_URL = 'https://script.google.com/macros/s/TESTDEPLOYMENT/exec';

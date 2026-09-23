@@ -107,13 +107,9 @@
     "heading": "Onde estamos",
     "address_label": "Morada",
     "directions": "Como chegar",
-    "show_map": "Ver mapa",
-    "map_privacy": "O mapa vem do OpenStreetMap e só é carregado quando o pedir.",
     "map_title": "Mapa de {name}",
     "map_title_generic": "Mapa da localização",
     "open_full_map": "Abrir o mapa completo",
-    "contact": "Contacto",
-    "hours": "Horário",
     "hours_per_room": "Horário por sala no calendário."
   },
   "roomCard": {

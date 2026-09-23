@@ -4203,7 +4203,49 @@ checked on screenshots at 1280px and 390px — `PR2_DRAFT.md`):**
 
 ### L04 — "Onde estamos" rework (both sites)
 
-**Priority: P1. State: TODO.** Current app block (V06): left column with
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+(2026-09-23):** app — `WhereWeAre` renders the heading, the space name, then
+one list (`where-lines`) of three icon lines in this order: hours (R01's
+grouped ranges, the per-room note under them when rooms differ), the mailto
+(phone only when `CONTACT_PHONE` is set), the address on two lines; "Como
+chegar" directly under the list; no `<hr>`, no uppercase labels (the
+`location.contact/hours/show_map/map_privacy` keys are gone from both
+catalogs). The OpenStreetMap iframe is in the first render — `loading="lazy"`,
+`referrerpolicy="no-referrer"`, its title, the bbox centred on the pin with
+the frame's shape (measured in a layout effect; the default shape until then)
+— with "Abrir o mapa completo" under it; the placeholder and the "só é
+carregado quando o pedir" sentence are gone. The frame is 16:10 with a 240px
+floor below `md` and the column's height (280px floor) from `md`; the grid
+columns are `min-w-0` so that floor cannot widen the page (found by the 390px
+e2e: 425px sideways scroll before the fix). `WhereWeAre.test.tsx` 15: line
+order, icons, no labels/divider, the button after the address, the iframe on
+first render with its attributes and the centred bbox, the full-map link, no
+phone, no map without coordinates. Vitest 546, tsc clean. Playwright
+`single-space.spec.ts`: the same block checked on the landing page and on
+`/spaces` (order, icons, directions under the address, iframe without a
+click, centred bbox, ≥280px), and a 390px context (words first, map under
+them at ≤16:10, ≥240px tall, no sideways scroll). Static site — the same
+block in `#localizacao`: name, three icon lines (hours "Todos os dias,
+08:00–22:00", mailto, two-line address), "Como chegar" under them,
+`where-map.js` mounts the lazy, referrer-free frame at load with the same
+bbox math and puts "Abrir o mapa completo" under it; placeholder, button,
+note sentence, divider and labels removed; `privacidade.html` gains the
+OpenStreetMap paragraph. Smoke: the block test asserts the order, the icons,
+no labels/divider, the iframe without a click with its attributes and the
+centred bbox (frame shape within 10 %, since the script measures before the
+web font settles the column), the 390px stack at 16:10 ≥240px, and the
+privacy page's wording — 31/31. **DECISIONS:** (1) the app measures the
+frame once after layout and only then sets the bbox's shape, so the
+server-rendered `src` has the default shape and is replaced before the lazy
+frame loads — alternative: a fixed shape on every layout (simpler, less
+centred on wide frames); (2) the static bbox shape is measured at script run
+and left alone afterwards (a later reload of the frame would cost a second
+map request) — the smoke test tolerates the resulting few percent;
+(3) the app has no privacy page, so the OpenStreetMap notice lives on the
+static site's `privacidade.html` only, as the assignment names it; (4) the
+directions button keeps `size="sm"` and the space name stays a subtitle line
+as before. Current app block (V06): left column with
 heading, space name, address, "Como chegar", a divider, "CONTACTO" label +
 email, "HORÁRIO" label + hours; right column a click-to-load map placeholder.
 **Change to — left column,** in this order, no divider and no uppercase
