@@ -4070,8 +4070,7 @@ Links: W01–W05 (the copy and register they touch), V01–V07 (the photos and
 
 ### L02 — One hero message, no separate "O espaço" section (both sites)
 
-**Priority: P1. State: IN PROGRESS** — implemented on
-`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+**Priority: P1. State: DONE — merged on main in `b2dd1dc` ([PR #63](https://github.com/fairglen/spacerental/pull/63) squashed into #62's branch, then [PR #62](https://github.com/fairglen/spacerental/pull/62)).** **Evidence
 (2026-09-23):** app — `hero.description`/`hero.support` carry the owner's
 lede and support in PT and EN, `theSpace.*` is gone from both catalogs,
 `TheSpace.tsx`, its test and its render on the landing page are deleted, the
@@ -4130,8 +4129,7 @@ silently. Links W01, W03, V04.
 
 ### L03 — Static site looks like the app
 
-**Priority: P1. State: IN PROGRESS** — implemented on
-`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+**Priority: P1. State: DONE — merged on main in `b2dd1dc` ([PR #63](https://github.com/fairglen/spacerental/pull/63) squashed into #62's branch, then [PR #62](https://github.com/fairglen/spacerental/pull/62)).** **Evidence
 (2026-09-23):** the parity table below was written from the app's Tailwind
 classes first, then `site.css`/`index.html` changed to it: the app's
 container padding at its three breakpoints, its hero scale and rhythm, its
@@ -4203,8 +4201,7 @@ checked on screenshots at 1280px and 390px — `PR2_DRAFT.md`):**
 
 ### L04 — "Onde estamos" rework (both sites)
 
-**Priority: P1. State: IN PROGRESS** — implemented on
-`feat/landing-parity-where-we-are`; DONE only once merged. **Branch-level
+**Priority: P1. State: DONE — merged on main in `b2dd1dc` ([PR #63](https://github.com/fairglen/spacerental/pull/63) squashed into #62's branch, then [PR #62](https://github.com/fairglen/spacerental/pull/62)).** **Branch-level
 verification (final state, 2026-09-23):** backend 662 and migration round
 trip + `alembic check` clean (no backend change on this branch), Vitest 546,
 tsc, `next build`, Playwright 48/48 on a freshly rebuilt and seeded loop
@@ -4274,6 +4271,63 @@ precomputed URL). **Mobile:** left column first, map below at 16:10, min
 iframe present on first render with the centred bbox, phone absent;
 Playwright on both pages; static smoke asserts the iframe exists without a
 click. Links V06, V07, R01, C09.
+
+## Site copy and form tweaks (M-series) — owner assignment 2026-09-23
+
+Branch `fix/site-copy-form-tweaks`, one PR, pushed and opened by the loop;
+merging is the owner's call because M01 needs the Apps Script redeployed
+FIRST. Binding as ever: formal register, tests with every change, nothing
+weakened. Links: F01 (the static site and its Apps Script backend, S27 its
+regression tests), L04 (the "Onde estamos" block on both sites), L03 (the
+parity table).
+
+### M01 — Remove "Especialidade" from the static site's contact form
+
+**Priority: P1. State: TODO.** The `#especialidade` select is validated
+client-side (`contact-form.js`: `ALLOWED_ESPECIALIDADE`, required) and
+server-side (`apps-script/Code.gs`: required + allowlist). The Apps Script is
+deployed on Google by the owner, not from this repo, so the two sides can be
+out of step for a while; make that safe. **Acceptance:** `Code.gs` —
+`especialidade` becomes OPTIONAL: a missing or empty value is accepted; when
+present the existing allowlist, length and control-character checks still
+apply; it leaves the `missing` required list; the "Especialidade:" line is
+omitted from the email when empty and the subject drops its half (there is
+no sheet row — sheet logging is deliberately not implemented). Everything
+else unchanged; the S27 tests (`tests/code-gs.test.mjs`) extended for both
+shapes. `index.html` — label, select and error paragraph removed, the other
+fields, IDs and order kept. `privacidade.html` — "especialidade" leaves the
+list of collected data. `contact-form.js` — the field leaves `values`, the
+allowlist, the required check and the two error strings that mention it; the
+payload simply has no key. `tests/smoke.spec.ts` — the specialty selections
+and assertions removed; one new test proves a submission without the field
+passes client-side validation and posts a payload with no `especialidade`
+key. README — a "Deployment order" note in the Apps Script runbook: redeploy
+`Code.gs` FIRST (the new version accepts both shapes), then merge; merging
+first breaks live submissions until the redeploy. The same note in bold at
+the top of the PR description. Links F01, S27, B49.
+
+### M02 — Recurring booking card: at least 4 hours a week
+
+**Priority: P2. State: TODO.** The "Reserva recorrente" pricing card on the
+static site says "Negociado para 3+ horas semanais." **Acceptance:** it says
+"Negociado a partir de 4 horas semanais." — the only text change on that
+card; both sites grepped (app catalogs PT+EN, static HTML, README/TODO copy)
+for any other "3+"/"3 horas" mention of the recurring arrangement and aligned
+(none found: the app's booking-page contact note states no number and must
+stay that way). Static smoke stays structural (the card exists with a CTA),
+no prose pin. Links F01, W01, Q-H04 (prices stay untouched).
+
+### M03 — "Onde estamos": drop the venue name line
+
+**Priority: P2. State: TODO.** The block prints the space name under the
+heading ("FlowSpace" on the static site, `space.name` in the app).
+**Acceptance:** app — `WhereWeAre.tsx` no longer renders the name subtitle;
+the heading is followed directly by the hours line; the name stays in the
+map iframe `title` (not visible text); `WhereWeAre.test.tsx` asserts no name
+is rendered and the line order hours → email → address → "Como chegar" is
+unchanged. Static — `<p class="where-name">FlowSpace</p>` removed with its
+CSS rule; smoke structural. Both sites still match (L03's parity table
+updated). Links L04, L03, V06, V07.
 
 ## Deferred scope
 
