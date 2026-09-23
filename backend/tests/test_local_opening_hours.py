@@ -275,7 +275,6 @@ class TestBookingOnTheLisbonClock:
         assert resp.status_code == 201, resp.text
         assert Decimal(resp.json()["booking"]["duration_hours"]) == Decimal(2)
 
-
     async def test_both_occurrences_of_the_fall_back_hour_are_bookable(
         self, client, auth_headers, db_session, lisbon_room, monkeypatch
     ):
