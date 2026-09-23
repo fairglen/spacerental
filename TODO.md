@@ -4274,9 +4274,11 @@ click. Links V06, V07, R01, C09.
 
 ## Site copy and form tweaks (M-series) — owner assignment 2026-09-23
 
-Branch `fix/site-copy-form-tweaks`, one PR, pushed and opened by the loop;
-merging is the owner's call because M01 needs the Apps Script redeployed
-FIRST. Binding as ever: formal register, tests with every change, nothing
+Branch `fix/site-copy-form-tweaks`, one PR — [PR #64](https://github.com/fairglen/spacerental/pull/64),
+opened by the loop with CI green (unit, e2e; backend jobs path-filtered,
+nothing under `backend/` changed; locally pytest 663, Vitest 546, tsc,
+`next build`, Playwright 48/48, static smoke 33, node tests 44). Merging is
+the owner's call because M01 needs the Apps Script redeployed FIRST. Binding as ever: formal register, tests with every change, nothing
 weakened. Links: F01 (the static site and its Apps Script backend, S27 its
 regression tests), L04 (the "Onde estamos" block on both sites), L03 (the
 parity table).
