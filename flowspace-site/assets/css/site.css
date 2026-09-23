@@ -263,8 +263,11 @@ a {
     padding: 8rem 0;
   }
 
+  /* `md:text-6xl` lands after `leading-tight` in the app's stylesheet, so
+     the headline is set solid from 768px. */
   .hero h1 {
     font-size: 3.75rem;
+    line-height: 1;
   }
 }
 
@@ -733,8 +736,18 @@ section.tight {
   line-height: 1.25rem;
 }
 
+/* The heading sits inside the card, as the app's block draws it (`text-xl
+   font-semibold`), with the space name as its subtitle. */
+.where-heading {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
 .where-name {
-  margin: 0 0 0.75rem;
+  margin: 0.25rem 0 0.75rem;
   font-weight: 500;
   color: var(--color-foreground);
 }
