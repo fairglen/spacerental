@@ -2084,14 +2084,16 @@ and do not build on, fix or delete them while the outcome is parked.
 opening-hours slice assigned by the owner on 2026-09-23 as Section 1 of
 `fix/local-opening-hours`, implemented and committed locally; DONE only once
 merged. The recurrence slice stays parked with R02/R03 (code untouched, flag
-off). **Evidence (2026-09-23):** 9 real-PG tests in
+off). **Evidence (2026-09-23, commit `9892851`):** 10 real-PG tests in
 `tests/test_local_opening_hours.py` on a Europe/Lisbon space — a winter and
 a summer day both have 14 slots reading 08:00–21:00 on the Lisbon clock
 (08:00Z vs 07:00Z); every slot of a day belongs to that local date; the
 spring-forward day (2026-03-29) offers 00:00, 02:00, 03:00, 04:00 and no
 01:00 for a 00–05 rule; the fall-back day (2026-10-25) offers each wall-clock
-hour once, 01:00 as its first occurrence (00:00Z, not 01:00Z); the UTC
-fixture space behaves exactly as before; `POST /bookings` accepts 08:00
+hour once, 01:00 as its first occurrence (00:00Z, not 01:00Z); the H01
+horizon's last served day is the space's date of that instant (a window
+ending 23:30Z on 31 July is served on 1 August in Lisbon, refused on the
+2nd); the UTC fixture space behaves exactly as before; `POST /bookings` accepts 08:00
 Lisbon in summer (07:00Z), refuses 07:00 Lisbon and 22:00 Lisbon, accepts the
 day's last hour; a block across the gap is two real hours; `timezone` is
 public, defaults to Europe/Lisbon on create, is refused for an unknown name
@@ -2099,11 +2101,12 @@ public, defaults to Europe/Lisbon on create, is refused for an unknown name
 Lisbon and restores it on a re-seed. S19 allowlist gains `timezone`.
 Migration `0012_space_timezone` round trip clean on an empty database (the
 column is a server default: no rule row and no booking instant is touched).
-Full backend 659 (650 on main). Frontend: the hours line reads the rules as
+Full backend 660 (650 on main). Frontend: the hours line reads the rules as
 the wall clock they are (10 unit tests, the summer case inverted from
 "09:00–23:00" to "08:00–22:00"); `Space.timezone` typed; Vitest 545; tsc
-clean. The rebuilt loop stack serves the seed's 08:00–22:00 as 07:00Z–21:00Z
-in September. **DECISIONS:** (1) the conftest fixture space is zoned `UTC`,
+clean; `next build` OK; Playwright 46/46 against the rebuilt loop stack,
+which serves the seed's 08:00–22:00 as 07:00Z–21:00Z in September; static
+site untouched (smoke 26/26). **DECISIONS:** (1) the conftest fixture space is zoned `UTC`,
 so the ~650 tests that pin UTC instants against its 08–20 rules keep their
 meaning, and Lisbon-clock behaviour has its own tests — alternative: convert
 every pinned expectation; (2) the timezone lives on the space, not the room

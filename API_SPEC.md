@@ -89,9 +89,9 @@ occurrence.
 `available` is true: `"past"` (already started), `"beyond_window"` (later than
 now + `BOOKING_MAX_ADVANCE_DAYS`, the customer's horizon), `"booked"` (a
 booking holds it) or `"blocked"` (operator blocked time). One reason per slot,
-in that order of precedence. A `date` after the window's last day is refused
-with `400` (`date is beyond the booking window`) rather than served as all
-unavailable.
+in that order of precedence. A `date` after the window's last day (the space's
+local date of that instant) is refused with `400` (`date is beyond the booking
+window`) rather than served as all unavailable.
 
 ---
 
