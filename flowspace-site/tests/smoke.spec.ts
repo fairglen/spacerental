@@ -105,6 +105,25 @@ test('at 390px everything stacks in one column and nothing scrolls sideways', as
   expect([...tops].sort((a, b) => a - b)).toEqual(tops);
 });
 
+// The pricing section: three plans, each with a name, a price line, a
+// description line and one CTA that lands on the contact form — structure,
+// not prose (the numbers and the copy are the owner's; M02 changed the
+// recurring card's line without touching this test).
+test('the three pricing cards each carry a name, a price, a line and a CTA to the form', async ({ page }) => {
+  await page.goto('/');
+  const cards = page.locator('#precos .price-card');
+  await expect(cards).toHaveCount(3);
+  for (const card of await cards.all()) {
+    await expect(card.locator('h3')).not.toBeEmpty();
+    await expect(card.locator('.price')).not.toBeEmpty();
+    await expect(card.locator('.price-desc')).not.toBeEmpty();
+    const cta = card.locator('a.btn');
+    await expect(cta).toHaveCount(1);
+    await expect(cta).toHaveAttribute('href', '#contacto');
+  }
+  await expect(page.locator('#precos .card.featured .card-badge')).toHaveCount(1);
+});
+
 // L02: on a phone the benefits wrap under the CTAs instead of overflowing.
 test('below 768px the four benefits wrap and nothing scrolls sideways', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

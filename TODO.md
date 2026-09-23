@@ -4332,7 +4332,17 @@ the top of the PR description. Links F01, S27, B49.
 
 ### M02 — Recurring booking card: at least 4 hours a week
 
-**Priority: P2. State: TODO.** The "Reserva recorrente" pricing card on the
+**Priority: P2. State: IN PROGRESS** — implemented on
+`fix/site-copy-form-tweaks`; DONE only once merged. **Evidence
+(2026-09-23):** the card's line reads "Negociado a partir de 4 horas
+semanais." and nothing else on the card changed. Grep of both sites for the
+recurring arrangement's number (`3+`, `3 horas`, `three hours`, `semanais`
+across `frontend/lib/i18n/*.json`, `frontend/components`, `frontend/app`,
+`flowspace-site/*.html`, both READMEs and this file): the static card was the
+only mention; the app's booking-page contact note and the parked series
+modal state no number and were left alone. Smoke +1, structural: three
+`.price-card`s each with a name, a price, a description line and exactly one
+CTA to `#contacto`, and one badge on the featured plan — no prose pinned. The "Reserva recorrente" pricing card on the
 static site says "Negociado para 3+ horas semanais." **Acceptance:** it says
 "Negociado a partir de 4 horas semanais." — the only text change on that
 card; both sites grepped (app catalogs PT+EN, static HTML, README/TODO copy)

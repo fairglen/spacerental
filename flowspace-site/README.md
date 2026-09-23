@@ -714,7 +714,7 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-32 tests, all passing at time of writing. They assert:
+33 tests, all passing at time of writing. They assert:
 
 - the hero renders one headline with its emphasised half, a lede and a support
   line, two CTAs and four benefits with their dots (structure, not prose — the
@@ -744,6 +744,8 @@ The config's `webServer` starts `python3 -m http.server` against
 - a mocked `{"result":"success"}` shows the success banner, clears the form,
   and that the request went out as `Content-Type: text/plain;charset=utf-8` —
   the simple-request property that makes the response readable at all;
+- the three pricing cards each carry a name, a price, a line and one CTA to
+  the form, and the featured plan its badge (structure, not prose — M02);
 - a submission without a specialty passes the client checks and the posted
   payload has no `especialidade` key at all (M01);
 - each of the six mocked error codes shows **its own** Portuguese message,
