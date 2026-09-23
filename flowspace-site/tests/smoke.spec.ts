@@ -18,17 +18,55 @@
  */
 import { test, expect } from '@playwright/test';
 
-test('hero renders one headline with its emphasised word and a lede', async ({ page }) => {
+test('hero renders one headline with its emphasised half, a lede, two CTAs and four benefits', async ({ page }) => {
   await page.goto('/');
-  // Structure, not prose (W01): one H1 with an <em> inside it, followed by a lede.
+  // Structure, not prose (W01; the words are pinned to the app's catalog by
+  // copy-parity.test.mjs): one H1 with an <em> inside it, a lede and a
+  // support line, two calls to action, four benefits with a dot each (L02).
   const h1 = page.locator('h1');
   await expect(h1).toHaveCount(1);
   await expect(h1).not.toBeEmpty();
   await expect(h1.locator('em')).not.toBeEmpty();
-  await expect(page.locator('.hero p.lede').first()).not.toBeEmpty();
+  await expect(page.locator('.hero p.lede')).toHaveCount(2);
+  await expect(page.locator('.hero p.lede-support')).not.toBeEmpty();
+  await expect(page.locator('.hero-actions a.btn')).toHaveCount(2);
+  const benefits = page.locator('.hero-benefits li');
+  await expect(benefits).toHaveCount(4);
+  for (const item of await benefits.all()) {
+    await expect(item).not.toBeEmpty();
+    expect(await item.evaluate((el) => getComputedStyle(el, '::before').width)).toBe('8px');
+  }
   // V04: the headline is the first thing in the hero; no pill above it.
   await expect(page.locator('.hero .hero-badge')).toHaveCount(0);
   await expect(page.locator('.hero-content > :first-child')).toHaveJSProperty('tagName', 'H1');
+});
+
+// L02: the hero carries the whole message; no "O espaço" section, and every
+// nav and footer anchor still lands on a section that exists.
+test('there is no "O espaço" section and every nav anchor resolves', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#espaco')).toHaveCount(0);
+  await expect(page.locator('a[href="#espaco"]')).toHaveCount(0);
+  const desktop = await page.locator('.nav-links a').allTextContents();
+  expect(desktop.map((t) => t.trim())).toEqual(['Salas', 'Como funciona', 'Preços', 'Onde estamos']);
+  await expect(page.locator('.nav-actions a.btn')).toHaveText('Reservar sala');
+  const anchors = await page.locator('.nav-links a, .nav-mobile a, .site-footer a[href^="#"]').evaluateAll((links) =>
+    links.map((a) => a.getAttribute('href')!),
+  );
+  expect(anchors.length).toBeGreaterThan(0);
+  for (const href of new Set(anchors)) {
+    await expect(page.locator(href), `${href} has no section`).toHaveCount(1);
+  }
+});
+
+// L02: on a phone the benefits wrap under the CTAs instead of overflowing.
+test('below 768px the four benefits wrap and nothing scrolls sideways', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.locator('.hero-benefits li')).toHaveCount(4);
+  const rows = new Set((await page.locator('.hero-benefits li').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top))));
+  expect(rows.size).toBeGreaterThan(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 // V02: every room card carries a photo gallery built from the manifest —

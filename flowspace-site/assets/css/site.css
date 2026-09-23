@@ -218,6 +218,37 @@ a {
   gap: 1rem;
 }
 
+/* The four benefits under the CTAs, as the app's hero draws them (L02): a
+   dot and muted text, wrapping on narrow screens. */
+.hero-benefits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 1.5rem;
+  row-gap: 0.5rem;
+  margin: 2.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--color-muted);
+}
+
+.hero-benefits li {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.hero-benefits li::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  flex: none;
+}
+
 /* ---------- Sections ---------- */
 
 section {
@@ -243,18 +274,6 @@ section.alt {
 .section-head p {
   color: var(--color-muted);
   margin: 0;
-}
-
-.prose {
-  max-width: 42rem;
-  margin: 0 auto;
-  text-align: center;
-  color: var(--color-muted);
-  font-size: 1.1rem;
-}
-
-.prose + .prose {
-  margin-top: 1.25rem;
 }
 
 /* ---------- Cards / grid ---------- */

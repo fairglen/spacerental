@@ -6,7 +6,7 @@
   "hero": {
     "headline_start": "O seu espaço,",
     "headline_highlight": "no seu tempo.",
-    "description": "Gabinetes profissionais para profissionais de saúde e bem-estar, pensados para trabalhar com conforto, privacidade e flexibilidade.",
+    "description": "Gabinetes tranquilos e bem equipados para profissionais de saúde e bem-estar. Reserve à hora e trabalhe à sua maneira.",
     "support": "Um espaço partilhado onde cada profissional mantém a sua autonomia e a sua forma de trabalhar.",
     "cta_primary": "Ver Espaços",
     "cta_primary_rooms": "Ver Salas",
@@ -70,11 +70,6 @@
     "rooms_cta_all": "Ver Todas as Salas",
     "error": "Não foi possível carregar as salas.",
     "retry": "Tentar novamente"
-  },
-  "theSpace": {
-    "title": "O espaço",
-    "p1": "O FlowSpace é um espaço profissional partilhado, pensado para profissionais de saúde e bem-estar que procuram um lugar onde possam exercer a sua atividade com conforto, privacidade e flexibilidade.",
-    "p2": "Gabinetes cuidados e equipados, num ambiente tranquilo e acolhedor, que permitem a cada profissional trabalhar de forma autónoma, de acordo com as necessidades da sua prática."
   },
   "navbar": {
     "spaces_link": "Espaços",

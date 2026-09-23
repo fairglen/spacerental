@@ -522,13 +522,16 @@ covered by `tests/code-gs.test.mjs`, see Testing).
 
 **Content and navigation**
 - [ ] Every section's content matches `index.html` verbatim against the spec
-      (hero headline/subheading, the two "O espaço" paragraphs, the three room cards'
-      names/prices/descriptions/amenities, the four "Como funciona" steps,
-      the three pricing cards, the address, and the footer copyright line).
-- [ ] Nav anchors (`#espaco`, `#salas`, `#como-funciona`, `#precos`,
-      `#localizacao`, `#contacto`) all scroll to the correct section.
-- [ ] Footer links (O espaço, Salas, Preços, Contacto, Política de
-      Privacidade) all work, including the link to `privacidade.html`.
+      (hero headline, lede, support line and four benefits — the same words as
+      the app's `hero.*` catalog, pinned by `tests/copy-parity.test.mjs` —
+      the three room cards' names/prices/amenities, the four "Como funciona"
+      steps, the three pricing cards, the address, and the footer copyright
+      line). There is no "O espaço" section any more (L02): its message lives
+      in the hero.
+- [ ] Nav anchors (`#salas`, `#como-funciona`, `#precos`, `#localizacao`,
+      `#contacto`) all scroll to the correct section.
+- [ ] Footer links (Salas, Preços, Contacto, Política de Privacidade) all
+      work, including the link to `privacidade.html`.
 - [ ] "Abrir no Google Maps" opens
       `https://www.google.com/maps/search/?api=1&query=Rua+12+de+Julho+de+1997%2C+2745-841+Queluz+%E2%80%94+Massam%C3%A3`
       in a new tab and resolves to the correct address.
@@ -812,3 +815,13 @@ node --test flowspace-site/tests/code-gs.test.mjs
 Run it after every edit to `Code.gs`, before pasting the file into the Apps
 Script editor. It proves the logic, not the deployment: the checklist above
 still applies.
+
+**Copy parity with the app** (`tests/copy-parity.test.mjs`, L02): the hero's
+headline, lede, support line and four benefits in `index.html` must equal the
+app's `hero.*` strings in `frontend/lib/i18n/pt.json`, character for
+character, and neither site may keep an "O espaço" section. Run it after
+editing either file:
+
+```bash
+node --test flowspace-site/tests/copy-parity.test.mjs
+```

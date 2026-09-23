@@ -4070,7 +4070,36 @@ Links: W01–W05 (the copy and register they touch), V01–V07 (the photos and
 
 ### L02 — One hero message, no separate "O espaço" section (both sites)
 
-**Priority: P1. State: TODO.** The "O espaço" section (W03's two paragraphs)
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+(2026-09-23):** app — `hero.description`/`hero.support` carry the owner's
+lede and support in PT and EN, `theSpace.*` is gone from both catalogs,
+`TheSpace.tsx`, its test and its render on the landing page are deleted, the
+pills row stays, and no nav/footer link pointed at `#o-espaco` (verified by
+grep). `Hero.test.tsx` is structural: one H1 with the emphasis span on the
+second half, lede and support from the catalog, exactly two links, four
+benefits in catalog order each with its dot, and a guard that the `theSpace`
+catalog key stays gone (4 tests); Vitest 545, tsc clean. Static site — the
+hero's H1 emphasis moved to "no seu tempo." as the app renders it, the lede
+and support are the catalog strings character for character (the extra
+"Reserva à hora, sem contratos nem compromissos." sentence dropped), a
+`.hero-benefits` row (dot + muted text, wraps) under the CTAs, `<section
+id="espaco">` and the three "O espaço" links (desktop nav, mobile nav, footer)
+removed, `.prose` deleted with its only user. `tests/copy-parity.test.mjs`
+(node:test, 4) pins the headline, lede, support and the four benefits to
+`pt.json` and asserts neither site keeps the section; smoke: the hero test
+now checks two CTAs and four 8px dots, a new test walks every nav/footer
+anchor to an existing section and asserts the desktop nav reads Salas · Como
+funciona · Preços · Onde estamos, and a 390px test proves the benefits wrap
+with no sideways scroll. README checklist updated. **DECISIONS:** (1) the
+static H1's emphasis moves from "espaço" to "no seu tempo." — the owner's
+line says the emphasis is the app's, and "character for character" cannot
+hold with the `<em>` on a different word; reverse by moving the `<em>` back
+(the copy-parity test would then need its emphasis assertion relaxed);
+(2) the copy-parity check is a node:test file beside `code-gs.test.mjs`, run
+by hand and in the PR draft, not wired into the app's CI (the static site's
+suites are deliberately outside it, F01); alternative: a Vitest test in the
+app reading `../flowspace-site/index.html`. The "O espaço" section (W03's two paragraphs)
 duplicates the hero and sits centred under it. Fold its message into the hero
 and remove the section on both sites. **Copy, verbatim, identical on both
 sites (formal register):** H1 "O seu espaço, no seu tempo." (the existing
