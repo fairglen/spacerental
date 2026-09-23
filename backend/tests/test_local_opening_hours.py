@@ -276,6 +276,46 @@ class TestBookingOnTheLisbonClock:
         assert Decimal(resp.json()["booking"]["duration_hours"]) == Decimal(2)
 
 
+    async def test_both_occurrences_of_the_fall_back_hour_are_bookable(
+        self, client, auth_headers, db_session, lisbon_room, monkeypatch
+    ):
+        """The two 01:00s of 25 October are distinct real hours: each can be
+        booked on its own, and one block across them is three hours of money
+        for three clock hours on the door (00:00, 01:00, 01:00 again)."""
+        _pin(monkeypatch, OCTOBER_CLOCK)
+        db_session.add(
+            AvailabilityRule(
+                room_id=lisbon_room.id, day_of_week=6, open_time=time(0, 0), close_time=time(5, 0)
+            )
+        )
+        await db_session.commit()
+        first = datetime(2026, 10, 25, 0, tzinfo=UTC)  # 01:00 WEST, the first time round
+        second = datetime(2026, 10, 25, 1, tzinfo=UTC)  # 01:00 WET, the second
+        assert first.astimezone(LISBON).hour == second.astimezone(LISBON).hour == 1
+        for start in (first, second):
+            resp = await _book(client, auth_headers, lisbon_room, start)
+            assert resp.status_code == 201, resp.text
+            booking = resp.json()["booking"]
+            assert datetime.fromisoformat(booking["start_time"]) == start
+            assert Decimal(booking["duration_hours"]) == Decimal(1)
+            # Free the hour again for the block below.
+            assert (
+                await client.delete(f"{API}/bookings/{booking['id']}", headers=auth_headers)
+            ).status_code == 204
+        block = await client.post(
+            f"{API}/bookings",
+            json={
+                "room_id": str(lisbon_room.id),
+                "start_time": datetime(2026, 10, 24, 23, tzinfo=UTC).isoformat(),  # 00:00 local
+                "end_time": datetime(2026, 10, 25, 2, tzinfo=UTC).isoformat(),  # 02:00 local
+                "payment_method": "hourly",
+            },
+            headers=auth_headers,
+        )
+        assert block.status_code == 201, block.text
+        assert Decimal(block.json()["booking"]["duration_hours"]) == Decimal(3)
+
+
 class TestTheTimezoneField:
     async def test_it_is_public_defaults_to_lisbon_and_is_validated_on_the_admin_endpoints(
         self, client, admin_headers, test_org, lisbon_space, db_session
