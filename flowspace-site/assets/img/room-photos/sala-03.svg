@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" width="1600" height="1200" role="img" aria-label="Gabinete com duas poltronas">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#DDEFFA"/><stop offset="1" stop-color="#F3F8FB"/>
+    </linearGradient>
+    <linearGradient id="floorg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#D6C3A9"/><stop offset="1" stop-color="#D6C3A9" stop-opacity="0.8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="1200" fill="#E9EEF3"/>
+  <!-- skirting + floor -->
+  <rect x="0" y="744.0" width="1600" height="456.0" fill="url(#floorg)"/>
+  <rect x="0" y="726.0" width="1600" height="18" fill="#FFFFFF" opacity="0.7"/>
+  <!-- floor boards -->
+  <rect x="0" y="790.0" width="1600" height="2" fill="#000" opacity="0.05"/><rect x="0" y="836.0" width="1600" height="2" fill="#000" opacity="0.05"/><rect x="0" y="882.0" width="1600" height="2" fill="#000" opacity="0.05"/><rect x="0" y="928.0" width="1600" height="2" fill="#000" opacity="0.05"/><rect x="0" y="974.0" width="1600" height="2" fill="#000" opacity="0.05"/><rect x="0" y="1020.0" width="1600" height="2" fill="#000" opacity="0.05"/><rect x="0" y="1066.0" width="1600" height="2" fill="#000" opacity="0.05"/><rect x="0" y="1112.0" width="1600" height="2" fill="#000" opacity="0.05"/><rect x="0" y="1158.0" width="1600" height="2" fill="#000" opacity="0.05"/>
+
+    <g transform="translate(1000,140)">
+      <rect x="0" y="0" width="460" height="400" rx="10" fill="#CFE3F2"/>
+      <rect x="0" y="0" width="460" height="400" rx="10" fill="url(#sky)"/>
+      <rect x="224.0" y="0" width="12" height="400" fill="#FFFFFF" opacity="0.9"/>
+      <rect x="0" y="194.0" width="460" height="12" fill="#FFFFFF" opacity="0.9"/>
+      <rect x="-14" y="-14" width="488" height="428" rx="14" fill="none" stroke="#FFFFFF" stroke-width="14"/>
+      <!-- curtain -->
+      <path d="M-60,-40 q40,200.0 0,480 h-70 v-520 z" fill="#DCE8E1" opacity="0.95"/>
+      <path d="M520,-40 q-40,200.0 0,480 h70 v-520 z" fill="#DCE8E1" opacity="0.95"/>
+    </g>
+    <g transform="translate(260,230)">
+      <rect x="0" y="0" width="260" height="190" rx="6" fill="#FFFFFF"/>
+      <rect x="18" y="18" width="224" height="154" fill="#8A6F5B" opacity="0.25"/>
+      <circle cx="156.0" cy="85.5" r="34.199999999999996" fill="#8A6F5B" opacity="0.5"/>
+    </g>
+    <g transform="translate(560,260)">
+      <rect x="0" y="0" width="180" height="140" rx="6" fill="#FFFFFF"/>
+      <rect x="18" y="18" width="144" height="104" fill="#8A6F5B" opacity="0.25"/>
+      <circle cx="108.0" cy="63.0" r="25.2" fill="#8A6F5B" opacity="0.5"/>
+    </g><ellipse cx="720.0" cy="983.9999999999999" rx="480" ry="100" fill="#E5EBF1"/>
+    <g transform="translate(240,960.0) scale(1,1)">
+      <ellipse cx="115" cy="42" rx="150" ry="18" fill="#000" opacity="0.08"/>
+      <!-- back -->
+      <rect x="0" y="-260" width="230" height="200" rx="40" fill="#8A6F5B"/>
+      <!-- seat -->
+      <rect x="-10" y="-90" width="250" height="90" rx="24" fill="#8A6F5B"/>
+      <!-- arm -->
+      <rect x="-40" y="-150" width="60" height="150" rx="24" fill="#8A6F5B" opacity="0.85"/>
+      <rect x="210" y="-150" width="60" height="150" rx="24" fill="#8A6F5B" opacity="0.85"/>
+      <!-- cushion highlight -->
+      <rect x="20" y="-240" width="190" height="150" rx="30" fill="#FFFFFF" opacity="0.10"/>
+      <!-- legs -->
+      <rect x="10" y="0" width="16" height="40" fill="#6B5B4B"/>
+      <rect x="204" y="0" width="16" height="40" fill="#6B5B4B"/>
+    </g>
+    <g transform="translate(680,960.0) scale(1,1)">
+      <ellipse cx="115" cy="42" rx="150" ry="18" fill="#000" opacity="0.08"/>
+      <!-- back -->
+      <rect x="0" y="-260" width="230" height="200" rx="40" fill="#8A6F5B"/>
+      <!-- seat -->
+      <rect x="-10" y="-90" width="250" height="90" rx="24" fill="#8A6F5B"/>
+      <!-- arm -->
+      <rect x="-40" y="-150" width="60" height="150" rx="24" fill="#8A6F5B" opacity="0.85"/>
+      <rect x="210" y="-150" width="60" height="150" rx="24" fill="#8A6F5B" opacity="0.85"/>
+      <!-- cushion highlight -->
+      <rect x="20" y="-240" width="190" height="150" rx="30" fill="#FFFFFF" opacity="0.10"/>
+      <!-- legs -->
+      <rect x="10" y="0" width="16" height="40" fill="#6B5B4B"/>
+      <rect x="204" y="0" width="16" height="40" fill="#6B5B4B"/>
+    </g>
+    <g transform="translate(1180,888.0)">
+      <ellipse cx="0" cy="0" rx="120" ry="34" fill="#B99A78"/>
+      <ellipse cx="0" cy="-8" rx="120" ry="34" fill="#B99A78" opacity="0.8"/>
+      <rect x="-8" y="0" width="16" height="70" fill="#8A6F5B"/>
+      <ellipse cx="0" cy="72" rx="46" ry="12" fill="#8A6F5B"/>
+      <!-- tissues + cup -->
+      <rect x="-60" y="-50" width="60" height="38" rx="6" fill="#FFFFFF"/>
+      <rect x="30" y="-40" width="26" height="30" rx="6" fill="#3D7A5E"/>
+    </g>
+    <g transform="translate(1480,792.0)">
+      <path d="M-45,0 h90 l-12,110 h-66 z" fill="#B99A78"/>
+      <g fill="#5C9B78">
+        <ellipse cx="0" cy="-90" rx="26" ry="95" transform="rotate(0)"/>
+        <ellipse cx="0" cy="-80" rx="24" ry="90" transform="rotate(-35)"/>
+        <ellipse cx="0" cy="-80" rx="24" ry="90" transform="rotate(35)"/>
+        <ellipse cx="0" cy="-60" rx="22" ry="80" transform="rotate(-70)"/>
+        <ellipse cx="0" cy="-60" rx="22" ry="80" transform="rotate(70)"/>
+      </g>
+    </g>
+    <g transform="translate(120,792.0)">
+      <rect x="-40" y="0" width="80" height="14" rx="7" fill="#4B4B5A"/>
+      <rect x="-5" y="-520" width="10" height="520" fill="#4B4B5A"/>
+      <path d="M-90,-520 h180 l-30,-140 h-120 z" fill="#F5E9D6"/>
+      <ellipse cx="0" cy="-520" rx="90" ry="10" fill="#FFF6E5" opacity="0.9"/>
+    </g></svg>

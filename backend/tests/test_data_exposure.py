@@ -42,7 +42,8 @@ PACKAGE_FIELDS = {
 USER_FIELDS = {"id", "email", "name", "avatar_url", "created_at"}
 # The operator's members list (A05): the membership, never the account.
 ORG_USER_FIELDS = {"id", "email", "name", "role", "joined_at", "bookings_count", "created_at"}
-SLOT_FIELDS = {"start", "end", "available"}
+# `reason` (H01) is one of four words about the slot, never about a person.
+SLOT_FIELDS = {"start", "end", "available", "reason"}
 
 
 def _monday(hour: int) -> datetime:
@@ -145,6 +146,13 @@ class TestPublicResponses:
         assert {frozenset(slot) for slot in slots} == {frozenset(SLOT_FIELDS)}
         taken = [slot for slot in slots if not slot["available"]]
         assert [datetime.fromisoformat(slot["start"]) for slot in taken] == [booking.start_time]
+        assert {slot["reason"] for slot in slots} <= {
+            None,
+            "past",
+            "booked",
+            "blocked",
+            "beyond_window",
+        }
         for private in (
             str(booking.id),
             str(test_user.id),

@@ -120,9 +120,10 @@ class Booking(Base):
         ForeignKey("recurrence_rules.id", ondelete="SET NULL"),
         nullable=True,
     )
-    # The prepaid purchase this booking's hours were debited from, so cancelling
-    # can credit them back to that exact purchase rather than guessing which of
-    # the user's packages to credit. NULL for every `hourly` booking.
+    # DEPRECATED (H02): the one purchase a booking's hours came from, before
+    # the hour bank let a booking draw on several. No longer written; the
+    # `booking_package_debits` rows are the ledger now. Kept nullable for one
+    # release so a downgrade can still find something to credit.
     package_purchase_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(
@@ -158,4 +159,9 @@ class Booking(Base):
     )
     package_purchase: Mapped["UserPackagePurchase | None"] = relationship(  # noqa: F821
         "UserPackagePurchase", lazy="noload"
+    )
+    # H02: where this booking's pack hours are debited from, one row per
+    # purchase, present only while the booking holds them (`package_hours`).
+    package_debits: Mapped[list["BookingPackageDebit"]] = relationship(  # noqa: F821
+        "BookingPackageDebit", lazy="noload"
     )

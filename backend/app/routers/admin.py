@@ -17,6 +17,7 @@ from app.booking_validity import (
     holds_slot,
     is_lost_slot_race,
     is_within_open_hours,
+    violated_constraint,
 )
 from app.config import settings
 from app.database import get_db
@@ -30,7 +31,7 @@ from app.locks import (
 )
 from app.models.booking import PAID_AT_CHECKOUT, Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember
-from app.models.package import Package
+from app.models.package import BookingPackageDebit, Package, UserPackagePurchase
 from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
 from app.payments import (
@@ -58,6 +59,14 @@ from app.schemas.space import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# The operator's split view (H02): which purchases a booking's pack hours
+# came from. Loaded wherever an operator reads a booking, never for a customer.
+_WITH_DEBITS = (
+    selectinload(Booking.package_debits)
+    .selectinload(BookingPackageDebit.purchase)
+    .selectinload(UserPackagePurchase.package)
+)
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -396,7 +405,7 @@ async def admin_list_bookings(
 
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room), selectinload(Booking.user))
+        .options(selectinload(Booking.room), selectinload(Booking.user), _WITH_DEBITS)
         .where(and_(*filters))
         .order_by(Booking.start_time.desc(), Booking.id.desc())
         .offset((page - 1) * page_size)
@@ -416,7 +425,11 @@ async def _locked_booking(db: AsyncSession, booking_id: uuid.UUID, org_id: uuid.
     """The booking, inside the operator's org, locked for the transaction."""
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
         .where(Booking.id == booking_id, Booking.org_id == org_id)
         .with_for_update(of=Booking)
         .execution_options(populate_existing=True)
@@ -428,17 +441,35 @@ async def _locked_booking(db: AsyncSession, booking_id: uuid.UUID, org_id: uuid.
 
 
 async def _validate_slot(
-    db: AsyncSession, room_id: uuid.UUID, start: datetime, end: datetime, now: datetime
+    db: AsyncSession,
+    room_id: uuid.UUID,
+    start: datetime,
+    end: datetime,
+    now: datetime,
+    *,
+    original_start: datetime | None = None,
 ) -> None:
     """The same rules a customer booking passes — minus the 24h rule, which is
-    a customer's, not an operator's (A01)."""
+    a customer's, not an operator's (A01), and minus the booking window (H01).
+
+    The past rule is an operator's (H03 b): a booking that has already
+    started may keep its start (or be said to have started later) while the
+    end or the room changes; only moving the START to before both now and
+    where it was is refused. The end must still lie ahead. Without an
+    `original_start` (a new booking) the start itself must lie ahead.
+    """
     if end <= start:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="end_time must be after start_time"
         )
-    if start < now:
+    floor = now if original_start is None else min(now, original_start)
+    if start < floor:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="start_time cannot be in the past"
+        )
+    if end <= now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="end_time cannot be in the past"
         )
     if end - start > MAX_BOOKING_DURATION:
         max_hours = int(MAX_BOOKING_DURATION.total_seconds() // 3600)
@@ -521,6 +552,10 @@ async def admin_update_booking(
     A move on a paid booking changes NO money: the old and new hour counts are
     returned as `hours` and the operator settles the difference with the
     customer outside the platform. Known limitation, recorded in TODO A01.
+    The PACK share does follow the new length (H03): shrinking credits the
+    surplus back to the purchases it came from, growing draws the extra from
+    the customer's hour bank, and `hours.uncovered` says what the bank could
+    not give.
     """
     booking = await _locked_booking(db, booking_id, org_id)
     now = clock.utcnow()
@@ -538,9 +573,17 @@ async def admin_update_booking(
             room = await _room_in_org(db, body.room_id, org_id)
         start = body.start_time or booking.start_time
         end = body.end_time or booking.end_time
-        await _validate_slot(db, room.id, start, end, now)
+        await _validate_slot(db, room.id, start, end, now, original_start=booking.start_time)
         if booking.status in (BookingStatus.confirmed, BookingStatus.pending):
             await expire_stale_holds(db, room.id, start, end, now)
+            # That bulk update may have flipped THIS row: a lapsed hold that
+            # still read `pending` and overlaps its own new slot. Its pack
+            # share is back on the purchases now; the settle below and the
+            # status logic must see what the row really is, or the hours
+            # would be credited twice (shrink) or drawn for a row that holds
+            # nothing (grow), and the row written back as `pending`.
+            await db.refresh(booking, attribute_names=["status", "hold_expires_at"])
+            previous_status = booking.status
             if await has_conflicting_booking(
                 db, room.id, start, end, exclude_booking_id=booking.id, now=now
             ):
@@ -550,14 +593,32 @@ async def admin_update_booking(
         booking.room_id = room.id
         booking.start_time = start
         booking.end_time = end
-        booking.duration_hours = _duration(start, end)
-        # Deliberately NOT recomputed: no charge and no credit is ever created
-        # here (O02 owns money movement). `hours` tells the operator what changed.
+        new_duration = _duration(start, end)
+        # The pack share follows the new length through the hour bank (H03);
+        # `total_amount` deliberately does not: no charge and no credit is ever
+        # created here (O02 owns money movement). `hours` tells the operator
+        # what changed and what the bank could not cover.
+        try:
+            uncovered = await package_hours.settle_moved_booking(
+                db, booking, new_duration=new_duration, now=now
+            )
+        except DBAPIError as exc:
+            # Losing a lock race with a concurrent walk is a retry, not a 500.
+            if not is_lost_slot_race(exc):
+                raise
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The customer's packs are being used right now; try again",
+            ) from None
+        booking.duration_hours = new_duration
         moved = True
         response["hours"] = {
             "before": f"{hours_before:.2f}",
             "after": f"{booking.duration_hours:.2f}",
         }
+        if uncovered > 0:
+            response["hours"]["uncovered"] = f"{uncovered:.2f}"
 
     new_status = body.status if body.status is not None else previous_status
     slot_holding = (BookingStatus.confirmed, BookingStatus.pending)
@@ -622,7 +683,15 @@ async def admin_update_booking(
         await db.flush()
     except DBAPIError as exc:
         # The EXCLUDE constraint is the last line against a concurrent write
-        # into the slot this move or reinstatement is taking.
+        # into the slot this move or reinstatement is taking. Any other
+        # constraint is a refused write, reported by name (H03) — never a 500.
+        constraint = violated_constraint(exc)
+        if constraint is not None:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"The change violates a constraint ({constraint})",
+            ) from None
         if not is_lost_slot_race(exc):
             raise
         await db.rollback()
@@ -634,7 +703,11 @@ async def admin_update_booking(
     # against the room the booking is in NOW.
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
         .where(Booking.id == booking.id)
         .execution_options(populate_existing=True)
     )
@@ -737,7 +810,11 @@ async def admin_create_booking(
         ) from None
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
         .where(Booking.id == booking.id)
         .execution_options(populate_existing=True)
     )
@@ -836,7 +913,11 @@ async def admin_mark_booking_paid(
         ) from None
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room).selectinload(Room.space), selectinload(Booking.user))
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
         .where(Booking.id == booking.id)
         .execution_options(populate_existing=True)
     )

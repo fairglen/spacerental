@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, within, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BookingSheet } from '@/components/admin/calendar/BookingSheet'
@@ -55,6 +55,22 @@ describe('BookingSheet — what it shows', () => {
     expect(within(sheet).getByDisplayValue('cliente habitual')).toBeInTheDocument()
   })
 
+  it('lists which packs a booking drew on, behind a disclosure (H02)', () => {
+    renderSheet({
+      ...booking, payment_method: 'package', duration_hours: 5, package_hours_used: 5, total_amount: 55,
+      package_debits: [
+        { purchase_id: 'p-soon', hours: 2, package_name: 'Pack 10h', expires_at: '2026-10-03T00:00:00Z' },
+        { purchase_id: 'p-later', hours: 3, package_name: 'Pack 20h', expires_at: '2026-11-21T00:00:00Z' },
+      ],
+    })
+    expect(screen.getByText(/Pack · 5h do pack/)).toBeVisible()
+    const summary = screen.getByText('Ver os 2 packs')
+    expect(summary.closest('details')).not.toHaveAttribute('open')
+    fireEvent.click(summary)
+    expect(screen.getByText('2h · Pack 10h · expira 3 out')).toBeVisible()
+    expect(screen.getByText('3h · Pack 20h · expira 21 nov')).toBeVisible()
+  })
+
   it('shows the pack share of a mixed booking and "Pago no local" for a manual one', () => {
     const { unmount } = render(<QueryClientProvider client={new QueryClient()}><BookingSheet booking={{ ...booking, payment_method: 'mixed', package_hours_used: 1, total_amount: 11 }} rooms={rooms} onClose={vi.fn()} onChanged={vi.fn()} /></QueryClientProvider>)
     expect(screen.getByText(/1h do pack \+ 11,00\s€/)).toBeVisible()
@@ -100,7 +116,7 @@ describe('BookingSheet — actions', () => {
 
   it('Alterar horário sends the new time and room and reports the hours', async () => {
     vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({
-      booking: { ...booking, room_id: 'r-b', end_time: '2030-01-07T13:00:00Z', duration_hours: 3 }, hours: { before: 2, after: 3 },
+      booking: { ...booking, room_id: 'r-b', end_time: '2030-01-07T13:00:00Z', duration_hours: 3 }, hours: { before: 2, after: 3, uncovered: 0 },
     })
     const user = userEvent.setup()
     renderSheet()
@@ -114,6 +130,63 @@ describe('BookingSheet — actions', () => {
     expect(body.end_time).toBe('2030-01-07T13:00:00.000Z')
     expect(await screen.findByRole('status')).toHaveTextContent(/2h → 3h/)
     expect(screen.getByRole('status')).toHaveTextContent(/fora da plataforma/)
+  })
+
+  it('a shortened pack booking says the hours went back to the bank, a longer one what the bank could not give (H03)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValueOnce({
+      booking: { ...booking, payment_method: 'package', package_hours_used: 1, duration_hours: 1 }, hours: { before: 2, after: 1, uncovered: 0 },
+    })
+    renderSheet({ ...booking, payment_method: 'package', package_hours_used: 2 })
+    await user.click(screen.getByRole('button', { name: 'Alterar horário' }))
+    fireEvent.change(screen.getByLabelText(/Fim/), { target: { value: '11:00' } })
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent(/2h → 1h/)
+    expect(status).toHaveTextContent(/1h voltaram ao banco de horas/)
+    expect(status).toHaveTextContent(/Nenhum dinheiro foi movido/)
+    expect(status).not.toHaveTextContent(/fora da plataforma/)
+    cleanup()
+
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValueOnce({
+      booking: { ...booking, payment_method: 'package', package_hours_used: 3, duration_hours: 4 }, hours: { before: 2, after: 4, uncovered: 1 },
+    })
+    renderSheet({ ...booking, payment_method: 'package', package_hours_used: 2 })
+    await user.click(screen.getByRole('button', { name: 'Alterar horário' }))
+    fireEvent.change(screen.getByLabelText(/Fim/), { target: { value: '14:00' } })
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    const grown = await screen.findByRole('status')
+    expect(grown).toHaveTextContent(/não cobre 1h/)
+    expect(grown).toHaveTextContent(/fora da plataforma/)
+  })
+
+  it('a mixed booking shortened inside its money part reports no pack movement (review on #59)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValueOnce({
+      booking: { ...booking, payment_method: 'mixed', package_hours_used: 2, duration_hours: 3, total_amount: 22 }, hours: { before: 4, after: 3, uncovered: 0 },
+    })
+    renderSheet({ ...booking, payment_method: 'mixed', package_hours_used: 2, duration_hours: 4, total_amount: 22 })
+    await user.click(screen.getByRole('button', { name: 'Alterar horário' }))
+    fireEvent.change(screen.getByLabelText(/Fim/), { target: { value: '13:00' } })
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent(/4h → 3h/)
+    expect(status).toHaveTextContent(/horas de pack não mudaram/)
+    expect(status).not.toHaveTextContent(/voltaram/)
+  })
+
+  it('a refused move keeps the form and its values so the operator can adjust (H03)', async () => {
+    vi.mocked(adminApi.updateBookingDetails).mockRejectedValue({ response: { status: 400, data: { detail: 'end_time cannot be in the past' } } })
+    const user = userEvent.setup()
+    renderSheet()
+    await user.click(screen.getByRole('button', { name: 'Alterar horário' }))
+    await user.selectOptions(screen.getByLabelText(/^Sala/), 'r-b')
+    fireEvent.change(screen.getByLabelText(/Fim/), { target: { value: '09:00' } })
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('O fim tem de ser depois de agora.')
+    expect(screen.getByLabelText(/^Sala/)).toHaveValue('r-b')
+    expect(screen.getByLabelText(/Fim/)).toHaveValue('09:00')
+    expect(screen.getByRole('button', { name: 'Guardar horário' })).toBeEnabled()
   })
 
   it('shows the API error inline when a move conflicts', async () => {

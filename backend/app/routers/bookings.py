@@ -13,6 +13,7 @@ from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
+    booking_window_end,
     expire_stale_holds,
     expire_user_holds,
     has_conflicting_booking,
@@ -83,12 +84,14 @@ async def create_booking(
       transaction and the booking is `confirmed` immediately. There is nothing
       left to pay, so the response carries no `checkout_url`, and the
       confirmation email is sent from here rather than from the webhook.
-    * `mixed` (C13) — "use my pack and pay the rest". The server alone decides
-      the split: a pack that covers the whole block makes it a `package`
-      booking; otherwise the soonest-expiring pack gives what it has, that
-      share is reserved now, and only the remaining hours go to Checkout as a
-      `pending` hold; with no usable hours at all it is a plain `hourly` one.
-      The reserved hours return whenever the hold ends without being paid.
+    * `mixed` (C13, pooled by H02) — "use my pack and pay the rest". The
+      server alone decides the split: the customer's hour bank (every active,
+      unexpired purchase, soonest-expiring first) gives `min(duration, bank)`;
+      if that is the whole block it is a `package` booking, if it is nothing
+      it is a plain `hourly` one, otherwise the pack share is reserved now
+      and only the remaining hours go to Checkout as a `pending` hold. The
+      reserved hours return, each to its own purchase, whenever the hold ends
+      without being paid.
     """
     # Fetch room. Space.is_active is checked alongside Room.is_active — a room
     # under a deactivated space is just as unbookable, and the public listing
@@ -136,6 +139,14 @@ async def create_booking(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="start_time cannot be in the past",
         )
+    # A customer's horizon (H01), checked before the opening hours so the
+    # answer names the rule that actually applies: a far-off Sunday is "too
+    # far", not "closed". The operator's paths (admin.py) have no horizon.
+    if body.start_time > booking_window_end(now):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_time is beyond the booking window",
+        )
 
     # Defensive technical bound, not a product decision about how long a
     # booking may be (that's a future call, not this one) — it exists purely
@@ -181,45 +192,38 @@ async def create_booking(
     # The schema admits customer methods only (`manual` is an operator's, A01)
     # and hands over a plain string; the identity checks below need the enum.
     method = PaymentMethod(body.payment_method)
-    purchase_id: uuid.UUID | None = None
+    draws: list[package_hours.Draw] = []
     package_hours_used = Decimal(0)
     if method is not PaymentMethod.hourly:
         # A lapsed mixed hold of this customer still has hours debited until
         # something reconciles it; do that before judging what they can spend.
         await expire_user_holds(db, user.id, now)
-        purchase = await package_hours.redeem_hours(
-            db,
-            user_id=user.id,
-            org_id=room.org_id,
-            hours=duration_hours,
-            now=now,
-        )
-        if purchase is not None:
-            # One pack pays for everything, so nothing is left to charge — even
-            # if a sooner-expiring pack holds a few hours (C13 decision 6).
-            method = PaymentMethod.package
-            purchase_id, package_hours_used = purchase.id, duration_hours
-        elif method is PaymentMethod.package:
-            # Nothing was deducted and no booking exists yet — the request is
-            # refused before anything is written.
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(f"No active package with {duration_hours} hours remaining"),
-            )
-        else:
-            partial = await package_hours.redeem_up_to(
+        if method is PaymentMethod.package:
+            # All or nothing: the bank covers the block, or nothing is
+            # deducted, no booking exists yet, and the request is refused
+            # before anything is written.
+            whole = await package_hours.redeem_hours(
                 db, user_id=user.id, org_id=room.org_id, hours=duration_hours, now=now
             )
-            if partial is None:
-                method = PaymentMethod.hourly
-            else:
-                purchase_id, package_hours_used = partial[0].id, partial[1]
-                # A balance that grew between the two looks can cover it all.
-                if package_hours_used == duration_hours:
-                    method = PaymentMethod.package
-                else:
-                    # `total_amount` is the money charged: the uncovered hours.
-                    total_amount = (duration_hours - package_hours_used) * room.hourly_rate
+            if whole is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(f"No active package with {duration_hours} hours remaining"),
+                )
+            draws = whole
+        else:
+            draws = await package_hours.redeem_up_to(
+                db, user_id=user.id, org_id=room.org_id, hours=duration_hours, now=now
+            )
+        package_hours_used = package_hours.total_drawn(draws)
+        if package_hours_used == duration_hours:
+            method = PaymentMethod.package
+        elif package_hours_used == 0:
+            method = PaymentMethod.hourly
+        else:
+            method = PaymentMethod.mixed
+            # `total_amount` is the money charged: the uncovered hours.
+            total_amount = (duration_hours - package_hours_used) * room.hourly_rate
 
     pays_with_package = method is PaymentMethod.package
 
@@ -235,7 +239,6 @@ async def create_booking(
         total_amount=total_amount,
         status=BookingStatus.confirmed if pays_with_package else BookingStatus.pending,
         payment_method=method,
-        package_purchase_id=purchase_id,
         package_hours_used=package_hours_used,
         notes=body.notes,
         hold_expires_at=None if pays_with_package else now + _hold_lifetime(),
@@ -254,6 +257,8 @@ async def create_booking(
             status_code=status.HTTP_409_CONFLICT,
             detail="This time slot is already booked",
         ) from None
+    # The hours were taken above; the rows saying from where need the id.
+    await package_hours.record_debits(db, booking, draws)
 
     checkout_url: str | None = None
     if not pays_with_package:

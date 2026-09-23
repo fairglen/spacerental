@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.models.package import PurchaseStatus
 from app.schemas.bounds import Money, Name, PackageHours, RejectExplicitNull, ValidityDays
@@ -74,3 +74,45 @@ class AdminPurchaseOut(UserPackagePurchaseOut):
     """The operator's view: plus the private note (A05)."""
 
     admin_note: str | None = None
+
+
+class ExpiringNextOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    hours: Decimal
+    expires_at: datetime
+
+
+class PackageBalanceOut(BaseModel):
+    """The hour bank as one number (H02): every active, unexpired hour the
+    customer holds, and the slice that lapses first."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    hours_available: Decimal
+    hours_expiring_next: ExpiringNextOut | None = None
+
+
+class BookingPackageDebitOut(BaseModel):
+    """One purchase's share of a booking (H02), for the operator's split view."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    purchase_id: uuid.UUID
+    hours: Decimal
+    package_name: str | None = None
+    expires_at: datetime | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten(cls, value):
+        # From the ORM row: the purchase and its package, when loaded.
+        purchase = getattr(value, "purchase", None)
+        if purchase is None:
+            return value
+        return {
+            "purchase_id": value.purchase_id,
+            "hours": value.hours,
+            "package_name": getattr(getattr(purchase, "package", None), "name", None),
+            "expires_at": purchase.expires_at,
+        }

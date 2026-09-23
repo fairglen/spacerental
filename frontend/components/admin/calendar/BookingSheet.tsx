@@ -8,7 +8,7 @@ import { X } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { adminBookingErrorMessage } from '@/lib/adminBookingErrors'
-import { formatBookingCost, formatHours, STATUS_COLORS, STATUS_LABELS, isUnpaidHold } from '@/lib/utils'
+import { formatBookingCost, formatHours, packSplitLine, STATUS_COLORS, STATUS_LABELS, isUnpaidHold } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -26,6 +26,27 @@ interface BookingSheetProps {
 
 const PAYMENT_LABELS: Record<Booking['payment_method'], string> = {
   hourly: 'À hora', package: 'Pack', mixed: 'Pack + pagamento', manual: 'Pago no local',
+}
+
+/**
+ * What a move did to the hours (A01, H03): money never moves; the pack share
+ * follows the new length through the hour bank, and `uncovered` is what the
+ * bank could not give for a longer booking.
+ */
+function moveOutcome(before: Booking, after: Booking, hours?: { before: number; after: number; uncovered?: number }): string {
+  if (!hours || hours.before === hours.after) return 'Horário alterado. O cliente recebe um email.'
+  const change = `Horário alterado. Duração ${formatHours(hours.before)} → ${formatHours(hours.after)}.`
+  const usesPack = (before.package_hours_used ?? 0) > 0 || before.payment_method === 'package' || before.payment_method === 'mixed'
+  if (!usesPack) return `${change} Nada foi cobrado nem devolvido; acerte a diferença com o cliente fora da plataforma.`
+  if (hours.uncovered && hours.uncovered > 0) {
+    return `${change} O banco de horas do cliente não cobre ${formatHours(hours.uncovered)}; acerte essas horas com o cliente fora da plataforma. Nenhum dinheiro foi movido.`
+  }
+  // What the PACK share did, not the duration: shortening a mixed booking
+  // inside its money part moves no hours at all.
+  const delta = (after.package_hours_used ?? 0) - (before.package_hours_used ?? 0)
+  if (delta < 0) return `${change} ${formatHours(-delta)} voltaram ao banco de horas do cliente. Nenhum dinheiro foi movido.`
+  if (delta > 0) return `${change} ${formatHours(delta)} saíram do banco de horas do cliente. Nenhum dinheiro foi movido.`
+  return `${change} As horas de pack não mudaram; nada foi cobrado nem devolvido.`
 }
 
 const toLocalDate = (iso: string) => format(parseISO(iso), 'yyyy-MM-dd')
@@ -84,12 +105,7 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
       if (move.room_id !== booking.room_id) body.room_id = move.room_id
       return adminApi.updateBookingDetails(booking.id, body, api)
     },
-    onSuccess: ({ booking: b, hours }) => done(
-      b,
-      hours && hours.before !== hours.after
-        ? `Horário alterado. Duração ${formatHours(hours.before)} → ${formatHours(hours.after)}: nada foi cobrado nem devolvido; acerta a diferença com o cliente fora da plataforma.`
-        : 'Horário alterado. O cliente recebe um email.',
-    ),
+    onSuccess: ({ booking: b, hours }) => done(b, moveOutcome(booking, b, hours)),
     onError: fail,
   })
   const saveNote = useMutation({
@@ -136,6 +152,17 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
           <dd className="text-foreground">
             {/* "Pago no local" already says the method; do not say it twice. */}
             {booking.payment_method === 'manual' ? formatBookingCost(booking) : `${PAYMENT_LABELS[booking.payment_method]} · ${formatBookingCost(booking)}`}
+            {/* H02: which packs the hours came from, on demand. */}
+            {(booking.package_debits?.length ?? 0) > 0 && (
+              <details className="mt-1 text-xs text-muted-foreground">
+                <summary className="cursor-pointer">
+                  {booking.package_debits!.length === 1 ? 'Ver o pack' : `Ver os ${booking.package_debits!.length} packs`}
+                </summary>
+                <ul className="mt-1 list-disc pl-4">
+                  {booking.package_debits!.map((d) => <li key={d.purchase_id}>{packSplitLine(d)}</li>)}
+                </ul>
+              </details>
+            )}
           </dd>
           <dt className="text-muted-foreground">Código</dt>
           <dd className="font-mono text-foreground">{booking.access_code ?? '—'}</dd>
@@ -210,7 +237,7 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
               <div><Label htmlFor="move-start">Início</Label><Input id="move-start" type="time" step={3600} value={move.start} onChange={(e) => setMove({ ...move, start: e.target.value })} className="mt-1" /></div>
               <div><Label htmlFor="move-end">Fim</Label><Input id="move-end" type="time" step={3600} value={move.end} onChange={(e) => setMove({ ...move, end: e.target.value })} className="mt-1" /></div>
             </div>
-            <p className="text-xs text-muted-foreground">O cliente recebe um email com o novo horário. Uma duração diferente não cobra nem devolve nada aqui.</p>
+            <p className="text-xs text-muted-foreground">O cliente recebe um email com o novo horário. Uma duração diferente não cobra nem devolve dinheiro aqui; as horas de pack acertam-se pelo banco de horas.</p>
             <div className="flex gap-2">
               <Button size="sm" type="submit" disabled={busy}>Guardar horário</Button>
               <Button size="sm" type="button" variant="outline" onClick={() => setMode('view')}>Voltar</Button>

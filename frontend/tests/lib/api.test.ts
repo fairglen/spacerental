@@ -328,6 +328,21 @@ describe('decimal field normalization', () => {
     expect(typeof result[0].hours_remaining).toBe('number')
   })
 
+  it('packagesApi.myPackages extracts the purchases and the bank, both as numbers (H02)', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({
+        data: {
+          purchases: [{ id: 'p1', hours_total: '10.00', hours_used: '2.00', hours_remaining: '8.00', amount_paid: '100.00', package: { id: 'k', price: '100.00' } }],
+          balance: { hours_available: '8.00', hours_expiring_next: { hours: '8.00', expires_at: '2027-01-01T00:00:00Z' } },
+        },
+      }),
+    } as any
+    const mine = await packagesApi.myPackages(mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/packages/me')
+    expect(mine.purchases[0]).toMatchObject({ hours_remaining: 8, package: { price: 100 } })
+    expect(mine.balance).toEqual({ hours_available: 8, hours_expiring_next: { hours: 8, expires_at: '2027-01-01T00:00:00Z' } })
+  })
+
   it('packagesApi.listMine also normalizes nested package.price', async () => {
     const mockApi = {
       get: vi.fn().mockResolvedValue({
@@ -583,7 +598,14 @@ describe('adminApi booking management and blocks (A01, A02)', () => {
     expect(mockApi.put).toHaveBeenCalledWith('/admin/bookings/b1', body)
     expect(result.booking.total_amount).toBe(22)
     expect(result.booking.admin_note).toBe('n')
-    expect(result.hours).toEqual({ before: 1, after: 2 })
+    // H03: `uncovered` is 0 when the API did not report any.
+    expect(result.hours).toEqual({ before: 1, after: 2, uncovered: 0 })
+  })
+
+  it('updateBookingDetails carries the hours the bank could not cover (H03)', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { booking, hours: { before: '2.00', after: '4.00', uncovered: '1.00' } } }) } as any
+    const result = await adminApi.updateBookingDetails('b1', { end_time: 'e' }, mockApi)
+    expect(result.hours).toEqual({ before: 2, after: 4, uncovered: 1 })
   })
 
   it('updateBooking (status only) still works and normalizes', async () => {
@@ -647,6 +669,7 @@ describe('adminApi users (A05)', () => {
           user: orgUser,
           bookings: [{ id: 'b1', total_amount: '22.00', duration_hours: '2.00', package_hours_used: '0.00', room: { id: 'r', hourly_rate: '11.00' } }],
           purchases: [{ id: 'p1', hours_total: '3.00', hours_used: '0.00', hours_remaining: '3.00', amount_paid: '0.00', admin_note: 'oferta', package: { id: 'k', price: '100.00' } }],
+          balance: { hours_available: '3.00', hours_expiring_next: { hours: '3.00', expires_at: '2027-01-01T00:00:00Z' } },
           support_requests: [],
         },
       }),
@@ -656,6 +679,25 @@ describe('adminApi users (A05)', () => {
     expect(detail.user).toEqual(orgUser)
     expect(detail.bookings[0].total_amount).toBe(22)
     expect(detail.purchases[0]).toMatchObject({ hours_remaining: 3, amount_paid: 0, admin_note: 'oferta', package: { price: 100 } })
+    // H02: the bank rides along, its strings turned into numbers too.
+    expect(detail.balance).toEqual({ hours_available: 3, hours_expiring_next: { hours: 3, expires_at: '2027-01-01T00:00:00Z' } })
+  })
+
+  it('getUser normalises a booking\'s per-pack split (H02)', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({
+        data: {
+          user: orgUser,
+          bookings: [{ id: 'b1', total_amount: '55.00', duration_hours: '5.00', package_hours_used: '5.00', package_debits: [{ purchase_id: 'p1', hours: '2.00', package_name: 'Pack 10h', expires_at: null }] }],
+          purchases: [],
+          balance: { hours_available: '0', hours_expiring_next: null },
+          support_requests: [],
+        },
+      }),
+    } as any
+    const detail = await adminApi.getUser('u1', mockApi)
+    expect(detail.bookings[0].package_debits).toEqual([{ purchase_id: 'p1', hours: 2, package_name: 'Pack 10h', expires_at: null }])
+    expect(detail.balance).toEqual({ hours_available: 0, hours_expiring_next: null })
   })
 
   it('setUserRole puts the role and unwraps the member row', async () => {

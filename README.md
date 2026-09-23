@@ -244,6 +244,21 @@ the customer and in the admin table) until refunds exist (O02).
 BOOKING_HOLD_MINUTES=1 docker compose up -d backend
 ```
 
+A customer may book at most `BOOKING_MAX_ADVANCE_DAYS` days ahead (default
+30, H01): a later `start_time` is refused, `GET /rooms/{id}/availability`
+reports those hours with `reason: "beyond_window"` (and `"past"`, `"booked"`,
+`"blocked"` for the others) and refuses a `date` past the window, and the
+calendar disables › once the next day/week lies past it, with the hint
+"Reservas abertas até <data>". Operators have no horizon: the admin calendar
+and `POST /admin/bookings` / `PUT /admin/bookings/{id}` work at any date.
+Compose hands the same value to the frontend as
+`NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS`; outside Compose set both.
+
+```bash
+# Try a short horizon: › stops after a week and day 8 answers 400.
+BOOKING_MAX_ADVANCE_DAYS=7 docker compose up -d --build backend frontend
+```
+
 ---
 
 ## Testing

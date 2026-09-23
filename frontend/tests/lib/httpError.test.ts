@@ -51,6 +51,8 @@ describe('bookingErrorMessage (B31)', () => {
   })
   it('explains a past start and hours outside opening time', () => {
     expect(bookingErrorMessage(httpError(400, 'start_time cannot be in the past'), 'hourly')).toMatch(/já passou/)
+    // H01: the horizon, with the number of days and the last date.
+    expect(bookingErrorMessage(httpError(400, 'start_time is beyond the booking window'), 'hourly')).toMatch(/30 dias de antecedência.*Escolha uma data até \d+ de \w+/)
     expect(bookingErrorMessage(httpError(400, "Requested time is outside the room's opening hours"), 'hourly')).toMatch(/horário de funcionamento/)
     expect(bookingErrorMessage(httpError(400, 'end_time must be after start_time'), 'hourly')).toMatch(/não é válido/)
   })

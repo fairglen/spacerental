@@ -17,7 +17,7 @@ from app import clock
 from app.auth import create_access_token, hash_password
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import MemberRole, OrganizationMember
-from app.models.package import Package, PurchaseStatus, UserPackagePurchase
+from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
 from app.models.user import User
 from app.payments import CheckoutKind
 from sqlalchemy import select
@@ -168,10 +168,21 @@ class TestTheSplit:
         assert session["amount_cents"] == 1100
         assert session["description"] == "1h Sala A (7h pagas com o pack)"
 
-        # Reserved at creation, before any payment.
+        # Reserved at creation, before any payment — as a debit row against
+        # the purchase it came from (H02); the old single link is not written.
         assert await _balance(db_session, seven_hours) == (Decimal(0), Decimal(7))
         stored = await _db_booking(db_session, booking["id"])
-        assert stored.package_purchase_id == seven_hours.id
+        assert stored.package_purchase_id is None
+        debits = (
+            (
+                await db_session.execute(
+                    select(BookingPackageDebit).where(BookingPackageDebit.booking_id == stored.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(d.purchase_id, d.hours) for d in debits] == [(seven_hours.id, Decimal(7))]
 
     async def test_client_numbers_are_ignored(
         self, client, auth_headers, test_room, test_member, payments, db_session, seven_hours
@@ -225,10 +236,13 @@ class TestTheSplit:
         for purchase in (expired, unpaid):
             assert await _balance(db_session, purchase) == (Decimal(5), Decimal(0))
 
-    async def test_a_whole_block_pack_wins_over_a_sooner_expiring_partial_one(
+    async def test_the_sooner_expiring_pack_is_spent_first_even_when_a_bigger_one_could_pay_alone(
         self, client, auth_headers, test_room, test_member, payments, db_session, test_org,
         test_user, pack,
     ):  # fmt: skip
+        """H02 superseded C13 decision 6 ("a pack that covers the whole block
+        wins"): the bank is one balance and the hours that lapse first go
+        first, so nothing is left to expire on the small pack."""
         soon = await _purchase(
             db_session, org=test_org, user=test_user, package=pack, hours="2", expires_in_days=5
         )
@@ -238,13 +252,15 @@ class TestTheSplit:
         resp = await _book(client, auth_headers, test_room, _monday(), hours=8)
         assert resp.status_code == 201, resp.text
         assert resp.json()["booking"]["payment_method"] == "package"
-        assert await _balance(db_session, soon) == (Decimal(2), Decimal(0))
-        assert await _balance(db_session, big) == (Decimal(2), Decimal(8))
+        assert await _balance(db_session, soon) == (Decimal(0), Decimal(2))
+        assert await _balance(db_session, big) == (Decimal(4), Decimal(6))
 
-    async def test_the_soonest_expiring_pack_pays_the_partial_share(
+    async def test_packs_are_pooled_soonest_expiring_first_before_any_money(
         self, client, auth_headers, test_room, test_member, payments, db_session, test_org,
         test_user, pack,
     ):  # fmt: skip
+        """H02: 3h + 5h cover an 8h block outright. Before the hour bank the
+        soonest pack gave its 3h and the other 5h were charged in money."""
         later = await _purchase(
             db_session, org=test_org, user=test_user, package=pack, hours="5", expires_in_days=60
         )
@@ -254,12 +270,10 @@ class TestTheSplit:
         resp = await _book(client, auth_headers, test_room, _monday(), hours=8)
         assert resp.status_code == 201, resp.text
         booking = resp.json()["booking"]
-        assert booking["payment_method"] == "mixed"
-        # One pack per booking: the 3h that lapse first, not 3h + 5h.
-        assert Decimal(booking["package_hours_used"]) == Decimal(3)
-        assert Decimal(booking["total_amount"]) == 5 * RATE
+        assert booking["payment_method"] == "package"
+        assert Decimal(booking["package_hours_used"]) == Decimal(8)
         assert await _balance(db_session, soon) == (Decimal(0), Decimal(3))
-        assert await _balance(db_session, later) == (Decimal(5), Decimal(0))
+        assert await _balance(db_session, later) == (Decimal(0), Decimal(5))
 
     async def test_another_orgs_pack_is_never_touched(
         self, client, auth_headers, test_room, test_member, payments, db_session, test_user

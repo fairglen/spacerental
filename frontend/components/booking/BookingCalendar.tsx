@@ -1,11 +1,12 @@
 'use client'
 import { useState, useCallback, useRef } from 'react'
-import { Calendar, dateFnsLocalizer, type Event, type SlotInfo } from 'react-big-calendar'
+import { Calendar, dateFnsLocalizer, type Event, type SlotInfo, type ToolbarProps } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay, parseISO, addDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useQueries } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
 import { CALENDAR_VIEWS, useCalendarView, type CalendarView } from '@/lib/hooks/useCalendarView'
+import { bookingWindowEnd, datesWithinWindow, isBeyondWindow, nextPeriodIsBeyondWindow } from '@/lib/bookingWindow'
 import type { Room, AvailabilitySlot } from '@/types'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
@@ -29,6 +30,7 @@ type Resolution =
   | { kind: 'range'; start: Date; end: Date }
   | { kind: 'taken'; from: Date; to: Date }
   | { kind: 'past' }
+  | { kind: 'beyond' }
   | { kind: 'closed' }
   | { kind: 'none' }
 
@@ -73,6 +75,9 @@ function resolveSelection(slots: AvailabilitySlot[], start: Date, end: Date, now
   if (covered.length === 0) return { kind: 'none' }
 
   if (covered.some((s) => isPastSlot(s, now))) return { kind: 'past' }
+  // Past the customer's horizon (H01): like a past hour, it is nobody's
+  // booking, so it gets its own message rather than "já está reservada".
+  if (covered.some(isBeyondWindow)) return { kind: 'beyond' }
 
   const taken = covered.find((s) => !s.available)
   if (taken) return { kind: 'taken', from: parseISO(taken.start), to: parseISO(taken.end) }
@@ -122,13 +127,68 @@ function visibleRange(slots: AvailabilitySlot[]): { min: Date; max: Date } {
   return { min: day(minHour), max: maxHour === 24 ? day(23, 59) : day(maxHour) }
 }
 
+const CALENDAR_MESSAGES = {
+  today: 'Hoje',
+  previous: '‹',
+  next: '›',
+  day: 'Dia',
+  week: 'Semana',
+  noEventsInRange: 'Sem reservas.',
+  showMore: (total: number) => `+${total} mais`,
+}
+
+const VIEW_LABELS: Record<CalendarView, string> = { day: CALENDAR_MESSAGES.day, week: CALENDAR_MESSAGES.week }
+
+/**
+ * react-big-calendar's own toolbar, with one difference: › is disabled once
+ * the next day/week lies entirely past the booking window (H01), so the
+ * customer is not walked into weeks of closed hours. Same class names as the
+ * default, so the existing styling and specs keep addressing it.
+ */
+export function BookingToolbar({ date, view, onNavigate, onView, label }: ToolbarProps) {
+  const nextDisabled = nextPeriodIsBeyondWindow(date, view as CalendarView)
+  return (
+    <div className="rbc-toolbar">
+      <span className="rbc-btn-group">
+        <button type="button" onClick={() => onNavigate('TODAY')}>{CALENDAR_MESSAGES.today}</button>
+        <button type="button" onClick={() => onNavigate('PREV')}>{CALENDAR_MESSAGES.previous}</button>
+        <button
+          type="button"
+          onClick={() => onNavigate('NEXT')}
+          disabled={nextDisabled}
+          title={nextDisabled ? 'Não é possível reservar para além desta data.' : undefined}
+        >
+          {CALENDAR_MESSAGES.next}
+        </button>
+      </span>
+      <span className="rbc-toolbar-label">{label}</span>
+      <span className="rbc-btn-group">
+        {CALENDAR_VIEWS.map((name) => (
+          <button
+            key={name}
+            type="button"
+            className={view === name ? 'rbc-active' : undefined}
+            onClick={() => onView(name)}
+          >
+            {VIEW_LABELS[name]}
+          </button>
+        ))}
+      </span>
+    </div>
+  )
+}
+
+const CALENDAR_COMPONENTS = { toolbar: BookingToolbar }
+
 export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
   const [selectedDate, setSelectedDate] = useState(new Date())
   // Hourly booking on a day or a week: there is no month view (C12).
   const [view, setView] = useCalendarView()
   const [selectionError, setSelectionError] = useState<string | null>(null)
 
-  const datesToFetch = getDatesForView(selectedDate, view)
+  // The last week usually straddles the horizon; the API refuses dates past
+  // it (400), which is not a failed load. Those days simply have no slots.
+  const datesToFetch = datesWithinWindow(getDatesForView(selectedDate, view))
 
   const slotQueries = useQueries({
     queries: datesToFetch.map((dateStr) => ({
@@ -152,8 +212,10 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
   if (allSlots.length > 0) lastRange.current = visibleRange(allSlots)
   const range = lastRange.current
 
+  // Only someone else's hours get an "Ocupado" chip: a gone hour and an hour
+  // past the horizon are simply not on offer.
   const events: Event[] = allSlots
-    .filter((s) => !s.available && !isPastSlot(s, new Date()))
+    .filter((s) => !s.available && !isPastSlot(s, new Date()) && !isBeyondWindow(s))
     .map((s) => ({
       title: 'Ocupado',
       start: parseISO(s.start),
@@ -176,6 +238,12 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       }
       if (resolution.kind === 'past') {
         setSelectionError('Essa hora já passou. Escolha um horário a partir de agora.')
+        return
+      }
+      if (resolution.kind === 'beyond') {
+        setSelectionError(
+          `As reservas estão abertas até ${format(bookingWindowEnd(), "d 'de' MMMM", { locale: pt })}. Escolha um horário até essa data.`,
+        )
         return
       }
       if (resolution.kind === 'closed') {
@@ -216,6 +284,9 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
             : 'Fechado neste dia. Use as setas para ver outro dia.'}
         </p>
       )}
+      <p data-testid="booking-window-hint" className="mb-2 text-xs text-muted-foreground">
+        Reservas abertas até {format(bookingWindowEnd(), "d 'de' MMMM", { locale: pt })}.
+      </p>
       <div className="h-[600px] [&_.rbc-today]:bg-accent [&_.rbc-selected]:bg-primary/20 [&_.rbc-event]:bg-muted-foreground [&_.rbc-toolbar-label]:font-semibold [&_.rbc-toolbar-label]:text-foreground">
         <Calendar
           localizer={localizer}
@@ -238,21 +309,14 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
             dayRangeHeaderFormat: ({ start, end }, culture, loc) =>
               `${loc!.format(start, "d 'de' MMM", culture)} – ${loc!.format(end, "d 'de' MMM", culture)}`,
           }}
-          messages={{
-            today: 'Hoje',
-            previous: '‹',
-            next: '›',
-            day: 'Dia',
-            week: 'Semana',
-            noEventsInRange: 'Sem reservas.',
-            showMore: (total: number) => `+${total} mais`,
-          }}
+          messages={CALENDAR_MESSAGES}
+          components={CALENDAR_COMPONENTS}
           eventPropGetter={() => ({
             style: { backgroundColor: '#6B7280', border: 'none', borderRadius: '4px', opacity: 0.85 },
           })}
           slotPropGetter={(date) => {
             const slot = slotAt(allSlots, date)
-            if (slot && isPastSlot(slot, new Date())) {
+            if (slot && (isPastSlot(slot, new Date()) || isBeyondWindow(slot))) {
               return { style: { backgroundColor: '#fafafa', color: '#9ca3af', cursor: 'not-allowed', opacity: 0.6 } }
             }
             if (slot?.available === false) return { style: { backgroundColor: '#f3f4f6' } }

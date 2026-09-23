@@ -101,3 +101,35 @@ describe('BookingsTable', () => {
     expect(onUpdateStatus).toHaveBeenCalledWith('b1', 'cancelled')
   })
 })
+
+describe('BookingsTable pack split (H02)', () => {
+  const debits = [
+    { purchase_id: 'p-soon', hours: 2, package_name: 'Pack 10h', expires_at: '2026-10-03T00:00:00Z' },
+    { purchase_id: 'p-later', hours: 3, package_name: 'Pack 20h', expires_at: '2026-11-21T00:00:00Z' },
+  ]
+
+  it('shows the hours from pack as a total and the per-pack split on hover', () => {
+    render(<BookingsTable bookings={[makeBooking('b1', { payment_method: 'package', duration_hours: 5, package_hours_used: 5, total_amount: 55, package_debits: debits })]} total={1} page={1} pageSize={20} onPageChange={vi.fn()} />)
+    expect(screen.getByText('5h do pack')).toBeVisible()
+    const split = screen.getByText('de 2 packs')
+    expect(split).toHaveAttribute('title', '2h · Pack 10h · expira 3 out\n3h · Pack 20h · expira 21 nov')
+  })
+
+  it('a mixed booking keeps its money-plus-hours line and names one pack as one', () => {
+    render(<BookingsTable bookings={[makeBooking('b2', { payment_method: 'mixed', duration_hours: 3, package_hours_used: 2, total_amount: 11, package_debits: [debits[0]] })]} total={1} page={1} pageSize={20} onPageChange={vi.fn()} />)
+    expect(screen.getByText(/11,00\s€/)).toBeVisible()
+    expect(screen.getByText('+ 2h do pack')).toBeVisible()
+    expect(screen.getByText('1 pack')).toHaveAttribute('title', '2h · Pack 10h · expira 3 out')
+  })
+
+  it('a lengthened pack booking the bank could not fully cover shows the real share (review on #59)', () => {
+    render(<BookingsTable bookings={[makeBooking('b4', { payment_method: 'package', duration_hours: 12, package_hours_used: 11, total_amount: 132, package_debits: [{ ...debits[1], hours: 11 }] })]} total={1} page={1} pageSize={20} onPageChange={vi.fn()} />)
+    expect(screen.getByText('11h do pack + 1h por acertar')).toBeVisible()
+    expect(screen.queryByText('12h do pack')).toBeNull()
+  })
+
+  it('a booking that holds no pack hours shows no split at all', () => {
+    render(<BookingsTable bookings={[makeBooking('b3', { package_debits: [] })]} total={1} page={1} pageSize={20} onPageChange={vi.fn()} />)
+    expect(screen.queryByText(/pack/)).toBeNull()
+  })
+})

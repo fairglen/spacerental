@@ -25,6 +25,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import clock, package_hours
+from app.config import settings
 from app.models.booking import Booking, BookingStatus
 from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule
@@ -50,8 +51,35 @@ MAX_BOOKING_DURATION = timedelta(hours=24)
 # here, this is only a sanity cap on what one row may claim.
 MAX_BLOCK_DURATION = timedelta(days=31)
 
-# Postgres sqlstate for `deadlock_detected`.
+# Postgres sqlstates: `deadlock_detected`, and the two constraint classes a
+# flush can trip that are NOT a lost race for a slot.
 _DEADLOCK_SQLSTATE = "40P01"
+_CHECK_VIOLATION = "23514"
+_UNIQUE_VIOLATION = "23505"
+
+
+def violated_constraint(exc: DBAPIError) -> str | None:
+    """The name of the CHECK or UNIQUE constraint `exc` reports, else None.
+
+    Such a violation is a bug in what the caller tried to write, never a
+    concurrent customer taking the slot — it must not be reported as one
+    (H03), and never as a 500 either: the caller answers 409 naming it.
+    """
+    if getattr(exc.orig, "sqlstate", None) not in (_CHECK_VIOLATION, _UNIQUE_VIOLATION):
+        return None
+    cause = getattr(exc.orig, "__cause__", None)
+    return getattr(cause, "constraint_name", None) or "unknown"
+
+
+def booking_window_end(now: datetime) -> datetime:
+    """The last instant a CUSTOMER may start a booking at (H01).
+
+    Inclusive: a start exactly `BOOKING_MAX_ADVANCE_DAYS` days out is allowed,
+    one second later is not. Read at call time, not import time, so a test
+    (or a deployment) can change the setting without reloading the module.
+    Operators are not bound by it — their paths never call this.
+    """
+    return now + timedelta(days=settings.BOOKING_MAX_ADVANCE_DAYS)
 
 
 def is_lost_slot_race(exc: DBAPIError) -> bool:
@@ -67,6 +95,8 @@ def is_lost_slot_race(exc: DBAPIError) -> bool:
     unhandled 500 for what is, semantically, still just a lost race for the
     slot — the exact failure mode this module exists to close off.
     """
+    if violated_constraint(exc) is not None:
+        return False
     return isinstance(exc, IntegrityError) or getattr(exc.orig, "sqlstate", None) == (
         _DEADLOCK_SQLSTATE
     )
@@ -142,13 +172,14 @@ async def _expire_lapsed_holds(db: AsyncSession, now: datetime, *scope) -> int:
             *scope,
         )
         .values(status=BookingStatus.expired)
-        .returning(Booking.package_purchase_id, Booking.package_hours_used)
+        .returning(Booking.id, Booking.package_hours_used)
         .execution_options(synchronize_session=False)
     )
     lapsed = result.all()
-    for purchase_id, hours in lapsed:
-        if purchase_id is not None and hours > 0:
-            await package_hours.credit_hours(db, purchase_id=purchase_id, hours=hours)
+    for booking_id, hours in lapsed:
+        if hours > 0:
+            # Every purchase the hold drew on gets its own hours back (H02).
+            await package_hours.release_debits(db, booking_id)
     return len(lapsed)
 
 

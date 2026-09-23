@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, act, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
+import { addDays, format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
+import type { ToolbarProps } from 'react-big-calendar'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { spacesApi } from '@/lib/api'
 import type { AvailabilitySlot, Room } from '@/types'
@@ -31,6 +32,7 @@ type CapturedCalendarProps = {
   selectable: boolean
   messages: Record<string, unknown>
   formats: Record<string, unknown>
+  components: { toolbar: React.ComponentType<ToolbarProps> }
 }
 
 let calendar: CapturedCalendarProps | null = null
@@ -62,8 +64,8 @@ const room: Room = {
 }
 
 /** Availability as the backend serves it: UTC instants, one row per hour. */
-function slot(start: string, end: string, available = true): AvailabilitySlot {
-  return { start, end, available }
+function slot(start: string, end: string, available = true, reason: AvailabilitySlot['reason'] = null): AvailabilitySlot {
+  return { start, end, available, reason: available ? null : reason }
 }
 
 const AVAILABLE_STYLE = '#f0faf5'
@@ -513,5 +515,87 @@ describe('BookingCalendar views: hourly booking on a day or a week (C12)', () =>
       </QueryClientProvider>,
     )
     expect(await screen.findByText(/Fechado nesta semana/)).toBeVisible()
+  })
+})
+
+describe('BookingCalendar booking window (H01)', () => {
+  // The API's verdict, not the browser's clock: a slot the backend marked as
+  // past the customer's horizon.
+  const far = slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z', false, 'beyond_window')
+
+  it('styles a beyond-window slot like a past one and shows no Ocupado chip', async () => {
+    await renderCalendar([far, slot('2030-08-12T10:00:00Z', '2030-08-12T11:00:00Z')])
+    expect(calendar!.slotPropGetter(parseISO(far.start)).style?.backgroundColor).toBe(PAST_STYLE)
+    expect(calendar!.slotPropGetter(parseISO(far.start)).style?.cursor).toBe('not-allowed')
+    expect(calendar!.events).toHaveLength(0)
+  })
+
+  it('refuses a selection past the window and names the last open date', async () => {
+    const { onSlotSelect } = await renderCalendar([far])
+    select(far.start, far.end)
+    expect(onSlotSelect).not.toHaveBeenCalled()
+    const alert = await screen.findByRole('alert')
+    const lastDay = format(addDays(new Date(), 30), "d 'de' MMMM", { locale: pt })
+    expect(alert).toHaveTextContent(`abertas até ${lastDay}`)
+    expect(alert).not.toHaveTextContent(/reservada|passou/)
+  })
+
+  it('always tells the customer until when bookings are open', async () => {
+    await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
+    const lastDay = format(addDays(new Date(), 30), "d 'de' MMMM", { locale: pt })
+    expect(screen.getByTestId('booking-window-hint')).toHaveTextContent(`Reservas abertas até ${lastDay}.`)
+  })
+
+  it('asks for no day past the window in the week that straddles it, and shows no load error', async () => {
+    setViewportWidth(1280) // the week view
+    await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
+    vi.mocked(spacesApi.getAvailability).mockClear()
+    // Navigate to the week holding the last open day (today + 30).
+    const lastDay = addDays(new Date(), 30)
+    act(() => calendar!.onNavigate(lastDay))
+    await waitFor(() => expect(spacesApi.getAvailability).toHaveBeenCalled())
+    const asked = vi.mocked(spacesApi.getAvailability).mock.calls.map(([, d]) => d)
+    const last = format(lastDay, 'yyyy-MM-dd')
+    expect(asked.length).toBeGreaterThan(0)
+    expect(asked.every((d) => d <= last)).toBe(true)
+    expect(asked).toContain(last)
+    expect(screen.queryByText(/Não foi possível carregar/)).toBeNull()
+  })
+
+  describe('toolbar', () => {
+    function renderToolbar(date: Date, view: 'day' | 'week') {
+      const onNavigate = vi.fn()
+      const onView = vi.fn()
+      const Toolbar = calendar!.components.toolbar
+      const localizer = { messages: {} } as ToolbarProps['localizer']
+      render(<Toolbar date={date} view={view} views={['day', 'week']} label="x" localizer={localizer} onNavigate={onNavigate} onView={onView} />)
+      return { onNavigate, onView }
+    }
+
+    it('keeps › live while the next day still has open hours', async () => {
+      await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
+      const { onNavigate } = renderToolbar(addDays(new Date(), 28), 'day')
+      const next = screen.getByRole('button', { name: '›' })
+      expect(next).toBeEnabled()
+      fireEvent.click(next)
+      expect(onNavigate).toHaveBeenCalledWith('NEXT')
+    })
+
+    it('disables › on the last open day, and in the week view once the next week is past it', async () => {
+      await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
+      const { onNavigate } = renderToolbar(addDays(new Date(), 30), 'day')
+      const next = screen.getByRole('button', { name: '›' })
+      expect(next).toBeDisabled()
+      fireEvent.click(next)
+      expect(onNavigate).not.toHaveBeenCalled()
+      cleanup()
+      // ‹, Hoje and the view switch stay usable whatever › does.
+      renderToolbar(addDays(new Date(), 30), 'week')
+      expect(screen.getByRole('button', { name: '›' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: '‹' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Hoje' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Semana' })).toHaveClass('rbc-active')
+      expect(screen.getByRole('button', { name: 'Dia' })).not.toHaveClass('rbc-active')
+    })
   })
 })

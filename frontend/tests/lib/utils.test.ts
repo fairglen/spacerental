@@ -89,6 +89,14 @@ describe('cancellationEligibility for checkout holds (C03)', () => {
 
 // A01: a booking the operator settled outside the platform.
 describe('formatBookingCost for manual bookings', () => {
+  it('shows the pack share actually debited, and what an operator still has to settle (H03)', async () => {
+    const { formatBookingCost } = await import('@/lib/utils')
+    expect(formatBookingCost({ payment_method: 'package', duration_hours: 12, total_amount: 132, package_hours_used: 12 })).toBe('12h do pack')
+    expect(formatBookingCost({ payment_method: 'package', duration_hours: 12, total_amount: 132, package_hours_used: 11 })).toBe('11h do pack + 1h por acertar')
+    // Pre-H02 rows never carried the field: the whole duration was the share.
+    expect(formatBookingCost({ payment_method: 'package', duration_hours: 3, total_amount: 33 })).toBe('3h do pack')
+  })
+
   it('says it was paid on site rather than showing an amount', async () => {
     const { formatBookingCost } = await import('@/lib/utils')
     expect(formatBookingCost({ payment_method: 'manual', duration_hours: 2, total_amount: 22 })).toBe('Pago no local')

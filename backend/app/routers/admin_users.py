@@ -13,17 +13,18 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import clock
+from app import clock, package_hours
 from app.auth import require_admin
+from app.booking_validity import expire_user_holds
 from app.database import get_db
 from app.models.booking import Booking
 from app.models.organization import MemberRole, OrganizationMember
-from app.models.package import Package, PurchaseStatus, UserPackagePurchase
+from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
 from app.models.support import SupportRequest
 from app.models.user import User
 from app.schemas.admin_users import ComplimentaryHoursCreate, ExpiryUpdate, OrgUserOut, RoleUpdate
 from app.schemas.booking import AdminBookingOut
-from app.schemas.package import AdminPurchaseOut
+from app.schemas.package import AdminPurchaseOut, PackageBalanceOut
 from app.schemas.support import SupportRequestOut
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
@@ -108,11 +109,22 @@ async def admin_get_user(
 ):
     """One customer: their bookings, purchases and help requests IN THIS ORG."""
     member = await _membership(db, user_id, org_id)
+    # Expiry is lazy: a lapsed mixed hold still has hours debited until
+    # something reconciles it. The customer's own packs page does this; the
+    # operator's view of the same bank must not read short, nor list debits
+    # for a booking that holds nothing.
+    now = clock.utcnow()
+    await expire_user_holds(db, user_id, now)
     bookings = (
         (
             await db.execute(
                 select(Booking)
-                .options(selectinload(Booking.room))
+                .options(
+                    selectinload(Booking.room),
+                    selectinload(Booking.package_debits)
+                    .selectinload(BookingPackageDebit.purchase)
+                    .selectinload(UserPackagePurchase.package),
+                )
                 .where(Booking.user_id == user_id, Booking.org_id == org_id)
                 .order_by(Booking.start_time.desc())
                 .limit(200)
@@ -150,6 +162,10 @@ async def admin_get_user(
         "user": _row(member, len(bookings)),
         "bookings": [AdminBookingOut.model_validate(b) for b in bookings],
         "purchases": [AdminPurchaseOut.model_validate(p) for p in purchases],
+        # The same bank the customer sees on their packs page (H02).
+        "balance": PackageBalanceOut.model_validate(
+            package_hours.bank_balance(list(purchases), now)
+        ),
         "support_requests": [SupportRequestOut.model_validate(r) for r in requests],
     }
 

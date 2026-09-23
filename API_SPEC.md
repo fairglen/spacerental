@@ -72,7 +72,15 @@ Response: `{ space: Space, rooms: Room[] }`
 
 ### GET /rooms/:id/availability
 Query: `?date=YYYY-MM-DD`
-Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool }] }`
+Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool, reason }] }`
+
+`reason` (H01) says why a slot is not bookable and is `null` exactly when
+`available` is true: `"past"` (already started), `"beyond_window"` (later than
+now + `BOOKING_MAX_ADVANCE_DAYS`, the customer's horizon), `"booked"` (a
+booking holds it) or `"blocked"` (operator blocked time). One reason per slot,
+in that order of precedence. A `date` after the window's last day is refused
+with `400` (`date is beyond the booking window`) rather than served as all
+unavailable.
 
 ---
 
@@ -133,24 +141,39 @@ what comes back:
   block. Nothing is written when it fails.
 - `mixed` — "use my pack and pay the rest". A request, not an instruction: the
   server alone decides the method stored, the pack share and the amount, and
-  ignores any such numbers in the body.
-  - One purchase can cover the whole block → a plain `package` booking
-    (confirmed, no `checkout_url`), exactly as above.
-  - Otherwise the soonest-expiring purchase that still has hours gives what it
-    has (one purchase per booking). Those hours are debited NOW, the booking is
-    `pending` with `package_hours_used` set, `total_amount` is the money for the
-    remaining hours only, and `checkout_url` charges just that. The Checkout
-    description reads e.g. `1h Sala Calma (7h pagas com o pack)`.
-  - No usable hours at all → a plain `hourly` booking.
-  The reserved hours go back to the same purchase whenever the hold ends
-  without being paid (backing out of Checkout, the hold expiring, a cancel) and
-  are taken again if the hold is resumed. Confirmation changes nothing about
-  them. Expiry is lazy: a lapsed hold's hours return the next time that
-  customer's bookings, packs or a new booking are read, or the slot is touched.
+  ignores any such numbers in the body. Since H02 the caller's purchases form
+  ONE hour bank (every `active`, unexpired purchase in the room's org),
+  drawn on soonest-expiring first, one `booking_package_debits` row per
+  purchase touched:
+  - The bank covers the whole block → a plain `package` booking (confirmed,
+    no `checkout_url`), exactly as above, even when that takes several
+    purchases.
+  - Otherwise the bank gives everything it has — `min(duration, bank)`. Those
+    hours are debited NOW, the booking is `pending` with `package_hours_used`
+    set, `total_amount` is the money for the remaining hours only, and
+    `checkout_url` charges just that. The Checkout description reads e.g.
+    `1h Sala Calma (7h pagas com o pack)`.
+  - An empty bank → a plain `hourly` booking.
+  The reserved hours go back, each to the purchase it came from, whenever the
+  hold ends without being paid (backing out of Checkout, the hold expiring, a
+  cancel) and are taken again — from whatever the bank holds then — if the
+  hold is resumed. Confirmation changes nothing about them. Expiry is lazy: a
+  lapsed hold's hours return the next time that customer's bookings, packs or
+  a new booking are read, or the slot is touched. `package` is the same walk
+  all-or-nothing: `409` and nothing debited when the bank cannot cover the
+  block.
+
+  `Booking.package_purchase_id` is **deprecated** (H02): no longer written,
+  kept nullable for one release. `package_hours_used` stays the booking's
+  pack share for good; the per-purchase split is the operator's
+  `package_debits` (below).
 
 Body: `{ room_id, start_time, end_time, notes?, payment_method? }`
 Response: `{ booking: Booking, checkout_url: string | null }`
-Errors: `403` not a member of the room's org, `404` unknown room, `409` slot
+Errors: `400` `start_time cannot be in the past`, `start_time is beyond the
+booking window` (later than now + `BOOKING_MAX_ADVANCE_DAYS`, default 30 —
+a customer's rule; operator endpoints have no horizon, H01), outside opening
+hours; `403` not a member of the room's org, `404` unknown room, `409` slot
 already booked *or* insufficient package hours.
 
 ### DELETE /bookings/:id
@@ -217,8 +240,15 @@ Body: `{ org_id }`
 Response: `{ purchase: UserPackagePurchase, checkout_url: string }`
 
 ### GET /packages/me
-My package purchases and remaining hours.
-Response: `{ purchases: UserPackagePurchase[] }`
+My package purchases and remaining hours, plus the hour bank they form (H02).
+Response: `{ purchases: UserPackagePurchase[], balance: PackageBalance }` with
+`PackageBalance = { hours_available, hours_expiring_next: { hours, expires_at }
+| null }`: `hours_available` sums every `active`, unexpired purchase the
+caller holds (across organizations, like the list — the product has one
+location); `hours_expiring_next` is the slice that lapses first (purchases
+lapsing at the same instant are added together), `null` when the bank is
+empty. Lazy hold expiry runs first, so a lapsed mixed hold's hours are back in
+the number.
 
 ---
 
@@ -349,16 +379,30 @@ hold. Response: `{ booking: AdminBooking }`.
 Any combination of (A01): a status change (`status`), a move (`start_time`,
 `end_time`, `room_id` — the room must be in the same org, else `404`) and a
 private note (`admin_note`). Omitted fields are unchanged; an empty body is
-`422`. A move passes the same validity and conflict checks as a customer
-booking (`400`/`409`) with NO 24h rule for operators, and moves NO money: a
-changed duration recomputes nothing about `total_amount`; the response carries
-`hours: { before, after }` and the operator settles the difference outside the
-platform (known limitation). A moved confirmed booking gets the confirmation
-email again with the line "A tua reserva foi alterada" and a new access code.
+`422`. A move passes the same opening-hours and conflict checks as a customer
+booking (`400`/`409`) with NO 24h rule and NO booking window for operators.
+The past rule is an operator's (H03): a booking that has already started may
+keep its start — or be given a later one — while the end or the room
+changes; only a START earlier than both now and the original is `400`
+(`start_time cannot be in the past`), and the new END must lie ahead (`400`
+`end_time cannot be in the past`). A move moves NO money: `total_amount` is
+never recomputed. The PACK share does follow the new length (H03) through
+the hour bank: shrinking credits the surplus back, latest-expiring purchase
+first, so the hours that lapse soonest stay spent; growing draws the extra
+from the bank, soonest-expiring first. The response carries `hours: {
+before, after, uncovered? }` — `uncovered` is what the bank could not give
+for a longer booking (the operator settles it with the customer outside the
+platform; no charge is created). A write that still trips a database
+constraint answers `409` `The change violates a constraint (<name>)`, never
+`500`. A moved confirmed booking gets the confirmation email again with the
+line "A sua reserva foi alterada" and a new access code.
 Response: `{ booking: AdminBooking, hours? }`.
 
-`AdminBooking` = `Booking` + `admin_note: string | null`. **`admin_note` is
-never returned by a customer endpoint.**
+`AdminBooking` = `Booking` + `admin_note: string | null` +
+`package_debits: [{ purchase_id, hours, package_name, expires_at }]` (H02: the
+purchases the booking's pack hours are currently drawn from, soonest-expiring
+first; empty when it holds no hours). **Neither is returned by a customer
+endpoint.**
 Body: `{ status: "confirmed"|"cancelled" }`
 
 ### GET /admin/users
@@ -371,9 +415,11 @@ Response: `{ users: OrgUser[], total, page, page_size }` where
 
 ### GET /admin/users/{user_id}
 One member of this org: `{ user: OrgUser, bookings: AdminBooking[] (newest
-first, ≤200, with `room`), purchases: AdminPurchase[] (with `package`),
-support_requests: SupportRequest[] (≤50) }`. Everything is scoped to this
-org. A person who is not a member → 404, identical to an unknown id.
+first, ≤200, with `room` and `package_debits`), purchases: AdminPurchase[]
+(with `package`), balance: PackageBalance (the same hour bank the customer
+sees, over this org's purchases), support_requests: SupportRequest[] (≤50) }`.
+Everything is scoped to this org. A person who is not a member → 404,
+identical to an unknown id.
 `AdminPurchase` = `UserPackagePurchase` + `admin_note: string | null`.
 
 ### PUT /admin/users/{user_id}/role
