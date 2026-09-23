@@ -4194,7 +4194,7 @@ checked on screenshots at 1280px and 390px — `PR2_DRAFT.md`):**
 | Grids | rooms `grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6`; steps `sm:grid-cols-2 lg:grid-cols-4 gap-8`; pricing `md:grid-cols-3 gap-6 max-w-4xl mx-auto` | `.grid-3` 3 → 1 <768; `.grid-4` 4 → 2 <1024 (2 even at 390) | mobile-first: rooms 1 / 2 ≥768 / 3 ≥1024; steps 1 / 2 ≥640 / 4 ≥1024, gap 2rem; pricing `.grid-pricing` 56rem centred, 3 ≥768 |
 | "Como funciona" step | disc `h-12 w-12 bg-primary text-primary-foreground font-bold text-lg`; title `font-semibold mb-2`; desc `text-sm` muted; hairline between steps from `lg` | disc 3rem 800; H3 1.05rem; no line | disc 3rem 700 1.125rem; H3 1rem 600 mb 0.5rem; hairline ≥1024; no description line (content) |
 | Pricing card | centred title `text-lg`; price `text-4xl font-bold` (2.25rem/2.5rem) + unit `text-sm` muted `ml-1`; desc `text-xs mt-1`; features `text-sm` muted with check icons `space-y-2 mb-6`; full-width button (primary when highlighted, outline otherwise) | title 1.1rem; price 2.25rem 800; unit 0.95rem; desc 0.85rem | title 1.125rem 600; price 2.25rem/2.5rem 700; unit 0.875rem 400 ml 0.25rem; desc 0.75rem/1rem mt 0.25rem mb 1.5rem; prices untouched |
-| "Onde estamos" | `grid gap-6 rounded-xl border bg-white p-6 md:grid-cols-5` (2/5 words, 3/5 map); map frame `min-h-[280px]` | `2fr 3fr`, gap 1.5rem, padding 1.5rem, border, radius | unchanged here (L04 reworks its content); stacks <768 like the app |
+| "Onde estamos" | `grid gap-6 rounded-xl border bg-white p-6 md:grid-cols-5` (2/5 words, 3/5 map); map frame `min-h-[280px]`; since M03 the heading is followed directly by the lines list — no venue name line on either site | `2fr 3fr`, gap 1.5rem, padding 1.5rem, border, radius | unchanged here (L04 reworks its content, M03 drops the name line on both); stacks <768 like the app |
 | Footer | `bg-foreground text-white`, container `py-12`; `grid-cols-1 md:grid-cols-3 gap-8`; brand: icon + `text-lg font-bold`, tagline `text-sm text-gray-400 max-w-xs`; headings `font-semibold mb-4 text-primary-light`; links `space-y-2 text-sm text-gray-400`; contact column: pin + "Queluz, Portugal", mail + email; bottom `mt-8 pt-8 border-t border-gray-700 text-center text-sm text-gray-500` | grid 3 → 1 <768, padding 3rem 0 2rem; "Navegação" and "Como chegar" (two address lines); bottom 0.82rem separate band | `.footer-inner` 3rem top/bottom; brand with the building icon 1.125rem 700; "Links" (Salas · Como funciona · Preços · Contacto) and "Contacto" (pin + "Queluz, Portugal", mail + email — the app's address line); bottom mt/pt 2rem 0.875rem |
 | Mobile (390px) | one column everywhere; CTAs stacked; benefits wrap; where-block words then map | steps still 2 columns; CTAs wrapped ad hoc | one column everywhere, CTAs stacked, no sideways scroll (smoke-tested) |
 | Not matched (content, not design) | app-only "value props" strip between hero and rooms; app room cards carry a capacity line and a "Reservar Esta Sala" button; app "Como funciona" steps carry a description; app section order puts "Onde estamos" inside the rooms section, the static site keeps it last with the contact form | — | recorded as open questions in `PR2_DRAFT.md` |
@@ -4353,7 +4353,20 @@ no prose pin. Links F01, W01, Q-H04 (prices stay untouched).
 
 ### M03 — "Onde estamos": drop the venue name line
 
-**Priority: P2. State: TODO.** The block prints the space name under the
+**Priority: P2. State: IN PROGRESS** — implemented on
+`fix/site-copy-form-tweaks`; DONE only once merged. **Evidence
+(2026-09-23):** app — `WhereWeAre` no longer renders the `<p>` with
+`space.name`; the heading's next sibling is the `where-lines` list; the name
+still titles the map iframe ("Mapa de {name}", not visible text).
+`WhereWeAre.test.tsx` (15): the name is not in the section's text, the iframe
+title carries it, the heading is followed directly by the list, and the
+order hours → email → address → "Como chegar" is unchanged; tsc clean.
+Static — `<p class="where-name">FlowSpace</p>` and its CSS rule removed; the
+heading now carries the `0.75rem` bottom margin the list had above it, so
+the spacing stays the app's `mt-3`. Smoke: the block test asserts no
+`.where-name` and that the heading's next sibling is the lines list. The
+L03 parity table's "Onde estamos" row notes the change; both READMEs
+updated. The block prints the space name under the
 heading ("FlowSpace" on the static site, `space.name` in the app).
 **Acceptance:** app — `WhereWeAre.tsx` no longer renders the name subtitle;
 the heading is followed directly by the hours line; the name stays in the

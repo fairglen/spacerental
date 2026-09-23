@@ -45,6 +45,7 @@ export function WhereWeAre({ space, rooms = [], headingAs: Heading = 'h2', class
   const directions = directionsUrl(space)
   if (lines.length === 0 && !directions) return null
 
+  // The name is no longer printed under the heading (M03); it only titles the map frame.
   const name = space.name?.trim()
   const hours = describeOpeningHours(rooms)
   const withMap = hasCoordinates(space)
@@ -60,7 +61,6 @@ export function WhereWeAre({ space, rooms = [], headingAs: Heading = 'h2', class
     >
       <div className="min-w-0 md:col-span-2 text-sm">
         <Heading id="onde-estamos" className="text-xl font-semibold text-foreground">{t('location.heading')}</Heading>
-        {name && <p className="mt-1 font-medium text-foreground">{name}</p>}
 
         <ul data-testid="where-lines" className="mt-3 space-y-2">
           {/* 1. When it is open (R01: the rules as the wall clock they are). */}

@@ -21,10 +21,15 @@ const rooms = [{ availability_rules: allWeek('08:00:00', '22:00:00') }]
 // and the rooms page.
 describe('WhereWeAre', () => {
   describe('the words', () => {
-    it('is a labelled section with the space name, the street, then postcode and city', () => {
-      render(<WhereWeAre space={full} rooms={rooms} />)
+    it('is a labelled section with the street, then postcode and city — and no venue name line (M03)', () => {
+      const { container } = render(<WhereWeAre space={full} rooms={rooms} />)
       const section = screen.getByRole('region', { name: /onde estamos/i })
-      expect(within(section).getByText('Espaço Calmo')).toBeVisible()
+      // The name is not visible text any more; it survives only in the map frame's title.
+      expect(within(section).queryByText('Espaço Calmo')).toBeNull()
+      expect(container.querySelector('iframe')!.getAttribute('title')).toMatch(/Espaço Calmo/)
+      // The heading is followed directly by the lines list.
+      const heading = within(section).getByRole('heading', { name: /onde estamos/i })
+      expect(heading.nextElementSibling).toBe(screen.getByTestId('where-lines'))
       const address = within(section).getByRole('group', { name: /morada/i })
       expect(address).toHaveTextContent('R. 12 de Julho de 1997 5, Loja 1')
       expect(address).toHaveTextContent('2745-841 Queluz')

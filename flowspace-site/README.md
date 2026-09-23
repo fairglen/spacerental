@@ -83,7 +83,7 @@ name, price and tags and no pictures.
 ## "Onde estamos" and the map
 
 The location, contact and hours sit in one section (`#localizacao`), the
-same block as the app's (L04): the heading and the space name, then one
+same block as the app's (L04, M03 — no venue name line): the heading, then one
 icon line each for the hours ("Todos os dias, 08:00–22:00", the same as the
 app's seed), `geral@flowspace.pt` (no phone line — there is no number yet) and
 the two-line address, with "Como chegar" (the Google Maps search URL) right

@@ -208,6 +208,9 @@ test('"Onde estamos" lists hours, email and address with icons, then "Como chega
   await page.goto('/');
   const where = page.locator('#localizacao');
   await expect(where.getByRole('heading', { level: 2 })).toHaveText('Onde estamos');
+  // No venue name line under the heading (M03): the lines list follows it directly.
+  await expect(where.locator('.where-name')).toHaveCount(0);
+  expect(await where.getByRole('heading', { level: 2 }).evaluate((el) => el.nextElementSibling!.className)).toBe('where-lines');
   const lines = where.locator('.where-lines > li');
   await expect(lines).toHaveCount(3);
   await expect(lines.nth(0)).toHaveText('Todos os dias, 08:00–22:00');
