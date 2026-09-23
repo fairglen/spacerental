@@ -54,6 +54,9 @@ async def require_migrated_schema() -> None:
 # Where the demo space physically is. The area is Massamá/Queluz in the
 # municipality of Sintra; "Queluz" is the postal locality, which is what an
 # address line uses.
+# The pilot location's clock (R01): every room's opening hours are read on it.
+DEMO_SPACE_TIMEZONE = "Europe/Lisbon"
+
 DEMO_SPACE_LOCATION = {
     "address": "R. 12 de Julho de 1997 5, Loja 1",
     "postal_code": "2745-841",
@@ -89,10 +92,10 @@ def _previous_demo_room_description(name: str) -> str:
     return f"Sala privada e confortável — {name}."
 
 
-# Opening hours the seed writes (V05): every day, 08:00-22:00. Evaluated in
-# UTC like every rule (R01), so the Lisbon wall clock reads 09:00-23:00 in
-# summer. `_PREVIOUS_SEED_RULES` is what earlier seeds wrote (Mon-Sat
-# 08:00-20:00), which a re-seed replaces; anything else is an operator's.
+# Opening hours the seed writes (V05): every day, 08:00-22:00 on the space's
+# clock (R01) — Lisbon, so 08:00 on the door summer and winter.
+# `_PREVIOUS_SEED_RULES` is what earlier seeds wrote (Mon-Sat 08:00-20:00),
+# which a re-seed replaces; anything else is an operator's.
 SEED_RULES = frozenset((day, time(8, 0), time(22, 0), True) for day in range(7))
 _PREVIOUS_SEED_RULES = frozenset((day, time(8, 0), time(20, 0), True) for day in range(6))
 
@@ -251,6 +254,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
             description=DEMO_SPACE_DESCRIPTION,
             images=[],
             amenities=["WiFi", "Café", "Impressora", "Ar condicionado"],
+            timezone=DEMO_SPACE_TIMEZONE,
             **DEMO_SPACE_LOCATION,
         )
         session.add(space)
@@ -261,6 +265,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
         # the placeholder Lisbon address: move it rather than leave it stale.
         for field, value in DEMO_SPACE_LOCATION.items():
             setattr(space, field, value)
+        space.timezone = DEMO_SPACE_TIMEZONE
         if space.description in _PREVIOUS_DEMO_SPACE_DESCRIPTIONS:
             space.description = DEMO_SPACE_DESCRIPTION
         await session.flush()

@@ -4,14 +4,11 @@ import type { OpeningWindow } from '@/types'
  * The "Horário" of "Onde estamos" (V06): what the space's rooms' availability
  * rules add up to, as a few human lines.
  *
- * Rules are per room and evaluated in UTC on the backend (R01 owns the Lisbon
- * wall-clock version). Here they are shown on the Lisbon clock for the day in
- * question — display only, nothing is booked from these lines — so in summer
- * a 08:00–22:00 UTC rule reads 09:00–23:00, which is when the door is open.
+ * Rules are per room and are the SPACE's wall clock (R01, `Space.timezone`,
+ * Europe/Lisbon for the pilot): "08:00:00" means 08:00 on the door, summer
+ * and winter. Nothing here converts — the backend does the UTC conversion
+ * when it books; these lines only read the rules back.
  */
-
-/** The space's local zone; the product has one location (C11). */
-export const SPACE_TIME_ZONE = 'Europe/Lisbon'
 
 const DAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 const ALL_DAYS = 'Todos os dias'
@@ -20,13 +17,10 @@ const CLOSED = 'Encerrado'
 type RoomLike = { availability_rules?: OpeningWindow[] | null }
 type Span = { open: string; close: string } | null
 
-/** "08:00:00" (UTC, as the API sends it) on the Lisbon clock of `day`. */
-export function toLocalClock(utcTime: string, day: Date): string {
-  const [h, m] = utcTime.split(':').map(Number)
-  const instant = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h, m))
-  return new Intl.DateTimeFormat('pt-PT', {
-    timeZone: SPACE_TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(instant)
+/** "08:00:00" as the API sends it → "08:00" as the door shows it. */
+export function toClock(wallTime: string): string {
+  const [h, m] = wallTime.split(':')
+  return `${h.padStart(2, '0')}:${(m ?? '00').padStart(2, '0')}`
 }
 
 /** Per weekday (0 = Monday), the outer span of every window of every room. */
@@ -50,9 +44,9 @@ function signature(room: RoomLike): string {
     .join(';')
 }
 
-export function describeOpeningHours(rooms: RoomLike[], today: Date = new Date()): { lines: string[]; differsByRoom: boolean } {
+export function describeOpeningHours(rooms: RoomLike[]): { lines: string[]; differsByRoom: boolean } {
   const spans = unionByDay(rooms)
-  const label = (span: Span) => (span ? `${toLocalClock(span.open, today)}–${toLocalClock(span.close, today)}` : CLOSED)
+  const label = (span: Span) => (span ? `${toClock(span.open)}–${toClock(span.close)}` : CLOSED)
   const labels = spans.map(label)
 
   const differsByRoom = new Set(rooms.map(signature)).size > 1

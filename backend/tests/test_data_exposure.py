@@ -29,7 +29,8 @@ API = "/api/v1"
 # `{id, url, thumb_url, width, height}` — storage keys never leave the API.
 SPACE_FIELDS = {
     "id", "org_id", "name", "description", "address", "city", "postal_code", "latitude",
-    "longitude", "images", "photos", "amenities", "is_active", "created_at", "updated_at", "rooms",
+    "longitude", "timezone", "images", "photos", "amenities", "is_active", "created_at",
+    "updated_at", "rooms",
 }  # fmt: skip
 ROOM_FIELDS = {
     "id", "space_id", "org_id", "name", "description", "capacity", "hourly_rate", "images",

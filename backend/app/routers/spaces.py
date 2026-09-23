@@ -1,5 +1,6 @@
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, select
@@ -7,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import clock
-from app.booking_validity import booking_window_end, holds_slot
+from app.booking_validity import booking_window_end, holds_slot, local_hourly_slots
 from app.database import get_db
 from app.models.booking import Booking
 from app.models.room_block import RoomBlock
@@ -60,13 +61,19 @@ async def get_room_availability(
     """
     Generate 1-hour availability slots for a room on a given date.
     Returns array of {start, end, available, reason}.
+
+    `date` is the SPACE's local date (R01): the slots are the wall-clock hours
+    the room is open that day, returned as UTC instants.
     """
     result = await db.execute(
-        select(Room).where(Room.id == room_id, Room.is_active == True)  # noqa: E712
+        select(Room)
+        .options(selectinload(Room.space))
+        .where(Room.id == room_id, Room.is_active == True)  # noqa: E712
     )
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    zone = ZoneInfo(room.space.timezone)
 
     # A slot that has already started cannot be booked (POST /bookings rejects
     # a past start_time), so it must not be advertised as available either;
@@ -77,7 +84,7 @@ async def get_room_availability(
     # per day for months; the last day inside it is served with each slot past
     # the exact instant marked `beyond_window`.
     window_end = booking_window_end(now)
-    if date > window_end.date():
+    if date > window_end.astimezone(zone).date():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="date is beyond the booking window",
@@ -99,24 +106,18 @@ async def get_room_availability(
         # No availability rule for this day — room is closed
         return {"slots": []}
 
-    # Build 1-hour slots within each open/close window (multiple windows per day
-    # are supported, e.g. morning + evening).
-    slot_starts: list[datetime] = []
-    windows: list[tuple[datetime, datetime]] = []
+    # One slot per wall-clock hour of each open window (several windows per
+    # day are fine, e.g. morning + evening), as UTC instants.
+    hourly: set[tuple[datetime, datetime]] = set()
     for rule in rules:
-        open_dt = datetime.combine(date, rule.open_time, tzinfo=UTC)
-        close_dt = datetime.combine(date, rule.close_time, tzinfo=UTC)
-        windows.append((open_dt, close_dt))
-        current = open_dt
-        while current + timedelta(hours=1) <= close_dt:
-            slot_starts.append(current)
-            current += timedelta(hours=1)
+        hourly.update(local_hourly_slots(date, rule.open_time, rule.close_time, zone))
+    slot_starts = sorted(s[0] for s in hourly)
 
     if not slot_starts:
         return {"slots": []}
 
-    day_start = min(w[0] for w in windows)
-    day_end = max(w[1] for w in windows)
+    day_start = slot_starts[0]
+    day_end = max(s[1] for s in hourly)
 
     # Bookings holding a slot on this date; an expired unpaid hold is free (C03).
     result = await db.execute(

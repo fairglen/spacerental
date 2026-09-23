@@ -2082,8 +2082,37 @@ and do not build on, fix or delete them while the outcome is parked.
 
 **Priority: P1 (opening-hours slice). State: IN PROGRESS** — the
 opening-hours slice assigned by the owner on 2026-09-23 as Section 1 of
-`fix/local-opening-hours`; the recurrence slice stays parked with R02/R03
-(code untouched, flag off). **Slice scope:** `spaces.timezone` (IANA name,
+`fix/local-opening-hours`, implemented and committed locally; DONE only once
+merged. The recurrence slice stays parked with R02/R03 (code untouched, flag
+off). **Evidence (2026-09-23):** 9 real-PG tests in
+`tests/test_local_opening_hours.py` on a Europe/Lisbon space — a winter and
+a summer day both have 14 slots reading 08:00–21:00 on the Lisbon clock
+(08:00Z vs 07:00Z); every slot of a day belongs to that local date; the
+spring-forward day (2026-03-29) offers 00:00, 02:00, 03:00, 04:00 and no
+01:00 for a 00–05 rule; the fall-back day (2026-10-25) offers each wall-clock
+hour once, 01:00 as its first occurrence (00:00Z, not 01:00Z); the UTC
+fixture space behaves exactly as before; `POST /bookings` accepts 08:00
+Lisbon in summer (07:00Z), refuses 07:00 Lisbon and 22:00 Lisbon, accepts the
+day's last hour; a block across the gap is two real hours; `timezone` is
+public, defaults to Europe/Lisbon on create, is refused for an unknown name
+(422) and accepted for `Atlantic/Azores`; the seed places the demo space in
+Lisbon and restores it on a re-seed. S19 allowlist gains `timezone`.
+Migration `0012_space_timezone` round trip clean on an empty database (the
+column is a server default: no rule row and no booking instant is touched).
+Full backend 659 (650 on main). Frontend: the hours line reads the rules as
+the wall clock they are (10 unit tests, the summer case inverted from
+"09:00–23:00" to "08:00–22:00"); `Space.timezone` typed; Vitest 545; tsc
+clean. The rebuilt loop stack serves the seed's 08:00–22:00 as 07:00Z–21:00Z
+in September. **DECISIONS:** (1) the conftest fixture space is zoned `UTC`,
+so the ~650 tests that pin UTC instants against its 08–20 rules keep their
+meaning, and Lisbon-clock behaviour has its own tests — alternative: convert
+every pinned expectation; (2) the timezone lives on the space, not the room
+(one door, one clock; the recurrence slice will need the same column);
+(3) the migration's server default puts every existing space in Lisbon — the
+pilot's rules were always written as Lisbon numbers, so this is the first
+time they are read as intended, and nothing is rewritten; a UTC-meaning
+operator would set `UTC` in the admin; (4) the seed re-asserts Lisbon on the
+demo space like it re-asserts the address (W04/C10 rule). **Slice scope:** `spaces.timezone` (IANA name,
 `Europe/Lisbon` default, migration `0012`), validated on the admin space
 endpoints and returned publicly; `AvailabilityRule.open_time/close_time` are
 the space's WALL CLOCK: `is_within_open_hours` and `GET
@@ -3870,10 +3899,12 @@ last hour stays visible in summer; its rooms-union residual stands. The
 e2e specs that skipped Sundays keep doing so (harmless) and `hour-bank`
 counts the 08–20 slots it needs rather than the day's total. Playwright
 `booking`, `week-view`, `admin-calendar`, `hour-bank` 16 passed on the
-re-seeded stack. **Known limitation, recorded (R01):** rules are evaluated in
-UTC, so Lisbon reads 09:00–23:00 in summer. **DECISION:** the re-seed
-replaces only the exact set an earlier seed wrote (any other set is an
-operator's), the same rule W04 applies to descriptions and V01 to photos.
+re-seeded stack. **Known limitation, recorded (R01) — resolved on
+`fix/local-opening-hours` (2026-09-23):** rules were evaluated in UTC, so
+Lisbon read 09:00–23:00 in summer; they are the space's wall clock now.
+**DECISION:** the re-seed replaces only the exact set an earlier seed wrote
+(any other set is an operator's), the same rule W04 applies to descriptions
+and V01 to photos.
 **Scope (as assigned):** `backend/app/seed.py` gives every
 room 08:00–22:00 on all seven days (idempotent update of existing rules);
 tests pinning 08–20 updated; the customer calendar's visible range follows the
