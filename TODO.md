@@ -3661,9 +3661,62 @@ photos are asked for: replacing the illustrations is Q-V08. **Links:** C16
 form), C10 (the space location and map), C09 (the contact address), A03 (the
 admin calendar's opening-hours residual), R01 (rules still evaluated in UTC).
 
+**Integrated verification (2026-09-23, final code state `aeb13a4` plus this
+evidence commit, stub mode, no credentials, isolated stack rebuilt from an
+empty database with the illustrations mounted):** backend pytest 645 passed
+(635 at PR 1's HEAD); migration round trip clean at
+`0011_booking_package_debits` (no schema change in PR 2); ruff check + format
+clean; `tsc` clean; Vitest 539 (507 at PR 1's HEAD); `next build` OK; full
+app Playwright 46 passed on the freshly seeded stack (the same 46 files as
+PR 1; `photos` and `single-space` extended); flowspace-site smoke 26 passed
+(22 at PR 1's HEAD) and Code.gs 38. Screenshots in `pr-screenshots/`
+(uncommitted): the mosaic at 1280px, the carousel at 390px, the gallery open,
+"Onde estamos" on the app and on the static site, the site's room cards.
+`PR2_DRAFT.md` (uncommitted) has the per-section summary, the decisions with
+reversals, the open questions (Q-H04 prices, Q-V08 real photos, V03's seed
+notes, V05's UTC hours, V07's static hours line) and the local reproduction
+commands.
+
 ### V01 — Room photo mosaic and gallery (app), seeded illustration photos
 
-**Priority: P1. State: QUEUED.** The booking area (`SpaceRoomsView`, above
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally; DONE only once merged.
+**Evidence (2026-09-23):** `PhotoMosaic` — 13 component tests (0 → the given
+placeholder, no region, no button; 1 → hero; 2 → halves; 3 → big + 2; 4 → big
++ 3; 5 and 8 → big + 4 with five tiles; the first photo is the big tile, every
+tile a sized cover-fitted `<img>` with alt "<sala> — fotografia N de M",
+eager then lazy; a `region` "<sala> — fotografias"; the <1024px branch is the
+carousel with a counter and no dots; the gallery opens on the button with the
+full images, a counter, a thumbnail `tablist` and a close button and closes on
+Escape; a tapped tile opens the gallery on that photo and a thumbnail moves
+it; arrow keys move it, "Fechar" closes; a tap on the small-screen carousel
+opens it on that photo). `PhotoCarousel` gained `size='full'`,
+`indicator='counter'`, `initialIndex`/`onIndexChange`, `onPhotoClick`, a
+`regionLabel` and "N de M" alts; its 16 tests unchanged. The card
+carousel's dots sit on their dark pill inside the frame — nothing to fix.
+Seed: 7 real-PG tests in `test_media.py` (each demo room gets the four
+illustrations in order, 1600×1200, the very bytes the site ships for main
+and thumbnail, WebP; the public shape carries no seed mark; a re-seed
+replaces its own photos and keeps an operator's, in front, without
+duplicates; the unmarked 960×720 gradients an earlier seed generated are
+replaced too; a second seed with nothing to do rewrites nothing; a missing
+illustration fails loudly naming `SEED_PHOTOS_DIR`; the gradient generator is
+gone). Vitest 520; tsc clean. Playwright `photos.spec.ts` (2): the landing
+card carousel as before; the room being booked shows the mosaic at 1280px
+("big + 3", four `/media` files, ~2:1), "Mostrar todas as fotos" opens the
+gallery (1 / 4 → 2 / 4, Escape closes), and at 390px the carousel fills the
+content width with its counter and no mosaic. **DECISIONS:** (1) both the
+mosaic and the carousel are in the DOM and CSS (`lg:`) picks one, so the
+server render is right on every screen; the hidden branch's lazy images do
+not load. Alternative: a `matchMedia` hook (hydration mismatch risk).
+(2) Seed photos carry a `seed: "sala-0N"` mark in the stored JSON (never in
+`PhotoOut`), which is how a re-seed tells its own rows from an operator's;
+the pre-V01 gradients are recognised by their shape (2–3 unmarked photos,
+all exactly 960×720) so an existing dev database is cleaned up too. Reverse:
+drop `_is_legacy_placeholder_set`. (3) The illustrations reach the
+container by a read-only bind mount in both Compose files rather than a
+`COPY` into the image (the test image's context is `backend/` alone).
+**Scope (as assigned):** The booking area (`SpaceRoomsView`, above
 "Disponibilidade — <sala>") shows the card-size 4:3 carousel left-aligned in a
 wide container. **Scope:** a `PhotoMosaic` for the selected room spanning the
 content width. ≥1024px: 2 columns × 2 rows, the first photo spanning both rows
@@ -3693,7 +3746,27 @@ as fotos" opens the gallery.
 
 ### V02 — Static site: room cards with photo galleries and a manifest
 
-**Priority: P2. State: QUEUED.** `flowspace-site/index.html` "Salas" cards
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `assets/js/room-gallery.js` (vanilla, ~150 lines) reads
+`assets/img/room-photos/manifest.json` and fills each `.room-gallery[data-room]`
+with the app's carousel semantics (region "<sala> — fotografias", a
+"diapositivo" per photo, "Fotografia anterior/seguinte", a dot `tablist`,
+arrow keys, a polite live region that speaks only after a move, no
+autoplay; scroll-snap, swipes followed silently); CSS in `site.css` bleeds
+the 4:3 frame to the card's edges; the three `.desc` paragraphs are gone,
+the intro sentence, names, prices and tags stay; the script tag sits next to
+the form's. Smoke spec +2 (structural: three cards, each a gallery with one
+image per manifest entry, alt "<sala> — fotografia N de 4", width/height,
+eager then lazy, a dot each, no `p.desc`, price and tags present; "next"
+moves to photo 2 and the announcer says so, the previous button is hidden at
+the start, ArrowLeft comes back, the last dot hides "next"): 24 passed.
+README: a "Room photos" section documenting the manifest as the one place
+real photos go. **DECISION:** the manifest is fetched over HTTP and the
+galleries are built by the script (no-JS visitors see name, price and tags
+and no pictures) — the alternative, four static `<img>` tags per card, would
+make real photos an HTML edit in three places instead of a manifest edit.
+**Scope (as assigned):** `flowspace-site/index.html` "Salas" cards
 have name, price, a description paragraph and tags. **Scope:** each card gets
 a photo carousel at the top (vanilla JS in `assets/js/room-gallery.js`,
 scroll-snap, prev/next, dots as a tablist, no autoplay, the app's aria,
@@ -3707,7 +3780,18 @@ have a gallery; next advances the counter/dots).
 
 ### V03 — Room copy: photos instead of descriptions
 
-**Priority: P2. State: QUEUED.** **Scope:** `RoomCard` and the selected-room
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `RoomCard` no longer renders `room.description` (the selected
+-room header never did); the admin room forms (new and edit) label the field
+"Notas internas (não visíveis ao cliente)"; API_SPEC says so on the create
+body and the `Room` type. The static site's `.desc` went with V02 and its
+intro sentence stays. Tests: a `RoomCard` component test (name, amenities
+rendered, the description not); the admin rooms test types into the relabelled
+field and asserts no "Descrição" label; the site smoke asserts no `p.desc`.
+The seed still writes the W04 room lines into `description` — now internal
+notes; left as they are (harmless, and W04's re-seed rule still holds).
+**Scope (as assigned):** `RoomCard` and the selected-room
 header stop rendering `room.description`; the field stays in the model, API
 and admin form, relabelled in admin "Notas internas (não visíveis ao
 cliente)" and noted in API_SPEC. Static site: `.desc` removed (V02); the
@@ -3716,7 +3800,15 @@ structural. **Validation:** component tests; site smoke.
 
 ### V04 — Remove the hero pill
 
-**Priority: P2. State: QUEUED.** **Scope:** the "Disponível à hora …" badge
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `hero.badge` deleted from `pt.json` and `en.json` (the parity
+test keeps both catalogs equal), its render and the `Clock` import gone from
+`Hero.tsx`; the static site's `<span class="hero-badge">` and its CSS rule
+gone. Tests, structural: the hero's first text is the headline and no pill
+element exists (Hero.test.tsx +1); the site hero has no `.hero-badge` and
+its first child is the `<h1>` (smoke +assertions). Vitest targeted 21; site
+smoke 24. **Scope (as assigned):** the "Disponível à hora …" badge
 goes from both heroes: app i18n key `hero.badge` (PT and EN, deleted, not
 emptied) and its render in `Hero.tsx`; static site `<span class="hero-badge">`.
 Hero tests updated structurally. **Validation:** Vitest incl. the catalog
@@ -3724,7 +3816,26 @@ parity test; site smoke.
 
 ### V05 — Opening hours: 08:00–22:00 every day
 
-**Priority: P2. State: QUEUED.** **Scope:** `backend/app/seed.py` gives every
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `seed.py` writes `SEED_RULES` (7 days × 08:00–22:00) and, on
+a re-seed, replaces exactly what earlier seeds wrote (`_PREVIOUS_SEED_RULES`,
+Mon–Sat 08:00–20:00) while leaving an operator's own hours alone — 4 real-PG
+tests in `test_space_location.py::TestSeedOpeningHours` (fresh seed: 21 rules;
+the pre-V05 set is replaced; an operator's kept; a second seed rewrites no
+row). Verified, not rebuilt: the customer calendar's visible range derives
+from the returned slots (B34, `visibleRange`, its unit tests unchanged) and
+the loop stack serves 14 slots 08:00–22:00 UTC after the re-seed. The admin
+calendar (A03) shades 08–22 instead of 08–20 and shows until 23:00 so the
+last hour stays visible in summer; its rooms-union residual stands. The
+e2e specs that skipped Sundays keep doing so (harmless) and `hour-bank`
+counts the 08–20 slots it needs rather than the day's total. Playwright
+`booking`, `week-view`, `admin-calendar`, `hour-bank` 16 passed on the
+re-seeded stack. **Known limitation, recorded (R01):** rules are evaluated in
+UTC, so Lisbon reads 09:00–23:00 in summer. **DECISION:** the re-seed
+replaces only the exact set an earlier seed wrote (any other set is an
+operator's), the same rule W04 applies to descriptions and V01 to photos.
+**Scope (as assigned):** `backend/app/seed.py` gives every
 room 08:00–22:00 on all seven days (idempotent update of existing rules);
 tests pinning 08–20 updated; the customer calendar's visible range follows the
 rules (B34 derived it from the slots — verified, fixed if not). **Known
@@ -3734,7 +3845,43 @@ tests; the Playwright specs that walk the day.
 
 ### V06 — "Onde estamos" block (app): location, contact and hours
 
-**Priority: P1. State: QUEUED.** One component on the landing page
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally; DONE only once merged.
+**Evidence (2026-09-23):** backend: the public `GET /spaces/{id}` carries each
+room's active `availability_rules` (`{day_of_week, open_time, close_time}`,
+never the rule id) — 1 real-PG test (an inactive rule stays out; the list
+endpoint carries none) and the S19 allowlist names the field and the
+window's fields. Frontend: `lib/openingHours` (10 unit tests: all days the
+same → "Todos os dias 08:00–22:00"; Mon–Fri + Sat + closed Sun → "Seg–Sex …",
+"Sáb …", "Dom Encerrado"; only consecutive days fold; union across rooms with
+`differsByRoom`; identical rooms do not differ; a lunch break becomes the
+day's outer span; the Lisbon clock reads an hour later in summer; no rules →
+"Encerrado"); `mapEmbedUrl` takes the frame's aspect and builds the box in
+ground distance around the pin (3 unit tests); `WhereWeAre` replaces
+`SpaceLocation` (14 component tests: labelled section with the name and the
+address lines; directions link; the one mailto and no `tel:` line, a phone
+line only when `NEXT_PUBLIC_CONTACT_PHONE` is set; the four hours cases;
+the placeholder holds the address and the button at the map's size and no
+third-party request leaves; the iframe is lazy, referrer-free, titled,
+centred on the point, then "Abrir o mapa completo"; no map column without
+coordinates; partial and empty locations). `SpaceCards` (landing) and
+`SpaceRoomsView` (rooms page header) render it with the space's rooms.
+`CONTACT_PHONE` in `.env.example`/Compose → `NEXT_PUBLIC_CONTACT_PHONE`,
+empty. Catalog keys `location.contact/hours/hours_per_room` (PT/EN). Vitest
+targeted 39 + 25 + 10; tsc clean. Playwright `single-space.spec.ts`
+extended: the block on the landing with the mailto, no `tel:`, "Todos os
+dias …" hours, a ≥280px placeholder, the map's bbox centred on the pin and
+the frame's size unchanged after loading, the full-map link; the block again
+on the rooms page. **DECISIONS:** (1) opening windows travel on the public
+room shape rather than a new endpoint — one read, already cached by the
+landing and the rooms page. (2) The hours are the union of the rooms'
+windows per day, and two windows on one day fold into the day's outer span
+("Seg 08:00–20:00" for 08–12 + 14–20); the per-room note covers the
+difference. (3) The line under the map is always there (the privacy note
+before the click, the full-map link after) so the frame never changes
+height. (4) The phone is a frontend env value (`CONTACT_PHONE` →
+`NEXT_PUBLIC_CONTACT_PHONE`), not a backend setting: nothing server-side
+uses it. **Scope (as assigned):** One component on the landing page
 (single-space mode) and the rooms/booking page header. **Scope:** two columns
 at ≥768px, stacked below. LEFT (40%): "Onde estamos"; space name; address
 lines; "Como chegar" (existing directions URL); divider; "Contacto": the email
@@ -3757,7 +3904,25 @@ and on the rooms page.
 
 ### V07 — "Onde estamos" block (static site)
 
-**Priority: P2. State: QUEUED.** **Scope:** the separate "Como chegar" and
+**Priority: P2. State: IN PROGRESS** — implemented on
+`feat/photos-mosaic-map-contacts`, committed locally. **Evidence
+(2026-09-23):** `#localizacao` is now one "Onde estamos" section with the
+app's two-column layout: address (two lines), "Como chegar" (the existing
+Google Maps URL, renamed from "Abrir no Google Maps"), a divider, "Contacto"
+with the mailto, no phone, "Horário" as "Todos os dias, 08:00–22:00"; on the
+right a map frame (min 280px) whose placeholder shows the address and "Ver
+mapa"; `assets/js/where-map.js` mounts the OpenStreetMap iframe on click
+(lazy, referrer-free, bbox in ground distance around the pin with the frame's
+aspect) and swaps the privacy note under it for "Abrir no mapa". The contact
+form stays below under "Envie-nos uma mensagem" with its JS and ids
+untouched; `#contacto` is that form block (every "Reservar"/"Falar
+connosco" button leads there, as before) and the nav's "Como chegar" now
+reads "Onde estamos". Smoke +2 (the block's content and anchors; no iframe
+and no third-party request until the click, then the centred, same-height
+map and the link; stacked below 768px) and the renamed link test: 26
+passed; Code.gs 38. README documents the section and the two data
+attributes. **DECISION:** `#contacto` stays on the form (its meaning for
+every CTA), `#localizacao` on the new section — both resolve. **Scope (as assigned):** the separate "Como chegar" and
 "Contacto" sections of `flowspace-site/index.html` become one "Onde estamos"
 section with the same two-column layout and content: address, "Como chegar"
 (existing Google Maps URL), geral@flowspace.pt, no phone, hours as static text

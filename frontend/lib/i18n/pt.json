@@ -4,7 +4,6 @@
     "tagline": "Gabinetes profissionais"
   },
   "hero": {
-    "badge": "Disponível à hora ou com pacote de horas",
     "headline_start": "O seu espaço,",
     "headline_highlight": "no seu tempo.",
     "description": "Gabinetes profissionais para profissionais de saúde e bem-estar, pensados para trabalhar com conforto, privacidade e flexibilidade.",
@@ -117,7 +116,10 @@
     "map_privacy": "O mapa vem do OpenStreetMap e só é carregado quando o pedir.",
     "map_title": "Mapa de {name}",
     "map_title_generic": "Mapa da localização",
-    "open_full_map": "Abrir o mapa completo"
+    "open_full_map": "Abrir o mapa completo",
+    "contact": "Contacto",
+    "hours": "Horário",
+    "hours_per_room": "Horário por sala no calendário."
   },
   "roomCard": {
     "capacity_one": "Até {count} pessoa",

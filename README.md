@@ -184,7 +184,10 @@ inspect the diff before deciding whether a migration or metadata repair is neede
 ## Room and space photos
 
 Operators upload photos from the admin (rooms and spaces); customers see them in
-a carousel. Storage sits behind a gateway (`backend/app/media.py`) like payments,
+a carousel on the room cards and, for the room being booked, as a mosaic
+(≥1024px: the first photo big on the left, the rest in a grid; below that a
+full-width carousel) with a full-screen gallery behind "Mostrar todas as
+fotos". Storage sits behind a gateway (`backend/app/media.py`) like payments,
 email and locks. `MEDIA_STORAGE=local` is the default and the only implementation
 today: processed photos (WebP, metadata stripped, 1600px + a 480px thumbnail) live
 in the `media` Docker volume and the API serves them read-only at `/media`. No
@@ -194,8 +197,14 @@ the backend at startup rather than quietly writing to local disk.
 - `MEDIA_BASE_URL` (default `http://localhost:8000/media`) is the browser-facing
   URL of that directory; change it with the API's public origin.
 - Without Docker, files go to `backend/media/` (gitignored).
-- `python -m app.seed` gives each demo room a few generated placeholder photos,
-  so the carousel has something to show locally; no image files live in git.
+- `python -m app.seed` gives each demo room the four illustrated room scenes
+  from `flowspace-site/assets/img/room-photos/` (`sala-01..04.webp` and their
+  thumbnails — the same four for every room, until real photos replace them),
+  copied through the same storage as uploads. Compose mounts that folder into
+  the backend container and sets `SEED_PHOTOS_DIR=/app/seed-photos`; a native
+  run finds the repo's copy by itself, and any other location can be given
+  with `SEED_PHOTOS_DIR`. Re-seeding replaces the seed's own photos (and the
+  gradients an older seed generated) and leaves an operator's uploads alone.
 - Removing the volume (`docker compose down -v`) removes the photos with the
   database, which keeps the two consistent.
 
@@ -243,6 +252,14 @@ the customer and in the admin table) until refunds exist (O02).
 # Shorten the hold to see expiry quickly:
 BOOKING_HOLD_MINUTES=1 docker compose up -d backend
 ```
+
+"Onde estamos" (landing page in single-space mode, and the top of the rooms
+page) shows the address, "Como chegar", the contact email, the opening hours
+derived from the rooms' availability rules (union across rooms, on the Lisbon
+clock — evaluated in UTC until R01) and a click-to-load OpenStreetMap frame
+centred on the pin. `CONTACT_PHONE` in `.env` (Compose hands it to the
+frontend as `NEXT_PUBLIC_CONTACT_PHONE`) adds a phone line when set; it is
+empty by default and no line is rendered.
 
 A customer may book at most `BOOKING_MAX_ADVANCE_DAYS` days ahead (default
 30, H01): a later `start_time` is refused, `GET /rooms/{id}/availability`

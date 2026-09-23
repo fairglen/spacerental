@@ -70,18 +70,40 @@ test.describe('single-space mode', () => {
     await page.goto('/')
     const where = page.getByRole('region', { name: /onde estamos/i })
     await expect(where).toBeVisible({ timeout: 15000 })
-    await expect(where.getByText('2745-841 Queluz')).toBeVisible()
+    // The address group (the map placeholder repeats the address at its size).
+    await expect(where.getByRole('group', { name: /morada/i }).getByText('2745-841 Queluz')).toBeVisible()
     const directions = where.getByRole('link', { name: /como chegar/i })
     await expect(directions).toHaveAttribute('href', /destination=38\.755723,-9\.279799/)
     await expect(directions).toHaveAttribute('target', '_blank')
     await expect(page.locator('iframe')).toHaveCount(0)
     expect(thirdParty).toEqual([])
 
+    // V06: one block — contact, hours (the seed's 08–22 every day, on the
+    // Lisbon clock), no phone line, and the map placeholder holds its size.
+    await expect(where.getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', /^mailto:/)
+    await expect(where.locator('a[href^="tel:"]')).toHaveCount(0)
+    await expect(where.getByTestId('opening-hours')).toHaveText(/Todos os dias (08:00–22:00|09:00–23:00)/)
+    const mapFrame = where.getByTestId('map-frame')
+    const before = await mapFrame.boundingBox()
+    expect(before!.height).toBeGreaterThanOrEqual(280)
+
     await where.getByRole('button', { name: /ver mapa/i }).click()
-    await expect(where.locator('iframe')).toHaveAttribute('src', /openstreetmap\.org\/export\/embed/)
+    const frame = where.locator('iframe')
+    await expect(frame).toHaveAttribute('src', /openstreetmap\.org\/export\/embed/)
+    const src = new URL((await frame.getAttribute('src'))!)
+    const [west, south, east, north] = src.searchParams.get('bbox')!.split(',').map(Number)
+    expect((west + east) / 2).toBeCloseTo(-9.279799, 5)
+    expect((south + north) / 2).toBeCloseTo(38.755723, 5)
+    const after = await mapFrame.boundingBox()
+    expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(2)
+    expect(Math.abs(after!.width - before!.width)).toBeLessThanOrEqual(2)
+    await expect(where.getByRole('link', { name: /abrir o mapa completo/i })).toBeVisible()
 
     await page.goto('/spaces')
-    await expect(page.getByText('2745-841 Queluz')).toBeVisible({ timeout: 15000 })
+    const whereRooms = page.getByRole('region', { name: /onde estamos/i })
+    await expect(whereRooms).toBeVisible({ timeout: 15000 })
+    await expect(whereRooms.getByRole('group', { name: /morada/i }).getByText('2745-841 Queluz')).toBeVisible()
+    await expect(whereRooms.getByTestId('opening-hours')).toHaveText(/Todos os dias/)
     // Nothing customer-facing still places the seeded space in Lisbon.
     await expect(page.getByText(/Lisboa|Lisbon/)).toHaveCount(0)
     await page.goto('/')

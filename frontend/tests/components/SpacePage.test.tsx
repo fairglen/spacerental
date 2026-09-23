@@ -98,3 +98,15 @@ describe('Space page — location header (C10)', () => {
     expect(heading.parentElement?.textContent).not.toMatch(/null|undefined/)
   })
 })
+
+// V03: photos instead of descriptions. The field stays in the API and the
+// admin form (as internal notes); customers never see it.
+describe('room description is not shown to customers (V03)', () => {
+  it('a room card renders name, price, capacity and amenities but not the description', async () => {
+    const { RoomCard } = await import('@/components/spaces/RoomCard')
+    render(<RoomCard room={{ ...roomA, description: 'Chave no armário 2', amenities: ['WiFi'] }} href="/spaces?room=r-a" />)
+    expect(screen.getByText('Sala Calma')).toBeInTheDocument()
+    expect(screen.getByText('WiFi')).toBeInTheDocument()
+    expect(screen.queryByText('Chave no armário 2')).toBeNull()
+  })
+})

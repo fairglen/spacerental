@@ -26,16 +26,129 @@ test('hero renders one headline with its emphasised word and a lede', async ({ p
   await expect(h1).not.toBeEmpty();
   await expect(h1.locator('em')).not.toBeEmpty();
   await expect(page.locator('.hero p.lede').first()).not.toBeEmpty();
+  // V04: the headline is the first thing in the hero; no pill above it.
+  await expect(page.locator('.hero .hero-badge')).toHaveCount(0);
+  await expect(page.locator('.hero-content > :first-child')).toHaveJSProperty('tagName', 'H1');
 });
 
-test('maps link points at the correct address', async ({ page }) => {
+// V02: every room card carries a photo gallery built from the manifest —
+// structure and behaviour, never which pictures.
+test('every room card has a photo gallery from the manifest, and no prose', async ({ page }) => {
   await page.goto('/');
-  const mapsLink = page.getByRole('link', { name: 'Abrir no Google Maps' });
+  const cards = page.locator('.room-card');
+  await expect(cards).toHaveCount(3);
+  const manifest = await (await page.request.get('/assets/img/room-photos/manifest.json')).json();
+  for (const card of await cards.all()) {
+    const name = (await card.locator('h3').innerText()).trim();
+    const slug = await card.locator('.room-gallery').getAttribute('data-room');
+    const expected = manifest[slug!].length;
+    const gallery = card.getByRole('region', { name: `${name} — fotografias` });
+    await expect(gallery).toBeVisible();
+    const images = gallery.getByRole('img');
+    await expect(images).toHaveCount(expected);
+    for (let i = 0; i < expected; i++) {
+      const image = images.nth(i);
+      await expect(image).toHaveAttribute('alt', `${name} — fotografia ${i + 1} de ${expected}`);
+      await expect(image).toHaveAttribute('width', /\d+/);
+      await expect(image).toHaveAttribute('height', /\d+/);
+      await expect(image).toHaveAttribute('loading', i === 0 ? 'eager' : 'lazy');
+      await expect(image).toHaveAttribute('src', /assets\/img\/room-photos\//);
+    }
+    await expect(gallery.getByRole('tablist', { name: 'Escolher fotografia' }).getByRole('tab')).toHaveCount(expected);
+    // Photos instead of descriptions (V03): name, price and tags stay.
+    await expect(card.locator('p.desc')).toHaveCount(0);
+    await expect(card.locator('.room-price')).not.toBeEmpty();
+    await expect(card.locator('.tag-list .tag').first()).toBeVisible();
+  }
+});
+
+test('"next" advances the gallery, the dots and the announcer follow, and the arrow keys work', async ({ page }) => {
+  await page.goto('/');
+  const gallery = page.locator('.room-card').first().getByRole('region', { name: /fotografias$/ });
+  await expect(gallery).toBeVisible();
+  const dots = gallery.getByRole('tab');
+  const announcer = gallery.locator('[data-gallery-announcer]');
+  await expect(dots.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(announcer).toBeEmpty(); // it never speaks unprompted
+  await expect(gallery.getByRole('button', { name: 'Fotografia anterior' })).toBeHidden(); // disabled at the start
+
+  await gallery.getByRole('button', { name: 'Fotografia seguinte' }).click();
+  await expect(dots.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(announcer).toHaveText('Fotografia 2 de 4');
+  await expect(gallery.getByRole('group', { name: 'Fotografia 2 de 4' })).toBeInViewport();
+
+  await gallery.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(dots.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(announcer).toHaveText('Fotografia 1 de 4');
+
+  await dots.nth(3).click();
+  await expect(dots.nth(3)).toHaveAttribute('aria-selected', 'true');
+  await expect(gallery.getByRole('button', { name: 'Fotografia seguinte' })).toBeHidden(); // disabled at the end
+});
+
+test('"Como chegar" points at the correct address', async ({ page }) => {
+  await page.goto('/');
+  const mapsLink = page.locator('#localizacao').getByRole('link', { name: 'Como chegar' });
   await expect(mapsLink).toHaveAttribute(
     'href',
     'https://www.google.com/maps/search/?api=1&query=Rua+12+de+Julho+de+1997%2C+2745-841+Queluz+%E2%80%94+Massam%C3%A3'
   );
   await expect(mapsLink).toHaveAttribute('target', '_blank');
+});
+
+// V07: one "Onde estamos" section — address, directions, contact, hours and
+// a map that loads only when asked; the contact form still below it.
+test('"Onde estamos" holds the address, the email, the hours and no phone; the map waits to be asked', async ({ page }) => {
+  const thirdParty: string[] = [];
+  page.on('request', (r) => { if (/openstreetmap|google\./.test(r.url())) thirdParty.push(r.url()); });
+  await page.goto('/');
+  const where = page.locator('#localizacao');
+  await expect(where.getByRole('heading', { level: 2 })).toHaveText('Onde estamos');
+  await expect(where.locator('.where-address')).toContainText('2745-841 Queluz');
+  await expect(where.getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', 'mailto:geral@flowspace.pt');
+  await expect(where.locator('a[href^="tel:"]')).toHaveCount(0);
+  await expect(where.locator('.where-line').last()).toHaveText('Todos os dias, 08:00–22:00');
+  // Both anchors resolve: the section, and the form below it.
+  await expect(page.locator('#contacto')).toHaveCount(1);
+  await expect(page.locator('#contacto')).toContainText('Envie-nos uma mensagem');
+  await expect(page.locator('#contacto form#contactForm')).toHaveCount(1);
+  await expect(page.locator('#localizacao #contacto')).toHaveCount(1);
+
+  // No map, no third-party request, until the visitor asks; the placeholder
+  // holds the address and the button at the map's size.
+  await expect(where.locator('iframe')).toHaveCount(0);
+  expect(thirdParty).toEqual([]);
+  const frame = where.locator('.where-map-frame');
+  const before = await frame.boundingBox();
+  expect(before!.height).toBeGreaterThanOrEqual(280);
+  await expect(where.locator('.where-map-placeholder')).toContainText('2745-841 Queluz');
+
+  await where.getByRole('button', { name: 'Ver mapa' }).click();
+  const map = where.locator('iframe');
+  await expect(map).toHaveAttribute('src', /openstreetmap\.org\/export\/embed\.html/);
+  await expect(map).toHaveAttribute('loading', 'lazy');
+  await expect(map).toHaveAttribute('referrerpolicy', 'no-referrer');
+  const src = new URL((await map.getAttribute('src'))!);
+  expect(src.searchParams.get('marker')).toBe('38.755723,-9.279799');
+  const [west, south, east, north] = src.searchParams.get('bbox')!.split(',').map(Number);
+  expect((west + east) / 2).toBeCloseTo(-9.279799, 5);
+  expect((south + north) / 2).toBeCloseTo(38.755723, 5);
+  // The box has the frame's shape on the ground, so the pin is centred.
+  const ratio = ((east - west) * Math.cos((38.755723 * Math.PI) / 180)) / (north - south);
+  expect(ratio).toBeCloseTo(before!.width / before!.height, 1);
+  const after = await frame.boundingBox();
+  expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(2);
+  await expect(where.getByRole('link', { name: 'Abrir no mapa' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=38\.755723/);
+});
+
+test('below 768px "Onde estamos" stacks, the map under the words', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const words = await page.locator('#localizacao .where-details').boundingBox();
+  const map = await page.locator('#localizacao .where-map').boundingBox();
+  expect(map!.y).toBeGreaterThanOrEqual(words!.y + words!.height);
+  expect(Math.abs(map!.x - words!.x)).toBeLessThan(2);
 });
 
 const STUB_URL = 'https://script.google.com/macros/s/TESTDEPLOYMENT/exec';

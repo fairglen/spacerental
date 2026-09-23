@@ -33,8 +33,10 @@ SPACE_FIELDS = {
 }  # fmt: skip
 ROOM_FIELDS = {
     "id", "space_id", "org_id", "name", "description", "capacity", "hourly_rate", "images",
-    "photos", "amenities", "color", "is_active", "created_at", "updated_at",
+    "photos", "amenities", "color", "is_active", "created_at", "updated_at", "availability_rules",
 }  # fmt: skip
+# A room's public opening windows (V06): the week's shape, never the rule row.
+OPENING_HOURS_FIELDS = {"day_of_week", "open_time", "close_time"}
 PACKAGE_FIELDS = {
     "id", "org_id", "name", "hours", "price", "validity_days", "is_active", "created_at",
     "updated_at",
@@ -118,6 +120,11 @@ class TestPublicResponses:
         assert set(detail) == {"space", "rooms"}
         assert set(detail["space"]) == SPACE_FIELDS
         assert [set(room) for room in detail["rooms"]] == [ROOM_FIELDS]
+        assert all(
+            set(window) == OPENING_HOURS_FIELDS
+            for room in detail["rooms"]
+            for window in room["availability_rules"]
+        )
         # The detail also nests the space's room relation. Which rooms belong
         # there is S20's business; whatever it holds, every entry carries the
         # published room fields and nothing more.

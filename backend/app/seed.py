@@ -10,16 +10,17 @@ if they do not already exist, and keeps the demo space's location current.
 
 import asyncio
 import io
-import unicodedata
 from datetime import time
 from decimal import Decimal
+from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import media
 from app.auth import hash_password
+from app.config import settings
 from app.database import async_session_factory, engine
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.package import Package
@@ -88,64 +89,103 @@ def _previous_demo_room_description(name: str) -> str:
     return f"Sala privada e confortável — {name}."
 
 
-PLACEHOLDER_PHOTOS_PER_ROOM = 3
+# Opening hours the seed writes (V05): every day, 08:00-22:00. Evaluated in
+# UTC like every rule (R01), so the Lisbon wall clock reads 09:00-23:00 in
+# summer. `_PREVIOUS_SEED_RULES` is what earlier seeds wrote (Mon-Sat
+# 08:00-20:00), which a re-seed replaces; anything else is an operator's.
+SEED_RULES = frozenset((day, time(8, 0), time(22, 0), True) for day in range(7))
+_PREVIOUS_SEED_RULES = frozenset((day, time(8, 0), time(20, 0), True) for day in range(6))
+
+# The four illustrated room scenes the marketing site ships (V01): the same
+# four, in this order, for every demo room, until real photos replace them
+# (TODO Q-V08). Each is a 1600x1200 WebP with a 480x360 thumbnail, already
+# the shape the upload pipeline (C14) would produce.
+SEED_PHOTO_NAMES = ("sala-01", "sala-02", "sala-03", "sala-04")
+# Marks a photo the seed wrote, so a re-seed can replace its own and leave an
+# operator's uploads alone. Not part of the public shape (`PhotoOut` ignores it).
+SEED_MARK = "seed"
 
 
-def _placeholder_png(room_name: str, color: str, variant: int) -> bytes:
-    """A small gradient picture with the room's name on it.
+def seed_photos_dir() -> Path:
+    """Where the illustrations are: `SEED_PHOTOS_DIR`, or the repo's own copy.
 
-    Generated rather than committed: the repository carries no binary assets,
-    and the demo rooms still have something for the carousel to show (C16).
+    Natively the checkout has `flowspace-site/` two levels up from this file;
+    inside the backend container it does not, so Compose mounts that folder
+    and sets the variable.
     """
-    width, height = 960, 720
-    base = tuple(int(color.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
-    # Each variant fades towards a different tone so the photos are tellable apart.
-    toward = [(255, 255, 255), (61, 122, 94), (40, 50, 70)][variant % 3]
-    image = Image.new("RGB", (width, height))
-    draw = ImageDraw.Draw(image)
-    for y in range(height):
-        t = y / (height - 1)
-        draw.line(
-            [(0, y), (width, y)],
-            fill=tuple(round(b + (e - b) * t) for b, e in zip(base, toward, strict=True)),
-        )
-    # Pillow's built-in font has no accented glyphs ("Névoa" drew a box), and
-    # white text vanishes into the light end of the gradient: plain ASCII on a
-    # dark band reads on every variant.
-    ascii_name = unicodedata.normalize("NFKD", room_name).encode("ascii", "ignore").decode()
-    caption = f"{ascii_name} - {variant + 1}"
-    font = ImageFont.load_default(size=52)
-    left, top, right, bottom = draw.textbbox((0, 0), caption, font=font)
-    text_w, text_h = right - left, bottom - top
-    x, y = (width - text_w) / 2, (height - text_h) / 2
-    draw.rounded_rectangle(
-        (x - 36, y - 24, x + text_w + 36, y + text_h + 36), radius=18, fill=(30, 40, 50)
+    if settings.SEED_PHOTOS_DIR:
+        return Path(settings.SEED_PHOTOS_DIR)
+    return Path(__file__).resolve().parents[2] / "flowspace-site" / "assets" / "img" / "room-photos"
+
+
+# What C16's generator produced, and nothing an operator is likely to have
+# uploaded: two or three pictures, every one exactly 960x720, none marked.
+_LEGACY_PLACEHOLDER_SIZE = (960, 720)
+
+
+def _is_legacy_placeholder_set(photos: list[dict]) -> bool:
+    return 2 <= len(photos) <= 3 and all(
+        SEED_MARK not in p and (p.get("width"), p.get("height")) == _LEGACY_PLACEHOLDER_SIZE
+        for p in photos
     )
-    draw.text((x - left, y - top), caption, font=font, fill=(255, 255, 255))
-    out = io.BytesIO()
-    image.save(out, format="PNG")
-    return out.getvalue()
 
 
-async def _seed_room_photos(room: Room) -> None:
-    """Give a photo-less demo room its placeholders, through the upload pipeline."""
+def _read_illustration(name: str) -> tuple[bytes, bytes, int, int]:
+    folder = seed_photos_dir()
+    main_path, thumb_path = folder / f"{name}.webp", folder / f"{name}-thumb.webp"
+    for path in (main_path, thumb_path):
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Seed photo {path} is missing; set SEED_PHOTOS_DIR to the folder holding "
+                f"{', '.join(n + '.webp' for n in SEED_PHOTO_NAMES)} and their -thumb.webp files"
+            )
+    main, thumb = main_path.read_bytes(), thumb_path.read_bytes()
+    with Image.open(io.BytesIO(main)) as image:
+        width, height = image.size
+    return main, thumb, width, height
+
+
+async def _seed_room_photos(room: Room) -> bool:
+    """Give a demo room the four illustrations, through the same storage as uploads.
+
+    Idempotent: the photos an earlier seed wrote (marked `SEED_MARK`) are
+    replaced — files deleted, rows rewritten — and an operator's own uploads
+    stay exactly where they are, ahead of the seed's. Returns whether anything
+    changed.
+    """
     storage = media.get_media_storage()
-    photos: list[dict] = []
-    for variant in range(PLACEHOLDER_PHOTOS_PER_ROOM):
-        processed = media.process_image(_placeholder_png(room.name, room.color, variant))
+    current = list(room.photos or [])
+    if _is_legacy_placeholder_set(current):
+        # The gradients C16's seed generated carry no mark; a database seeded
+        # before V01 would keep them ahead of the illustrations for good.
+        seeded, operators = current, []
+    else:
+        operators = [p for p in current if SEED_MARK not in p]
+        seeded = [p for p in current if SEED_MARK in p]
+    if [p.get(SEED_MARK) for p in seeded] == list(SEED_PHOTO_NAMES):
+        return False
+    for photo in seeded:
+        for key in (photo.get("key"), photo.get("thumb_key")):
+            if key:
+                await storage.delete(key)
+    fresh: list[dict] = []
+    for name in SEED_PHOTO_NAMES:
+        main, thumb, width, height = _read_illustration(name)
         photo_id, key, thumb_key = media.new_photo_keys("rooms", room.id)
-        await storage.save(key, processed.main)
-        await storage.save(thumb_key, processed.thumb)
-        photos.append(
+        await storage.save(key, main)
+        await storage.save(thumb_key, thumb)
+        fresh.append(
             {
                 "id": photo_id,
                 "key": key,
                 "thumb_key": thumb_key,
-                "width": processed.width,
-                "height": processed.height,
+                "width": width,
+                "height": height,
+                SEED_MARK: name,
             }
         )
-    room.photos = photos
+    room.photos = operators + fresh
+    return True
 
 
 async def seed_demo_data(session: AsyncSession) -> None:
@@ -258,33 +298,38 @@ async def seed_demo_data(session: AsyncSession) -> None:
             if room.description == _previous_demo_room_description(room.name):
                 room.description = DEMO_ROOM_DESCRIPTIONS[room.name]
             print(f"Room already exists: {room.name} ({room.id})")
-        # Only a room with no photos at all: whatever an operator uploaded,
-        # removed or reordered is theirs, and a re-seed must not touch it.
-        if not room.photos:
-            await _seed_room_photos(room)
+        # The seed's own photos are replaced; an operator's uploads are theirs.
+        if await _seed_room_photos(room):
             await session.flush()
-            print(f"  Generated {len(room.photos)} placeholder photos for {room.name}")
+            print(f"  Seeded {len(SEED_PHOTO_NAMES)} illustration photos for {room.name}")
         created_rooms.append(room)
 
-    # ── Availability Rules (Mon-Sat 08:00-20:00) ──────────────────────────
+    # ── Availability Rules (every day 08:00-22:00, V05) ───────────────────
     for room in created_rooms:
         result = await session.execute(
             select(AvailabilityRule).where(AvailabilityRule.room_id == room.id)
         )
         existing_rules = result.scalars().all()
-        if not existing_rules:
-            for day in range(6):  # 0=Monday to 5=Saturday
-                rule = AvailabilityRule(
-                    room_id=room.id,
-                    day_of_week=day,
-                    open_time=time(8, 0),
-                    close_time=time(20, 0),
-                )
-                session.add(rule)
-            await session.flush()
-            print(f"Created availability rules for room: {room.name}")
+        found = {(r.day_of_week, r.open_time, r.close_time, r.is_active) for r in existing_rules}
+        if found == SEED_RULES:
+            print(f"Availability rules already current for room: {room.name}")
+        elif existing_rules and found != _PREVIOUS_SEED_RULES:
+            # An operator shaped these hours; a re-seed must not undo that.
+            print(f"Availability rules kept as the operator set them: {room.name}")
         else:
-            print(f"Availability rules already exist for room: {room.name}")
+            for rule in existing_rules:
+                await session.delete(rule)
+            for day, open_time, close_time, _ in sorted(SEED_RULES):
+                session.add(
+                    AvailabilityRule(
+                        room_id=room.id,
+                        day_of_week=day,
+                        open_time=open_time,
+                        close_time=close_time,
+                    )
+                )
+            await session.flush()
+            print(f"Seeded availability rules for room: {room.name}")
 
     # ── Packages ──────────────────────────────────────────────────────────
     packages_data = [

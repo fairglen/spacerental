@@ -48,6 +48,7 @@ services:
       # Handed to the visitor's browser inside API responses, so localhost is
       # correct here (same reasoning as STRIPE_STUB_CHECKOUT_BASE_URL).
       MEDIA_BASE_URL: ${MEDIA_BASE_URL:-http://localhost:8000/media}
+      SEED_PHOTOS_DIR: /app/seed-photos
       # Defaults mirror app/config.py so a fresh clone comes up in stub mode
       # with nothing set. The keys are forwarded empty rather than omitted:
       # app.payments.validate_payment_settings() treats empty as missing, so
@@ -93,6 +94,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      # The room illustrations the seed copies into MEDIA_ROOT (V01): the
+      # container has no view of flowspace-site/, so the folder is mounted.
+      - ./flowspace-site/assets/img/room-photos:/app/seed-photos:ro
       # Outside the bind mount on purpose: uploads must not land in the checkout.
       - media:/var/lib/spacerental/media
     # The image's ENTRYPOINT runs `alembic upgrade head` before handing off to
@@ -109,6 +113,8 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required — copy .env.example to .env}
       NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: ${RECURRING_BOOKINGS_ENABLED:-false}
       NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS: ${BOOKING_MAX_ADVANCE_DAYS:-30}
+      # Optional phone line in "Onde estamos" (V06); empty = no line.
+      NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
       INTERNAL_API_URL: http://backend:8000/api/v1
     depends_on:

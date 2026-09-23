@@ -5,7 +5,7 @@ import { Building2 } from 'lucide-react'
 import { spacesApi } from '@/lib/api'
 import { useSingleSpace } from '@/lib/hooks/useSingleSpace'
 import { RoomCard } from '@/components/spaces/RoomCard'
-import { SpaceLocation } from '@/components/spaces/SpaceLocation'
+import { WhereWeAre } from '@/components/spaces/WhereWeAre'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -81,11 +81,8 @@ function SingleSpaceRooms({ space }: { space: Space }) {
           </Link>
         </div>
       )}
-      <section aria-labelledby="onde-estamos" id="onde-estamos-seccao" className="mt-12 mx-auto max-w-3xl rounded-xl border border-border bg-white p-6 scroll-mt-20">
-        <h3 id="onde-estamos" className="text-xl font-semibold text-foreground">{t('location.heading')}</h3>
-        <p className="mt-1 mb-4 text-sm font-medium text-foreground">{space.name}</p>
-        <SpaceLocation space={space} variant="compact" />
-      </section>
+      {/* Where the one space is, how to reach it and when it is open (V06). */}
+      <WhereWeAre space={space} rooms={rooms} headingAs="h3" className="mt-12" />
     </>
   )
 }

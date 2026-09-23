@@ -40,18 +40,24 @@ export function directionsUrl(space: SpaceLocationData): string | null {
   return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : null
 }
 
-// Half-widths of the embedded map's box, in degrees: a few streets around the
-// door. Longitude is wider because the preview is landscape.
-const HALF_HEIGHT = 0.0025
-const HALF_WIDTH = 0.005
+// Half-height of the embedded map's box, in degrees of latitude: a few
+// streets around the door. The half-width follows the frame's aspect ratio,
+// scaled by 1/cos(lat) because a degree of longitude is shorter than a degree
+// of latitude away from the equator — so the box has the frame's shape and
+// the marker sits in its middle instead of near the bottom (V06).
+const HALF_HEIGHT = 0.006
+export const DEFAULT_MAP_ASPECT = 1.5
 
 /** OpenStreetMap's keyless embed, centred on the point, with a marker. */
-export function mapEmbedUrl(latitude: number, longitude: number): string {
+export function mapEmbedUrl(latitude: number, longitude: number, aspect: number = DEFAULT_MAP_ASPECT): string {
+  const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : DEFAULT_MAP_ASPECT
   // Shift the box instead of clipping it, so the point stays inside it and the
   // box keeps a real area even at a pole or the antimeridian.
   const centreLat = Math.min(90 - HALF_HEIGHT, Math.max(-90 + HALF_HEIGHT, latitude))
-  const centreLng = Math.min(180 - HALF_WIDTH, Math.max(-180 + HALF_WIDTH, longitude))
-  const box = [centreLng - HALF_WIDTH, centreLat - HALF_HEIGHT, centreLng + HALF_WIDTH, centreLat + HALF_HEIGHT]
+  const cosLat = Math.max(0.05, Math.cos((centreLat * Math.PI) / 180))
+  const halfWidth = Math.min(90, (HALF_HEIGHT * safeAspect) / cosLat)
+  const centreLng = Math.min(180 - halfWidth, Math.max(-180 + halfWidth, longitude))
+  const box = [centreLng - halfWidth, centreLat - HALF_HEIGHT, centreLng + halfWidth, centreLat + HALF_HEIGHT]
     .map((n) => n.toFixed(6))
     .join(',')
   const params = new URLSearchParams({ bbox: box, layer: 'mapnik', marker: `${latitude},${longitude}` })

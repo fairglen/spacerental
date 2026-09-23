@@ -67,6 +67,10 @@ List all active spaces (public). Each space carries its location: `address`,
 Response: `{ spaces: Space[] }`
 
 ### GET /spaces/:id
+Each room carries `availability_rules: [{ day_of_week, open_time, close_time }]`
+(V06): its active opening windows, weekday 0 = Monday, times in UTC like every
+rule (R01). "Onde estamos" derives the space's hours from their union. The
+list endpoint (`GET /spaces`) does not load rooms.
 Space detail with rooms.
 Response: `{ space: Space, rooms: Room[] }`
 
@@ -338,6 +342,10 @@ never build these URLs: they arrive ready-made in `photos`.
 ### POST /admin/spaces/:id/rooms
 Add a room to a space.
 Body: `{ name, description, capacity, hourly_rate, color, amenities?, images? }`
+`description` is the operator's **internal note** since V03 ("Notas internas
+(não visíveis ao cliente)" in the admin): it is still returned by the public
+room endpoints for compatibility but no customer screen renders it — the
+photos say what the room is like.
 
 ### PUT /admin/rooms/:id
 Update a room. `is_active: false` switches it off for customers (A07) — but
@@ -493,10 +501,11 @@ type Room = {
   space_id: string
   org_id: string
   name: string
-  description: string
+  description: string          // operator's internal note (V03); not rendered to customers
   capacity: number
   hourly_rate: number
   images: string[]
+  availability_rules?: { day_of_week: number; open_time: string; close_time: string }[]  // on GET /spaces/:id (V06)
   amenities: string[]
   color: string
   is_active: boolean

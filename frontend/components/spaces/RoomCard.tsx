@@ -53,7 +53,7 @@ export function RoomCard({ room, onBook, href, selected = false }: RoomCardProps
         </div>
       </CardHeader>
       <CardContent>
-        {room.description && <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{room.description}</p>}
+        {/* V03: the photos say what the room is like; `description` is the operator's internal note now. */}
         <div className="flex flex-wrap gap-1 mb-4">
           {room.amenities.slice(0, 3).map((a) => (
             <Badge key={a} variant="secondary" className="text-xs">{a}</Badge>

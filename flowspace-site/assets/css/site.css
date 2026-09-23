@@ -187,19 +187,6 @@ a {
   max-width: 42rem;
 }
 
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: var(--color-accent-bg);
-  color: var(--color-primary);
-  border-radius: 999px;
-  padding: 0.35rem 0.9rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 1.25rem;
-}
-
 .hero h1 {
   font-size: 2.75rem;
   line-height: 1.15;
@@ -323,10 +310,128 @@ section.alt {
   margin: 0 0 0.75rem;
 }
 
-.room-card p.desc {
-  color: var(--color-muted);
-  font-size: 0.95rem;
-  margin: 0 0 1rem;
+/* Room card photo gallery (V02): the frame bleeds to the card's edges, above
+   the name; native scroll-snap does the swiping. */
+.room-gallery {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  margin: -1.75rem -1.75rem 1.25rem;
+  border-radius: var(--radius) var(--radius) 0 0;
+  overflow: hidden;
+  background: var(--color-accent-bg);
+}
+
+.room-gallery:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.room-gallery-track {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.room-gallery-track::-webkit-scrollbar {
+  display: none;
+}
+
+.room-gallery-slide {
+  flex: 0 0 100%;
+  height: 100%;
+  scroll-snap-align: center;
+}
+
+.room-gallery-slide img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-gallery-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-foreground);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.room-gallery-btn.prev { left: 0.5rem; }
+.room-gallery-btn.next { right: 0.5rem; }
+
+.room-gallery:hover .room-gallery-btn,
+.room-gallery:focus-within .room-gallery-btn,
+.room-gallery-btn:focus-visible {
+  opacity: 1;
+}
+
+.room-gallery-btn:disabled {
+  display: none;
+}
+
+.room-gallery-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+}
+
+/* A dark pill behind the dots: white dots alone vanish on a light picture. */
+.room-gallery-dots {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.room-gallery-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.room-gallery-dot span {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  transition: width 0.15s, background 0.15s;
+}
+
+.room-gallery-dot[aria-selected="true"] span {
+  width: 0.75rem;
+  background: #fff;
+}
+
+.room-gallery-dot:focus-visible span {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-gallery-track { scroll-behavior: auto; }
 }
 
 .tag-list {
@@ -428,29 +533,100 @@ section.alt {
 
 /* ---------- Localização ---------- */
 
-.location-card {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+/* ---------- Onde estamos (V07) ---------- */
+
+.where-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   gap: 1.5rem;
   background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 2rem;
-  max-width: 46rem;
-  margin: 0 auto;
+  padding: 1.5rem;
 }
 
-.location-address {
+.where-address {
+  margin: 0 0 1rem;
   font-size: 1.05rem;
   color: var(--color-foreground);
 }
 
-.location-address strong {
+.where-address strong,
+.where-address span {
   display: block;
+}
+
+.where-address strong {
   color: var(--color-primary);
   margin-bottom: 0.25rem;
+}
+
+.where-divider {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 1.25rem 0;
+}
+
+.where-label {
+  margin: 0.75rem 0 0.15rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.where-line {
+  margin: 0;
+  color: var(--color-foreground);
+}
+
+.where-map-frame {
+  display: flex;
+  height: 100%;
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-accent-bg);
+}
+
+.where-map-frame iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+}
+
+.where-map-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.where-map-placeholder p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.95rem;
+}
+
+.where-map-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.contact-block {
+  margin-top: 3rem;
+}
+
+.contact-block .section-head h3 {
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
 }
 
 /* ---------- Contact form ---------- */
@@ -658,9 +834,19 @@ section.alt {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .location-card {
-    flex-direction: column;
-    align-items: flex-start;
-    text-align: left;
+  .where-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

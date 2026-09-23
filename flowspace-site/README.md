@@ -14,8 +14,8 @@ and acceptance criteria, and the plan this was built from for full context.
 
 - **Is**: a one-page static site (`index.html`) plus a minimal privacy
   placeholder (`privacidade.html`), hand-written CSS, a small vanilla-JS
-  contact form, and a Google Apps Script backend that emails submissions to
-  `geral@flowspace.pt`.
+  contact form, a vanilla-JS photo gallery on the room cards, and a Google
+  Apps Script backend that emails submissions to `geral@flowspace.pt`.
 - **Isn't**: a Next.js app, a Tailwind build, or anything requiring
   `npm install` to preview. It isn't wired into any of the app's CI workflows,
   and touching it never runs `backend-tests.yml`/`frontend-tests.yml`/`e2e.yml`.
@@ -59,6 +59,40 @@ reach `fetch()`, and come back as an HTML error page. Anything that does not
 match the full pattern above is treated as unconfigured and fails loudly at
 load. `tests/smoke.spec.ts` pins that for the placeholder and for four
 same-host-but-malformed URLs.
+
+## Room photos
+
+Each room card carries a small carousel (`assets/js/room-gallery.js`, CSS in
+`site.css`, no dependency: native scroll-snap, previous/next buttons, dots as
+a `tablist`, arrow keys, no autoplay, the same accessible names as the app's
+carousel). It reads `assets/img/room-photos/manifest.json`:
+
+```json
+{ "sala-calma": ["sala-01.svg", "sala-02.svg", "sala-03.svg", "sala-04.svg"], … }
+```
+
+The key is the card's `data-room` slug, the value the files in that folder,
+in order. Today every room shows the same four illustrated scenes
+(`sala-01..04.svg`; the `.webp` files next to them are the app's seed copies).
+**Real photos later are a manifest edit plus the files** — drop them into
+`assets/img/room-photos/`, list them per room, done; nothing in the script or
+the HTML changes. The first picture loads eagerly, the rest lazily, all with
+`width`/`height` so the card does not jump. Without JavaScript the card shows
+name, price and tags and no pictures.
+
+## "Onde estamos" and the map
+
+The location, contact and hours sit in one section (`#localizacao`): the
+address, "Como chegar" (the Google Maps search URL), `geral@flowspace.pt`, no
+phone line (there is no number yet), and the hours as static text — "Todos os
+dias, 08:00–22:00", the same as the app's seed. The map on the right is an
+OpenStreetMap embed that `assets/js/where-map.js` mounts **only when the
+visitor presses "Ver mapa"**, so the page makes no third-party request by
+default; the bounding box is built around the pin (the `data-lat`/`data-lng`
+attributes) with the frame's aspect ratio, so the marker is centred. The
+contact form stays below it under "Envie-nos uma mensagem", and `#contacto`
+now points at that form block (every "Reservar" button does). Change the
+address in the HTML and the coordinates in the two data attributes.
 
 ## Deploying to GitHub Pages
 
@@ -662,11 +696,21 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-22 tests, all passing at time of writing. They assert:
+26 tests, all passing at time of writing. They assert:
 
 - the hero renders one headline with its emphasised word and a lede (structure,
-  not prose — the copy is the owner's to change), and the Google Maps link
-  href is exactly correct;
+  not prose — the copy is the owner's to change) and no pill above it (V04),
+  and the "Como chegar" href is exactly correct;
+- "Onde estamos" holds the address, the mailto, the hours and no phone; both
+  anchors resolve and the form is still there; no iframe and no third-party
+  request until "Ver mapa", then a lazy, referrer-free OpenStreetMap frame
+  whose box is centred on the pin with the frame's shape, at the same height
+  as the placeholder, with "Abrir no mapa" below; the block stacks below
+  768px (V07);
+- every room card has a gallery built from the manifest (one image per listed
+  file with its alt, sizes and loading policy, a dot per photo, no prose
+  paragraph), and "next", the dots and the arrow keys move it with the live
+  region following (V02);
 - the script rewrite the suite relies on matches whatever `APPS_SCRIPT_URL` is
   committed (placeholder or deployed URL) and still fails loudly if the
   constant disappears (B49);

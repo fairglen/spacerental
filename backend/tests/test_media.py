@@ -371,43 +371,135 @@ class TestStorageSeam:
 
 
 class TestSeededPhotos:
-    """The demo rooms get generated placeholder photos, so the carousel has data locally."""
+    """The demo rooms get the four room illustrations (V01), so the mosaic and
+    the carousel have data locally, through the same storage as uploads."""
 
-    async def test_each_demo_room_gets_a_few_generated_photos_through_the_same_pipeline(
-        self, db_session
-    ):
-        from app.seed import seed_demo_data
+    async def test_each_demo_room_gets_the_four_illustrations_in_order(self, db_session):
+        from app.seed import SEED_PHOTO_NAMES, seed_demo_data, seed_photos_dir
 
         await seed_demo_data(db_session)
         await db_session.commit()
         rooms = (await db_session.execute(select(Room))).scalars().all()
         assert len(rooms) == 3
+        source = seed_photos_dir()
         for room in rooms:
-            assert 2 <= len(room.photos) <= 3
+            assert [p["seed"] for p in room.photos] == list(SEED_PHOTO_NAMES)
             for photo in room.photos:
-                # Stored like any upload: keys, real files, WebP, no metadata.
-                assert set(photo) == {"id", "key", "thumb_key", "width", "height"}
-                for key in (photo["key"], photo["thumb_key"]):
-                    with Image.open(MEDIA_ROOT / key) as stored:
-                        assert stored.format == "WEBP"
-                        assert not dict(stored.getexif())
-        # Different pictures, not one file three times.
-        first = rooms[0].photos
-        assert len({(MEDIA_ROOT / p["key"]).read_bytes() for p in first}) == len(first)
+                # Stored like any upload: keys, real files, the public shape's
+                # fields, plus the seed's own mark.
+                assert set(photo) == {"id", "key", "thumb_key", "width", "height", "seed"}
+                assert (photo["width"], photo["height"]) == (1600, 1200)
+                # The very bytes the marketing site ships, main and thumbnail.
+                assert (MEDIA_ROOT / photo["key"]).read_bytes() == (
+                    source / f"{photo['seed']}.webp"
+                ).read_bytes()
+                assert (MEDIA_ROOT / photo["thumb_key"]).read_bytes() == (
+                    source / f"{photo['seed']}-thumb.webp"
+                ).read_bytes()
+                with Image.open(MEDIA_ROOT / photo["key"]) as stored:
+                    assert stored.format == "WEBP"
+        # Each room has its own files: deleting one room's photos cannot blank another's.
+        keys = [p["key"] for room in rooms for p in room.photos]
+        assert len(set(keys)) == 12
 
-    async def test_reseeding_adds_none_and_leaves_an_operators_photos_alone(self, db_session):
+    async def test_the_public_shape_carries_no_seed_mark(self, client, db_session):
+        from app.seed import seed_demo_data
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        spaces = (await client.get("/api/v1/spaces")).json()["spaces"]
+        detail = (await client.get(f"/api/v1/spaces/{spaces[0]['id']}")).json()
+        for room in detail["rooms"]:
+            assert len(room["photos"]) == 4
+            assert all(
+                set(p) == {"id", "url", "thumb_url", "width", "height"} for p in room["photos"]
+            )
+
+    async def test_reseeding_replaces_its_own_photos_and_keeps_an_operators(self, db_session):
         from app.seed import seed_demo_data
 
         await seed_demo_data(db_session)
         await db_session.commit()
         room = (await db_session.execute(select(Room).order_by(Room.name))).scalars().first()
-        kept = [room.photos[0]]
-        room.photos = kept
+        # The operator uploaded one of their own and dropped two of the seed's
+        # (through the API those two files would be deleted too; here only the
+        # rows go, so only the two the seed still finds are its to clean up).
+        replaced = [room.photos[0]["key"], room.photos[3]["key"]]
+        own = {"id": "op-1", "key": "rooms/x/op.webp", "thumb_key": "rooms/x/op_thumb.webp",
+               "width": 800, "height": 600}  # fmt: skip
+        room.photos = [own, room.photos[0], room.photos[3]]
         await db_session.commit()
 
         await seed_demo_data(db_session)
         await db_session.commit()
         await db_session.refresh(room)
-        assert room.photos == kept
+        # Theirs first and untouched; then the four illustrations again — no
+        # duplicates, and the files the earlier seed wrote are gone.
+        assert room.photos[0] == own
+        assert [p["seed"] for p in room.photos[1:]] == ["sala-01", "sala-02", "sala-03", "sala-04"]
+        assert len(room.photos) == 5
+        for key in replaced:
+            assert not (MEDIA_ROOT / key).exists()
+        for p in room.photos[1:]:
+            assert (MEDIA_ROOT / p["key"]).exists()
         counts = (await db_session.execute(select(Room.photos))).scalars().all()
-        assert sorted(len(c) for c in counts) == [1, 3, 3]
+        assert sorted(len(c) for c in counts) == [4, 4, 5]
+
+    async def test_the_gradients_an_earlier_seed_generated_are_replaced_too(self, db_session):
+        """A database seeded before V01 holds C16's unmarked 960x720 gradients:
+        they are the seed's, not an operator's, and go the same way."""
+        from app.seed import seed_demo_data
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        room = (await db_session.execute(select(Room).order_by(Room.name))).scalars().first()
+        legacy = []
+        for i in range(3):
+            key = f"rooms/{room.id}/legacy{i}.webp"
+            (MEDIA_ROOT / key).parent.mkdir(parents=True, exist_ok=True)
+            (MEDIA_ROOT / key).write_bytes(b"x")
+            (MEDIA_ROOT / key.replace(".webp", "_thumb.webp")).write_bytes(b"x")
+            thumb_key = key.replace(".webp", "_thumb.webp")
+            legacy.append(
+                {"id": f"l{i}", "key": key, "thumb_key": thumb_key, "width": 960, "height": 720}
+            )
+        room.photos = legacy
+        await db_session.commit()
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        await db_session.refresh(room)
+        assert [p["seed"] for p in room.photos] == ["sala-01", "sala-02", "sala-03", "sala-04"]
+        assert not any((MEDIA_ROOT / p["key"]).exists() for p in legacy)
+
+    async def test_a_second_seed_with_nothing_to_do_rewrites_nothing(self, db_session):
+        from app.seed import seed_demo_data
+
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        keys = sorted(
+            p["key"]
+            for photos in (await db_session.execute(select(Room.photos))).scalars()
+            for p in photos
+        )
+        await seed_demo_data(db_session)
+        await db_session.commit()
+        again = sorted(
+            p["key"]
+            for photos in (await db_session.execute(select(Room.photos))).scalars()
+            for p in photos
+        )
+        assert again == keys
+
+    async def test_a_missing_illustration_fails_loudly(self, db_session, monkeypatch, tmp_path):
+        from app.seed import seed_demo_data
+
+        monkeypatch.setattr(settings, "SEED_PHOTOS_DIR", str(tmp_path))
+        with pytest.raises(FileNotFoundError, match="SEED_PHOTOS_DIR"):
+            await seed_demo_data(db_session)
+
+    def test_the_gradient_generator_is_gone(self):
+        import app.seed as seed
+
+        assert not hasattr(seed, "_placeholder_png")
+        assert not hasattr(seed, "PLACEHOLDER_PHOTOS_PER_ROOM")

@@ -98,6 +98,17 @@ class PhotoOrder(BaseModel):
     order: list[uuid.UUID] = Field(max_length=50)
 
 
+class OpeningHoursOut(BaseModel):
+    """One open window of a room's week as the public sees it (V06): weekday
+    0 = Monday, times in UTC like every rule (R01). Never the rule's id."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    day_of_week: int
+    open_time: time
+    close_time: time
+
+
 class RoomOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -115,6 +126,14 @@ class RoomOut(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    # The room's active opening windows, when the route loaded them (the
+    # public space detail does): what "Onde estamos" derives the hours from.
+    availability_rules: list[OpeningHoursOut] = []
+
+    @field_validator("availability_rules", mode="before")
+    @classmethod
+    def _active_only(cls, rules):
+        return [r for r in rules if getattr(r, "is_active", True)]
 
 
 class RoomCreate(BaseModel):

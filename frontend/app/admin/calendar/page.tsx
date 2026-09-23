@@ -36,8 +36,12 @@ type CalEvent = {
 }
 const DnDCalendar = withDragAndDrop<CalEvent, Room>(Calendar as never)
 
+// The seed opens every room 08:00–22:00 UTC (V05); the grid shows an hour
+// either side in the browser's zone, which in summer means up to 23:00 Lisbon.
 const DAY_START = 7
-const DAY_END = 22
+const DAY_END = 23
+const OPEN_FROM = 8
+const OPEN_UNTIL = 22
 const STATUS_MARK: Record<Booking['status'], string> = {
   confirmed: '✓', pending: '⏳', cancelled: '✕', completed: '✓', expired: '⌛', paid_unfulfilled: '!',
 }
@@ -131,7 +135,8 @@ function OrgCalendar() {
   const [blockToEdit, setBlockToEdit] = useState<RoomBlock | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
 
-  // Opening hours union for the vertical range; 07–22 at least.
+  // Opening hours union for the vertical range; 07–23 at least (A03 residual:
+  // the rooms' real union would need one more query per room).
   const { min, max } = useMemo(() => {
     const d = (h: number, m = 0) => new Date(1970, 0, 1, h, m)
     return { min: d(DAY_START), max: d(DAY_END) }
@@ -262,7 +267,7 @@ function OrgCalendar() {
                 : { backgroundColor: STATUS_BG[e.booking!.status], border: 'none', borderRadius: 4, opacity: ['cancelled', 'expired'].includes(e.booking!.status) ? 0.55 : 1 },
               title: e.kind === 'booking' && e.booking ? `${STATUS_LABELS[e.booking.status]} — ${e.booking.user?.email ?? ''}` : e.block?.reason,
             })}
-            slotPropGetter={(d: Date) => (d.getHours() < 8 || d.getHours() >= 20 ? { style: { backgroundColor: '#f3f4f6' } } : {})}
+            slotPropGetter={(d: Date) => (d.getHours() < OPEN_FROM || d.getHours() >= OPEN_UNTIL ? { style: { backgroundColor: '#f3f4f6' } } : {})}
             formats={{
               dayHeaderFormat: (d, culture, loc) => loc!.format(d, "EEEE, d 'de' MMMM", culture),
               dayRangeHeaderFormat: ({ start, end }, culture, loc) => `${loc!.format(start, "d 'de' MMM", culture)} – ${loc!.format(end, "d 'de' MMM", culture)}`,

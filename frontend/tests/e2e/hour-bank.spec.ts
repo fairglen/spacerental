@@ -22,19 +22,22 @@ async function adminToken(page: Page): Promise<string> {
   return session.accessToken
 }
 
-/** The first weekday from `from` days out on which 08:00–20:00 UTC is entirely free. */
+/** The first day from `from` days out on which 08:00–20:00 UTC is entirely free. */
 async function freeDay(page: Page, roomId: string, from: number): Promise<Date> {
   for (let offset = from; offset < from + 10; offset++) {
     const d = new Date()
     d.setUTCDate(d.getUTCDate() + offset)
     const day = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
-    if (day.getUTCDay() === 0) continue
     const { slots } = await (await page.request.get(`${API_URL}/rooms/${roomId}/availability`, {
       params: { date: day.toISOString().slice(0, 10) },
     })).json()
-    if (slots.length === 12 && slots.every((s: { available: boolean }) => s.available)) return day
+    const wanted = (slots as { start: string; available: boolean }[]).filter((s) => {
+      const hour = new Date(s.start).getUTCHours()
+      return hour >= 8 && hour < 20
+    })
+    if (wanted.length === 12 && wanted.every((s) => s.available)) return day
   }
-  throw new Error('no fully free day in the next ten')
+  throw new Error('no day with 08:00–20:00 free in the next ten')
 }
 
 // help.spec.ts, just before this file, spends most of the public budget (B18).
@@ -93,12 +96,13 @@ test('two packs form one bank: a 12h day draws on both, the balance shows what i
   expect(after.balance).toMatchObject({ hours_available: '8.00', hours_expiring_next: { hours: '8.00' } })
   expect(after.purchases.map((p: { hours_remaining: string }) => p.hours_remaining).sort()).toEqual(['0.00', '8.00'])
 
-  // The operator's table names both packs behind the total.
-  await page.goto('/admin/bookings')
-  const row = page.getByRole('row').filter({ hasText: email })
+  // The operator's view of this customer names both packs behind the total
+  // (their own page, so other specs' bookings cannot page it away).
+  await page.goto(`/admin/users/${me.id}`)
+  const row = page.getByRole('row').filter({ hasText: room.name }).filter({ hasText: '12h do pack' })
   await expect(row).toBeVisible({ timeout: 15000 })
-  await expect(row).toContainText('12h do pack')
   await expect(row.getByText('de 2 packs')).toHaveAttribute('title', /5h · .*\n7h · /)
+  await expect(page.getByTestId('user-hour-bank')).toContainText('8h disponíveis')
 
   // The customer's own screens: the booking, and one balance of 8h.
   await page.context().clearCookies()

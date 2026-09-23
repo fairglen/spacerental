@@ -35,7 +35,7 @@ async def get_space(space_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Space detail with rooms (public)."""
     result = await db.execute(
         select(Space)
-        .options(selectinload(Space.rooms))
+        .options(selectinload(Space.rooms).selectinload(Room.availability_rules))
         .where(Space.id == space_id, Space.is_active == True)  # noqa: E712
     )
     space = result.scalar_one_or_none()
