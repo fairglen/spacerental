@@ -4130,7 +4130,34 @@ silently. Links W01, W03, V04.
 
 ### L03 — Static site looks like the app
 
-**Priority: P1. State: TODO.** The static site is the marketing twin of the
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+(2026-09-23):** the parity table below was written from the app's Tailwind
+classes first, then `site.css`/`index.html` changed to it: the app's
+container padding at its three breakpoints, its hero scale and rhythm, its
+button sizes and `rounded-lg` (new `--radius-button`, `--shadow-sm/md/lg`,
+`--color-badge-*` tokens in `tokens.css`), its centred section heads at
+`text-3xl font-bold`, its section rhythm and backgrounds, its card
+radius/border/shadow and padding, room cards with the photos then name and
+price on one line then grey badges, "Como funciona" discs with the hairline
+from 1024px, pricing cards at the app's scale (prices untouched), and a
+footer with the app's three columns (brand + tagline, Links, Contacto with
+"Queluz, Portugal" and the email). Mobile-first grids: one column at 390px
+everywhere, the CTAs stacked, no sideways scroll. Static smoke: two new
+structural tests (1280px columns, container width and padding, heading
+scale, button size, room-card child order; 390px single column, stacked
+CTAs, section order, no sideways scroll) — 30/30 with the rest of the
+suite. Screenshots app vs static at 1280px and 390px in `PR2_DRAFT.md`.
+**DECISIONS:** (1) the app's section heads are centred (`text-center`), so
+the static heads stay centred at the app's scale — the assignment's
+"left-aligned" premise did not hold and the app is the reference;
+(2) content the static site never had is not added for parity: the app's
+value-props strip, the room cards' capacity line and "Reservar Esta Sala"
+button, the steps' descriptions; and the static site keeps "Onde estamos"
+last, with the contact form, where the app has it inside the rooms section —
+all recorded as open questions in `PR2_DRAFT.md`; (3) the static room cards
+keep their four tags where the app shows at most three (content, not
+design). The static site is the marketing twin of the
 app's landing page and should be visually indistinguishable where the
 content is the same. Today its section heads and prose are centred
 (`.section-head`, `.prose` in `site.css`) while the app's landing lives in a
@@ -4154,7 +4181,25 @@ side in `PR2_DRAFT.md`; static smoke updated structurally. Links F01, W01,
 V02, V07.
 
 **Parity table (app = reference; read from the app's Tailwind classes, then
-checked on screenshots at 1280px and 390px):** to be filled by the task.
+checked on screenshots at 1280px and 390px — `PR2_DRAFT.md`):**
+
+| Element | App (reference) | Static site before | Static site after |
+|---|---|---|---|
+| Container | `max-w-7xl px-4 sm:px-6 lg:px-8`: 80rem; side padding 1rem / 1.5rem ≥640 / 2rem ≥1024 | 80rem, 1.5rem fixed | 80rem; 1rem / 1.5rem / 2rem at the same breakpoints |
+| Nav | h-16, border-b, white/90 blur; links `text-sm` muted, gap 6; CTA `size="sm"` (h-8 px-3 text-xs) | 4rem, links 0.9rem gap 1.75rem, CTA default | links 0.875rem gap 1.5rem; CTA `.btn-sm` (2rem, 0.75rem) |
+| Hero | `py-20 md:py-32` (5rem / 8rem); gradient white → accent → primary-light/30 to bottom-right; 600px blurred disc; content `max-w-3xl` (48rem); H1 `text-5xl md:text-6xl font-bold leading-tight mb-6` (3rem / 3.75rem, 700, 1.25, mb 1.5rem), emphasis italic primary on "no seu tempo."; lede `text-xl` (1.25rem/1.75rem) muted `mb-4 max-w-xl`; support `text-lg mb-8`; CTAs `flex-col sm:flex-row gap-4`, lg buttons (h-12 px-8 text-base); benefits `mt-10 flex-wrap gap-x-6 gap-y-2 text-sm` with 8px dots | 5rem/6rem, 135° gradient, 36rem glow; content 42rem; H1 2.75rem 800 (2.1rem <768), `<em>` on "espaço"; lede 1.2rem mb 2rem; support 1.05rem; CTAs wrap; no benefits (until L02) | every value the app's; H1 3rem / 3.75rem ≥768, 700; emphasis on "no seu tempo." (L02); lede 1.25rem mb 1rem; support 1.125rem mb 2rem; CTAs stack <640; benefits row (L02) |
+| Buttons | `rounded-lg` (0.5rem), `text-sm font-medium`; default h-10 px-4; lg h-12 px-8 text-base; sm h-8 px-3 text-xs; outline = primary border/text, hover accent | radius 0.75rem, 0.95rem 600, padding-based height | `--radius-button` 0.5rem; 0.875rem 500; h 2.5rem / 3rem / 2rem |
+| Section rhythm | rooms `py-16` on background; "Como funciona" `py-20` on background; "Preços" `py-20` on white; "Onde estamos" a card inside the rooms section (`mt-12`) | every section 5rem; `.alt` (white) on "O espaço", "Como funciona", "Onde estamos" | rooms `.tight` 4rem on background; "Como funciona" background; "Preços" white; "Onde estamos" section on background (its own card is white) |
+| Section heads | centred; H2 `text-3xl font-bold` (1.875rem/2.25rem, 700) `mb-4` (rooms `mb-3`); muted line `max-w-xl mx-auto`; block `mb-12` (rooms `mb-10`) — the app centres its heads, so the assignment's "left-aligned" premise did not hold; the app is the reference | centred, H2 2rem 800 mb 0.75rem, block mb 3rem, max-width 40rem | centred; H2 1.875rem/2.25rem 700, mb 1rem (rooms 0.75rem); block mb 3rem (rooms 2.5rem) |
+| Cards | `rounded-xl border #E5E7EB bg-white shadow-sm`, `p-6`; room cards `hover:shadow-md`; featured plan `border-2 border-primary shadow-lg` + badge `-top-3 px-3 py-1 text-xs font-medium` | radius 0.75rem, border, no shadow, `p-1.75rem`; featured custom green shadow; badge 700 | `--shadow-sm/md/lg` tokens (Tailwind's values); `p-1.5rem`; hover shadow-md; featured shadow-lg; badge 500 |
+| Room card | photo carousel `aspect-[4/3] rounded-t-xl` bleeding to the edges; header `p-6 pb-2`: name `text-base font-semibold` and price `text-lg font-bold text-primary` + `/h` `text-xs` muted on one line; capacity line; tags = secondary badges (`bg-gray-100 text-gray-700 text-xs font-medium rounded-full px-2.5 py-0.5`, gap 1); full-width CTA | gallery, then H3 1.15rem, price 1.4rem 800 on its own line, green accent tags 0.78rem 600 | gallery (margins −1.5rem), `.room-head` flex row: H3 1rem 600 + price 1.125rem 700 with 0.75rem unit; grey badges 0.75rem 500 gap 0.25rem; no capacity line and no CTA (content: the static cards never had them — DECISION) |
+| Grids | rooms `grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6`; steps `sm:grid-cols-2 lg:grid-cols-4 gap-8`; pricing `md:grid-cols-3 gap-6 max-w-4xl mx-auto` | `.grid-3` 3 → 1 <768; `.grid-4` 4 → 2 <1024 (2 even at 390) | mobile-first: rooms 1 / 2 ≥768 / 3 ≥1024; steps 1 / 2 ≥640 / 4 ≥1024, gap 2rem; pricing `.grid-pricing` 56rem centred, 3 ≥768 |
+| "Como funciona" step | disc `h-12 w-12 bg-primary text-primary-foreground font-bold text-lg`; title `font-semibold mb-2`; desc `text-sm` muted; hairline between steps from `lg` | disc 3rem 800; H3 1.05rem; no line | disc 3rem 700 1.125rem; H3 1rem 600 mb 0.5rem; hairline ≥1024; no description line (content) |
+| Pricing card | centred title `text-lg`; price `text-4xl font-bold` (2.25rem/2.5rem) + unit `text-sm` muted `ml-1`; desc `text-xs mt-1`; features `text-sm` muted with check icons `space-y-2 mb-6`; full-width button (primary when highlighted, outline otherwise) | title 1.1rem; price 2.25rem 800; unit 0.95rem; desc 0.85rem | title 1.125rem 600; price 2.25rem/2.5rem 700; unit 0.875rem 400 ml 0.25rem; desc 0.75rem/1rem mt 0.25rem mb 1.5rem; prices untouched |
+| "Onde estamos" | `grid gap-6 rounded-xl border bg-white p-6 md:grid-cols-5` (2/5 words, 3/5 map); map frame `min-h-[280px]` | `2fr 3fr`, gap 1.5rem, padding 1.5rem, border, radius | unchanged here (L04 reworks its content); stacks <768 like the app |
+| Footer | `bg-foreground text-white`, container `py-12`; `grid-cols-1 md:grid-cols-3 gap-8`; brand: icon + `text-lg font-bold`, tagline `text-sm text-gray-400 max-w-xs`; headings `font-semibold mb-4 text-primary-light`; links `space-y-2 text-sm text-gray-400`; contact column: pin + "Queluz, Portugal", mail + email; bottom `mt-8 pt-8 border-t border-gray-700 text-center text-sm text-gray-500` | grid 3 → 1 <768, padding 3rem 0 2rem; "Navegação" and "Como chegar" (two address lines); bottom 0.82rem separate band | `.footer-inner` 3rem top/bottom; brand with the building icon 1.125rem 700; "Links" (Salas · Como funciona · Preços · Contacto) and "Contacto" (pin + "Queluz, Portugal", mail + email — the app's address line); bottom mt/pt 2rem 0.875rem |
+| Mobile (390px) | one column everywhere; CTAs stacked; benefits wrap; where-block words then map | steps still 2 columns; CTAs wrapped ad hoc | one column everywhere, CTAs stacked, no sideways scroll (smoke-tested) |
+| Not matched (content, not design) | app-only "value props" strip between hero and rooms; app room cards carry a capacity line and a "Reservar Esta Sala" button; app "Como funciona" steps carry a description; app section order puts "Onde estamos" inside the rooms section, the static site keeps it last with the contact form | — | recorded as open questions in `PR2_DRAFT.md` |
 
 ### L04 — "Onde estamos" rework (both sites)
 

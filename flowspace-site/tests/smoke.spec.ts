@@ -59,6 +59,52 @@ test('there is no "O espaço" section and every nav anchor resolves', async ({ p
   }
 });
 
+// L03: the layout is the app's — its container, its columns at 1280px, one
+// column at 390px with the same stacking order and no sideways scroll.
+test('at 1280px the grids have the app\'s columns inside an 80rem container', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+  const columnsOf = (selector: string) =>
+    page.locator(selector).evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+  expect(await columnsOf('#salas .grid')).toBe(3);
+  expect(await columnsOf('#como-funciona .grid')).toBe(4);
+  expect(await columnsOf('#precos .grid')).toBe(3);
+  expect(await columnsOf('.footer-grid')).toBe(3);
+  const container = await page.locator('#salas .container').boundingBox();
+  // max-w-7xl with lg:px-8 — the content box is 1280 − 2 × 32 = 1216 wide.
+  expect(container!.width).toBe(1280);
+  expect(await page.locator('#salas .container').evaluate((el) => getComputedStyle(el).paddingLeft)).toBe('32px');
+  // Section heads are centred with the app's heading scale (text-3xl font-bold).
+  const h2 = page.locator('#como-funciona .section-head h2');
+  expect(await h2.evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el).fontWeight, getComputedStyle(el).textAlign])).toEqual(['30px', '700', 'center']);
+  // Buttons: the app's rounded-lg, h-10 / h-12.
+  expect(await page.locator('.hero-actions .btn-lg').first().evaluate((el) => [getComputedStyle(el).height, getComputedStyle(el).borderRadius])).toEqual(['48px', '8px']);
+  // The room card: photos, then name and price on one line, then the tags.
+  const card = page.locator('.room-card').first();
+  const order = await card.evaluate((el) => Array.from(el.children).map((c) => c.className));
+  expect(order).toEqual(['room-gallery', 'room-head', 'tag-list']);
+});
+
+test('at 390px everything stacks in one column and nothing scrolls sideways', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const columnsOf = (selector: string) =>
+    page.locator(selector).evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+  for (const selector of ['#salas .grid', '#como-funciona .grid', '#precos .grid', '.footer-grid', '.where-grid']) {
+    expect(await columnsOf(selector), selector).toBe(1);
+  }
+  expect(await page.locator('#salas .container').evaluate((el) => getComputedStyle(el).paddingLeft)).toBe('16px');
+  // The two CTAs stack, like the app's `flex-col sm:flex-row`.
+  const [first, second] = await page.locator('.hero-actions .btn').all();
+  expect((await second.boundingBox())!.y).toBeGreaterThan((await first.boundingBox())!.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // Sections in order: hero, rooms, how it works, pricing, where we are, footer.
+  const tops = await Promise.all(
+    ['.hero', '#salas', '#como-funciona', '#precos', '#localizacao', '.site-footer'].map(async (sel) => (await page.locator(sel).boundingBox())!.y),
+  );
+  expect([...tops].sort((a, b) => a - b)).toEqual(tops);
+});
+
 // L02: on a phone the benefits wrap under the CTAs instead of overflowing.
 test('below 768px the four benefits wrap and nothing scrolls sideways', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

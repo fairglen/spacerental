@@ -24,7 +24,7 @@
         <a href="#localizacao">Onde estamos</a>
       </div>
       <div class="nav-actions">
-        <a href="#contacto" class="btn btn-primary">Reservar sala</a>
+        <a href="#contacto" class="btn btn-primary btn-sm">Reservar sala</a>
       </div>
       <button class="nav-toggle" id="navToggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="navMobile">☰</button>
     </div>
@@ -56,17 +56,19 @@
     </div>
   </header>
 
-  <section id="salas">
+  <section id="salas" class="tight">
     <div class="container">
-      <div class="section-head">
+      <div class="section-head tight">
         <h2>Salas</h2>
         <p>Três espaços, cada um pensado para um tipo de consulta.</p>
       </div>
       <div class="grid grid-3">
         <div class="card room-card">
           <div class="room-gallery" data-room="sala-calma" data-label="Sala Calma"></div>
-          <h3>Sala Calma</h3>
-          <p class="room-price">12€<small>/hora</small></p>
+          <div class="room-head">
+            <h3>Sala Calma</h3>
+            <p class="room-price">12€<small>/hora</small></p>
+          </div>
           <ul class="tag-list">
             <li class="tag">Ar condicionado</li>
             <li class="tag">Isolamento acústico</li>
@@ -76,8 +78,10 @@
         </div>
         <div class="card room-card">
           <div class="room-gallery" data-room="sala-brisa" data-label="Sala Brisa"></div>
-          <h3>Sala Brisa</h3>
-          <p class="room-price">15€<small>/hora</small></p>
+          <div class="room-head">
+            <h3>Sala Brisa</h3>
+            <p class="room-price">15€<small>/hora</small></p>
+          </div>
           <ul class="tag-list">
             <li class="tag">Ar condicionado</li>
             <li class="tag">Isolamento acústico</li>
@@ -87,8 +91,10 @@
         </div>
         <div class="card room-card">
           <div class="room-gallery" data-room="sala-nevoa" data-label="Sala Névoa"></div>
-          <h3>Sala Névoa</h3>
-          <p class="room-price">18€<small>/hora</small></p>
+          <div class="room-head">
+            <h3>Sala Névoa</h3>
+            <p class="room-price">18€<small>/hora</small></p>
+          </div>
           <ul class="tag-list">
             <li class="tag">Ar condicionado</li>
             <li class="tag">Luz natural</li>
@@ -100,7 +106,7 @@
     </div>
   </section>
 
-  <section id="como-funciona" class="alt">
+  <section id="como-funciona">
     <div class="container">
       <div class="section-head">
         <h2>Como funciona</h2>
@@ -126,12 +132,12 @@
     </div>
   </section>
 
-  <section id="precos">
+  <section id="precos" class="alt">
     <div class="container">
       <div class="section-head">
         <h2>Preços</h2>
       </div>
-      <div class="grid grid-3">
+      <div class="grid grid-pricing">
         <div class="card price-card">
           <h3>À hora</h3>
           <p class="price">12–18€<small>/hora</small></p>
@@ -155,7 +161,7 @@
     </div>
   </section>
 
-  <section id="localizacao" class="alt">
+  <section id="localizacao">
     <div class="container">
       <div class="section-head">
         <h2>Onde estamos</h2>
@@ -257,29 +263,41 @@
   </section>
 
   <footer class="site-footer">
-    <div class="container footer-grid">
-      <div>
-        <p class="footer-wordmark">FlowSpace</p>
-        <p class="footer-tagline">Salas equipadas para profissionais de saúde e bem-estar, disponíveis à hora.</p>
+    <div class="container footer-inner">
+      <div class="footer-grid">
+        <div>
+          <p class="footer-wordmark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+            FlowSpace
+          </p>
+          <p class="footer-tagline">Salas equipadas para profissionais de saúde e bem-estar, disponíveis à hora.</p>
+        </div>
+        <div>
+          <h3>Links</h3>
+          <ul>
+            <li><a href="#salas">Salas</a></li>
+            <li><a href="#como-funciona">Como funciona</a></li>
+            <li><a href="#precos">Preços</a></li>
+            <li><a href="#contacto">Contacto</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Contacto</h3>
+          <ul>
+            <li class="with-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>
+              <span data-footer-location>Queluz, Portugal</span>
+            </li>
+            <li class="with-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+              <a href="mailto:geral@flowspace.pt">geral@flowspace.pt</a>
+            </li>
+          </ul>
+        </div>
       </div>
-      <div>
-        <h3>Navegação</h3>
-        <ul>
-          <li><a href="#salas">Salas</a></li>
-          <li><a href="#precos">Preços</a></li>
-          <li><a href="#contacto">Contacto</a></li>
-        </ul>
+      <div class="footer-bottom">
+        © 2025 FlowSpace, Lda. · Todos os direitos reservados · <a href="privacidade.html">Política de Privacidade</a>
       </div>
-      <div>
-        <h3>Como chegar</h3>
-        <ul>
-          <li>Rua 12 de Julho de 1997</li>
-          <li>2745-841 Queluz — Massamã</li>
-        </ul>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      © 2025 FlowSpace, Lda. · Todos os direitos reservados · <a href="privacidade.html">Política de Privacidade</a>
     </div>
   </footer>
 
