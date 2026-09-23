@@ -208,6 +208,13 @@ test('the subject is built from the allow-listed options only', () => {
       assert.equal(fresh.sent[0].subject, `Novo contacto FlowSpace — ${especialidade} / ${interesse}`);
     }
   }
+  // Without a specialty (M01) the subject is the prefix and the interest alone.
+  for (const interesse of config.ALLOWED_INTERESSE) {
+    const fresh = loadScript();
+    const { especialidade: _dropped, ...withoutSpecialty } = valid({ interesse, nome: 'URGENTE: paga já' });
+    assert.equal(fresh.post(withoutSpecialty).result, 'success');
+    assert.equal(fresh.sent[0].subject, `Novo contacto FlowSpace — ${interesse}`);
+  }
   const script = loadScript();
   assert.deepEqual(script.post(valid({ especialidade: 'Psicologia — URGENTE' })), ERROR('invalid_option'));
   assert.deepEqual(
@@ -231,6 +238,38 @@ test('length is judged on what was sent, before anything is stripped', () => {
   }
   assert.equal(script.sent.length, 0);
   assert.equal(loadScript().post(valid({ nome: 'a'.repeat(MAX_NOME_LENGTH) })).result, 'success');
+});
+
+// M01: the form no longer asks for a specialty, but the deployed script and
+// the site can be out of step for a while, so the script takes both shapes.
+test('a submission without especialidade is accepted, and the mail simply has no such line', () => {
+  const { especialidade: _dropped, ...withoutSpecialty } = valid();
+  for (const body of [withoutSpecialty, { ...withoutSpecialty, especialidade: '' }, { ...withoutSpecialty, especialidade: '   ' }]) {
+    const script = loadScript();
+    assert.equal(script.post(body).result, 'success');
+    assert.equal(script.sent.length, 1);
+    const mail = script.sent[0];
+    assert.equal(mail.to, RECIPIENT);
+    assert.equal(mail.subject, 'Novo contacto FlowSpace — Reserva avulsa');
+    assert.doesNotMatch(mail.body, /Especialidade/);
+    assert.ok(mail.body.includes('Nome: Ana Silva'));
+    assert.ok(mail.body.includes('Interesse: Reserva avulsa'));
+  }
+});
+
+test('a specialty that is present is still checked as before: allowlist, length and control characters', () => {
+  const { config } = loadScript();
+  const script = loadScript();
+  assert.equal(script.post(valid({ especialidade: 'Psiquiatria' })).result, 'success');
+  assert.ok(script.sent[0].body.includes('Especialidade: Psiquiatria'));
+  assert.deepEqual(loadScript().post(valid({ especialidade: 'Cardiologia' })), ERROR('invalid_option'));
+  assert.deepEqual(
+    loadScript().post(valid({ especialidade: 'a'.repeat(config.MAX_ENUM_LENGTH + 1) })),
+    ERROR('field_too_long')
+  );
+  assert.deepEqual(loadScript().post(valid({ especialidade: `Psicologia${CR}${LF}` })), ERROR('invalid_characters'));
+  // A non-string is "absent", like everywhere else — and absent is now fine.
+  assert.equal(loadScript().post(valid({ especialidade: 42 })).result, 'success');
 });
 
 test('a name that is empty once sanitised is a missing field, not a blank enquiry', () => {

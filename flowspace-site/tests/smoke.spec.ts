@@ -353,9 +353,37 @@ async function stubConfiguredEndpoint(page: Page) {
 async function fillValidForm(page: Page) {
   await page.fill('#nome', 'Maria Silva');
   await page.fill('#email', 'maria@example.com');
-  await page.selectOption('#especialidade', 'Psicologia');
   await page.selectOption('#interesse', 'Reserva avulsa');
 }
+
+// M01: the form no longer asks for a specialty. The client accepts the
+// submission without it and the payload simply carries no such key — the
+// deployed Code.gs (redeployed first) takes both shapes.
+test('a submission without a specialty passes validation and posts a payload with no especialidade key', async ({ page }) => {
+  await serveWithUrl(page, STUB_URL);
+  const bodies: string[] = [];
+  await page.route(STUB_URL, async (route) => {
+    bodies.push(route.request().postData() ?? '');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'text/plain;charset=utf-8', 'access-control-allow-origin': '*' },
+      body: JSON.stringify({ result: 'success', message: 'Mensagem enviada com sucesso.' }),
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.locator('#especialidade, [name="especialidade"], #especialidade-error')).toHaveCount(0);
+  await fillValidForm(page);
+  await page.click('#submitBtn');
+
+  await expect(page.locator('#formSuccess')).toHaveClass(/is-visible/);
+  await expect(page.locator('.field-error.is-visible')).toHaveCount(0);
+  expect(bodies).toHaveLength(1);
+  const payload = JSON.parse(bodies[0]);
+  expect(payload).not.toHaveProperty('especialidade');
+  expect(Object.keys(payload).sort()).toEqual(['email', 'interesse', 'mensagem', 'nome', 'timestamp']);
+  expect(payload.interesse).toBe('Reserva avulsa');
+});
 
 test('a confirmed success response shows the success banner', async ({ page }) => {
   await serveWithUrl(page, STUB_URL);
@@ -562,10 +590,9 @@ for (const url of MALFORMED_URLS) {
 }
 
 /**
- * Mirrors CONFIG.ALLOWED_ESPECIALIDADE / ALLOWED_INTERESSE in Code.gs. The
- * server is still the real enforcement; this is the immediate feedback, and it
- * stops a tampered value burning a send slot only to come back as
- * invalid_option.
+ * Mirrors CONFIG.ALLOWED_INTERESSE in Code.gs. The server is still the real
+ * enforcement; this is the immediate feedback, and it stops a tampered value
+ * burning a send slot only to come back as invalid_option.
  */
 test('a tampered select value is rejected client-side before any request', async ({ page }) => {
   const requests: string[] = [];
@@ -574,16 +601,16 @@ test('a tampered select value is rejected client-side before any request', async
 
   await page.goto('/');
   await fillValidForm(page);
-  await page.locator('#especialidade').evaluate((el: HTMLSelectElement) => {
+  await page.locator('#interesse').evaluate((el: HTMLSelectElement) => {
     const option = document.createElement('option');
-    option.value = 'Cardiologia';
+    option.value = 'Compra do edifício';
     el.appendChild(option);
-    el.value = 'Cardiologia';
+    el.value = 'Compra do edifício';
   });
   await page.click('#submitBtn');
 
-  await expect(page.locator('#especialidade-error')).toHaveClass(/is-visible/);
-  await expect(page.locator('#especialidade')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#interesse-error')).toHaveClass(/is-visible/);
+  await expect(page.locator('#interesse')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
   expect(requests.filter((r) => r.includes('script.google.com'))).toHaveLength(0);
 });
@@ -601,7 +628,6 @@ test('field errors are wired to their controls for screen readers', async ({ pag
   await expect(page.locator('#nome-error')).toHaveClass(/is-visible/);
   await expect(nome).toHaveAttribute('aria-invalid', 'true');
   await expect(page.locator('#email')).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.locator('#especialidade')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.locator('#interesse')).toHaveAttribute('aria-invalid', 'true');
 
   await fillValidForm(page);

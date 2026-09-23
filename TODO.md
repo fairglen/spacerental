@@ -4283,7 +4283,31 @@ parity table).
 
 ### M01 — Remove "Especialidade" from the static site's contact form
 
-**Priority: P1. State: TODO.** The `#especialidade` select is validated
+**Priority: P1. State: IN PROGRESS** — implemented on
+`fix/site-copy-form-tweaks`; DONE only once the Apps Script is redeployed AND
+the PR merged, in that order. **Evidence (2026-09-23):** `Code.gs` — the
+`missing` list is `nome, email, interesse`; a present `especialidade` still
+goes through the length cap, the control-character check and the allowlist
+(`invalid_option`), an absent, empty, blank or non-string one is accepted;
+the subject is the prefix plus `interesse`, with the specialty before it only
+when sent; the body has an "Especialidade:" line only when sent (omitted, not
+"—"; there is no sheet row: sheet logging is deliberately not implemented).
+S27 suite 40 (+2: both shapes accepted with the exact subject and no
+"Especialidade" in the body; a present value still allow-listed, length- and
+control-checked). `index.html` — the label, select and error paragraph are
+gone, nome/email/interesse/mensagem keep their IDs and order.
+`privacidade.html` lists nome, email, interesse e mensagem. `contact-form.js`
+— no `ALLOWED_ESPECIALIDADE`, no field in `values`, no required check, the
+`invalid_option`/`missing_fields` messages name only the interest. Smoke 32
+(+1): a submission without the field passes validation and posts exactly
+`email, interesse, mensagem, nome, timestamp`; the tampered-select test now
+tampers `#interesse` so the client enum check stays covered; the aria test
+lost its specialty line. README: the "Deployment order" note in the runbook,
+the allowlist/subject/checklist passages updated. **DECISIONS:** (1) the
+"Especialidade:" line is omitted when absent rather than written as "—" (the
+reader sees only what was sent; the subject likewise drops its half);
+(2) the client-side tampered-select test moved to `#interesse` instead of
+being deleted, so the enum mirror keeps its coverage. The `#especialidade` select is validated
 client-side (`contact-form.js`: `ALLOWED_ESPECIALIDADE`, required) and
 server-side (`apps-script/Code.gs`: required + allowlist). The Apps Script is
 deployed on Google by the owner, not from this repo, so the two sides can be
