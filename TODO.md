@@ -92,7 +92,11 @@ refunds, recurring bookings (code stays, flag off), half/full-day products,
 and any price change — the 12€/15€/18€ on the static site versus 11€/h in the
 app is queued as Q-H04, untouched. Decisions the owner did not give are taken
 the conservative way, recorded under the task and tagged `DECISION:` in the
-commit body. Commits stay local; the owner reviews and opens the PRs.
+commit body. Opened on the owner's instruction on 2026-09-23 as
+[PR #59](https://github.com/fairglen/spacerental/pull/59) (H01–H03, base
+`main`) and [PR #60](https://github.com/fairglen/spacerental/pull/60)
+(V01–V07, stacked on #59's branch — retarget to `main` once #59 merges);
+the owner reviews and merges.
 
 States used below:
 
