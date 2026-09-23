@@ -2104,8 +2104,26 @@ the change (00–05: 6 slots on 25 Oct, 4 on 29 Mar). Nothing else in the
 follow-up is a gap: the admin availability endpoints only store rules, there
 is no availability-summary code, and no other place turns a rule into an
 instant (`local_hourly_slots` is the single conversion). The recurrence
-slice stays parked with R02/R03 (code untouched, flag off). **Evidence (#61,
-2026-09-23, commit `9892851`):** 10 real-PG tests in
+slice stays parked with R02/R03 (code untouched, flag off). **Follow-up
+evidence (2026-09-23, commit `6ca47d9` on `fix/local-opening-hours-dst`):**
+`local_hourly_slots` yields both occurrences of the fall-back hour (fold 0,
+then fold 1) as distinct, contiguous UTC instants; 12 real-PG tests in
+`test_local_opening_hours.py` — 15 January opens at 08:00Z and 15 July at
+07:00Z (14 slots each); 21:00–22:00 Lisbon accepted and 22:00–23:00 refused
+in July and in January; a 00–05 window yields 4 slots on 29 March (nothing at
+01:00) and 6 on 25 October (01:00 twice: 00:00Z and 01:00Z), while 08–22
+yields 14 on both days; the H01 horizon's local last day; the UTC fixture
+space unchanged; the gap booking; the `timezone` field; the seed. Playwright
+`single-space.spec.ts`: the hours line reads exactly "Todos os dias
+08:00–22:00" and, in a Europe/Lisbon-zoned browser, the customer calendar's
+first bookable row is 08:00 and the last 21:00 (14 tinted rows). Full run at
+`6ca47d9`: backend 662, migration round trip clean at `0012` with `alembic
+check`, Vitest 545, tsc, `next build`, Playwright 47/47 on the rebuilt loop
+stack, static smoke 26 (site untouched). Screenshot of the week of 25 Oct
+2026 in the PR draft (`pr-screenshots/pr1-calendar-25-oct-2026.png`, taken
+with a 60-day window so the week is reachable): 08:00 first on every day,
+including Sat 24 and Sun 25. **Evidence (#61, 2026-09-23, commit
+`9892851`):** 10 real-PG tests in
 `tests/test_local_opening_hours.py` on a Europe/Lisbon space — a winter and
 a summer day both have 14 slots reading 08:00–21:00 on the Lisbon clock
 (08:00Z vs 07:00Z); every slot of a day belongs to that local date; the
