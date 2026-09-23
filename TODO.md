@@ -4287,7 +4287,11 @@ parity table).
 
 **Priority: P1. State: IN PROGRESS** — implemented on
 `fix/site-copy-form-tweaks`; DONE only once the Apps Script is redeployed AND
-the PR merged, in that order. **Evidence (2026-09-23):** `Code.gs` — the
+the PR merged, in that order. **Before this task** the `#especialidade`
+select was validated client-side (`contact-form.js`: `ALLOWED_ESPECIALIDADE`,
+required) and server-side (`apps-script/Code.gs`: required + allowlist); both
+are gone from the client and the server now treats the field as optional —
+the description below is the state as implemented. **Evidence (2026-09-23):** `Code.gs` — the
 `missing` list is `nome, email, interesse`; a present `especialidade` still
 goes through the length cap, the control-character check and the allowlist
 (`invalid_option`), an absent, empty, blank or non-string one is accepted;
@@ -4309,11 +4313,12 @@ the allowlist/subject/checklist passages updated. **DECISIONS:** (1) the
 "Especialidade:" line is omitted when absent rather than written as "—" (the
 reader sees only what was sent; the subject likewise drops its half);
 (2) the client-side tampered-select test moved to `#interesse` instead of
-being deleted, so the enum mirror keeps its coverage. The `#especialidade` select is validated
+being deleted, so the enum mirror keeps its coverage. The `#especialidade` select WAS validated
 client-side (`contact-form.js`: `ALLOWED_ESPECIALIDADE`, required) and
 server-side (`apps-script/Code.gs`: required + allowlist). The Apps Script is
 deployed on Google by the owner, not from this repo, so the two sides can be
-out of step for a while; make that safe. **Acceptance:** `Code.gs` —
+out of step for a while; the task makes that safe. **Acceptance (as
+implemented):** `Code.gs` —
 `especialidade` becomes OPTIONAL: a missing or empty value is accepted; when
 present the existing allowlist, length and control-character checks still
 apply; it leaves the `missing` required list; the "Especialidade:" line is
@@ -4345,7 +4350,8 @@ only mention; the app's booking-page contact note and the parked series
 modal state no number and were left alone. Smoke +1, structural: three
 `.price-card`s each with a name, a price, a description line and exactly one
 CTA to `#contacto`, and one badge on the featured plan — no prose pinned. The "Reserva recorrente" pricing card on the
-static site says "Negociado para 3+ horas semanais." **Acceptance:** it says
+static site SAID "Negociado para 3+ horas semanais." **Acceptance (as
+implemented):** it says
 "Negociado a partir de 4 horas semanais." — the only text change on that
 card; both sites grepped (app catalogs PT+EN, static HTML, README/TODO copy)
 for any other "3+"/"3 horas" mention of the recurring arrangement and aligned
@@ -4368,9 +4374,9 @@ heading now carries the `0.75rem` bottom margin the list had above it, so
 the spacing stays the app's `mt-3`. Smoke: the block test asserts no
 `.where-name` and that the heading's next sibling is the lines list. The
 L03 parity table's "Onde estamos" row notes the change; both READMEs
-updated. The block prints the space name under the
+updated. The block PRINTED the space name under the
 heading ("FlowSpace" on the static site, `space.name` in the app).
-**Acceptance:** app — `WhereWeAre.tsx` no longer renders the name subtitle;
+**Acceptance (as implemented):** app — `WhereWeAre.tsx` no longer renders the name subtitle;
 the heading is followed directly by the hours line; the name stays in the
 map iframe `title` (not visible text); `WhereWeAre.test.tsx` asserts no name
 is rendered and the line order hours → email → address → "Como chegar" is
