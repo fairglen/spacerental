@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { waitOutPublicRateWindow } from './helpers/rooms'
+import { preferDayView, useDayView, waitOutPublicRateWindow } from './helpers/rooms'
 
 const API_URL = process.env.E2E_API_URL || 'http://localhost:8000/api/v1'
 
@@ -78,11 +78,12 @@ test.describe('single-space mode', () => {
     await expect(page.locator('iframe')).toHaveCount(0)
     expect(thirdParty).toEqual([])
 
-    // V06: one block — contact, hours (the seed's 08–22 every day, on the
-    // Lisbon clock), no phone line, and the map placeholder holds its size.
+    // V06: one block — contact, hours (the seed's 08–22 every day, read as
+    // the wall clock it is, whatever the season: R01), no phone line, and the
+    // map placeholder holds its size.
     await expect(where.getByRole('link', { name: 'geral@flowspace.pt' })).toHaveAttribute('href', /^mailto:/)
     await expect(where.locator('a[href^="tel:"]')).toHaveCount(0)
-    await expect(where.getByTestId('opening-hours')).toHaveText(/Todos os dias (08:00–22:00|09:00–23:00)/)
+    await expect(where.getByTestId('opening-hours')).toHaveText('Todos os dias 08:00–22:00')
     const mapFrame = where.getByTestId('map-frame')
     const before = await mapFrame.boundingBox()
     expect(before!.height).toBeGreaterThanOrEqual(280)
@@ -109,5 +110,40 @@ test.describe('single-space mode', () => {
     await page.goto('/')
     await expect(page.getByTestId('footer-location')).toContainText('Queluz')
     await expect(page.getByText(/Lisboa|Lisbon/)).toHaveCount(0)
+  })
+
+  // R01: the rules are the door's clock. In a Lisbon-zoned browser the first
+  // bookable row of the customer calendar is 08:00 and the last is 21:00,
+  // whatever the season — before R01 the grid read 09:00–22:00 in summer.
+  test('the calendar\'s first bookable hour is 08:00 on the Lisbon clock', async ({ browser }) => {
+    const context = await browser.newContext({ timezoneId: 'Europe/Lisbon' })
+    await preferDayView(context)
+    const page = await context.newPage()
+    try {
+      await page.goto('/spaces')
+      await page.getByRole('button', { name: /Reservar Esta Sala/i }).first().click()
+      await expect(page.locator('.rbc-calendar')).toBeVisible({ timeout: 15000 })
+      await useDayView(page)
+      // Tomorrow: a whole day of slots, none of them already past.
+      await page.getByRole('button', { name: '›' }).click()
+      const rows = page.locator('.rbc-time-content .rbc-day-slot .rbc-timeslot-group')
+      const labels = page.locator('.rbc-time-gutter .rbc-timeslot-group .rbc-label')
+      const tinted = async () => {
+        const colours = await rows.evaluateAll((groups) =>
+          groups.map((g) => window.getComputedStyle(g.querySelector('.rbc-time-slot')!).backgroundColor),
+        )
+        // A slot the API returned is tinted (available or taken); the padding
+        // rows and closed hours are not.
+        return colours.map((c) => c === 'rgb(240, 250, 245)' || c === 'rgb(243, 244, 246)')
+      }
+      await expect.poll(async () => (await tinted()).some(Boolean), { timeout: 15000 }).toBe(true)
+      const isSlot = await tinted()
+      const texts = (await labels.allTextContents()).map((t) => t.trim())
+      expect(texts[isSlot.indexOf(true)]).toBe('08:00')
+      expect(texts[isSlot.lastIndexOf(true)]).toBe('21:00')
+      expect(isSlot.filter(Boolean)).toHaveLength(14)
+    } finally {
+      await context.close()
+    }
   })
 })

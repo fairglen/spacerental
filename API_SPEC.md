@@ -81,9 +81,13 @@ Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool, reason }] 
 Opening hours are the space's wall clock (`Space.timezone`, Europe/Lisbon for
 the pilot): a room open "08:00–22:00" is open 08:00–22:00 on the door all
 year, and the slots come back as UTC instants (08:00Z in winter, 07:00Z in
-summer). On the spring-forward day the hour that does not exist yields no
-slot; on the fall-back day the repeated hour is offered once, its first
-occurrence.
+summer). Slots are whole hours on that clock, and a slot is a real hour of
+the room's time: on the spring-forward day the hour that does not exist
+yields no slot (one slot fewer across the change), and on the fall-back day
+the repeated hour yields two slots, one per occurrence (one slot more) — both
+are distinct, contiguous UTC instants. Lisbon changes its clocks at 01:00 UTC,
+so a window such as 08:00–22:00 never spans the change and has 14 slots on
+those days like on any other.
 
 `reason` (H01) says why a slot is not bookable and is `null` exactly when
 `available` is true: `"past"` (already started), `"beyond_window"` (later than

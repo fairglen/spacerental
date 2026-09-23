@@ -2146,11 +2146,15 @@ parameter is the space's local date); the seed's 08:00–22:00 therefore reads
 08:00–22:00 in Lisbon all year, and existing rules keep their numbers (they
 were always meant as Lisbon — the migration moves no row and no booking);
 "Onde estamos" and the hours line stop converting UTC→Lisbon and show the
-rules as they are. **DST policy (decided here):** a local window boundary
-that does not exist (the spring-forward gap) is skipped as a slot — nothing
-can start in an hour that does not happen; an ambiguous boundary (the
-fall-back hour) takes its first occurrence (`fold=0`), so a day is never
-longer than its wall clock says. **Validation:** real-PG tests around both
+rules as they are. **DST policy (decided in #61, amended by the owner's
+Section 1 text on the follow-up branch):** a local hour that does not exist
+(the spring-forward gap) yields no slot — nothing can start in an hour that
+does not happen, so a window across the change has one slot fewer; a local
+hour that happens twice (the fall-back fold) yields two slots, one per
+occurrence (`fold=0`, then `fold=1`), because both are real, bookable hours,
+so a window across the change has one slot more. (#61 had served the
+repeated hour once; the owner's rule "a 25-hour day yields one more slot"
+replaces that.) **Validation:** real-PG tests around both
 Lisbon transitions (last Sunday of March and of October 2026) for
 availability and for `POST /bookings`; a UTC-zoned space keeps today's
 behaviour (the fixture space is UTC so the existing suite stays meaningful —

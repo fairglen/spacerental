@@ -249,24 +249,29 @@ def local_hourly_slots(
 
     The window is walked on the space's clock, hour by hour, and each hour is
     converted on its own — so a summer day and a winter day both open at the
-    same number on the door. The two DST edge cases follow one rule each, the
-    same one the R01 record states:
+    same number on the door. Slots are whole clock hours, and a slot is a
+    real hour of the room's time, so the two DST days follow from that (R01):
 
-    * an hour that does not exist (the spring-forward gap) is skipped —
-      nothing can start in an hour that never happens;
-    * an hour that happens twice (the fall-back fold) is offered once, its
-      first occurrence (`fold=0`), so the day is never longer than its clock
-      says.
+    * an hour that does not exist (the spring-forward gap) yields no slot —
+      nothing can start in an hour that never happens, and the 23-hour day
+      has one slot fewer across the change;
+    * an hour that happens twice (the fall-back fold) yields two slots, one
+      per occurrence (`fold=0`, then `fold=1`) — both are real, bookable
+      hours, and the 25-hour day has one slot more across the change.
     """
     slots: list[tuple[datetime, datetime]] = []
     current = datetime.combine(day, open_time)
     close = datetime.combine(day, close_time)
     while current + SLOT_DURATION <= close:
-        local = current.replace(tzinfo=zone)  # fold=0: the first occurrence
-        start_utc = local.astimezone(UTC)
-        # A wall time in the gap maps to an instant that reads as a different
-        # wall time; that is how zoneinfo says "this hour does not exist".
-        if start_utc.astimezone(zone).replace(tzinfo=None) == current:
+        for fold in (0, 1):
+            start_utc = current.replace(tzinfo=zone, fold=fold).astimezone(UTC)
+            # A wall time in the gap maps to an instant that reads as a
+            # different wall time; that is how zoneinfo says "this hour does
+            # not exist". Outside the fold, fold=1 is the same instant again.
+            if start_utc.astimezone(zone).replace(tzinfo=None) != current:
+                continue
+            if slots and slots[-1][0] == start_utc:
+                continue
             slots.append((start_utc, start_utc + SLOT_DURATION))
         current += SLOT_DURATION
     return slots
