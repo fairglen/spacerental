@@ -4204,8 +4204,14 @@ checked on screenshots at 1280px and 390px — `PR2_DRAFT.md`):**
 ### L04 — "Onde estamos" rework (both sites)
 
 **Priority: P1. State: IN PROGRESS** — implemented on
-`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
-(2026-09-23):** app — `WhereWeAre` renders the heading, the space name, then
+`feat/landing-parity-where-we-are`; DONE only once merged. **Branch-level
+verification (final state, 2026-09-23):** backend 662 and migration round
+trip + `alembic check` clean (no backend change on this branch), Vitest 546,
+tsc, `next build`, Playwright 48/48 on a freshly rebuilt and seeded loop
+stack, static smoke 31/31, copy-parity 4/4; app-vs-static screenshots at
+1280px and 390px in `PR2_DRAFT.md`, after which the hero content moved inside
+the container, the headline was set solid from 768px and the block's heading
+moved into its card (`f31d8dc`). **Evidence (2026-09-23):** app — `WhereWeAre` renders the heading, the space name, then
 one list (`where-lines`) of three icon lines in this order: hours (R01's
 grouped ranges, the per-room note under them when rooms differ), the mailto
 (phone only when `CONTACT_PHONE` is set), the address on two lines; "Como
