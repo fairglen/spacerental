@@ -307,6 +307,9 @@ async def test_space(db_session, test_org) -> Space:
         description="d",
         address="addr",
         city="Lisbon",
+        # UTC on purpose (R01): hundreds of tests pin UTC instants against the
+        # 08-20 rules below; Lisbon-clock behaviour has its own tests.
+        timezone="UTC",
         images=[],
         amenities=[],
     )

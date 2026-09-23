@@ -10,15 +10,18 @@ is follow-up work, not something already done here; don't assume the two
 agree until spaces.py is migrated to `is_within_open_hours`.
 
 All comparisons are done on tz-aware UTC instants. Stored `TIMESTAMPTZ`
-columns and `BookingCreate`'s validator both guarantee that; nothing here
-does wall-clock/local-time reasoning — R01 is the ticket for Lisbon local
-time, not this one.
+columns and `BookingCreate`'s validator both guarantee that. The one place
+wall-clock time enters is `local_hourly_slots` (R01): an `AvailabilityRule`'s
+open/close times are the SPACE's clock (`Space.timezone`, Europe/Lisbon for
+the pilot), and each local day's hours are turned into UTC instants there —
+08:00 on the door is 08:00 UTC in winter and 07:00 UTC in summer.
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from datetime import date as date_
 from itertools import pairwise
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -28,7 +31,7 @@ from app import clock, package_hours
 from app.config import settings
 from app.models.booking import Booking, BookingStatus
 from app.models.room_block import RoomBlock
-from app.models.space import AvailabilityRule
+from app.models.space import AvailabilityRule, Room, Space
 
 # The product currently only ever offers whole-hour slots (see
 # `GET /rooms/{room_id}/availability` and `BookingCalendar`'s
@@ -230,8 +233,47 @@ async def has_blocking_block(
     return result.first() is not None
 
 
-async def _open_windows_for_day(
-    db: AsyncSession, room_id: uuid.UUID, day: date_
+async def room_timezone(db: AsyncSession, room_id: uuid.UUID) -> ZoneInfo:
+    """The clock a room's opening hours are read on: its space's (R01)."""
+    result = await db.execute(
+        select(Space.timezone).join(Room, Room.space_id == Space.id).where(Room.id == room_id)
+    )
+    name = result.scalar_one_or_none()
+    return ZoneInfo(name or "UTC")
+
+
+def local_hourly_slots(
+    day: date_, open_time: time, close_time: time, zone: ZoneInfo
+) -> list[tuple[datetime, datetime]]:
+    """One slot per wall-clock hour of `[open, close)` on `day`, as UTC instants.
+
+    The window is walked on the space's clock, hour by hour, and each hour is
+    converted on its own — so a summer day and a winter day both open at the
+    same number on the door. The two DST edge cases follow one rule each, the
+    same one the R01 record states:
+
+    * an hour that does not exist (the spring-forward gap) is skipped —
+      nothing can start in an hour that never happens;
+    * an hour that happens twice (the fall-back fold) is offered once, its
+      first occurrence (`fold=0`), so the day is never longer than its clock
+      says.
+    """
+    slots: list[tuple[datetime, datetime]] = []
+    current = datetime.combine(day, open_time)
+    close = datetime.combine(day, close_time)
+    while current + SLOT_DURATION <= close:
+        local = current.replace(tzinfo=zone)  # fold=0: the first occurrence
+        start_utc = local.astimezone(UTC)
+        # A wall time in the gap maps to an instant that reads as a different
+        # wall time; that is how zoneinfo says "this hour does not exist".
+        if start_utc.astimezone(zone).replace(tzinfo=None) == current:
+            slots.append((start_utc, start_utc + SLOT_DURATION))
+        current += SLOT_DURATION
+    return slots
+
+
+async def _open_slots_for_local_day(
+    db: AsyncSession, room_id: uuid.UUID, day: date_, zone: ZoneInfo
 ) -> list[tuple[datetime, datetime]]:
     result = await db.execute(
         select(AvailabilityRule).where(
@@ -240,23 +282,9 @@ async def _open_windows_for_day(
             AvailabilityRule.is_active == True,  # noqa: E712
         )
     )
-    rules = result.scalars().all()
-    return [
-        (
-            datetime.combine(day, rule.open_time, tzinfo=UTC),
-            datetime.combine(day, rule.close_time, tzinfo=UTC),
-        )
-        for rule in rules
-    ]
-
-
-def _hourly_slots(windows: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
     slots: list[tuple[datetime, datetime]] = []
-    for open_dt, close_dt in windows:
-        current = open_dt
-        while current + SLOT_DURATION <= close_dt:
-            slots.append((current, current + SLOT_DURATION))
-            current += SLOT_DURATION
+    for rule in result.scalars().all():
+        slots.extend(local_hourly_slots(day, rule.open_time, rule.close_time, zone))
     return sorted(slots)
 
 
@@ -270,7 +298,7 @@ async def is_within_open_hours(
     `AvailabilityRule` window for that day with no closed gap in between (e.g.
     a lunch closure) and none of it outside the configured hours entirely.
     A day with no active rule at all is closed, same as the calendar's "no
-    rule for this day" case.
+    rule for this day" case. "That day" is the space's local day (R01).
     """
     start_utc = start_time.astimezone(UTC)
     end_utc = end_time.astimezone(UTC)
@@ -285,11 +313,12 @@ async def is_within_open_hours(
     if any(dt.minute or dt.second or dt.microsecond for dt in (start_utc, end_utc)):
         return False
 
+    zone = await room_timezone(db, room_id)
     all_slots: set[tuple[datetime, datetime]] = set()
-    day = start_utc.date()
-    last_day = (end_utc - timedelta(microseconds=1)).date()
+    day = start_utc.astimezone(zone).date()
+    last_day = (end_utc - timedelta(microseconds=1)).astimezone(zone).date()
     while day <= last_day:
-        all_slots.update(_hourly_slots(await _open_windows_for_day(db, room_id, day)))
+        all_slots.update(await _open_slots_for_local_day(db, room_id, day, zone))
         day += timedelta(days=1)
 
     # Deduplicated on purpose: two `AvailabilityRule` rows for the same room

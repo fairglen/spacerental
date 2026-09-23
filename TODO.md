@@ -109,6 +109,21 @@ the calendar asked for days past the window and showed the 400s as a load
 error; `bookingWindowEnd` used calendar days (an hour off across DST); the
 sheet's outcome copy read the duration delta rather than the pack-share
 delta and keyed the split by text; `sala-04.svg`'s label said two armchairs.
+Both merged 2026-09-23: #59 as `1aabcfe`, #60 as `9a497f7`.
+
+**Local opening hours, landing parity and "Onde estamos" rework (2026-09-23,
+after #60):** by explicit owner assignment, delivered unattended on two
+stacked branches. **PR 1** `fix/local-opening-hours` (from main `9a497f7`):
+R01's opening-hours slice — rules evaluated on the space's wall clock
+(Europe/Lisbon for the pilot), small and separately revertible. **PR 2**
+`feat/landing-parity-where-we-are` (from the finished PR 1 branch): the
+owner named three sections — hero copy, static-site design parity, "Onde
+estamos" rework, on both the app and the static site — but the assignment
+text reached the loop truncated before their specification (see L02–L04
+below), so they are recorded as blocked, not guessed at. Decisions the owner
+did not give are taken the conservative way, recorded under the task and
+tagged `DECISION:` in the commit body. Commits stay local; the owner reviews
+and opens the PRs.
 
 States used below:
 
@@ -2065,7 +2080,63 @@ and do not build on, fix or delete them while the outcome is parked.
 
 ### R01 — Preserve Lisbon wall time for availability and recurrence
 
-**Depends on:** C99; disposition of Q26/Q27. **Scope:** room/space timezone
+**Priority: P1 (opening-hours slice). State: IN PROGRESS** — the
+opening-hours slice assigned by the owner on 2026-09-23 as Section 1 of
+`fix/local-opening-hours`, implemented and committed locally; DONE only once
+merged. The recurrence slice stays parked with R02/R03 (code untouched, flag
+off). **Evidence (2026-09-23, commit `9892851`):** 10 real-PG tests in
+`tests/test_local_opening_hours.py` on a Europe/Lisbon space — a winter and
+a summer day both have 14 slots reading 08:00–21:00 on the Lisbon clock
+(08:00Z vs 07:00Z); every slot of a day belongs to that local date; the
+spring-forward day (2026-03-29) offers 00:00, 02:00, 03:00, 04:00 and no
+01:00 for a 00–05 rule; the fall-back day (2026-10-25) offers each wall-clock
+hour once, 01:00 as its first occurrence (00:00Z, not 01:00Z); the H01
+horizon's last served day is the space's date of that instant (a window
+ending 23:30Z on 31 July is served on 1 August in Lisbon, refused on the
+2nd); the UTC fixture space behaves exactly as before; `POST /bookings` accepts 08:00
+Lisbon in summer (07:00Z), refuses 07:00 Lisbon and 22:00 Lisbon, accepts the
+day's last hour; a block across the gap is two real hours; `timezone` is
+public, defaults to Europe/Lisbon on create, is refused for an unknown name
+(422) and accepted for `Atlantic/Azores`; the seed places the demo space in
+Lisbon and restores it on a re-seed. S19 allowlist gains `timezone`.
+Migration `0012_space_timezone` round trip clean on an empty database (the
+column is a server default: no rule row and no booking instant is touched).
+Full backend 660 (650 on main). Frontend: the hours line reads the rules as
+the wall clock they are (10 unit tests, the summer case inverted from
+"09:00–23:00" to "08:00–22:00"); `Space.timezone` typed; Vitest 545; tsc
+clean; `next build` OK; Playwright 46/46 against the rebuilt loop stack,
+which serves the seed's 08:00–22:00 as 07:00Z–21:00Z in September; static
+site untouched (smoke 26/26). **DECISIONS:** (1) the conftest fixture space is zoned `UTC`,
+so the ~650 tests that pin UTC instants against its 08–20 rules keep their
+meaning, and Lisbon-clock behaviour has its own tests — alternative: convert
+every pinned expectation; (2) the timezone lives on the space, not the room
+(one door, one clock; the recurrence slice will need the same column);
+(3) the migration's server default puts every existing space in Lisbon — the
+pilot's rules were always written as Lisbon numbers, so this is the first
+time they are read as intended, and nothing is rewritten; a UTC-meaning
+operator would set `UTC` in the admin; (4) the seed re-asserts Lisbon on the
+demo space like it re-asserts the address (W04/C10 rule). **Slice scope:** `spaces.timezone` (IANA name,
+`Europe/Lisbon` default, migration `0012`), validated on the admin space
+endpoints and returned publicly; `AvailabilityRule.open_time/close_time` are
+the space's WALL CLOCK: `is_within_open_hours` and `GET
+/rooms/{id}/availability` build each local day's windows in the space's zone
+and convert to UTC instants (stored bookings stay UTC; the `date` query
+parameter is the space's local date); the seed's 08:00–22:00 therefore reads
+08:00–22:00 in Lisbon all year, and existing rules keep their numbers (they
+were always meant as Lisbon — the migration moves no row and no booking);
+"Onde estamos" and the hours line stop converting UTC→Lisbon and show the
+rules as they are. **DST policy (decided here):** a local window boundary
+that does not exist (the spring-forward gap) is skipped as a slot — nothing
+can start in an hour that does not happen; an ambiguous boundary (the
+fall-back hour) takes its first occurrence (`fold=0`), so a day is never
+longer than its wall clock says. **Validation:** real-PG tests around both
+Lisbon transitions (last Sunday of March and of October 2026) for
+availability and for `POST /bookings`; a UTC-zoned space keeps today's
+behaviour (the fixture space is UTC so the existing suite stays meaningful —
+DECISION recorded on the commit); migration round trip; the S19 allowlist;
+frontend unit tests for the hours line; the public shape test.
+
+**Depends on:** C99; disposition of Q26/Q27. **Scope (original):** room/space timezone
 metadata, migration, availability and recurrence expansion, frontend preview.
 
 **Acceptance:** establish an explicit location timezone (Europe/Lisbon for the
@@ -3831,10 +3902,12 @@ last hour stays visible in summer; its rooms-union residual stands. The
 e2e specs that skipped Sundays keep doing so (harmless) and `hour-bank`
 counts the 08–20 slots it needs rather than the day's total. Playwright
 `booking`, `week-view`, `admin-calendar`, `hour-bank` 16 passed on the
-re-seeded stack. **Known limitation, recorded (R01):** rules are evaluated in
-UTC, so Lisbon reads 09:00–23:00 in summer. **DECISION:** the re-seed
-replaces only the exact set an earlier seed wrote (any other set is an
-operator's), the same rule W04 applies to descriptions and V01 to photos.
+re-seeded stack. **Known limitation, recorded (R01) — resolved on
+`fix/local-opening-hours` (2026-09-23):** rules were evaluated in UTC, so
+Lisbon read 09:00–23:00 in summer; they are the space's wall clock now.
+**DECISION:** the re-seed replaces only the exact set an earlier seed wrote
+(any other set is an operator's), the same rule W04 applies to descriptions
+and V01 to photos.
 **Scope (as assigned):** `backend/app/seed.py` gives every
 room 08:00–22:00 on all seven days (idempotent update of existing rules);
 tests pinning 08–20 updated; the customer calendar's visible range follows the
@@ -3939,6 +4012,32 @@ stand-ins used on both sites for every room. When real photos exist: the app
 takes them through the admin photo manager (C15) per room; the static site
 takes them as a `manifest.json` edit plus the files (V02). No code change
 expected.
+
+## Landing parity and "Onde estamos" rework (L-series) — owner assignment 2026-09-23 (PR 2)
+
+Branch `feat/landing-parity-where-we-are`, from the finished PR 1 branch.
+The owner's message named the three sections below for BOTH the app and the
+static site, but the loop received the assignment cut off before their
+specification (it ends mid-sentence in the "Before the loop" instructions).
+Per the delivery rules nothing is guessed: the three items are recorded with
+their titles and their obvious links, marked BLOCKED, and left for the owner
+to specify. Links: W01–W05 (the copy and register they will touch), V01–V07
+(the photos and "Onde estamos" they build on).
+
+### L02 — Hero copy
+
+**Priority: P2. State: BLOCKED — specification not received.** Title only.
+Links W01 (static site copy), W03 (app landing copy), V04 (the pill removal).
+
+### L03 — Static-site design parity
+
+**Priority: P2. State: BLOCKED — specification not received.** Title only.
+Links F01/W01 (the static site), V02/V07 (its galleries and "Onde estamos").
+
+### L04 — "Onde estamos" rework
+
+**Priority: P2. State: BLOCKED — specification not received.** Title only.
+Links V06/V07 (the block on both sites), R01 (the hours it shows).
 
 ## Deferred scope
 

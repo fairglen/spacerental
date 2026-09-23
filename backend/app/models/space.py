@@ -46,6 +46,12 @@ class Space(Base):
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # The location's own clock (R01): an IANA zone name. Every AvailabilityRule
+    # of every room here is read on this clock — 08:00 means 08:00 on the
+    # door, summer and winter — while bookings and slots stay UTC instants.
+    timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="Europe/Lisbon", server_default="Europe/Lisbon"
+    )
     # Six decimal places is about 11 cm, and what a maps app hands out.
     latitude: Mapped[decimal.Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[decimal.Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)

@@ -20,6 +20,7 @@ from app.schemas.bounds import (
     PostalCode,
     RejectExplicitNull,
     Tags,
+    TimeZoneName,
     Weekday,
 )
 
@@ -176,6 +177,8 @@ class SpaceOut(BaseModel):
     postal_code: str | None
     latitude: Decimal | None
     longitude: Decimal | None
+    # The clock every room's opening hours are read on (R01).
+    timezone: str
     images: list[str]
     photos: list[PhotoOut] = []
     amenities: list[str]
@@ -193,6 +196,8 @@ class SpaceCreate(BaseModel):
     postal_code: PostalCode | None = None
     latitude: Latitude | None = None
     longitude: Longitude | None = None
+    # The clock the rooms' opening hours are read on (R01); Lisbon for the pilot.
+    timezone: TimeZoneName = "Europe/Lisbon"
     images: ImageUrls = []
     amenities: Tags = []
 
@@ -214,6 +219,7 @@ class SpaceUpdate(RejectExplicitNull):
     postal_code: PostalCode | None = None
     latitude: Latitude | None = None
     longitude: Longitude | None = None
+    timezone: TimeZoneName | None = None
     images: ImageUrls | None = None
     amenities: Tags | None = None
     is_active: bool | None = None

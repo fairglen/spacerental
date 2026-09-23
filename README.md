@@ -173,7 +173,11 @@ inspect the diff before deciding whether a migration or metadata repair is neede
   OpenStreetMap preview that loads only when they press "Ver mapa".
 - Weekly series are an explicit opt-in pending UTC foundation, parked by the
   owner on 2026-09-19 (flag off, code left in place; R02/R03/R99 DEFERRED).
-  Lisbon wall-clock opening hours (R01) are not parked.
+- Opening hours are the space's wall clock (R01, opening-hours slice):
+  `spaces.timezone` (Europe/Lisbon for the pilot) is the clock every room's
+  availability rules are read on, so "08:00–22:00" is 08:00–22:00 on the door
+  in summer and winter; bookings and slots stay UTC instants. The recurrence
+  slice of R01 stays with the parked series work.
 - Email confirmation/cancellation uses stub/live gateways and in-process
   background tasks. Durable jobs/retries remain O01.
 - Smart-lock stub lifecycle is Q28; live startup is gated until durable
@@ -255,8 +259,8 @@ BOOKING_HOLD_MINUTES=1 docker compose up -d backend
 
 "Onde estamos" (landing page in single-space mode, and the top of the rooms
 page) shows the address, "Como chegar", the contact email, the opening hours
-derived from the rooms' availability rules (union across rooms, on the Lisbon
-clock — evaluated in UTC until R01) and a click-to-load OpenStreetMap frame
+derived from the rooms' availability rules (union across rooms, read as the
+space's wall clock, R01) and a click-to-load OpenStreetMap frame
 centred on the pin. `CONTACT_PHONE` in `.env` (Compose hands it to the
 frontend as `NEXT_PUBLIC_CONTACT_PHONE`) adds a phone line when set; it is
 empty by default and no line is rendered.

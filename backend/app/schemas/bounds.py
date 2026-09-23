@@ -13,6 +13,7 @@ in TODO.md (S09).
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, ClassVar
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 
@@ -48,6 +49,22 @@ ImageUrl = Annotated[
 ]
 # The admin UI appends an alpha suffix to this value, so it has to be #RRGGBB.
 Color = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
+
+
+def _known_timezone(name: str) -> str:
+    # `zoneinfo` resolves names from the system database (or tzdata): the
+    # one check that means the backend can actually evaluate the clock.
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError("must be an IANA time zone name, e.g. Europe/Lisbon") from exc
+    return name
+
+
+# A location's clock (R01): a real IANA zone name, at most 64 characters.
+TimeZoneName = Annotated[
+    str, StringConstraints(min_length=1, max_length=64), AfterValidator(_known_timezone)
+]
 
 Tags = Annotated[list[Tag], Field(max_length=50)]
 ImageUrls = Annotated[list[ImageUrl], Field(max_length=50)]

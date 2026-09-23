@@ -29,7 +29,7 @@ generous; they live in `backend/app/schemas/bounds.py`.
 | `capacity` | 1 to 10000 |
 | `hourly_rate`, `price` | 0 to 99999999.99, two decimals |
 | Package `hours`, `validity_days` | 1 to 999, 1 to 3650 |
-| Availability rules | weekday 0 to 6, opening before closing, at most 50 per call |
+| Availability rules | weekday 0 to 6, opening before closing, at most 50 per call; times are the space's wall clock (R01) |
 | Booking and series instants, `until_date` | before the year 2100 |
 | Admin list `page` | 1 to 1000000 |
 
@@ -75,16 +75,23 @@ Space detail with rooms.
 Response: `{ space: Space, rooms: Room[] }`
 
 ### GET /rooms/:id/availability
-Query: `?date=YYYY-MM-DD`
+Query: `?date=YYYY-MM-DD` — the SPACE's local date (R01).
 Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool, reason }] }`
+
+Opening hours are the space's wall clock (`Space.timezone`, Europe/Lisbon for
+the pilot): a room open "08:00–22:00" is open 08:00–22:00 on the door all
+year, and the slots come back as UTC instants (08:00Z in winter, 07:00Z in
+summer). On the spring-forward day the hour that does not exist yields no
+slot; on the fall-back day the repeated hour is offered once, its first
+occurrence.
 
 `reason` (H01) says why a slot is not bookable and is `null` exactly when
 `available` is true: `"past"` (already started), `"beyond_window"` (later than
 now + `BOOKING_MAX_ADVANCE_DAYS`, the customer's horizon), `"booked"` (a
 booking holds it) or `"blocked"` (operator blocked time). One reason per slot,
-in that order of precedence. A `date` after the window's last day is refused
-with `400` (`date is beyond the booking window`) rather than served as all
-unavailable.
+in that order of precedence. A `date` after the window's last day (the space's
+local date of that instant) is refused with `400` (`date is beyond the booking
+window`) rather than served as all unavailable.
 
 ---
 
@@ -266,7 +273,11 @@ All spaces for admin's org.
 
 ### POST /admin/spaces
 Create a space.
-Body: `{ name, description?, address?, city?, postal_code?, latitude?, longitude?, images?, amenities? }`
+Body: `{ name, description?, address?, city?, postal_code?, latitude?, longitude?, timezone?, images?, amenities? }`
+
+`timezone` (R01) is an IANA zone name (`Europe/Lisbon` by default; 422 for a
+name the backend cannot resolve): the clock every room's availability rules
+are read on. `PUT /admin/spaces/:id` accepts it too.
 
 Location rules (422 otherwise): `postal_code` is at most 20 characters;
 `latitude` is within -90..90 and `longitude` within -180..180, as a number or a
@@ -478,6 +489,7 @@ type Space = {
   // frontend/lib/api.ts converts them to numbers and keeps null as null.
   latitude: string | null
   longitude: string | null
+  timezone: string             // IANA zone the rooms' opening hours are read on (R01)
   // Legacy list of external URLs; nothing renders it. Left as it was.
   images: string[]
   // Uploaded photos in display order, first = cover (C14).
