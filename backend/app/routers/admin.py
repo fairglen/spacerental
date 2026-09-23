@@ -576,6 +576,14 @@ async def admin_update_booking(
         await _validate_slot(db, room.id, start, end, now, original_start=booking.start_time)
         if booking.status in (BookingStatus.confirmed, BookingStatus.pending):
             await expire_stale_holds(db, room.id, start, end, now)
+            # That bulk update may have flipped THIS row: a lapsed hold that
+            # still read `pending` and overlaps its own new slot. Its pack
+            # share is back on the purchases now; the settle below and the
+            # status logic must see what the row really is, or the hours
+            # would be credited twice (shrink) or drawn for a row that holds
+            # nothing (grow), and the row written back as `pending`.
+            await db.refresh(booking, attribute_names=["status", "hold_expires_at"])
+            previous_status = booking.status
             if await has_conflicting_booking(
                 db, room.id, start, end, exclude_booking_id=booking.id, now=now
             ):
@@ -590,9 +598,19 @@ async def admin_update_booking(
         # `total_amount` deliberately does not: no charge and no credit is ever
         # created here (O02 owns money movement). `hours` tells the operator
         # what changed and what the bank could not cover.
-        uncovered = await package_hours.settle_moved_booking(
-            db, booking, new_duration=new_duration, now=now
-        )
+        try:
+            uncovered = await package_hours.settle_moved_booking(
+                db, booking, new_duration=new_duration, now=now
+            )
+        except DBAPIError as exc:
+            # Losing a lock race with a concurrent walk is a retry, not a 500.
+            if not is_lost_slot_race(exc):
+                raise
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The customer's packs are being used right now; try again",
+            ) from None
         booking.duration_hours = new_duration
         moved = True
         response["hours"] = {

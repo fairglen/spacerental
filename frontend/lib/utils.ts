@@ -80,7 +80,15 @@ export function cancellationEligibility(
 export function formatBookingCost(
   b: Pick<Booking, 'payment_method' | 'duration_hours' | 'total_amount' | 'package_hours_used'>,
 ): string {
-  if (b.payment_method === 'package') return `${formatHours(b.duration_hours)} do pack`
+  if (b.payment_method === 'package') {
+    // H03: an operator can lengthen a pack booking past what the bank had;
+    // the share stays what was actually debited and the rest is "por acertar".
+    const share = b.package_hours_used ?? b.duration_hours
+    const uncovered = b.duration_hours - share
+    return uncovered > 0
+      ? `${formatHours(share)} do pack + ${formatHours(uncovered)} por acertar`
+      : `${formatHours(share)} do pack`
+  }
   if (b.payment_method === 'mixed') {
     return `${formatHours(b.package_hours_used ?? 0)} do pack + ${formatCurrency(b.total_amount)}`
   }
@@ -94,12 +102,14 @@ export function formatBookingCost(
  * purchase, "2h · Pack 10h · expira 3 out". Empty when the booking holds no
  * hours or the response did not carry the split.
  */
+export function packSplitLine(d: BookingPackageDebit): string {
+  const parts = [formatHours(d.hours), d.package_name ?? 'Pack']
+  if (d.expires_at) parts.push(`expira ${format(parseISO(d.expires_at), 'd MMM', { locale: pt })}`)
+  return parts.join(' · ')
+}
+
 export function packSplitLines(debits: BookingPackageDebit[] | undefined): string[] {
-  return (debits ?? []).map((d) => {
-    const parts = [formatHours(d.hours), d.package_name ?? 'Pack']
-    if (d.expires_at) parts.push(`expira ${format(parseISO(d.expires_at), 'd MMM', { locale: pt })}`)
-    return parts.join(' · ')
-  })
+  return (debits ?? []).map(packSplitLine)
 }
 
 /** "10h", "7,5h" — a whole number of hours has no fraction, a real fraction

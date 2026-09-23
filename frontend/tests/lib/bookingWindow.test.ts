@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import {
   bookingMaxAdvanceDays,
   bookingWindowEnd,
+  datesWithinWindow,
   isBeyondWindow,
   nextPeriodIsBeyondWindow,
   DEFAULT_BOOKING_MAX_ADVANCE_DAYS,
@@ -28,6 +29,23 @@ describe('bookingMaxAdvanceDays', () => {
       vi.stubEnv('NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS', bad)
       expect(() => bookingMaxAdvanceDays()).toThrow(/positive integer/)
     }
+  })
+})
+
+describe('bookingWindowEnd', () => {
+  it('adds exact 24-hour days to the instant, like the API, even across a DST change', () => {
+    // Lisbon springs forward on 2026-03-29: calendar-day maths would land an hour off.
+    expect(bookingWindowEnd(new Date('2026-03-28T10:00:00Z'))).toEqual(new Date('2026-04-27T10:00:00Z'))
+    expect(bookingWindowEnd(new Date('2026-10-24T10:00:00Z'))).toEqual(new Date('2026-11-23T10:00:00Z'))
+  })
+})
+
+describe('datesWithinWindow', () => {
+  it('drops the dates the API would refuse: everything after the window\'s last day', () => {
+    const now = new Date(2026, 8, 22, 10, 0) // last day: 22 Oct
+    const week = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25']
+    expect(datesWithinWindow(week, now)).toEqual(['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22'])
+    expect(datesWithinWindow(['2026-09-22'], now)).toEqual(['2026-09-22'])
   })
 })
 

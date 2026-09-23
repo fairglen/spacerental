@@ -427,3 +427,86 @@ class TestNoFiveHundreds:
         # Nothing was written.
         assert (await _db_booking(db_session, booking["id"])).duration_hours == Decimal(3)
         assert (await _db_booking(db_session, booking["id"])).status is BookingStatus.confirmed
+
+
+class TestAMoveOfAHoldThatLapsedUnderneath:
+    """Review finding on #59: the move path's own `expire_stale_holds` can flip
+    the very booking being moved (a lapsed `pending` hold overlapping its new
+    slot) while the ORM instance still reads `pending`. The settle must see
+    the status the row really has: no second credit, no orphan debits, and
+    the row stays `expired`."""
+
+    async def _lapsed_mixed_hold(self, client, auth_headers, test_room, monkeypatch, hours=12):
+        start = _monday(hour=8)
+        booking = await _book(client, auth_headers, test_room, start, hours=hours)
+        assert booking["payment_method"] == "mixed"
+        # Past the hold's deadline: the row still reads `pending` (lazy expiry).
+        _pin(monkeypatch, datetime.now(tz=UTC) + timedelta(minutes=16))
+        return booking, start
+
+    async def test_shrinking_it_credits_the_pack_exactly_once_and_leaves_it_expired(
+        self, client, auth_headers, admin_headers, test_org, test_room, db_session, payments,
+        b_ten, monkeypatch,
+    ):  # fmt: skip
+        booking, start = await self._lapsed_mixed_hold(client, auth_headers, test_room, monkeypatch)
+        assert await _balance(db_session, b_ten) == (Decimal(0), Decimal(10))
+
+        resp = await _move(client, admin_headers, test_org, booking["id"], start, hours=8)
+        assert resp.status_code == 200, resp.text
+        stored = await _db_booking(db_session, booking["id"])
+        assert stored.status is BookingStatus.expired
+        assert stored.hold_expires_at is None
+        assert stored.duration_hours == Decimal(8)
+        assert stored.package_hours_used == Decimal(8)  # the recorded share, capped
+        # Everything the hold had is back — once. No rows for a row that holds nothing.
+        assert await _balance(db_session, b_ten) == (Decimal(10), Decimal(0))
+        assert await _debits(db_session, booking["id"]) == {}
+        assert resp.json()["booking"]["status"] == "expired"
+
+    async def test_growing_it_draws_nothing_from_the_bank(
+        self,
+        client,
+        auth_headers,
+        admin_headers,
+        test_org,
+        test_user,
+        test_room,
+        db_session,
+        payments,
+        pack,
+        a_two,
+        monkeypatch,
+    ):
+        # 5h against a 2h bank: 2 from A, 3 in money — a mixed hold.
+        booking, start = await self._lapsed_mixed_hold(
+            client, auth_headers, test_room, monkeypatch, hours=5
+        )
+        # Plenty in the bank by the time the operator grows it.
+        later = await _purchase(
+            db_session, org=test_org, user=test_user, package=pack, hours="10", expires_in_days=60
+        )
+        resp = await _move(client, admin_headers, test_org, booking["id"], start, hours=9)
+        assert resp.status_code == 200, resp.text
+        stored = await _db_booking(db_session, booking["id"])
+        assert stored.status is BookingStatus.expired
+        assert stored.package_hours_used == Decimal(2)
+        assert "uncovered" not in resp.json()["hours"]
+        assert await _debits(db_session, booking["id"]) == {}
+        assert await _balance(db_session, a_two) == (Decimal(2), Decimal(0))
+        assert await _balance(db_session, later) == (Decimal(10), Decimal(0))
+
+    async def test_reviving_it_as_pending_in_the_same_call_takes_the_hours_again_once(
+        self, client, auth_headers, admin_headers, test_org, test_room, db_session, payments,
+        b_ten, monkeypatch,
+    ):  # fmt: skip
+        booking, start = await self._lapsed_mixed_hold(client, auth_headers, test_room, monkeypatch)
+        resp = await _move(
+            client, admin_headers, test_org, booking["id"], start, hours=8, status="pending"
+        )
+        assert resp.status_code == 200, resp.text
+        stored = await _db_booking(db_session, booking["id"])
+        assert stored.status is BookingStatus.pending
+        assert stored.hold_expires_at is not None
+        assert stored.package_hours_used == Decimal(8)
+        assert await _debits(db_session, booking["id"]) == {b_ten.id: Decimal(8)}
+        assert await _balance(db_session, b_ten) == (Decimal(2), Decimal(8))

@@ -293,11 +293,24 @@ async def settle_moved_booking(
 
     if new_duration < booking.package_hours_used:
         surplus = booking.package_hours_used - new_duration
-        for debit in reversed(await debits_of(db, booking.id)):
+        debits = await debits_of(db, booking.id)
+        # Take every affected purchase's lock in the walk's order (expiry asc)
+        # BEFORE crediting in reverse order: a concurrent walk locks the same
+        # rows in that order, and two paths locking in opposite orders is a
+        # deadlock waiting to happen.
+        locked = {}
+        for debit in debits:
+            purchase = await _lock(db, debit.purchase_id)
+            if purchase is not None:
+                locked[debit.purchase_id] = purchase
+        for debit in reversed(debits):
             if surplus <= 0:
                 break
             give = min(debit.hours, surplus)
-            await credit_hours(db, purchase_id=debit.purchase_id, hours=give)
+            purchase = locked.get(debit.purchase_id)
+            if purchase is not None:
+                purchase.hours_remaining += give
+                purchase.hours_used -= give
             debit.hours -= give
             if debit.hours <= 0:
                 await db.delete(debit)

@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app import clock, package_hours
 from app.auth import require_admin
+from app.booking_validity import expire_user_holds
 from app.database import get_db
 from app.models.booking import Booking
 from app.models.organization import MemberRole, OrganizationMember
@@ -108,6 +109,12 @@ async def admin_get_user(
 ):
     """One customer: their bookings, purchases and help requests IN THIS ORG."""
     member = await _membership(db, user_id, org_id)
+    # Expiry is lazy: a lapsed mixed hold still has hours debited until
+    # something reconciles it. The customer's own packs page does this; the
+    # operator's view of the same bank must not read short, nor list debits
+    # for a booking that holds nothing.
+    now = clock.utcnow()
+    await expire_user_holds(db, user_id, now)
     bookings = (
         (
             await db.execute(
@@ -157,7 +164,7 @@ async def admin_get_user(
         "purchases": [AdminPurchaseOut.model_validate(p) for p in purchases],
         # The same bank the customer sees on their packs page (H02).
         "balance": PackageBalanceOut.model_validate(
-            package_hours.bank_balance(list(purchases), clock.utcnow())
+            package_hours.bank_balance(list(purchases), now)
         ),
         "support_requests": [SupportRequestOut.model_validate(r) for r in requests],
     }

@@ -6,7 +6,7 @@ import { pt } from 'date-fns/locale'
 import { useQueries } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
 import { CALENDAR_VIEWS, useCalendarView, type CalendarView } from '@/lib/hooks/useCalendarView'
-import { bookingWindowEnd, isBeyondWindow, nextPeriodIsBeyondWindow } from '@/lib/bookingWindow'
+import { bookingWindowEnd, datesWithinWindow, isBeyondWindow, nextPeriodIsBeyondWindow } from '@/lib/bookingWindow'
 import type { Room, AvailabilitySlot } from '@/types'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
@@ -186,7 +186,9 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
   const [view, setView] = useCalendarView()
   const [selectionError, setSelectionError] = useState<string | null>(null)
 
-  const datesToFetch = getDatesForView(selectedDate, view)
+  // The last week usually straddles the horizon; the API refuses dates past
+  // it (400), which is not a failed load. Those days simply have no slots.
+  const datesToFetch = datesWithinWindow(getDatesForView(selectedDate, view))
 
   const slotQueries = useQueries({
     queries: datesToFetch.map((dateStr) => ({

@@ -96,7 +96,19 @@ commit body. Opened on the owner's instruction on 2026-09-23 as
 [PR #59](https://github.com/fairglen/spacerental/pull/59) (H01–H03, base
 `main`) and [PR #60](https://github.com/fairglen/spacerental/pull/60)
 (V01–V07, stacked on #59's branch — retarget to `main` once #59 merges);
-the owner reviews and merges.
+the owner reviews and merges. Copilot's eight findings on #59 (2026-09-23)
+were all valid and fixed in one commit: the move path's own
+`expire_stale_holds` could flip the booking being moved while the ORM copy
+still read `pending` (critical — double credit on shrink, orphan debits on
+grow, the row written back as pending); the shrink credited purchases in
+reverse draw order without first taking their locks in the walk's order
+(deadlock); the operator's customer page read the bank without reconciling
+lapsed holds; `package` labels used the duration instead of the debited
+share after a partly covered growth (table, sheet, `formatBookingCost`);
+the calendar asked for days past the window and showed the 400s as a load
+error; `bookingWindowEnd` used calendar days (an hour off across DST); the
+sheet's outcome copy read the duration delta rather than the pack-share
+delta and keyed the split by text; `sala-04.svg`'s label said two armchairs.
 
 States used below:
 

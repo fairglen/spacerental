@@ -546,6 +546,22 @@ describe('BookingCalendar booking window (H01)', () => {
     expect(screen.getByTestId('booking-window-hint')).toHaveTextContent(`Reservas abertas até ${lastDay}.`)
   })
 
+  it('asks for no day past the window in the week that straddles it, and shows no load error', async () => {
+    setViewportWidth(1280) // the week view
+    await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
+    vi.mocked(spacesApi.getAvailability).mockClear()
+    // Navigate to the week holding the last open day (today + 30).
+    const lastDay = addDays(new Date(), 30)
+    act(() => calendar!.onNavigate(lastDay))
+    await waitFor(() => expect(spacesApi.getAvailability).toHaveBeenCalled())
+    const asked = vi.mocked(spacesApi.getAvailability).mock.calls.map(([, d]) => d)
+    const last = format(lastDay, 'yyyy-MM-dd')
+    expect(asked.length).toBeGreaterThan(0)
+    expect(asked.every((d) => d <= last)).toBe(true)
+    expect(asked).toContain(last)
+    expect(screen.queryByText(/Não foi possível carregar/)).toBeNull()
+  })
+
   describe('toolbar', () => {
     function renderToolbar(date: Date, view: 'day' | 'week') {
       const onNavigate = vi.fn()

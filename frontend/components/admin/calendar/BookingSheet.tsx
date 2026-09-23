@@ -8,7 +8,7 @@ import { X } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { adminBookingErrorMessage } from '@/lib/adminBookingErrors'
-import { formatBookingCost, formatHours, packSplitLines, STATUS_COLORS, STATUS_LABELS, isUnpaidHold } from '@/lib/utils'
+import { formatBookingCost, formatHours, packSplitLine, STATUS_COLORS, STATUS_LABELS, isUnpaidHold } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -33,17 +33,20 @@ const PAYMENT_LABELS: Record<Booking['payment_method'], string> = {
  * follows the new length through the hour bank, and `uncovered` is what the
  * bank could not give for a longer booking.
  */
-function moveOutcome(b: Booking, hours?: { before: number; after: number; uncovered?: number }): string {
+function moveOutcome(before: Booking, after: Booking, hours?: { before: number; after: number; uncovered?: number }): string {
   if (!hours || hours.before === hours.after) return 'Horário alterado. O cliente recebe um email.'
   const change = `Horário alterado. Duração ${formatHours(hours.before)} → ${formatHours(hours.after)}.`
-  const usesPack = (b.package_hours_used ?? 0) > 0 || b.payment_method === 'package' || b.payment_method === 'mixed'
+  const usesPack = (before.package_hours_used ?? 0) > 0 || before.payment_method === 'package' || before.payment_method === 'mixed'
   if (!usesPack) return `${change} Nada foi cobrado nem devolvido; acerte a diferença com o cliente fora da plataforma.`
   if (hours.uncovered && hours.uncovered > 0) {
     return `${change} O banco de horas do cliente não cobre ${formatHours(hours.uncovered)}; acerte essas horas com o cliente fora da plataforma. Nenhum dinheiro foi movido.`
   }
-  return hours.after < hours.before
-    ? `${change} As horas a mais voltaram ao banco de horas do cliente. Nenhum dinheiro foi movido.`
-    : `${change} As horas a mais saíram do banco de horas do cliente. Nenhum dinheiro foi movido.`
+  // What the PACK share did, not the duration: shortening a mixed booking
+  // inside its money part moves no hours at all.
+  const delta = (after.package_hours_used ?? 0) - (before.package_hours_used ?? 0)
+  if (delta < 0) return `${change} ${formatHours(-delta)} voltaram ao banco de horas do cliente. Nenhum dinheiro foi movido.`
+  if (delta > 0) return `${change} ${formatHours(delta)} saíram do banco de horas do cliente. Nenhum dinheiro foi movido.`
+  return `${change} As horas de pack não mudaram; nada foi cobrado nem devolvido.`
 }
 
 const toLocalDate = (iso: string) => format(parseISO(iso), 'yyyy-MM-dd')
@@ -102,7 +105,7 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
       if (move.room_id !== booking.room_id) body.room_id = move.room_id
       return adminApi.updateBookingDetails(booking.id, body, api)
     },
-    onSuccess: ({ booking: b, hours }) => done(b, moveOutcome(b, hours)),
+    onSuccess: ({ booking: b, hours }) => done(b, moveOutcome(booking, b, hours)),
     onError: fail,
   })
   const saveNote = useMutation({
@@ -156,7 +159,7 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
                   {booking.package_debits!.length === 1 ? 'Ver o pack' : `Ver os ${booking.package_debits!.length} packs`}
                 </summary>
                 <ul className="mt-1 list-disc pl-4">
-                  {packSplitLines(booking.package_debits).map((line) => <li key={line}>{line}</li>)}
+                  {booking.package_debits!.map((d) => <li key={d.purchase_id}>{packSplitLine(d)}</li>)}
                 </ul>
               </details>
             )}

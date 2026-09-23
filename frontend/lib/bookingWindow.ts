@@ -2,6 +2,8 @@ import { addDays, startOfDay, startOfWeek } from 'date-fns'
 import type { AvailabilitySlot } from '@/types'
 import type { CalendarView } from '@/lib/hooks/useCalendarView'
 
+const DAY_MS = 86_400_000
+
 /**
  * How far ahead a customer may book (H01). Mirrors the backend's
  * `BOOKING_MAX_ADVANCE_DAYS`: the API is authoritative (it refuses a later
@@ -24,9 +26,19 @@ export function bookingMaxAdvanceDays(): number {
   return days
 }
 
-/** The last instant a customer may start a booking at: now + N days, inclusive. */
+/**
+ * The last instant a customer may start a booking at: now + N days, inclusive.
+ * Exact 24-hour days from the instant, as the backend's `timedelta(days=N)`
+ * — not calendar days in the browser's zone, which drift an hour across a
+ * DST change and can put the hint a day off the API's boundary.
+ */
 export function bookingWindowEnd(now: Date = new Date()): Date {
-  return addDays(now, bookingMaxAdvanceDays())
+  return new Date(now.getTime() + bookingMaxAdvanceDays() * DAY_MS)
+}
+
+/** The last calendar day (in the browser's zone) with any bookable hour. */
+export function bookingWindowLastDay(now: Date = new Date()): Date {
+  return startOfDay(bookingWindowEnd(now))
 }
 
 /**
@@ -39,7 +51,13 @@ export function nextPeriodIsBeyondWindow(visible: Date, view: CalendarView, now:
     view === 'week'
       ? addDays(startOfWeek(visible, { weekStartsOn: 1 }), 7)
       : addDays(startOfDay(visible), 1)
-  return nextStart > startOfDay(bookingWindowEnd(now))
+  return nextStart > bookingWindowLastDay(now)
+}
+
+/** Only the dates the API will answer for: none after the window's last day. */
+export function datesWithinWindow(dates: string[], now: Date = new Date()): string[] {
+  const last = bookingWindowLastDay(now)
+  return dates.filter((d) => new Date(`${d}T00:00:00`) <= last)
 }
 
 /** The API's own verdict; a slot without a reason field is never "beyond". */

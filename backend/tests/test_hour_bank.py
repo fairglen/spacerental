@@ -379,6 +379,30 @@ class TestWhatPeopleSee:
         assert page.status_code == 200, page.text
         assert page.json()["balance"] == body["balance"]
 
+    async def test_the_operators_view_reconciles_a_lapsed_hold_first(
+        self, client, auth_headers, admin_headers, test_org, test_user, test_room, db_session,
+        payments, long_day, a_two, b_ten, monkeypatch,
+    ):  # fmt: skip
+        """Review finding on #59: the customer's packs page reconciles lazy
+        expiry before the balance; the operator's page must too, or it reads
+        a bank short by a hold that holds nothing."""
+        made = await _book(client, auth_headers, test_room, _monday(), hours=13)
+        assert made.status_code == 201, made.text
+        booking_id = made.json()["booking"]["id"]
+        _pin(monkeypatch, datetime.now(tz=UTC) + timedelta(minutes=16))
+
+        page = await client.get(
+            f"{API}/admin/users/{test_user.id}", params=_org(test_org), headers=admin_headers
+        )
+        assert page.status_code == 200, page.text
+        body = page.json()
+        assert Decimal(body["balance"]["hours_available"]) == Decimal(12)
+        row = next(b for b in body["bookings"] if b["id"] == booking_id)
+        assert row["status"] == "expired"
+        assert row["package_debits"] == []
+        assert await _balance(db_session, a_two) == (Decimal(2), Decimal(0))
+        assert await _balance(db_session, b_ten) == (Decimal(10), Decimal(0))
+
     async def test_an_empty_bank_has_nothing_expiring_next(self, client, auth_headers):
         mine = await client.get(f"{API}/packages/me", headers=auth_headers)
         assert mine.json()["balance"] == {"hours_available": "0", "hours_expiring_next": None}
@@ -486,3 +510,50 @@ class TestMigrationBackfill:
         assert (await _db_booking(db_session, hourly.id)).package_purchase_id == b_ten.id
         # An existing link is left alone.
         assert (await _db_booking(db_session, confirmed.id)).package_purchase_id == a_two.id
+
+
+class TestShrinkLocksInWalkOrder:
+    async def test_a_shrink_parks_behind_a_walk_instead_of_deadlocking(
+        self, client, auth_headers, test_room, session_factory, db_session, a_two, b_ten
+    ):
+        """Review finding on #59: a shrink credits in REVERSE draw order, a
+        walk debits in draw order. Two live connections: the walk holds A and
+        B without committing; the shrink must park on A (the first lock in
+        the walk's order) and finish once the walk commits — never lock B
+        first and deadlock against it."""
+        from app import package_hours
+        from app.models.booking import Booking
+
+        made = await _book(client, auth_headers, test_room, _monday(), hours=5)  # A2 + B3
+        booking_id = uuid.UUID(made.json()["booking"]["id"])
+        now = datetime.now(tz=UTC)
+
+        async with session_factory() as walker, session_factory() as shrinker:
+            # The walk: takes A (drained, skipped) then B, and keeps the locks.
+            draws = await package_hours.redeem_up_to(
+                walker,
+                user_id=a_two.user_id,
+                org_id=a_two.org_id,
+                hours=Decimal(3),
+                now=now,
+            )
+            assert [(p.id, taken) for p, taken in draws] == [(b_ten.id, Decimal(3))]
+
+            booking = (
+                await shrinker.execute(select(Booking).where(Booking.id == booking_id))
+            ).scalar_one()
+            shrink = asyncio.create_task(
+                package_hours.settle_moved_booking(
+                    shrinker, booking, new_duration=Decimal(1), now=now
+                )
+            )
+            await asyncio.sleep(0.3)
+            assert not shrink.done()  # parked on the walker's locks, not deadlocked
+            await walker.commit()
+            assert await asyncio.wait_for(shrink, timeout=10) == Decimal(0)
+            await shrinker.commit()
+
+        # Both landed: the walk spent 3 more of B, the shrink gave 3 of B and 1 of A back.
+        assert await _balance(db_session, a_two) == (Decimal(1), Decimal(1))
+        assert await _balance(db_session, b_ten) == (Decimal(7), Decimal(3))
+        assert await _debits(db_session, booking_id) == {a_two.id: Decimal(1)}

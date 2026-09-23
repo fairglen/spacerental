@@ -143,7 +143,7 @@ describe('BookingSheet — actions', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
     const status = await screen.findByRole('status')
     expect(status).toHaveTextContent(/2h → 1h/)
-    expect(status).toHaveTextContent(/voltaram ao banco de horas/)
+    expect(status).toHaveTextContent(/1h voltaram ao banco de horas/)
     expect(status).toHaveTextContent(/Nenhum dinheiro foi movido/)
     expect(status).not.toHaveTextContent(/fora da plataforma/)
     cleanup()
@@ -158,6 +158,21 @@ describe('BookingSheet — actions', () => {
     const grown = await screen.findByRole('status')
     expect(grown).toHaveTextContent(/não cobre 1h/)
     expect(grown).toHaveTextContent(/fora da plataforma/)
+  })
+
+  it('a mixed booking shortened inside its money part reports no pack movement (review on #59)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValueOnce({
+      booking: { ...booking, payment_method: 'mixed', package_hours_used: 2, duration_hours: 3, total_amount: 22 }, hours: { before: 4, after: 3, uncovered: 0 },
+    })
+    renderSheet({ ...booking, payment_method: 'mixed', package_hours_used: 2, duration_hours: 4, total_amount: 22 })
+    await user.click(screen.getByRole('button', { name: 'Alterar horário' }))
+    fireEvent.change(screen.getByLabelText(/Fim/), { target: { value: '13:00' } })
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent(/4h → 3h/)
+    expect(status).toHaveTextContent(/horas de pack não mudaram/)
+    expect(status).not.toHaveTextContent(/voltaram/)
   })
 
   it('a refused move keeps the form and its values so the operator can adjust (H03)', async () => {

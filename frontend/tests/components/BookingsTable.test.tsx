@@ -122,6 +122,12 @@ describe('BookingsTable pack split (H02)', () => {
     expect(screen.getByText('1 pack')).toHaveAttribute('title', '2h · Pack 10h · expira 3 out')
   })
 
+  it('a lengthened pack booking the bank could not fully cover shows the real share (review on #59)', () => {
+    render(<BookingsTable bookings={[makeBooking('b4', { payment_method: 'package', duration_hours: 12, package_hours_used: 11, total_amount: 132, package_debits: [{ ...debits[1], hours: 11 }] })]} total={1} page={1} pageSize={20} onPageChange={vi.fn()} />)
+    expect(screen.getByText('11h do pack + 1h por acertar')).toBeVisible()
+    expect(screen.queryByText('12h do pack')).toBeNull()
+  })
+
   it('a booking that holds no pack hours shows no split at all', () => {
     render(<BookingsTable bookings={[makeBooking('b3', { package_debits: [] })]} total={1} page={1} pageSize={20} onPageChange={vi.fn()} />)
     expect(screen.queryByText(/pack/)).toBeNull()
