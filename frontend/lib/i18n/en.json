@@ -6,7 +6,7 @@
   "hero": {
     "headline_start": "Your space,",
     "headline_highlight": "on your time.",
-    "description": "Professional consulting rooms for health and wellbeing professionals, designed for comfort, privacy and flexibility.",
+    "description": "Calm, well-equipped consulting rooms for health and wellbeing professionals. Book by the hour and work your own way.",
     "support": "A shared space where every professional keeps their autonomy and their own way of working.",
     "cta_primary": "View Spaces",
     "cta_primary_rooms": "View Rooms",
@@ -71,11 +71,6 @@
     "error": "Could not load the rooms.",
     "retry": "Try again"
   },
-  "theSpace": {
-    "title": "The space",
-    "p1": "FlowSpace is a shared professional space for health and wellbeing professionals looking for a place where they can practise with comfort, privacy and flexibility.",
-    "p2": "Well-kept, equipped consulting rooms in a calm, welcoming setting that let each professional work autonomously, according to the needs of their practice."
-  },
   "navbar": {
     "spaces_link": "Spaces",
     "rooms_link": "Rooms",
@@ -112,13 +107,9 @@
     "heading": "Where we are",
     "address_label": "Address",
     "directions": "Get directions",
-    "show_map": "Show map",
-    "map_privacy": "The map comes from OpenStreetMap and only loads when you ask for it.",
     "map_title": "Map of {name}",
     "map_title_generic": "Location map",
     "open_full_map": "Open the full map",
-    "contact": "Contact",
-    "hours": "Opening hours",
     "hours_per_room": "Hours vary by room; see the calendar."
   },
   "roomCard": {

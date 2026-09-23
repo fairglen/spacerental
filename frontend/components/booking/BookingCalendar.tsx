@@ -101,12 +101,12 @@ const FALLBACK_MAX_HOUR = 20
 /**
  * The hours the grid must show so every returned slot is visible (B34).
  *
- * Opening hours are evaluated in UTC on the backend (R01 owns the Lisbon
- * wall-clock version), so the 08:00–20:00 UTC seed is 09:00–21:00 Lisbon in
- * summer and a fixed 08:00–20:00 grid hid the last bookable hour. Derive the
- * window from the slots themselves, in the browser's zone (the zone
- * react-big-calendar lays the grid out in), with an hour of padding on each
- * side, clamped to the day.
+ * The slots are UTC instants of the space's opening hours on its own clock
+ * (R01), laid out here in the browser's zone — the zone react-big-calendar
+ * draws the grid in. A fixed 08:00–20:00 grid once hid the last bookable
+ * hour, so the window is derived from the slots themselves, with an hour of
+ * padding on each side, clamped to the day: for a Lisbon visitor the seed's
+ * 08:00–22:00 puts 08:00 as the first bookable row whatever the season.
  */
 function visibleRange(slots: AvailabilitySlot[]): { min: Date; max: Date } {
   const day = (h: number, m = 0) => new Date(0, 0, 0, h, m)

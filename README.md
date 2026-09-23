@@ -169,8 +169,9 @@ inspect the diff before deciding whether a migration or metadata repair is neede
   space and the spaces list comes back with no code change
   (`frontend/lib/hooks/useSingleSpace.ts` is the one place that decides).
 - **A space has a real location**: address, postcode and optional coordinates,
-  edited in the admin space form. Customers get a "Como chegar" link and an
-  OpenStreetMap preview that loads only when they press "Ver mapa".
+  edited in the admin space form. Customers get the hours, the contact email,
+  the address with a "Como chegar" link, and an OpenStreetMap map that is on
+  the page from the start (L04).
 - Weekly series are an explicit opt-in pending UTC foundation, parked by the
   owner on 2026-09-19 (flag off, code left in place; R02/R03/R99 DEFERRED).
 - Opening hours are the space's wall clock (R01, opening-hours slice):

@@ -2082,9 +2082,48 @@ and do not build on, fix or delete them while the outcome is parked.
 
 **Priority: P1 (opening-hours slice). State: IN PROGRESS** — the
 opening-hours slice assigned by the owner on 2026-09-23 as Section 1 of
-`fix/local-opening-hours`, implemented and committed locally; DONE only once
-merged. The recurrence slice stays parked with R02/R03 (code untouched, flag
-off). **Evidence (2026-09-23, commit `9892851`):** 10 real-PG tests in
+`fix/local-opening-hours`, merged as [PR #61](https://github.com/fairglen/spacerental/pull/61)
+(`2a56655`). The owner's full Section 1 text arrived after the merge; the
+lines it adds beyond #61 are the **follow-up slice** on
+`fix/local-opening-hours-dst` (recorded 2026-09-23, before implementation):
+(a) the DST overlap policy — the assignment says a 25-hour day yields one
+more slot and a 23-hour day one fewer, so the fall-back hour must be served
+TWICE (both occurrences, `fold=0` and `fold=1`), not once as #61 decided;
+(b) the acceptance dates as written: a July date (07:00Z) and a January date
+(08:00Z), 21:00–22:00 Lisbon accepted in summer AND winter, 22:00–23:00
+refused in both; (c) Playwright: "Onde estamos" reads "Todos os dias
+08:00–22:00" and the customer calendar's first bookable row is 08:00 (in a
+Lisbon-zoned browser); (d) the stale "evaluated in UTC" comment on
+`visibleRange` in `BookingCalendar.tsx`; (e) a screenshot of the calendar on
+25 Oct 2026 with 08:00 first, in the PR draft. **One acceptance line cannot
+hold as written:** "25 Oct 2026 yields 15 slots for 08–22 and 29 Mar 2026
+yields 13" — Lisbon changes its clocks at 01:00 UTC (01:00→02:00 in March
+and 02:00→01:00 in October on the door), outside an 08–22 window, so 08–22 yields 14 on
+both days; the one-more/one-fewer rule is asserted on a window that spans
+the change (00–05: 6 slots on 25 Oct, 4 on 29 Mar). Nothing else in the
+follow-up is a gap: the admin availability endpoints only store rules, there
+is no availability-summary code, and no other place turns a rule into an
+instant (`local_hourly_slots` is the single conversion). The recurrence
+slice stays parked with R02/R03 (code untouched, flag off). **Follow-up
+evidence (2026-09-23, commit `6ca47d9` on `fix/local-opening-hours-dst`):**
+`local_hourly_slots` yields both occurrences of the fall-back hour (fold 0,
+then fold 1) as distinct, contiguous UTC instants; 12 real-PG tests in
+`test_local_opening_hours.py` — 15 January opens at 08:00Z and 15 July at
+07:00Z (14 slots each); 21:00–22:00 Lisbon accepted and 22:00–23:00 refused
+in July and in January; a 00–05 window yields 4 slots on 29 March (nothing at
+01:00) and 6 on 25 October (01:00 twice: 00:00Z and 01:00Z), while 08–22
+yields 14 on both days; the H01 horizon's local last day; the UTC fixture
+space unchanged; the gap booking; the `timezone` field; the seed. Playwright
+`single-space.spec.ts`: the hours line reads exactly "Todos os dias
+08:00–22:00" and, in a Europe/Lisbon-zoned browser, the customer calendar's
+first bookable row is 08:00 and the last 21:00 (14 tinted rows). Full run at
+`6ca47d9`: backend 662, migration round trip clean at `0012` with `alembic
+check`, Vitest 545, tsc, `next build`, Playwright 47/47 on the rebuilt loop
+stack, static smoke 26 (site untouched). Screenshot of the week of 25 Oct
+2026 in the PR draft (`pr-screenshots/pr1-calendar-25-oct-2026.png`, taken
+with a 60-day window so the week is reachable): 08:00 first on every day,
+including Sat 24 and Sun 25. **Evidence (#61, 2026-09-23, commit
+`9892851`):** 10 real-PG tests in
 `tests/test_local_opening_hours.py` on a Europe/Lisbon space — a winter and
 a summer day both have 14 slots reading 08:00–21:00 on the Lisbon clock
 (08:00Z vs 07:00Z); every slot of a day belongs to that local date; the
@@ -2125,11 +2164,15 @@ parameter is the space's local date); the seed's 08:00–22:00 therefore reads
 08:00–22:00 in Lisbon all year, and existing rules keep their numbers (they
 were always meant as Lisbon — the migration moves no row and no booking);
 "Onde estamos" and the hours line stop converting UTC→Lisbon and show the
-rules as they are. **DST policy (decided here):** a local window boundary
-that does not exist (the spring-forward gap) is skipped as a slot — nothing
-can start in an hour that does not happen; an ambiguous boundary (the
-fall-back hour) takes its first occurrence (`fold=0`), so a day is never
-longer than its wall clock says. **Validation:** real-PG tests around both
+rules as they are. **DST policy (decided in #61, amended by the owner's
+Section 1 text on the follow-up branch):** a local hour that does not exist
+(the spring-forward gap) yields no slot — nothing can start in an hour that
+does not happen, so a window across the change has one slot fewer; a local
+hour that happens twice (the fall-back fold) yields two slots, one per
+occurrence (`fold=0`, then `fold=1`), because both are real, bookable hours,
+so a window across the change has one slot more. (#61 had served the
+repeated hour once; the owner's rule "a 25-hour day yields one more slot"
+replaces that.) **Validation:** real-PG tests around both
 Lisbon transitions (last Sunday of March and of October 2026) for
 availability and for `POST /bookings`; a UTC-zoned space keeps today's
 behaviour (the fixture space is UTC so the existing suite stays meaningful —
@@ -4015,29 +4058,222 @@ expected.
 
 ## Landing parity and "Onde estamos" rework (L-series) — owner assignment 2026-09-23 (PR 2)
 
-Branch `feat/landing-parity-where-we-are`, from the finished PR 1 branch.
-The owner's message named the three sections below for BOTH the app and the
-static site, but the loop received the assignment cut off before their
-specification (it ends mid-sentence in the "Before the loop" instructions).
-Per the delivery rules nothing is guessed: the three items are recorded with
-their titles and their obvious links, marked BLOCKED, and left for the owner
-to specify. Links: W01–W05 (the copy and register they will touch), V01–V07
-(the photos and "Onde estamos" they build on).
+Branch `feat/landing-parity-where-we-are`, from the finished PR 1 follow-up
+branch (`fix/local-opening-hours-dst`; PR 1 itself merged as #61). The
+sections below apply to BOTH the app and the static site. The specification
+first reached the loop cut off (recorded 2026-09-23 morning as BLOCKED); the
+owner resent it the same afternoon and the three tasks are now specified in
+full. Out of scope for every item: prices (Q-H04 stays recorded), refunds,
+recurring bookings, photos (the illustrations stay), any new dependency.
+Links: W01–W05 (the copy and register they touch), V01–V07 (the photos and
+"Onde estamos" they build on).
 
-### L02 — Hero copy
+### L02 — One hero message, no separate "O espaço" section (both sites)
 
-**Priority: P2. State: BLOCKED — specification not received.** Title only.
-Links W01 (static site copy), W03 (app landing copy), V04 (the pill removal).
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+(2026-09-23):** app — `hero.description`/`hero.support` carry the owner's
+lede and support in PT and EN, `theSpace.*` is gone from both catalogs,
+`TheSpace.tsx`, its test and its render on the landing page are deleted, the
+pills row stays, and no nav/footer link pointed at `#o-espaco` (verified by
+grep). `Hero.test.tsx` is structural: one H1 with the emphasis span on the
+second half, lede and support from the catalog, exactly two links, four
+benefits in catalog order each with its dot, and a guard that the `theSpace`
+catalog key stays gone (4 tests); Vitest 545, tsc clean. Static site — the
+hero's H1 emphasis moved to "no seu tempo." as the app renders it, the lede
+and support are the catalog strings character for character (the extra
+"Reserva à hora, sem contratos nem compromissos." sentence dropped), a
+`.hero-benefits` row (dot + muted text, wraps) under the CTAs, `<section
+id="espaco">` and the three "O espaço" links (desktop nav, mobile nav, footer)
+removed, `.prose` deleted with its only user. `tests/copy-parity.test.mjs`
+(node:test, 4) pins the headline, lede, support and the four benefits to
+`pt.json` and asserts neither site keeps the section; smoke: the hero test
+now checks two CTAs and four 8px dots, a new test walks every nav/footer
+anchor to an existing section and asserts the desktop nav reads Salas · Como
+funciona · Preços · Onde estamos, and a 390px test proves the benefits wrap
+with no sideways scroll. README checklist updated. **DECISIONS:** (1) the
+static H1's emphasis moves from "espaço" to "no seu tempo." — the owner's
+line says the emphasis is the app's, and "character for character" cannot
+hold with the `<em>` on a different word; reverse by moving the `<em>` back
+(the copy-parity test would then need its emphasis assertion relaxed);
+(2) the copy-parity check is a node:test file beside `code-gs.test.mjs`, run
+by hand and in the PR draft, not wired into the app's CI (the static site's
+suites are deliberately outside it, F01); alternative: a Vitest test in the
+app reading `../flowspace-site/index.html`. The "O espaço" section (W03's two paragraphs)
+duplicates the hero and sits centred under it. Fold its message into the hero
+and remove the section on both sites. **Copy, verbatim, identical on both
+sites (formal register):** H1 "O seu espaço, no seu tempo." (the existing
+emphasis on "no seu tempo." exactly as the app renders it today); lede
+"Gabinetes tranquilos e bem equipados para profissionais de saúde e
+bem-estar. Reserve à hora e trabalhe à sua maneira."; support "Um espaço
+partilhado onde cada profissional mantém a sua autonomia e a sua forma de
+trabalhar."; benefits row, same four in the same order: "Reserva online em
+segundos · Sem caução · Cancelamento até 24h antes · Pagamento seguro". EN
+(app catalog only): "Your space, on your time." / "Calm, well-equipped
+consulting rooms for health and wellbeing professionals. Book by the hour and
+work your own way." / "A shared space where every professional keeps their
+autonomy and their own way of working." **App:** update `hero.description` /
+`hero.support` (PT+EN); delete `components/landing/TheSpace.tsx`, its i18n
+keys and its render in the landing page; keep the pills row; the nav/footer
+must not link to a removed anchor. **Static site:** the same copy in the
+hero, character for character; drop the extra sentence "Reserva à hora, sem
+contratos nem compromissos."; add the four-benefit row styled like the app's
+(dot + text, muted, wraps on mobile); remove `<section id="espaco">` and its
+nav link "O espaço" (nav becomes Salas · Como funciona · Preços · Onde
+estamos + the CTA); the hero badge is already gone on main (V04) — do not
+re-add. **Tests:** Hero/landing tests structural (headline present, two
+CTAs, four benefits; no prose snapshots); static smoke: nav links resolve,
+no `#espaco`; one static-vs-app copy check — a test that the hero lede and
+support strings in `flowspace-site/index.html` equal `hero.description` /
+`hero.support` in `frontend/lib/i18n/pt.json`, so the two sites cannot drift
+silently. Links W01, W03, V04.
 
-### L03 — Static-site design parity
+### L03 — Static site looks like the app
 
-**Priority: P2. State: BLOCKED — specification not received.** Title only.
-Links F01/W01 (the static site), V02/V07 (its galleries and "Onde estamos").
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+(2026-09-23):** the parity table below was written from the app's Tailwind
+classes first, then `site.css`/`index.html` changed to it: the app's
+container padding at its three breakpoints, its hero scale and rhythm, its
+button sizes and `rounded-lg` (new `--radius-button`, `--shadow-sm/md/lg`,
+`--color-badge-*` tokens in `tokens.css`), its centred section heads at
+`text-3xl font-bold`, its section rhythm and backgrounds, its card
+radius/border/shadow and padding, room cards with the photos then name and
+price on one line then grey badges, "Como funciona" discs with the hairline
+from 1024px, pricing cards at the app's scale (prices untouched), and a
+footer with the app's three columns (brand + tagline, Links, Contacto with
+"Queluz, Portugal" and the email). Mobile-first grids: one column at 390px
+everywhere, the CTAs stacked, no sideways scroll. Static smoke: two new
+structural tests (1280px columns, container width and padding, heading
+scale, button size, room-card child order; 390px single column, stacked
+CTAs, section order, no sideways scroll) — 30/30 with the rest of the
+suite. Screenshots app vs static at 1280px and 390px in `PR2_DRAFT.md`.
+**DECISIONS:** (1) the app's section heads are centred (`text-center`), so
+the static heads stay centred at the app's scale — the assignment's
+"left-aligned" premise did not hold and the app is the reference;
+(2) content the static site never had is not added for parity: the app's
+value-props strip, the room cards' capacity line and "Reservar Esta Sala"
+button, the steps' descriptions; and the static site keeps "Onde estamos"
+last, with the contact form, where the app has it inside the rooms section —
+all recorded as open questions in `PR2_DRAFT.md`; (3) the static room cards
+keep their four tags where the app shows at most three (content, not
+design). The static site is the marketing twin of the
+app's landing page and should be visually indistinguishable where the
+content is the same. Today its section heads and prose are centred
+(`.section-head`, `.prose` in `site.css`) while the app's landing lives in a
+max-w-7xl container with its own heading scale. **First, the parity table**
+(below, filled in this task before the CSS changes) walking the APP landing
+page section by section at 1280px and 390px: container width and padding,
+section vertical spacing, heading sizes/weights/alignment, card
+radius/border/shadow, button sizes, benefits row, footer columns. The app is
+the reference; the static site changes to match, never the other way. **Then
+apply it** in `site.css`/`index.html`: section heads with the app's heading
+scale and alignment; the same container (80rem, 1rem/1.5rem/2rem side
+padding); the same section rhythm; room cards matching the app's `RoomCard`
+(photo carousel, name, price, tags — same order and sizes); "Como funciona"
+and "Preços" cards matching the app's HowItWorks/Pricing look (content
+stays; prices untouched); footer with the same three-column structure and the
+same address line. Reuse `tokens.css` values; add tokens there if the app has
+one the static site lacks. Fonts/colours already match; the palette does not
+change. **Mobile:** same stacking order as the app at 390px, no horizontal
+scroll. **Validation:** screenshots of both sites at 1280px and 390px side by
+side in `PR2_DRAFT.md`; static smoke updated structurally. Links F01, W01,
+V02, V07.
 
-### L04 — "Onde estamos" rework
+**Parity table (app = reference; read from the app's Tailwind classes, then
+checked on screenshots at 1280px and 390px — `PR2_DRAFT.md`):**
 
-**Priority: P2. State: BLOCKED — specification not received.** Title only.
-Links V06/V07 (the block on both sites), R01 (the hours it shows).
+| Element | App (reference) | Static site before | Static site after |
+|---|---|---|---|
+| Container | `max-w-7xl px-4 sm:px-6 lg:px-8`: 80rem; side padding 1rem / 1.5rem ≥640 / 2rem ≥1024 | 80rem, 1.5rem fixed | 80rem; 1rem / 1.5rem / 2rem at the same breakpoints |
+| Nav | h-16, border-b, white/90 blur; links `text-sm` muted, gap 6; CTA `size="sm"` (h-8 px-3 text-xs) | 4rem, links 0.9rem gap 1.75rem, CTA default | links 0.875rem gap 1.5rem; CTA `.btn-sm` (2rem, 0.75rem) |
+| Hero | `py-20 md:py-32` (5rem / 8rem); gradient white → accent → primary-light/30 to bottom-right; 600px blurred disc; content `max-w-3xl` (48rem); H1 `text-5xl md:text-6xl font-bold leading-tight mb-6` (3rem / 3.75rem, 700, 1.25, mb 1.5rem), emphasis italic primary on "no seu tempo."; lede `text-xl` (1.25rem/1.75rem) muted `mb-4 max-w-xl`; support `text-lg mb-8`; CTAs `flex-col sm:flex-row gap-4`, lg buttons (h-12 px-8 text-base); benefits `mt-10 flex-wrap gap-x-6 gap-y-2 text-sm` with 8px dots | 5rem/6rem, 135° gradient, 36rem glow; content 42rem; H1 2.75rem 800 (2.1rem <768), `<em>` on "espaço"; lede 1.2rem mb 2rem; support 1.05rem; CTAs wrap; no benefits (until L02) | every value the app's; H1 3rem / 3.75rem ≥768, 700; emphasis on "no seu tempo." (L02); lede 1.25rem mb 1rem; support 1.125rem mb 2rem; CTAs stack <640; benefits row (L02) |
+| Buttons | `rounded-lg` (0.5rem), `text-sm font-medium`; default h-10 px-4; lg h-12 px-8 text-base; sm h-8 px-3 text-xs; outline = primary border/text, hover accent | radius 0.75rem, 0.95rem 600, padding-based height | `--radius-button` 0.5rem; 0.875rem 500; h 2.5rem / 3rem / 2rem |
+| Section rhythm | rooms `py-16` on background; "Como funciona" `py-20` on background; "Preços" `py-20` on white; "Onde estamos" a card inside the rooms section (`mt-12`) | every section 5rem; `.alt` (white) on "O espaço", "Como funciona", "Onde estamos" | rooms `.tight` 4rem on background; "Como funciona" background; "Preços" white; "Onde estamos" section on background (its own card is white) |
+| Section heads | centred; H2 `text-3xl font-bold` (1.875rem/2.25rem, 700) `mb-4` (rooms `mb-3`); muted line `max-w-xl mx-auto`; block `mb-12` (rooms `mb-10`) — the app centres its heads, so the assignment's "left-aligned" premise did not hold; the app is the reference | centred, H2 2rem 800 mb 0.75rem, block mb 3rem, max-width 40rem | centred; H2 1.875rem/2.25rem 700, mb 1rem (rooms 0.75rem); block mb 3rem (rooms 2.5rem) |
+| Cards | `rounded-xl border #E5E7EB bg-white shadow-sm`, `p-6`; room cards `hover:shadow-md`; featured plan `border-2 border-primary shadow-lg` + badge `-top-3 px-3 py-1 text-xs font-medium` | radius 0.75rem, border, no shadow, `p-1.75rem`; featured custom green shadow; badge 700 | `--shadow-sm/md/lg` tokens (Tailwind's values); `p-1.5rem`; hover shadow-md; featured shadow-lg; badge 500 |
+| Room card | photo carousel `aspect-[4/3] rounded-t-xl` bleeding to the edges; header `p-6 pb-2`: name `text-base font-semibold` and price `text-lg font-bold text-primary` + `/h` `text-xs` muted on one line; capacity line; tags = secondary badges (`bg-gray-100 text-gray-700 text-xs font-medium rounded-full px-2.5 py-0.5`, gap 1); full-width CTA | gallery, then H3 1.15rem, price 1.4rem 800 on its own line, green accent tags 0.78rem 600 | gallery (margins −1.5rem), `.room-head` flex row: H3 1rem 600 + price 1.125rem 700 with 0.75rem unit; grey badges 0.75rem 500 gap 0.25rem; no capacity line and no CTA (content: the static cards never had them — DECISION) |
+| Grids | rooms `grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6`; steps `sm:grid-cols-2 lg:grid-cols-4 gap-8`; pricing `md:grid-cols-3 gap-6 max-w-4xl mx-auto` | `.grid-3` 3 → 1 <768; `.grid-4` 4 → 2 <1024 (2 even at 390) | mobile-first: rooms 1 / 2 ≥768 / 3 ≥1024; steps 1 / 2 ≥640 / 4 ≥1024, gap 2rem; pricing `.grid-pricing` 56rem centred, 3 ≥768 |
+| "Como funciona" step | disc `h-12 w-12 bg-primary text-primary-foreground font-bold text-lg`; title `font-semibold mb-2`; desc `text-sm` muted; hairline between steps from `lg` | disc 3rem 800; H3 1.05rem; no line | disc 3rem 700 1.125rem; H3 1rem 600 mb 0.5rem; hairline ≥1024; no description line (content) |
+| Pricing card | centred title `text-lg`; price `text-4xl font-bold` (2.25rem/2.5rem) + unit `text-sm` muted `ml-1`; desc `text-xs mt-1`; features `text-sm` muted with check icons `space-y-2 mb-6`; full-width button (primary when highlighted, outline otherwise) | title 1.1rem; price 2.25rem 800; unit 0.95rem; desc 0.85rem | title 1.125rem 600; price 2.25rem/2.5rem 700; unit 0.875rem 400 ml 0.25rem; desc 0.75rem/1rem mt 0.25rem mb 1.5rem; prices untouched |
+| "Onde estamos" | `grid gap-6 rounded-xl border bg-white p-6 md:grid-cols-5` (2/5 words, 3/5 map); map frame `min-h-[280px]` | `2fr 3fr`, gap 1.5rem, padding 1.5rem, border, radius | unchanged here (L04 reworks its content); stacks <768 like the app |
+| Footer | `bg-foreground text-white`, container `py-12`; `grid-cols-1 md:grid-cols-3 gap-8`; brand: icon + `text-lg font-bold`, tagline `text-sm text-gray-400 max-w-xs`; headings `font-semibold mb-4 text-primary-light`; links `space-y-2 text-sm text-gray-400`; contact column: pin + "Queluz, Portugal", mail + email; bottom `mt-8 pt-8 border-t border-gray-700 text-center text-sm text-gray-500` | grid 3 → 1 <768, padding 3rem 0 2rem; "Navegação" and "Como chegar" (two address lines); bottom 0.82rem separate band | `.footer-inner` 3rem top/bottom; brand with the building icon 1.125rem 700; "Links" (Salas · Como funciona · Preços · Contacto) and "Contacto" (pin + "Queluz, Portugal", mail + email — the app's address line); bottom mt/pt 2rem 0.875rem |
+| Mobile (390px) | one column everywhere; CTAs stacked; benefits wrap; where-block words then map | steps still 2 columns; CTAs wrapped ad hoc | one column everywhere, CTAs stacked, no sideways scroll (smoke-tested) |
+| Not matched (content, not design) | app-only "value props" strip between hero and rooms; app room cards carry a capacity line and a "Reservar Esta Sala" button; app "Como funciona" steps carry a description; app section order puts "Onde estamos" inside the rooms section, the static site keeps it last with the contact form | — | recorded as open questions in `PR2_DRAFT.md` |
+
+### L04 — "Onde estamos" rework (both sites)
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/landing-parity-where-we-are`; DONE only once merged. **Branch-level
+verification (final state, 2026-09-23):** backend 662 and migration round
+trip + `alembic check` clean (no backend change on this branch), Vitest 546,
+tsc, `next build`, Playwright 48/48 on a freshly rebuilt and seeded loop
+stack, static smoke 31/31, copy-parity 4/4; app-vs-static screenshots at
+1280px and 390px in `PR2_DRAFT.md`, after which the hero content moved inside
+the container, the headline was set solid from 768px and the block's heading
+moved into its card (`f31d8dc`). **Evidence (2026-09-23):** app — `WhereWeAre` renders the heading, the space name, then
+one list (`where-lines`) of three icon lines in this order: hours (R01's
+grouped ranges, the per-room note under them when rooms differ), the mailto
+(phone only when `CONTACT_PHONE` is set), the address on two lines; "Como
+chegar" directly under the list; no `<hr>`, no uppercase labels (the
+`location.contact/hours/show_map/map_privacy` keys are gone from both
+catalogs). The OpenStreetMap iframe is in the first render — `loading="lazy"`,
+`referrerpolicy="no-referrer"`, its title, the bbox centred on the pin with
+the frame's shape (measured in a layout effect; the default shape until then)
+— with "Abrir o mapa completo" under it; the placeholder and the "só é
+carregado quando o pedir" sentence are gone. The frame is 16:10 with a 240px
+floor below `md` and the column's height (280px floor) from `md`; the grid
+columns are `min-w-0` so that floor cannot widen the page (found by the 390px
+e2e: 425px sideways scroll before the fix). `WhereWeAre.test.tsx` 15: line
+order, icons, no labels/divider, the button after the address, the iframe on
+first render with its attributes and the centred bbox, the full-map link, no
+phone, no map without coordinates. Vitest 546, tsc clean. Playwright
+`single-space.spec.ts`: the same block checked on the landing page and on
+`/spaces` (order, icons, directions under the address, iframe without a
+click, centred bbox, ≥280px), and a 390px context (words first, map under
+them at ≤16:10, ≥240px tall, no sideways scroll). Static site — the same
+block in `#localizacao`: name, three icon lines (hours "Todos os dias,
+08:00–22:00", mailto, two-line address), "Como chegar" under them,
+`where-map.js` mounts the lazy, referrer-free frame at load with the same
+bbox math and puts "Abrir o mapa completo" under it; placeholder, button,
+note sentence, divider and labels removed; `privacidade.html` gains the
+OpenStreetMap paragraph. Smoke: the block test asserts the order, the icons,
+no labels/divider, the iframe without a click with its attributes and the
+centred bbox (frame shape within 10 %, since the script measures before the
+web font settles the column), the 390px stack at 16:10 ≥240px, and the
+privacy page's wording — 31/31. **DECISIONS:** (1) the app measures the
+frame once after layout and only then sets the bbox's shape, so the
+server-rendered `src` has the default shape and is replaced before the lazy
+frame loads — alternative: a fixed shape on every layout (simpler, less
+centred on wide frames); (2) the static bbox shape is measured at script run
+and left alone afterwards (a later reload of the frame would cost a second
+map request) — the smoke test tolerates the resulting few percent;
+(3) the app has no privacy page, so the OpenStreetMap notice lives on the
+static site's `privacidade.html` only, as the assignment names it; (4) the
+directions button keeps `size="sm"` and the space name stays a subtitle line
+as before. Current app block (V06): left column with
+heading, space name, address, "Como chegar", a divider, "CONTACTO" label +
+email, "HORÁRIO" label + hours; right column a click-to-load map placeholder.
+**Change to — left column,** in this order, no divider and no uppercase
+labels, each line icon + text: (1) hours "Todos os dias 08:00–22:00" (from
+R01; grouped ranges when days differ, as today), (2) email (mailto), (3)
+address on two lines, then the "Como chegar" button directly under the
+address. Heading "Onde estamos" stays; the space name stays as a subtitle.
+**Right column:** the map loads IMMEDIATELY on render — no "Ver mapa" step.
+Keep the iframe `loading="lazy"` (below the fold on the landing page, so the
+browser defers it anyway), `title`, `referrerpolicy="no-referrer"`, the
+centred bbox computation from V06/V07 and the "Abrir o mapa completo" link.
+Remove the placeholder and the "só é carregado quando o pedir" sentence. Add
+one privacy line to the site's privacy page/notice: the map is an
+OpenStreetMap embed (openstreetmap.org receives the request). **Same block,
+same order and behaviour** on the rooms/booking page header and on the static
+site's `#localizacao` section (static: hours as text "Todos os dias,
+08:00–22:00", eager iframe, the same bbox math in a tiny inline script or a
+precomputed URL). **Mobile:** left column first, map below at 16:10, min
+240px. **Tests:** component tests for the line order, no labels/divider,
+iframe present on first render with the centred bbox, phone absent;
+Playwright on both pages; static smoke asserts the iframe exists without a
+click. Links V06, V07, R01, C09.
 
 ## Deferred scope
 

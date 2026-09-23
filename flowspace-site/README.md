@@ -82,17 +82,20 @@ name, price and tags and no pictures.
 
 ## "Onde estamos" and the map
 
-The location, contact and hours sit in one section (`#localizacao`): the
-address, "Como chegar" (the Google Maps search URL), `geral@flowspace.pt`, no
-phone line (there is no number yet), and the hours as static text — "Todos os
-dias, 08:00–22:00", the same as the app's seed. The map on the right is an
-OpenStreetMap embed that `assets/js/where-map.js` mounts **only when the
-visitor presses "Ver mapa"**, so the page makes no third-party request by
-default; the bounding box is built around the pin (the `data-lat`/`data-lng`
-attributes) with the frame's aspect ratio, so the marker is centred. The
-contact form stays below it under "Envie-nos uma mensagem", and `#contacto`
-now points at that form block (every "Reservar" button does). Change the
-address in the HTML and the coordinates in the two data attributes.
+The location, contact and hours sit in one section (`#localizacao`), the
+same block as the app's (L04): the heading and the space name, then one
+icon line each for the hours ("Todos os dias, 08:00–22:00", the same as the
+app's seed), `geral@flowspace.pt` (no phone line — there is no number yet) and
+the two-line address, with "Como chegar" (the Google Maps search URL) right
+under the address. The map on the right is an OpenStreetMap embed that
+`assets/js/where-map.js` mounts **as soon as the page loads** (lazy and
+referrer-free; `privacidade.html` says openstreetmap.org receives that
+request); the bounding box is built around the pin (the `data-lat`/`data-lng`
+attributes) with the frame's aspect ratio, so the marker is centred, and
+"Abrir o mapa completo" sits under it. The contact form stays below it under
+"Envie-nos uma mensagem", and `#contacto` points at that form block (every
+"Reservar" button does). Change the address in the HTML and the coordinates
+in the two data attributes.
 
 ## Deploying to GitHub Pages
 
@@ -522,13 +525,16 @@ covered by `tests/code-gs.test.mjs`, see Testing).
 
 **Content and navigation**
 - [ ] Every section's content matches `index.html` verbatim against the spec
-      (hero headline/subheading, the two "O espaço" paragraphs, the three room cards'
-      names/prices/descriptions/amenities, the four "Como funciona" steps,
-      the three pricing cards, the address, and the footer copyright line).
-- [ ] Nav anchors (`#espaco`, `#salas`, `#como-funciona`, `#precos`,
-      `#localizacao`, `#contacto`) all scroll to the correct section.
-- [ ] Footer links (O espaço, Salas, Preços, Contacto, Política de
-      Privacidade) all work, including the link to `privacidade.html`.
+      (hero headline, lede, support line and four benefits — the same words as
+      the app's `hero.*` catalog, pinned by `tests/copy-parity.test.mjs` —
+      the three room cards' names/prices/amenities, the four "Como funciona"
+      steps, the three pricing cards, the address, and the footer copyright
+      line). There is no "O espaço" section any more (L02): its message lives
+      in the hero.
+- [ ] Nav anchors (`#salas`, `#como-funciona`, `#precos`, `#localizacao`,
+      `#contacto`) all scroll to the correct section.
+- [ ] Footer links (Salas, Preços, Contacto, Política de Privacidade) all
+      work, including the link to `privacidade.html`.
 - [ ] "Abrir no Google Maps" opens
       `https://www.google.com/maps/search/?api=1&query=Rua+12+de+Julho+de+1997%2C+2745-841+Queluz+%E2%80%94+Massam%C3%A3`
       in a new tab and resolves to the correct address.
@@ -696,17 +702,26 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-26 tests, all passing at time of writing. They assert:
+31 tests, all passing at time of writing. They assert:
 
-- the hero renders one headline with its emphasised word and a lede (structure,
-  not prose — the copy is the owner's to change) and no pill above it (V04),
-  and the "Como chegar" href is exactly correct;
-- "Onde estamos" holds the address, the mailto, the hours and no phone; both
-  anchors resolve and the form is still there; no iframe and no third-party
-  request until "Ver mapa", then a lazy, referrer-free OpenStreetMap frame
-  whose box is centred on the pin with the frame's shape, at the same height
-  as the placeholder, with "Abrir no mapa" below; the block stacks below
-  768px (V07);
+- the hero renders one headline with its emphasised half, a lede and a support
+  line, two CTAs and four benefits with their dots (structure, not prose — the
+  words are pinned to the app's catalog by `copy-parity.test.mjs`) and no pill
+  above it (V04); there is no "O espaço" section and every nav and footer
+  anchor lands on a section (L02); the "Como chegar" href is exactly correct;
+- the layout is the app's (L03): three room columns, four steps, three plans
+  and three footer columns inside the 80rem container with 32px side padding
+  at 1280px, centred `text-3xl` heads, 48px `rounded-lg` buttons, the room
+  card's photos → name/price → tags order; one column everywhere at 390px
+  with stacked CTAs, the sections in order and no sideways scroll;
+- "Onde estamos" lists hours, email and address with icons, then "Como
+  chegar", with no labels or divider and no phone; both anchors resolve and
+  the form is still there; the OpenStreetMap frame is there without a click —
+  lazy, referrer-free, titled, its box centred on the pin with the frame's
+  shape (within a few percent: the script measures before the web font
+  settles), "Abrir o mapa completo" below; the block stacks below 768px with
+  the map at 16:10 and at least 240px tall; the privacy page names the
+  OpenStreetMap embed (L04);
 - every room card has a gallery built from the manifest (one image per listed
   file with its alt, sizes and loading policy, a dot per photo, no prose
   paragraph), and "next", the dots and the arrow keys move it with the live
@@ -812,3 +827,13 @@ node --test flowspace-site/tests/code-gs.test.mjs
 Run it after every edit to `Code.gs`, before pasting the file into the Apps
 Script editor. It proves the logic, not the deployment: the checklist above
 still applies.
+
+**Copy parity with the app** (`tests/copy-parity.test.mjs`, L02): the hero's
+headline, lede, support line and four benefits in `index.html` must equal the
+app's `hero.*` strings in `frontend/lib/i18n/pt.json`, character for
+character, and neither site may keep an "O espaço" section. Run it after
+editing either file:
+
+```bash
+node --test flowspace-site/tests/copy-parity.test.mjs
+```

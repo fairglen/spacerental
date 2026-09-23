@@ -20,13 +20,18 @@ from sqlalchemy import select
 API = "/api/v1"
 LISBON = ZoneInfo("Europe/Lisbon")
 
-# Lisbon springs forward on 2026-03-29 (01:00 → 02:00) and falls back on
-# 2026-10-25 (02:00 → 01:00). The tests pin the clock, so the calendar dates
-# below are safe to use as "days ahead".
-WINTER_DAY = date(2026, 3, 27)  # Friday, UTC+0
-SUMMER_DAY = date(2026, 3, 31)  # Tuesday, UTC+1
+# Lisbon springs forward on 2026-03-29 (01:00 → 02:00 on the door, 01:00 UTC)
+# and falls back on 2026-10-25 (02:00 → 01:00 on the door, 01:00 UTC). The
+# tests pin the clock a few days before each date, so every date below is
+# inside the booking window.
+WINTER_DAY = date(2026, 1, 15)  # Thursday, UTC+0
+SUMMER_DAY = date(2026, 7, 15)  # Wednesday, UTC+1
 SPRING_FORWARD = date(2026, 3, 29)  # Sunday
 FALL_BACK = date(2026, 10, 25)  # Sunday
+WINTER_CLOCK = datetime(2026, 1, 10, 12, tzinfo=UTC)
+SUMMER_CLOCK = datetime(2026, 7, 10, 12, tzinfo=UTC)
+MARCH_CLOCK = datetime(2026, 3, 20, 12, tzinfo=UTC)
+OCTOBER_CLOCK = datetime(2026, 10, 20, 12, tzinfo=UTC)
 
 pytestmark = pytest.mark.usefixtures("test_member")
 
@@ -101,13 +106,14 @@ class TestAvailabilityOnTheLisbonClock:
     async def test_winter_and_summer_days_both_read_eight_to_twenty_two_on_the_door(
         self, client, lisbon_room, monkeypatch
     ):
-        _pin(monkeypatch, datetime(2026, 3, 20, 12, tzinfo=UTC))
+        _pin(monkeypatch, WINTER_CLOCK)
         winter = await _slots(client, lisbon_room, WINTER_DAY)
+        _pin(monkeypatch, SUMMER_CLOCK)
         summer = await _slots(client, lisbon_room, SUMMER_DAY)
         assert len(winter) == len(summer) == 14
-        # The instants are UTC: 08:00 UTC in winter, 07:00 UTC in summer…
-        assert winter[0] == datetime(2026, 3, 27, 8, tzinfo=UTC)
-        assert summer[0] == datetime(2026, 3, 31, 7, tzinfo=UTC)
+        # The instants are UTC: 08:00 UTC in January, 07:00 UTC in July…
+        assert winter[0] == datetime(2026, 1, 15, 8, tzinfo=UTC)
+        assert summer[0] == datetime(2026, 7, 15, 7, tzinfo=UTC)
         # …and both are 08:00 on the Lisbon clock.
         assert winter[0].astimezone(LISBON).hour == summer[0].astimezone(LISBON).hour == 8
         assert winter[-1].astimezone(LISBON).hour == summer[-1].astimezone(LISBON).hour == 21
@@ -115,19 +121,22 @@ class TestAvailabilityOnTheLisbonClock:
     async def test_the_date_parameter_is_the_spaces_local_date(
         self, client, lisbon_room, monkeypatch
     ):
-        _pin(monkeypatch, datetime(2026, 3, 20, 12, tzinfo=UTC))
+        _pin(monkeypatch, SUMMER_CLOCK)
         # Every slot of a summer day belongs to that Lisbon date, even the one
         # that starts at 23:00 UTC the day before would (there is none: the
         # window closes at 22:00 local), and none spills into the next date.
         summer = await _slots(client, lisbon_room, SUMMER_DAY)
         assert {s.astimezone(LISBON).date() for s in summer} == {SUMMER_DAY}
 
-    async def test_the_spring_forward_day_has_thirteen_hours_and_no_slot_in_the_gap(
+    async def test_the_spring_forward_day_has_one_slot_fewer_across_the_gap(
         self, client, db_session, lisbon_room, monkeypatch
     ):
-        """A rule that spans the gap (00:00-05:00 local on the last Sunday of
-        March) loses the hour that does not happen: nothing can start at 01:00."""
-        _pin(monkeypatch, datetime(2026, 3, 20, 12, tzinfo=UTC))
+        """The 23-hour day: a window that spans the change (00:00-05:00 local
+        on the last Sunday of March) loses the hour that does not happen, so
+        five clock hours yield four slots and nothing can start at 01:00. The
+        change is at 01:00 on the door, so the day's 08-22 window is untouched:
+        14 slots, like any other day."""
+        _pin(monkeypatch, MARCH_CLOCK)
         db_session.add(
             AvailabilityRule(
                 room_id=lisbon_room.id,
@@ -141,15 +150,17 @@ class TestAvailabilityOnTheLisbonClock:
         early = [s.astimezone(LISBON) for s in slots if s.astimezone(LISBON).hour < 8]
         local = sorted(s.strftime("%H:%M") for s in early)
         assert local == ["00:00", "02:00", "03:00", "04:00"]
-        # The day's main window is still 14 slots: 08:00-22:00 local.
         assert len([s for s in slots if s.astimezone(LISBON).hour >= 8]) == 14
+        assert len(slots) == 18
 
-    async def test_the_fall_back_day_takes_the_first_occurrence_of_the_repeated_hour(
+    async def test_the_fall_back_day_has_one_slot_more_the_repeated_hour_twice(
         self, client, db_session, lisbon_room, monkeypatch
     ):
-        """00:00-05:00 local on the last Sunday of October: 01:00 happens twice
-        on the door; the slots are one per wall-clock hour, first occurrence."""
-        _pin(monkeypatch, datetime(2026, 10, 20, 12, tzinfo=UTC))
+        """The 25-hour day: 00:00-05:00 local on the last Sunday of October
+        contains 01:00 twice on the door, and both are real, bookable hours,
+        so five clock hours yield six slots. 08-22 stays 14: the change is at
+        02:00 on the door."""
+        _pin(monkeypatch, OCTOBER_CLOCK)
         db_session.add(
             AvailabilityRule(
                 room_id=lisbon_room.id,
@@ -162,11 +173,15 @@ class TestAvailabilityOnTheLisbonClock:
         slots = await _slots(client, lisbon_room, FALL_BACK)
         early = sorted(s for s in slots if s.astimezone(LISBON).hour < 8)
         assert [s.astimezone(LISBON).strftime("%H:%M") for s in early] == [
-            "00:00", "01:00", "02:00", "03:00", "04:00",
+            "00:00", "01:00", "01:00", "02:00", "03:00", "04:00",
         ]  # fmt: skip
-        # 01:00 local is the first occurrence: 00:00 UTC (still UTC+1), not 01:00 UTC.
+        # The two 01:00s are distinct instants: 00:00 UTC (still UTC+1) and
+        # 01:00 UTC (UTC+0 from then on); the slots stay contiguous.
         assert early[1] == datetime(2026, 10, 25, 0, tzinfo=UTC)
-        assert early[2] == datetime(2026, 10, 25, 2, tzinfo=UTC)
+        assert early[2] == datetime(2026, 10, 25, 1, tzinfo=UTC)
+        assert early[3] == datetime(2026, 10, 25, 2, tzinfo=UTC)
+        assert len([s for s in slots if s.astimezone(LISBON).hour >= 8]) == 14
+        assert len(slots) == 20
 
     async def test_the_windows_last_day_is_the_local_one(self, client, lisbon_room, monkeypatch):
         """H01's horizon is an instant; the last day it is served on is the
@@ -186,10 +201,10 @@ class TestAvailabilityOnTheLisbonClock:
         assert resp.json()["detail"] == "date is beyond the booking window"
 
     async def test_a_utc_space_keeps_todays_behaviour(self, client, test_room, monkeypatch):
-        _pin(monkeypatch, datetime(2026, 3, 20, 12, tzinfo=UTC))
-        # conftest's room: Mon-Sat 08-20 on a UTC space (2026-03-31 is a Tuesday).
+        _pin(monkeypatch, SUMMER_CLOCK)
+        # conftest's room: Mon-Sat 08-20 on a UTC space (2026-07-15 is a Wednesday).
         slots = await _slots(client, test_room, SUMMER_DAY)
-        assert slots[0] == datetime(2026, 3, 31, 8, tzinfo=UTC)
+        assert slots[0] == datetime(2026, 7, 15, 8, tzinfo=UTC)
         assert len(slots) == 12
 
 
@@ -197,28 +212,44 @@ class TestBookingOnTheLisbonClock:
     async def test_eight_in_the_morning_lisbon_is_open_in_summer_and_seven_utc_is_not(
         self, client, auth_headers, lisbon_room, monkeypatch
     ):
-        _pin(monkeypatch, datetime(2026, 3, 20, 12, tzinfo=UTC))
+        _pin(monkeypatch, SUMMER_CLOCK)
         at_eight_lisbon = datetime.combine(SUMMER_DAY, time(8), tzinfo=LISBON)
         ok = await _book(client, auth_headers, lisbon_room, at_eight_lisbon)
         assert ok.status_code == 201, ok.text
         assert datetime.fromisoformat(ok.json()["booking"]["start_time"]) == datetime(
-            2026, 3, 31, 7, tzinfo=UTC
+            2026, 7, 15, 7, tzinfo=UTC
         )
         # 06:00 UTC = 07:00 Lisbon: the door is still shut.
-        early = await _book(client, auth_headers, lisbon_room, datetime(2026, 3, 31, 6, tzinfo=UTC))
+        early = await _book(client, auth_headers, lisbon_room, datetime(2026, 7, 15, 6, tzinfo=UTC))
         assert early.status_code == 400
         assert "opening hours" in early.json()["detail"]
-        # 21:00-22:00 Lisbon = 20:00-21:00 UTC: the last hour of the day is open.
-        last = await _book(client, auth_headers, lisbon_room, datetime(2026, 3, 31, 20, tzinfo=UTC))
+
+    @pytest.mark.parametrize(
+        ("clock_at", "day", "last_hour_utc"),
+        [(SUMMER_CLOCK, SUMMER_DAY, 20), (WINTER_CLOCK, WINTER_DAY, 21)],
+        ids=["summer", "winter"],
+    )
+    async def test_the_last_hour_is_open_and_the_one_after_it_is_not_in_both_seasons(
+        self, client, auth_headers, lisbon_room, monkeypatch, clock_at, day, last_hour_utc
+    ):
+        _pin(monkeypatch, clock_at)
+        # 21:00-22:00 on the door: 20:00 UTC in July, 21:00 UTC in January.
+        at_nine_pm = datetime.combine(day, time(21), tzinfo=LISBON)
+        last = await _book(client, auth_headers, lisbon_room, at_nine_pm)
         assert last.status_code == 201, last.text
-        # 22:00 Lisbon = 21:00 UTC: closed, whatever the UTC number says.
-        shut = await _book(client, auth_headers, lisbon_room, datetime(2026, 3, 31, 21, tzinfo=UTC))
+        assert datetime.fromisoformat(last.json()["booking"]["start_time"]) == datetime.combine(
+            day, time(last_hour_utc), tzinfo=UTC
+        )
+        # 22:00-23:00 on the door: closed in both seasons, whatever the UTC number.
+        at_ten_pm = datetime.combine(day, time(22), tzinfo=LISBON)
+        shut = await _book(client, auth_headers, lisbon_room, at_ten_pm)
         assert shut.status_code == 400
+        assert "opening hours" in shut.json()["detail"]
 
     async def test_a_block_across_the_spring_forward_gap_is_two_real_hours(
         self, client, auth_headers, db_session, lisbon_room, monkeypatch
     ):
-        _pin(monkeypatch, datetime(2026, 3, 20, 12, tzinfo=UTC))
+        _pin(monkeypatch, MARCH_CLOCK)
         db_session.add(
             AvailabilityRule(
                 room_id=lisbon_room.id, day_of_week=6, open_time=time(0, 0), close_time=time(5, 0)
@@ -243,6 +274,45 @@ class TestBookingOnTheLisbonClock:
         )
         assert resp.status_code == 201, resp.text
         assert Decimal(resp.json()["booking"]["duration_hours"]) == Decimal(2)
+
+    async def test_both_occurrences_of_the_fall_back_hour_are_bookable(
+        self, client, auth_headers, db_session, lisbon_room, monkeypatch
+    ):
+        """The two 01:00s of 25 October are distinct real hours: each can be
+        booked on its own, and one block across them is three hours of money
+        for three clock hours on the door (00:00, 01:00, 01:00 again)."""
+        _pin(monkeypatch, OCTOBER_CLOCK)
+        db_session.add(
+            AvailabilityRule(
+                room_id=lisbon_room.id, day_of_week=6, open_time=time(0, 0), close_time=time(5, 0)
+            )
+        )
+        await db_session.commit()
+        first = datetime(2026, 10, 25, 0, tzinfo=UTC)  # 01:00 WEST, the first time round
+        second = datetime(2026, 10, 25, 1, tzinfo=UTC)  # 01:00 WET, the second
+        assert first.astimezone(LISBON).hour == second.astimezone(LISBON).hour == 1
+        for start in (first, second):
+            resp = await _book(client, auth_headers, lisbon_room, start)
+            assert resp.status_code == 201, resp.text
+            booking = resp.json()["booking"]
+            assert datetime.fromisoformat(booking["start_time"]) == start
+            assert Decimal(booking["duration_hours"]) == Decimal(1)
+            # Free the hour again for the block below.
+            assert (
+                await client.delete(f"{API}/bookings/{booking['id']}", headers=auth_headers)
+            ).status_code == 204
+        block = await client.post(
+            f"{API}/bookings",
+            json={
+                "room_id": str(lisbon_room.id),
+                "start_time": datetime(2026, 10, 24, 23, tzinfo=UTC).isoformat(),  # 00:00 local
+                "end_time": datetime(2026, 10, 25, 2, tzinfo=UTC).isoformat(),  # 02:00 local
+                "payment_method": "hourly",
+            },
+            headers=auth_headers,
+        )
+        assert block.status_code == 201, block.text
+        assert Decimal(block.json()["booking"]["duration_hours"]) == Decimal(3)
 
 
 class TestTheTimezoneField:
