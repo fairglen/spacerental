@@ -83,7 +83,7 @@ name, price and tags and no pictures.
 ## "Onde estamos" and the map
 
 The location, contact and hours sit in one section (`#localizacao`), the
-same block as the app's (L04): the heading and the space name, then one
+same block as the app's (L04, M03 — no venue name line): the heading, then one
 icon line each for the hours ("Todos os dias, 08:00–22:00", the same as the
 app's seed), `geral@flowspace.pt` (no phone line — there is no number yet) and
 the two-line address, with "Como chegar" (the Google Maps search URL) right
@@ -199,11 +199,13 @@ Each error code `Code.gs` can return has its own message in `ERROR_MESSAGES`
 message there too** — an unmapped code degrades to the neutral message, which
 is safe but unhelpful.
 
-The two enum allowlists (`ALLOWED_ESPECIALIDADE`, `ALLOWED_INTERESSE`) are
-mirrored client-side, defined once at the top of `contact-form.js`, so a
-tampered `<select>` gets immediate feedback instead of burning a send slot.
-That mirror is **feedback only** — `Code.gs` re-checks every value and is the
-real enforcement. Never remove the server-side check.
+The enum allowlist (`ALLOWED_INTERESSE`) is mirrored client-side, defined
+once at the top of `contact-form.js`, so a tampered `<select>` gets immediate
+feedback instead of burning a send slot. That mirror is **feedback only** —
+`Code.gs` re-checks every value and is the real enforcement. Never remove
+the server-side check. (`especialidade` is no longer on the form — M01; the
+server still allow-lists it when an older page sends one, and accepts its
+absence.)
 
 ### The request has a deadline
 
@@ -340,6 +342,14 @@ does **not** update the live Web App URL's behavior. You must go to
 Deploy**. This keeps the same `/exec` URL while pushing the new script logic
 live.
 
+**Deployment order (M01, the specialty field):** redeploy `Code.gs` **first**,
+then merge the change that removes the field from the page. The current
+`Code.gs` accepts both shapes — a submission with a valid `especialidade` and
+one without the key at all — so a page served before or after the merge is
+answered either way. Merging first is the one wrong order: until the
+redeploy, the old deployment still lists `especialidade` as required and
+answers every live submission with `missing_fields`.
+
 > 🚨 **`Code.gs` is a reference copy — commits to it change nothing live.**
 > The repo and the deployed Web App drift apart the moment either is edited
 > alone. A security fix landed here is not in effect until someone re-pastes
@@ -392,11 +402,12 @@ survived it untouched. A `nome` of `"Ana\nBcc: vitima@exemplo.com"` reached
 `MailApp.sendEmail` with the newline intact — and `Bcc:` is precisely the
 header that turns this form into a relay.
 
-The subject is now assembled from a constant prefix plus `especialidade` and
-`interesse` only. Both have been compared by identity against
-`ALLOWED_ESPECIALIDADE` / `ALLOWED_INTERESSE` before that point, so their only
-possible values are the literals in `CONFIG`, which contain no control
-characters. The visitor's name is in the **body**, where it belongs.
+The subject is now assembled from a constant prefix plus `interesse` and,
+only when one was sent, `especialidade`. Both have been compared by identity
+against `ALLOWED_INTERESSE` / `ALLOWED_ESPECIALIDADE` before that point, so
+their only possible values are the literals in `CONFIG`, which contain no
+control characters; an absent specialty contributes nothing. The visitor's
+name is in the **body**, where it belongs.
 
 **Never reintroduce free text into the subject.** Not putting user input in a
 header is a categorically stronger control than filtering it on the way in —
@@ -583,12 +594,12 @@ success banner; the entered values must survive so the visitor can retry)
 - [ ] `rate_limited` — submit twice with the same email inside the 5-minute
       cooldown, waiting out the 5-second client cooldown between attempts.
       Expect "Recebemos demasiados pedidos neste momento…".
-- [ ] `invalid_option` — tamper a dropdown past the client mirror
-      (`const s = document.getElementById('especialidade'); s.appendChild(Object.assign(document.createElement('option'), {value:'Cardiologia'})); s.value='Cardiologia';`)
+- [ ] `invalid_option` — tamper the dropdown past the client mirror
+      (`const s = document.getElementById('interesse'); s.appendChild(Object.assign(document.createElement('option'), {value:'Compra do edifício'})); s.value='Compra do edifício';`)
       and force a submit. The client catches it first and shows the inline
       field error with no request; to reach the server message, comment out
-      the client enum check locally and expect "A especialidade ou o interesse
-      selecionado não é válido…".
+      the client enum check locally and expect "O interesse selecionado não é
+      válido…".
 - [ ] `stale_or_future_timestamp` — leave the page open for over an hour, then
       submit. Expect "O formulário esteve aberto demasiado tempo…".
 - [ ] Unconfirmed — go offline (devtools → Network → Offline) and submit.
@@ -617,21 +628,22 @@ success banner; the entered values must survive so the visitor can retry)
       and force a submit. **No mail may arrive at that Bcc address**, and none
       at `geral@flowspace.pt` either — the request is rejected before sending.
 - [ ] A normal submission's email has subject
-      `Novo contacto FlowSpace — <especialidade> / <interesse>` with **no
-      visitor-supplied text in it**, and the name appears in the body.
+      `Novo contacto FlowSpace — <interesse>` with **no visitor-supplied text
+      in it** (an older page that still sends a specialty gets
+      `— <especialidade> / <interesse>`), and the name appears in the body.
 - [ ] The received mail has exactly one recipient, `geral@flowspace.pt`, and no
       Cc or Bcc (check "Show original" / full headers, not just the client UI).
 
 **Contact form — normal operation**
-- [ ] Submitting with each required field empty (nome, email, especialidade,
-      interesse) in turn shows that field's inline error and does not submit.
+- [ ] Submitting with each required field empty (nome, email, interesse) in
+      turn shows that field's inline error and does not submit. There is no
+      specialty field any more (M01).
 - [ ] An invalid email (e.g. `foo@bar`) is rejected client-side.
 - [ ] A dropdown value tampered past the allowlist (see `invalid_option`
       above) shows that field's inline error and fires **no** request. The
-      three `especialidade` and four `interesse` values in
-      `ALLOWED_ESPECIALIDADE`/`ALLOWED_INTERESSE` must match the `<option>`
-      values in `index.html` and `CONFIG` in `Code.gs` — all three lists
-      still agree.
+      four `interesse` values in `ALLOWED_INTERESSE` must match the
+      `<option>` values in `index.html` and `CONFIG` in `Code.gs` — all three
+      lists still agree.
 - [ ] Filling the hidden honeypot field via devtools (`document.getElementById('assunto2').value = 'x'`)
       and submitting results in a silent no-op — no network request fires,
       no banner shows.
@@ -643,7 +655,7 @@ success banner; the entered values must survive so the visitor can retry)
 **Accessibility**
 - [ ] Each invalid control gets `aria-invalid="true"` after a failed submit,
       and clears back to `"false"` once corrected (inspect `#nome`, `#email`,
-      `#especialidade`, `#interesse`).
+      `#interesse`).
 - [ ] Each control's `aria-describedby` points at its `*-error` paragraph, so
       a screen reader reads the field-specific message.
 - [ ] The mobile menu button's `aria-label` tracks its action ("Abrir menu"
@@ -702,7 +714,7 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-31 tests, all passing at time of writing. They assert:
+33 tests, all passing at time of writing. They assert:
 
 - the hero renders one headline with its emphasised half, a lede and a support
   line, two CTAs and four benefits with their dots (structure, not prose — the
@@ -732,6 +744,10 @@ The config's `webServer` starts `python3 -m http.server` against
 - a mocked `{"result":"success"}` shows the success banner, clears the form,
   and that the request went out as `Content-Type: text/plain;charset=utf-8` —
   the simple-request property that makes the response readable at all;
+- the three pricing cards each carry a name, a price, a line and one CTA to
+  the form, and the featured plan its badge (structure, not prose — M02);
+- a submission without a specialty passes the client checks and the posted
+  payload has no `especialidade` key at all (M01);
 - each of the six mocked error codes shows **its own** Portuguese message,
   keeps the entered values, re-enables the button, and shows **no** success
   banner;
@@ -817,7 +833,10 @@ into a Node VM sandbox with in-memory fakes of `MailApp`, `CacheService`,
 `PropertiesService`, `LockService`, `ContentService` and `Utilities`, and call
 `doPost()` directly. They pin the mail-security invariants above (constant
 recipient, no free text in a header, control characters refused before a send
-slot is spent), the payload and length checks, the honeypot and both rate
+slot is spent), the payload and length checks, the optional specialty (absent
+or empty accepted, a present one still allow-listed and length/control-char
+checked, no "Especialidade:" line and no subject half when absent — M01), the
+honeypot and both rate
 limits. No package, no network, nothing sent to the deployed script:
 
 ```bash

@@ -45,7 +45,9 @@ describe('landing section by space mode', () => {
     const where = await screen.findByRole('region', { name: /onde estamos/i })
     expect(within(where).getByText('2745-841 Queluz')).toBeVisible()
     expect(within(where).getByRole('link', { name: /como chegar/i })).toBeVisible()
-    expect(within(where).getByText('Espaço s-1')).toBeVisible()
+    // The venue name is no longer printed in the block (M03); the hours line follows the heading.
+    expect(within(where).queryByText('Espaço s-1')).toBeNull()
+    expect(within(where).getByTestId('opening-hours')).toBeVisible()
   })
 
   it('one space with no rooms yet: says so instead of an empty grid', async () => {

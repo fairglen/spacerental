@@ -56,12 +56,11 @@
   const REQUEST_TIMEOUT_MS = 15000;
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  // Mirrors CONFIG.ALLOWED_ESPECIALIDADE / CONFIG.ALLOWED_INTERESSE in
-  // apps-script/Code.gs, and the <option> values in index.html. Defined once
-  // here so the client checks cannot drift apart from each other. These give
-  // immediate feedback only — Code.gs re-checks every value and is the real
-  // enforcement. Never drop the server-side check in favour of this one.
-  const ALLOWED_ESPECIALIDADE = ['Psicologia', 'Psiquiatria', 'Outra'];
+  // Mirrors CONFIG.ALLOWED_INTERESSE in apps-script/Code.gs, and the <option>
+  // values in index.html. Defined once here so the client checks cannot drift
+  // apart from each other. This gives immediate feedback only — Code.gs
+  // re-checks every value and is the real enforcement. Never drop the
+  // server-side check in favour of this one.
   const ALLOWED_INTERESSE = [
     'Reserva avulsa',
     'Pack 10 horas',
@@ -94,11 +93,10 @@
     invalid_email:
       'O email indicado não foi aceite. Confirme o endereço e tente novamente.',
     invalid_option:
-      'A especialidade ou o interesse selecionado não é válido. Recarregue a ' +
-      'página e volte a escolher uma das opções da lista.',
+      'O interesse selecionado não é válido. Recarregue a página e volte a ' +
+      'escolher uma das opções da lista.',
     missing_fields:
-      'Faltam dados obrigatórios. Preencha o nome, o email, a especialidade e ' +
-      'o interesse.',
+      'Faltam dados obrigatórios. Preencha o nome, o email e o interesse.',
     send_failed:
       'A mensagem não pôde ser entregue por email. ' + CONTACT_FALLBACK,
     invalid_payload:
@@ -180,10 +178,6 @@
     }
     if (!values.email || !EMAIL_REGEX.test(values.email)) {
       showFieldError('email');
-      valid = false;
-    }
-    if (ALLOWED_ESPECIALIDADE.indexOf(values.especialidade) === -1) {
-      showFieldError('especialidade');
       valid = false;
     }
     if (ALLOWED_INTERESSE.indexOf(values.interesse) === -1) {
@@ -311,7 +305,6 @@
     const values = {
       nome: form.nome.value.trim(),
       email: form.email.value.trim(),
-      especialidade: form.especialidade.value,
       interesse: form.interesse.value,
       mensagem: form.mensagem.value.trim(),
       timestamp: new Date().toISOString(),

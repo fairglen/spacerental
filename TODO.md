@@ -4070,8 +4070,7 @@ Links: W01–W05 (the copy and register they touch), V01–V07 (the photos and
 
 ### L02 — One hero message, no separate "O espaço" section (both sites)
 
-**Priority: P1. State: IN PROGRESS** — implemented on
-`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+**Priority: P1. State: DONE — merged on main in `b2dd1dc` ([PR #63](https://github.com/fairglen/spacerental/pull/63) squashed into #62's branch, then [PR #62](https://github.com/fairglen/spacerental/pull/62)).** **Evidence
 (2026-09-23):** app — `hero.description`/`hero.support` carry the owner's
 lede and support in PT and EN, `theSpace.*` is gone from both catalogs,
 `TheSpace.tsx`, its test and its render on the landing page are deleted, the
@@ -4130,8 +4129,7 @@ silently. Links W01, W03, V04.
 
 ### L03 — Static site looks like the app
 
-**Priority: P1. State: IN PROGRESS** — implemented on
-`feat/landing-parity-where-we-are`; DONE only once merged. **Evidence
+**Priority: P1. State: DONE — merged on main in `b2dd1dc` ([PR #63](https://github.com/fairglen/spacerental/pull/63) squashed into #62's branch, then [PR #62](https://github.com/fairglen/spacerental/pull/62)).** **Evidence
 (2026-09-23):** the parity table below was written from the app's Tailwind
 classes first, then `site.css`/`index.html` changed to it: the app's
 container padding at its three breakpoints, its hero scale and rhythm, its
@@ -4196,15 +4194,14 @@ checked on screenshots at 1280px and 390px — `PR2_DRAFT.md`):**
 | Grids | rooms `grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6`; steps `sm:grid-cols-2 lg:grid-cols-4 gap-8`; pricing `md:grid-cols-3 gap-6 max-w-4xl mx-auto` | `.grid-3` 3 → 1 <768; `.grid-4` 4 → 2 <1024 (2 even at 390) | mobile-first: rooms 1 / 2 ≥768 / 3 ≥1024; steps 1 / 2 ≥640 / 4 ≥1024, gap 2rem; pricing `.grid-pricing` 56rem centred, 3 ≥768 |
 | "Como funciona" step | disc `h-12 w-12 bg-primary text-primary-foreground font-bold text-lg`; title `font-semibold mb-2`; desc `text-sm` muted; hairline between steps from `lg` | disc 3rem 800; H3 1.05rem; no line | disc 3rem 700 1.125rem; H3 1rem 600 mb 0.5rem; hairline ≥1024; no description line (content) |
 | Pricing card | centred title `text-lg`; price `text-4xl font-bold` (2.25rem/2.5rem) + unit `text-sm` muted `ml-1`; desc `text-xs mt-1`; features `text-sm` muted with check icons `space-y-2 mb-6`; full-width button (primary when highlighted, outline otherwise) | title 1.1rem; price 2.25rem 800; unit 0.95rem; desc 0.85rem | title 1.125rem 600; price 2.25rem/2.5rem 700; unit 0.875rem 400 ml 0.25rem; desc 0.75rem/1rem mt 0.25rem mb 1.5rem; prices untouched |
-| "Onde estamos" | `grid gap-6 rounded-xl border bg-white p-6 md:grid-cols-5` (2/5 words, 3/5 map); map frame `min-h-[280px]` | `2fr 3fr`, gap 1.5rem, padding 1.5rem, border, radius | unchanged here (L04 reworks its content); stacks <768 like the app |
+| "Onde estamos" | `grid gap-6 rounded-xl border bg-white p-6 md:grid-cols-5` (2/5 words, 3/5 map); map frame `min-h-[280px]`; since M03 the heading is followed directly by the lines list — no venue name line on either site | `2fr 3fr`, gap 1.5rem, padding 1.5rem, border, radius | unchanged here (L04 reworks its content, M03 drops the name line on both); stacks <768 like the app |
 | Footer | `bg-foreground text-white`, container `py-12`; `grid-cols-1 md:grid-cols-3 gap-8`; brand: icon + `text-lg font-bold`, tagline `text-sm text-gray-400 max-w-xs`; headings `font-semibold mb-4 text-primary-light`; links `space-y-2 text-sm text-gray-400`; contact column: pin + "Queluz, Portugal", mail + email; bottom `mt-8 pt-8 border-t border-gray-700 text-center text-sm text-gray-500` | grid 3 → 1 <768, padding 3rem 0 2rem; "Navegação" and "Como chegar" (two address lines); bottom 0.82rem separate band | `.footer-inner` 3rem top/bottom; brand with the building icon 1.125rem 700; "Links" (Salas · Como funciona · Preços · Contacto) and "Contacto" (pin + "Queluz, Portugal", mail + email — the app's address line); bottom mt/pt 2rem 0.875rem |
 | Mobile (390px) | one column everywhere; CTAs stacked; benefits wrap; where-block words then map | steps still 2 columns; CTAs wrapped ad hoc | one column everywhere, CTAs stacked, no sideways scroll (smoke-tested) |
 | Not matched (content, not design) | app-only "value props" strip between hero and rooms; app room cards carry a capacity line and a "Reservar Esta Sala" button; app "Como funciona" steps carry a description; app section order puts "Onde estamos" inside the rooms section, the static site keeps it last with the contact form | — | recorded as open questions in `PR2_DRAFT.md` |
 
 ### L04 — "Onde estamos" rework (both sites)
 
-**Priority: P1. State: IN PROGRESS** — implemented on
-`feat/landing-parity-where-we-are`; DONE only once merged. **Branch-level
+**Priority: P1. State: DONE — merged on main in `b2dd1dc` ([PR #63](https://github.com/fairglen/spacerental/pull/63) squashed into #62's branch, then [PR #62](https://github.com/fairglen/spacerental/pull/62)).** **Branch-level
 verification (final state, 2026-09-23):** backend 662 and migration round
 trip + `alembic check` clean (no backend change on this branch), Vitest 546,
 tsc, `next build`, Playwright 48/48 on a freshly rebuilt and seeded loop
@@ -4274,6 +4271,118 @@ precomputed URL). **Mobile:** left column first, map below at 16:10, min
 iframe present on first render with the centred bbox, phone absent;
 Playwright on both pages; static smoke asserts the iframe exists without a
 click. Links V06, V07, R01, C09.
+
+## Site copy and form tweaks (M-series) — owner assignment 2026-09-23
+
+Branch `fix/site-copy-form-tweaks`, one PR — [PR #64](https://github.com/fairglen/spacerental/pull/64),
+opened by the loop with CI green (unit, e2e; backend jobs path-filtered,
+nothing under `backend/` changed; locally pytest 663, Vitest 546, tsc,
+`next build`, Playwright 48/48, static smoke 33, node tests 44). Merging is
+the owner's call because M01 needs the Apps Script redeployed FIRST. Binding as ever: formal register, tests with every change, nothing
+weakened. Links: F01 (the static site and its Apps Script backend, S27 its
+regression tests), L04 (the "Onde estamos" block on both sites), L03 (the
+parity table).
+
+### M01 — Remove "Especialidade" from the static site's contact form
+
+**Priority: P1. State: IN PROGRESS** — implemented on
+`fix/site-copy-form-tweaks`; DONE only once the Apps Script is redeployed AND
+the PR merged, in that order. **Before this task** the `#especialidade`
+select was validated client-side (`contact-form.js`: `ALLOWED_ESPECIALIDADE`,
+required) and server-side (`apps-script/Code.gs`: required + allowlist); both
+are gone from the client and the server now treats the field as optional —
+the description below is the state as implemented. **Evidence (2026-09-23):** `Code.gs` — the
+`missing` list is `nome, email, interesse`; a present `especialidade` still
+goes through the length cap, the control-character check and the allowlist
+(`invalid_option`), an absent, empty, blank or non-string one is accepted;
+the subject is the prefix plus `interesse`, with the specialty before it only
+when sent; the body has an "Especialidade:" line only when sent (omitted, not
+"—"; there is no sheet row: sheet logging is deliberately not implemented).
+S27 suite 40 (+2: both shapes accepted with the exact subject and no
+"Especialidade" in the body; a present value still allow-listed, length- and
+control-checked). `index.html` — the label, select and error paragraph are
+gone, nome/email/interesse/mensagem keep their IDs and order.
+`privacidade.html` lists nome, email, interesse e mensagem. `contact-form.js`
+— no `ALLOWED_ESPECIALIDADE`, no field in `values`, no required check, the
+`invalid_option`/`missing_fields` messages name only the interest. Smoke 32
+(+1): a submission without the field passes validation and posts exactly
+`email, interesse, mensagem, nome, timestamp`; the tampered-select test now
+tampers `#interesse` so the client enum check stays covered; the aria test
+lost its specialty line. README: the "Deployment order" note in the runbook,
+the allowlist/subject/checklist passages updated. **DECISIONS:** (1) the
+"Especialidade:" line is omitted when absent rather than written as "—" (the
+reader sees only what was sent; the subject likewise drops its half);
+(2) the client-side tampered-select test moved to `#interesse` instead of
+being deleted, so the enum mirror keeps its coverage. The `#especialidade` select WAS validated
+client-side (`contact-form.js`: `ALLOWED_ESPECIALIDADE`, required) and
+server-side (`apps-script/Code.gs`: required + allowlist). The Apps Script is
+deployed on Google by the owner, not from this repo, so the two sides can be
+out of step for a while; the task makes that safe. **Acceptance (as
+implemented):** `Code.gs` —
+`especialidade` becomes OPTIONAL: a missing or empty value is accepted; when
+present the existing allowlist, length and control-character checks still
+apply; it leaves the `missing` required list; the "Especialidade:" line is
+omitted from the email when empty and the subject drops its half (there is
+no sheet row — sheet logging is deliberately not implemented). Everything
+else unchanged; the S27 tests (`tests/code-gs.test.mjs`) extended for both
+shapes. `index.html` — label, select and error paragraph removed, the other
+fields, IDs and order kept. `privacidade.html` — "especialidade" leaves the
+list of collected data. `contact-form.js` — the field leaves `values`, the
+allowlist, the required check and the two error strings that mention it; the
+payload simply has no key. `tests/smoke.spec.ts` — the specialty selections
+and assertions removed; one new test proves a submission without the field
+passes client-side validation and posts a payload with no `especialidade`
+key. README — a "Deployment order" note in the Apps Script runbook: redeploy
+`Code.gs` FIRST (the new version accepts both shapes), then merge; merging
+first breaks live submissions until the redeploy. The same note in bold at
+the top of the PR description. Links F01, S27, B49.
+
+### M02 — Recurring booking card: at least 4 hours a week
+
+**Priority: P2. State: IN PROGRESS** — implemented on
+`fix/site-copy-form-tweaks`; DONE only once merged. **Evidence
+(2026-09-23):** the card's line reads "Negociado a partir de 4 horas
+semanais." and nothing else on the card changed. Grep of both sites for the
+recurring arrangement's number (`3+`, `3 horas`, `three hours`, `semanais`
+across `frontend/lib/i18n/*.json`, `frontend/components`, `frontend/app`,
+`flowspace-site/*.html`, both READMEs and this file): the static card was the
+only mention; the app's booking-page contact note and the parked series
+modal state no number and were left alone. Smoke +1, structural: three
+`.price-card`s each with a name, a price, a description line and exactly one
+CTA to `#contacto`, and one badge on the featured plan — no prose pinned. The "Reserva recorrente" pricing card on the
+static site SAID "Negociado para 3+ horas semanais." **Acceptance (as
+implemented):** it says
+"Negociado a partir de 4 horas semanais." — the only text change on that
+card; both sites grepped (app catalogs PT+EN, static HTML, README/TODO copy)
+for any other "3+"/"3 horas" mention of the recurring arrangement and aligned
+(none found: the app's booking-page contact note states no number and must
+stay that way). Static smoke stays structural (the card exists with a CTA),
+no prose pin. Links F01, W01, Q-H04 (prices stay untouched).
+
+### M03 — "Onde estamos": drop the venue name line
+
+**Priority: P2. State: IN PROGRESS** — implemented on
+`fix/site-copy-form-tweaks`; DONE only once merged. **Evidence
+(2026-09-23):** app — `WhereWeAre` no longer renders the `<p>` with
+`space.name`; the heading's next sibling is the `where-lines` list; the name
+still titles the map iframe ("Mapa de {name}", not visible text).
+`WhereWeAre.test.tsx` (15): the name is not in the section's text, the iframe
+title carries it, the heading is followed directly by the list, and the
+order hours → email → address → "Como chegar" is unchanged; tsc clean.
+Static — `<p class="where-name">FlowSpace</p>` and its CSS rule removed; the
+heading now carries the `0.75rem` bottom margin the list had above it, so
+the spacing stays the app's `mt-3`. Smoke: the block test asserts no
+`.where-name` and that the heading's next sibling is the lines list. The
+L03 parity table's "Onde estamos" row notes the change; both READMEs
+updated. The block PRINTED the space name under the
+heading ("FlowSpace" on the static site, `space.name` in the app).
+**Acceptance (as implemented):** app — `WhereWeAre.tsx` no longer renders the name subtitle;
+the heading is followed directly by the hours line; the name stays in the
+map iframe `title` (not visible text); `WhereWeAre.test.tsx` asserts no name
+is rendered and the line order hours → email → address → "Como chegar" is
+unchanged. Static — `<p class="where-name">FlowSpace</p>` removed with its
+CSS rule; smoke structural. Both sites still match (L03's parity table
+updated). Links L04, L03, V06, V07.
 
 ## Deferred scope
 

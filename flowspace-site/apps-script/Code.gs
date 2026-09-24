@@ -204,7 +204,10 @@ function doPost(e) {
   const sanitized = sanitize(raw);
 
   const timestamp = asText(data.timestamp).trim();
-  const missing = ['nome', 'email', 'especialidade', 'interesse'].filter(function (field) {
+  // `especialidade` is optional (M01): the form no longer asks for it, but a
+  // page served before that change may still send it, so both shapes are
+  // accepted. When it is present it is checked exactly as before.
+  const missing = ['nome', 'email', 'interesse'].filter(function (field) {
     return sanitized[field] === '';
   });
   if (missing.length > 0 || timestamp === '') {
@@ -216,7 +219,8 @@ function doPost(e) {
   }
 
   if (
-    CONFIG.ALLOWED_ESPECIALIDADE.indexOf(sanitized.especialidade) === -1 ||
+    (sanitized.especialidade !== '' &&
+      CONFIG.ALLOWED_ESPECIALIDADE.indexOf(sanitized.especialidade) === -1) ||
     CONFIG.ALLOWED_INTERESSE.indexOf(sanitized.interesse) === -1
   ) {
     return errorResponse('invalid_option');
@@ -245,10 +249,11 @@ function doPost(e) {
   // and refuses to send if it ever stops holding.
   //
   // The subject carries NO free text. It is assembled from a constant prefix
-  // plus `especialidade` and `interesse`, both of which have just been
-  // checked against ALLOWED_ESPECIALIDADE / ALLOWED_INTERESSE by identity —
-  // so their only possible values are the literals in CONFIG, which contain
-  // no control characters. The visitor's name used to be interpolated here
+  // plus `interesse` and, when one was sent, `especialidade` — both of which
+  // have just been checked against ALLOWED_INTERESSE / ALLOWED_ESPECIALIDADE
+  // by identity — so their only possible values are the literals in CONFIG,
+  // which contain no control characters. An absent specialty contributes
+  // nothing. The visitor's name used to be interpolated here
   // and was a header-injection hole; it belongs in the body, where it now is.
   // Never put a free-text field in this string: not putting user input in a
   // header is a far stronger control than trying to filter it on the way in.
@@ -265,23 +270,24 @@ function doPost(e) {
   // passed. The first four would add or forge a delivery target; the last
   // three would render attacker-controlled markup or files in the reader's
   // mail client. See FORBIDDEN_MAIL_OPTIONS.
+  const subjectParts = [];
+  if (sanitized.especialidade !== '') subjectParts.push(sanitized.especialidade);
+  subjectParts.push(sanitized.interesse);
+  const bodyLines = ['Nome: ' + sanitized.nome, 'Email: ' + sanitized.email];
+  if (sanitized.especialidade !== '') {
+    bodyLines.push('Especialidade: ' + sanitized.especialidade);
+  }
+  bodyLines.push(
+    'Interesse: ' + sanitized.interesse,
+    'Mensagem: ' + (sanitized.mensagem || '(sem mensagem)'),
+    '',
+    'Submetido em: ' + now.toISOString()
+  );
   const mailOptions = {
     to: CONFIG.TO_EMAIL,
     replyTo: sanitized.email,
-    subject:
-      'Novo contacto FlowSpace — ' +
-      sanitized.especialidade +
-      ' / ' +
-      sanitized.interesse,
-    body: [
-      'Nome: ' + sanitized.nome,
-      'Email: ' + sanitized.email,
-      'Especialidade: ' + sanitized.especialidade,
-      'Interesse: ' + sanitized.interesse,
-      'Mensagem: ' + (sanitized.mensagem || '(sem mensagem)'),
-      '',
-      'Submetido em: ' + now.toISOString(),
-    ].join('\n'),
+    subject: 'Novo contacto FlowSpace — ' + subjectParts.join(' / '),
+    body: bodyLines.join('\n'),
   };
 
   if (!assertSendOptions(mailOptions)) {

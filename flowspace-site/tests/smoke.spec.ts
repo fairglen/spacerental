@@ -105,6 +105,25 @@ test('at 390px everything stacks in one column and nothing scrolls sideways', as
   expect([...tops].sort((a, b) => a - b)).toEqual(tops);
 });
 
+// The pricing section: three plans, each with a name, a price line, a
+// description line and one CTA that lands on the contact form — structure,
+// not prose (the numbers and the copy are the owner's; M02 changed the
+// recurring card's line without touching this test).
+test('the three pricing cards each carry a name, a price, a line and a CTA to the form', async ({ page }) => {
+  await page.goto('/');
+  const cards = page.locator('#precos .price-card');
+  await expect(cards).toHaveCount(3);
+  for (const card of await cards.all()) {
+    await expect(card.locator('h3')).not.toBeEmpty();
+    await expect(card.locator('.price')).not.toBeEmpty();
+    await expect(card.locator('.price-desc')).not.toBeEmpty();
+    const cta = card.locator('a.btn');
+    await expect(cta).toHaveCount(1);
+    await expect(cta).toHaveAttribute('href', '#contacto');
+  }
+  await expect(page.locator('#precos .card.featured .card-badge')).toHaveCount(1);
+});
+
 // L02: on a phone the benefits wrap under the CTAs instead of overflowing.
 test('below 768px the four benefits wrap and nothing scrolls sideways', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -189,6 +208,9 @@ test('"Onde estamos" lists hours, email and address with icons, then "Como chega
   await page.goto('/');
   const where = page.locator('#localizacao');
   await expect(where.getByRole('heading', { level: 2 })).toHaveText('Onde estamos');
+  // No venue name line under the heading (M03): the lines list follows it directly.
+  await expect(where.locator('.where-name')).toHaveCount(0);
+  expect(await where.getByRole('heading', { level: 2 }).evaluate((el) => el.nextElementSibling!.className)).toBe('where-lines');
   const lines = where.locator('.where-lines > li');
   await expect(lines).toHaveCount(3);
   await expect(lines.nth(0)).toHaveText('Todos os dias, 08:00–22:00');
@@ -353,9 +375,37 @@ async function stubConfiguredEndpoint(page: Page) {
 async function fillValidForm(page: Page) {
   await page.fill('#nome', 'Maria Silva');
   await page.fill('#email', 'maria@example.com');
-  await page.selectOption('#especialidade', 'Psicologia');
   await page.selectOption('#interesse', 'Reserva avulsa');
 }
+
+// M01: the form no longer asks for a specialty. The client accepts the
+// submission without it and the payload simply carries no such key — the
+// deployed Code.gs (redeployed first) takes both shapes.
+test('a submission without a specialty passes validation and posts a payload with no especialidade key', async ({ page }) => {
+  await serveWithUrl(page, STUB_URL);
+  const bodies: string[] = [];
+  await page.route(STUB_URL, async (route) => {
+    bodies.push(route.request().postData() ?? '');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'text/plain;charset=utf-8', 'access-control-allow-origin': '*' },
+      body: JSON.stringify({ result: 'success', message: 'Mensagem enviada com sucesso.' }),
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.locator('#especialidade, [name="especialidade"], #especialidade-error')).toHaveCount(0);
+  await fillValidForm(page);
+  await page.click('#submitBtn');
+
+  await expect(page.locator('#formSuccess')).toHaveClass(/is-visible/);
+  await expect(page.locator('.field-error.is-visible')).toHaveCount(0);
+  expect(bodies).toHaveLength(1);
+  const payload = JSON.parse(bodies[0]);
+  expect(payload).not.toHaveProperty('especialidade');
+  expect(Object.keys(payload).sort()).toEqual(['email', 'interesse', 'mensagem', 'nome', 'timestamp']);
+  expect(payload.interesse).toBe('Reserva avulsa');
+});
 
 test('a confirmed success response shows the success banner', async ({ page }) => {
   await serveWithUrl(page, STUB_URL);
@@ -562,10 +612,9 @@ for (const url of MALFORMED_URLS) {
 }
 
 /**
- * Mirrors CONFIG.ALLOWED_ESPECIALIDADE / ALLOWED_INTERESSE in Code.gs. The
- * server is still the real enforcement; this is the immediate feedback, and it
- * stops a tampered value burning a send slot only to come back as
- * invalid_option.
+ * Mirrors CONFIG.ALLOWED_INTERESSE in Code.gs. The server is still the real
+ * enforcement; this is the immediate feedback, and it stops a tampered value
+ * burning a send slot only to come back as invalid_option.
  */
 test('a tampered select value is rejected client-side before any request', async ({ page }) => {
   const requests: string[] = [];
@@ -574,16 +623,16 @@ test('a tampered select value is rejected client-side before any request', async
 
   await page.goto('/');
   await fillValidForm(page);
-  await page.locator('#especialidade').evaluate((el: HTMLSelectElement) => {
+  await page.locator('#interesse').evaluate((el: HTMLSelectElement) => {
     const option = document.createElement('option');
-    option.value = 'Cardiologia';
+    option.value = 'Compra do edifício';
     el.appendChild(option);
-    el.value = 'Cardiologia';
+    el.value = 'Compra do edifício';
   });
   await page.click('#submitBtn');
 
-  await expect(page.locator('#especialidade-error')).toHaveClass(/is-visible/);
-  await expect(page.locator('#especialidade')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#interesse-error')).toHaveClass(/is-visible/);
+  await expect(page.locator('#interesse')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.locator('#formSuccess')).not.toHaveClass(/is-visible/);
   expect(requests.filter((r) => r.includes('script.google.com'))).toHaveLength(0);
 });
@@ -601,7 +650,6 @@ test('field errors are wired to their controls for screen readers', async ({ pag
   await expect(page.locator('#nome-error')).toHaveClass(/is-visible/);
   await expect(nome).toHaveAttribute('aria-invalid', 'true');
   await expect(page.locator('#email')).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.locator('#especialidade')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.locator('#interesse')).toHaveAttribute('aria-invalid', 'true');
 
   await fillValidForm(page);
