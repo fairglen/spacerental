@@ -30,6 +30,8 @@ export default function SignInPage() {
   // Where to return after signing in (B28) — set by the booking modal and by
   // the NextAuth middleware. Only a same-origin path is ever followed.
   const callbackUrl = safeInternalPath(searchParams.get('callbackUrl'))
+  // Set by /reset-password after a successful change (G03).
+  const passwordReset = searchParams.get('password') === 'reset'
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
@@ -66,6 +68,11 @@ export default function SignInPage() {
             <p className="text-sm text-muted-foreground mt-1">Bem-vindo de volta</p>
           </CardHeader>
           <CardContent className="pt-4">
+            {passwordReset && (
+              <p role="status" className="text-sm text-primary bg-primary/10 rounded-lg px-3 py-2 mb-4">
+                A sua password foi alterada. Inicie sessão com a nova password.
+              </p>
+            )}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
                 <Label htmlFor="email">Email</Label>
@@ -81,6 +88,11 @@ export default function SignInPage() {
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'A entrar...' : 'Entrar'}
               </Button>
+              <p className="text-center text-sm">
+                <Link href="/forgot-password" className="text-muted-foreground hover:text-primary hover:underline">
+                  Esqueceu-se da password?
+                </Link>
+              </p>
             </form>
             <p className="text-center text-sm text-muted-foreground mt-4">
               Ainda não tem conta?{' '}

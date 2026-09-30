@@ -421,6 +421,16 @@ describe('customer enrollment API contract', () => {
     expect(post).toHaveBeenCalledWith('/auth/enroll')
   })
 
+  it('password reset (G03): request and confirm post their bodies and unwrap `detail`', async () => {
+    const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { detail: 'Se existir uma conta…' } })
+    expect(await authApi.requestPasswordReset('me@test.com')).toBe('Se existir uma conta…')
+    expect(post).toHaveBeenCalledWith('/auth/password-reset/request', { email: 'me@test.com' })
+    post.mockResolvedValue({ data: { detail: 'Password alterada.' } })
+    expect(await authApi.confirmPasswordReset('tok', 'novapass123')).toBe('Password alterada.')
+    expect(post).toHaveBeenCalledWith('/auth/password-reset/confirm', { token: 'tok', password: 'novapass123' })
+    post.mockRestore()
+  })
+
   it('preserves the authentication envelope returned by customer registration', async () => {
     const response = { access_token: 'token', token_type: 'bearer', user: { id: 'user' }, role: 'member' }
     const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: response })

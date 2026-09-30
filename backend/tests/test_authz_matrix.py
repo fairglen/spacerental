@@ -45,6 +45,9 @@ ROUTES: dict[tuple[str, str], str] = {
     ("POST", f"{API}/auth/register"): PUBLIC,
     ("POST", f"{API}/auth/register/operator"): PUBLIC,
     ("POST", f"{API}/auth/login"): PUBLIC,
+    # G03: the reset flow never says whether an email exists; test_password_reset.py.
+    ("POST", f"{API}/auth/password-reset/request"): PUBLIC,
+    ("POST", f"{API}/auth/password-reset/confirm"): PUBLIC,
     ("POST", f"{API}/auth/enroll"): CUSTOMER,
     ("GET", f"{API}/auth/me"): CUSTOMER,
     ("GET", f"{API}/auth/memberships"): CUSTOMER,
@@ -94,6 +97,8 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/admin/users/{{user_id}}"): OPERATOR,
     ("PUT", f"{API}/admin/users/{{user_id}}/role"): OPERATOR,
     ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/password-reset"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/set-password"): OPERATOR,
     ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"): OPERATOR,
     ("GET", f"{API}/admin/packages"): OPERATOR,
     # C19 inbox; its cross-org cases are in test_support.py.
@@ -119,6 +124,9 @@ ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/checkout/stub/{session_id}/pay"): STUB,
     ("POST", "/checkout/stub/{session_id}/cancel"): STUB,
     ("GET", "/health"): PUBLIC,
+    # G03: the stub mailbox for browser tests; mounted only outside production
+    # (test_password_reset.py proves the production app has no such route).
+    ("GET", "/__test__/emails"): PUBLIC,
 }
 
 # Minimal valid bodies, so a sweep's 401/403/404 is the authorization answer and
@@ -155,6 +163,7 @@ BODIES: dict[tuple[str, str], dict] = {
         "package_id": str(uuid.UUID(int=3)),
         "reason": "sweep",
     },
+    ("POST", f"{API}/admin/users/{{user_id}}/set-password"): {"password": "sweep-pass-123"},
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
     ("PUT", f"{API}/admin/support/requests/{{request_id}}"): {"status": "closed"},
@@ -610,6 +619,8 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("GET", f"{API}/admin/users/{{user_id}}"),
             ("PUT", f"{API}/admin/users/{{user_id}}/role"),
             ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"),
+            ("POST", f"{API}/admin/users/{{user_id}}/password-reset"),
+            ("POST", f"{API}/admin/users/{{user_id}}/set-password"),
             ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"),
             ("GET", f"{API}/admin/users/{{user_id}}/history"),
             ("GET", f"{API}/admin/purchases/{{purchase_id}}/history"),

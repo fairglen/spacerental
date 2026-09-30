@@ -369,6 +369,16 @@ SCENARIOS: dict[tuple[str, str], Scenario] = {
     ("PUT", f"{API}/admin/users/{{user_id}}/role"): Scenario(
         _json("PUT", lambda w: f"{API}/admin/users/{w.member.id}/role", {"role": "admin"})
     ),
+    ("POST", f"{API}/admin/users/{{user_id}}/password-reset"): Scenario(
+        _json("POST", lambda w: f"{API}/admin/users/{w.member.id}/password-reset")
+    ),
+    ("POST", f"{API}/admin/users/{{user_id}}/set-password"): Scenario(
+        _json(
+            "POST",
+            lambda w: f"{API}/admin/users/{w.member.id}/set-password",
+            {"password": "definida123"},
+        )
+    ),
     ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): Scenario(
         _json(
             "POST",

@@ -7,6 +7,10 @@ BRAND_NAME = "FlowSpace"
 
 
 class Settings(BaseSettings):
+    # What kind of deployment this is (G03). Only `production` is special:
+    # the local-only test hooks (`app.routers.test_hooks`) are never mounted
+    # there, whatever EMAIL_MODE says.
+    APP_ENV: str = "development"
     DATABASE_URL: str = "postgresql+asyncpg://spacerental:spacerental@localhost:5432/spacerental"
     SECRET_KEY: str = "dev-secret-key-change-this-in-production-min-32-chars"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours

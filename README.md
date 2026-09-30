@@ -219,6 +219,21 @@ Stripe, Resend (email), and Seam (smart locks) sit behind credential-free stub
 interfaces. `STRIPE_MODE`, `EMAIL_MODE` and `SEAM_MODE` default to `stub`; all tests
 run without third-party accounts or network access.
 
+**Email** (`backend/app/email.py`): with `EMAIL_MODE=stub` (the default)
+every message is logged and kept in process memory, and — outside
+`APP_ENV=production` — listed by `GET /__test__/emails` (the last 20: to,
+subject, links). That hook is how the password-reset browser test follows the
+link nobody can otherwise receive locally; the same route does not exist on
+a production app, and `tests/test_password_reset.py` proves it. The reset
+flow itself: `POST /auth/password-reset/request` always answers 202 with the
+same sentence (nobody learns whether an email has an account); the link in
+the email is single-use and lives 60 minutes; `POST /auth/password-reset/
+confirm` sets the password and signs every earlier session out (`users.
+token_version`, carried in the JWT as `tv`). An operator can send the same
+link from the customer's page or set a password directly (`/admin/users/
+{id}/password-reset`, `/set-password`); a suspended account
+(`users.disabled_at`) can do none of it.
+
 **Smart locks** (`backend/app/locks.py`): webhook/stub checkout confirmation,
 admin confirmation and prepaid pack redemption issue an access code. Individual,
 admin and recurring-series cancellations revoke it. Failed revocations retain
@@ -324,7 +339,7 @@ cd frontend
 npx playwright install --with-deps chromium
 npm run test:e2e
 ```
-The E2E suite exercises auth (sign-up, sign-in, protected routes), space browsing, and the admin dashboard. Set `E2E_BASE_URL` if your stack runs on a non-default URL.
+The E2E suite exercises auth (sign-up, sign-in, password reset, protected routes), space browsing, and the admin dashboard. Set `E2E_BASE_URL` if your stack runs on a non-default URL, and `E2E_API_URL` (default `http://localhost:8000/api/v1`) when the backend does too — the specs call the API directly for setup and read the stub mailbox at `<API root>/__test__/emails`.
 
 The suite assumes the seeded stack: **exactly one public space**, which is what
 puts the app in single-space mode (`single-space.spec.ts` skips itself

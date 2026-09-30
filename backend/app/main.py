@@ -23,6 +23,7 @@ from app.routers import (
     room_blocks,
     spaces,
     support,
+    test_hooks,
     webhooks,
 )
 
@@ -78,6 +79,8 @@ app.include_router(webhooks.router, prefix=API_PREFIX)
 # No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
 # see app/routers/checkout_stub.py.
 app.include_router(checkout_stub.router)
+# Local-only (G03): the stub mailbox for browser tests; never in production.
+test_hooks.mount(app, email_mode=settings.EMAIL_MODE, app_env=settings.APP_ENV)
 
 
 # python:3.12-slim ships no /etc/mime.types and its built-in table has no WebP,

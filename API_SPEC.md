@@ -130,6 +130,29 @@ No automatic account migration or enrollment on login.
 Body: `{ email, password }`
 Response: `{ access_token, token_type, user, role }` — same shape as register
 
+### POST /auth/password-reset/request
+Body: `{ email }`. **Always 202** with `{ detail: "Se existir uma conta com
+este email, vai receber uma ligação para repor a password." }` — whether or
+not the email has an account, and whether or not that account is enabled —
+so the endpoint says nothing about who is registered. When it does exist and
+is enabled, one email with `<FRONTEND_URL>/reset-password/<token>`: a 32-byte
+urlsafe token stored only as its SHA-256, valid 60 minutes, single use; a
+new request invalidates the user's older unused links. Auth rate-limit tier.
+
+### POST /auth/password-reset/confirm
+Body: `{ token, password (8–128) }`. 400 `A ligação é inválida ou já expirou.`
+for a token that is unknown, used, expired, or belongs to a disabled account
+(one message for all, so tokens cannot be probed). Success (200) sets the
+password, marks the token used and bumps the account's `token_version`,
+which signs every earlier session out. Auth rate-limit tier.
+
+**Sessions and suspended accounts (G02/G03).** Every token carries `tv`, the
+`token_version` it was issued under (older tokens without the claim read as
+0); a token whose `tv` differs from the account's is a 401. A suspended
+account (`disabled_at` set) gets 401 `A conta está desativada.` at login (after
+the password check, so only the account's holder hears it), 401 `Account
+disabled` on any token, and no reset email.
+
 ### GET /auth/me
 Headers: `Authorization: Bearer <jwt>`
 Response: `User`
@@ -452,6 +475,26 @@ purchases the booking's pack hours are currently drawn from, soonest-expiring
 first; empty when it holds no hours). **Neither is returned by a customer
 endpoint.**
 Body: `{ status: "confirmed"|"cancelled" }`
+
+### POST /admin/users/{user_id}/password-reset
+"Enviar ligação de recuperação" (G03): sends the customer the same single-use,
+one-hour link they could ask for themselves, recording the operator on the
+token. 202 `{ sent_to, sent_at }`; 409 when the account is suspended; 404 for
+a non-member. Audited as `password_reset.send` — the row never carries the
+token.
+
+### POST /admin/users/{user_id}/set-password
+"Definir password" (G03). Body: `{ password (8–128) }` → `{ user: OrgUser }`.
+Sets the password, bumps `token_version` (every session out) and deletes the
+account's open reset links. Allowed on a suspended account (they still cannot
+sign in until reactivated). Audited as `password.set` without the value. Auth
+rate-limit tier.
+
+### GET /__test__/emails
+**Local only.** Mounted when `EMAIL_MODE=stub` and `APP_ENV != production`:
+`{ emails: [{ to, subject, links }] }`, the last 20 messages the stub gateway
+"sent", so a browser test can follow a reset link. Absent from a production
+app.
 
 ### GET /admin/users
 The org's members (A05), searchable and paged.

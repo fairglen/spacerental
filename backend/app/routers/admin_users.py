@@ -8,24 +8,27 @@ membership row: a person who is not a member is not there, whatever their id.
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import audit, clock, package_hours
-from app.auth import require_admin
+from app import audit, clock, email, package_hours, password_reset
+from app.auth import hash_password, require_admin
 from app.booking_validity import expire_user_holds
 from app.database import get_db
+from app.email import EmailGateway, get_email_gateway
 from app.models.booking import Booking
 from app.models.organization import MemberRole, OrganizationMember
 from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
 from app.models.support import SupportRequest
 from app.models.user import User
+from app.ratelimit import AUTH_TIER, rate_limit
 from app.schemas.admin_users import ComplimentaryHoursCreate, ExpiryUpdate, OrgUserOut, RoleUpdate
 from app.schemas.booking import AdminBookingOut
 from app.schemas.package import AdminPurchaseOut, PackageBalanceOut
 from app.schemas.support import SupportRequestOut
+from app.schemas.user import PasswordSet
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 # A customer's purchases, addressed by their own id (A06).
@@ -205,6 +208,72 @@ async def admin_set_role(
         action="role.set",
         before=before,
         after={"id": str(user_id), "role": member.role.value},
+    )
+    count = await db.scalar(
+        select(func.count()).where(Booking.user_id == user_id, Booking.org_id == org_id)
+    )
+    return {"user": _row(member, count or 0)}
+
+
+@router.post("/{user_id}/password-reset", status_code=status.HTTP_202_ACCEPTED)
+async def admin_send_password_reset(
+    user_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    org_id: uuid.UUID = Query(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
+):
+    """ "Enviar ligação de recuperação" (G03): the same single-use, one-hour
+    link the customer can ask for themselves, sent by the operator. A
+    suspended account gets nothing (409): reactivate first."""
+    member = await _membership(db, user_id, org_id)
+    user = member.user
+    if user.disabled_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The account is disabled")
+    now = clock.utcnow()
+    raw = await password_reset.issue(db, user, now=now, created_by_admin_id=admin.id)
+    email.enqueue_email(
+        background_tasks,
+        email_gateway,
+        email.password_reset_email(to=user.email, link=password_reset.reset_link(raw)),
+    )
+    # The token itself is never part of the row: `after` says only that a
+    # link went out, and when.
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=user,
+        action="password_reset.send",
+        after={"id": str(user.id), "sent_to": user.email, "sent_at": now.isoformat()},
+    )
+    return {"sent_to": user.email, "sent_at": now}
+
+
+@router.post("/{user_id}/set-password")
+@rate_limit(AUTH_TIER)
+async def admin_set_password(
+    user_id: uuid.UUID,
+    body: PasswordSet,
+    org_id: uuid.UUID = Query(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """ "Definir password" (G03): the operator sets it directly. Every session
+    and every open reset link of the account dies with it; the audit row
+    records that it happened and never the value. Allowed on a suspended
+    account (the person still cannot sign in until it is reactivated)."""
+    member = await _membership(db, user_id, org_id)
+    user = member.user
+    await password_reset.set_password(db, user, hash_password(body.password))
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=user,
+        action="password.set",
+        after={"id": str(user.id), "sessions_revoked": True},
     )
     count = await db.scalar(
         select(func.count()).where(Booking.user_id == user_id, Booking.org_id == org_id)

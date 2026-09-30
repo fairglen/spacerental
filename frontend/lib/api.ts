@@ -119,6 +119,15 @@ export const authApi = {
 
   registerOperator: (data: { email: string; password: string; name: string }) =>
     apiClient.post<RegisterResponse>('/auth/register/operator', data).then(r => r.data),
+
+  // Password reset (G03). The request always answers 202 with the same
+  // neutral sentence, whether or not the email exists; the page shows it.
+  requestPasswordReset: (email: string) =>
+    apiClient.post<{ detail: string }>('/auth/password-reset/request', { email }).then(r => r.data.detail),
+
+  // 400 for an unknown, used or expired token — the page offers a new request.
+  confirmPasswordReset: (token: string, password: string) =>
+    apiClient.post<{ detail: string }>('/auth/password-reset/confirm', { token, password }).then(r => r.data.detail),
 }
 
 // ─── Public ──────────────────────────────────────────────────────────────
