@@ -9,7 +9,7 @@ import type {
   AdminAction, PaginatedActions, AuditFilters, AdminSpaceDetail, AdminRoomDetail,
   AdminBookingDetail, AdminPackageDetail, AdminUserCreateBody, AdminUserPatch, AnonymisedUser,
   PaginatedPurchases, AdminPurchaseDetail, PurchaseFilters, SupportRequestDetail,
-  OrganizationSettings, OrganizationSettingsPatch,
+  OrganizationSettings, OrganizationSettingsPatch, PublicContact,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -140,10 +140,13 @@ export const spacesApi = {
   list: (api = apiClient) =>
     api.get<{ spaces: Space[] }>('/spaces').then(r => r.data.spaces.map(normSpace)),
 
-  get: (id: string, api = apiClient) =>
-    api.get<{ space: Space; rooms: Room[] }>(`/spaces/${id}`).then(r => ({
+  // `contact` (G04): the organisation's public contact when the owner set
+  // one; the customer-facing block falls back to `lib/contact.ts` otherwise.
+  get: (id: string, api = apiClient): Promise<{ space: Space; rooms: Room[]; contact?: PublicContact }> =>
+    api.get<{ space: Space; rooms: Room[]; contact?: PublicContact }>(`/spaces/${id}`).then(r => ({
       space: normSpace(r.data.space),
       rooms: (r.data.rooms ?? []).map(normRoom),
+      contact: { email: r.data.contact?.email ?? null, phone: r.data.contact?.phone ?? null },
     })),
 
   getAvailability: (roomId: string, date: string, api = apiClient) =>

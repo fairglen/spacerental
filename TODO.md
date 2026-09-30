@@ -4740,7 +4740,28 @@ panel; "state" says which task fills the gap.
 
 ### G05 — Shared admin CRUD kit (`frontend/components/admin/crud/`)
 
-**Priority: P1. State: QUEUED (Part A2).** **Scope:** `EntityList`
+**Priority: P1. State: IN PROGRESS** — implemented on `feat/admin-crud-ui`
+(`48ea525`); DONE only once merged. **Evidence (2026-10-01):**
+`CrudKit.test.tsx` (13): EntityList renders a captioned table with 44 px
+rows, opens a row on click and Enter, moves focus with ↑/↓, debounces the
+search by 300 ms, emits filter/sort/page changes, shows skeletons, an error
+with retry and the empty state with its action, and a per-row ⋯ menu that
+acts on that row; EntityForm keeps "Guardar" disabled until dirty, saves,
+toasts and refetches, maps a 422 to the field and a 409 to a banner with
+the blockers, and guards leaving (beforeunload + in-app links);
+DangerZone enables the hard delete only when the name or the short id is
+typed, lists blockers on a 409, toggles the soft state, and explains when
+the hard delete is unavailable; ReasonDialog needs five characters,
+confirms with the reason and shows the API refusal (blockers included);
+HistoryRow shows actor/label/changed keys and expands to the diff;
+PageHeader/Breadcrumbs; apiErrors parses 422 field lists, 409 blockers,
+strings and network failures. `lib/api.ts` gained a wrapper for every Part
+A1 endpoint with shape tests (+9). A Radix toast queue is mounted in the
+admin shell; the sidebar is in the owner's order with section-aware
+highlighting. **DECISION:** the list state lives in the URL
+(`useListState`), and the four server-paginated lists are not keyed by
+organisation so the hook can send a later page back to page one when the
+organisation changes (the old behaviour, kept). **Scope:** `EntityList`
 (toolbar: search with 300 ms debounce, filter chips, sort select;
 sticky-header table; row click → detail; per-row ⋯ menu; empty state with
 the primary action; skeleton rows; error state with retry; URL-synced
@@ -4762,7 +4783,39 @@ signal. **Validation:** component tests per piece.
 
 ### G06 — Entity pages (migrate and complete; routes stable)
 
-**Priority: P1. State: QUEUED (Part A2).** Sidebar: Dashboard · Calendário
+**Priority: P1. State: IN PROGRESS** — implemented on `feat/admin-crud-ui`
+(`f643cc4`, `d3df1b6`, `2a6c5f6`); DONE only once merged. **Evidence
+(2026-10-01):** `AdminEntityPages.test.tsx` (15) over every new page —
+rooms list across spaces; the room page saves the hours with the
+closed-day toggle and copy-to-all-days and blocks an hour, shows A07's
+409 as blockers, and a space id is redirected; the booking page shows
+customer, payment with the Stripe id, access code, notes and the history
+diff, "Corrigir valor" needs a reason and sends `total_amount` + `reason`,
+a paid booking has no hard delete and cancelling asks for a reason, an
+expired hold is deleted after typing the id; the customer page shows the
+last reset sent, sends a new link, sets a password behind a matching
+confirmation with no reveal, suspends; anonymises after typing the email
+and a reason, with no hard delete while referenced; the new-customer page
+sends the link by default or a password when chosen; a purchase
+adjustment below the debited hours shows the 409 inline; the support page
+shows message/links/context/mailto and moves the status and note; the
+audit page filters and expands a row to the diff; settings save for the
+owner and are read-only with a note for an admin. The three replaced
+dialogs' tests were ported (bookings org switch, package edit/deactivate,
+space location). Playwright `admin-crud.spec.ts` (6): the six flows the
+owner listed, green on a fresh stack. **Found on the way:**
+`BookingCalendar.test.tsx` expected `addDays(now, 30)` for the window's
+last day, a calendar day off within the first hour of a day across the
+autumn clock change — it now uses `bookingWindowLastDay()`. **DECISIONS:**
+(1) `/admin/rooms/[id]` is the room page; a space id there is looked up
+and redirected to `/admin/spaces/[id]`, where the rooms section (create,
+duplicate, activate) now lives. (2) The customer-facing contact reads the
+organisation's value through the public space detail's `contact` (G04);
+the frontend's `CONTACT_EMAIL` stays the fallback, wired in the settings
+page's description — the "Onde estamos" block itself keeps the constant
+until the org contact is set by an owner (no seed change). (3) Sign-in
+and the G03 reset pages already share the auth card layout; nothing to
+change. Sidebar: Dashboard · Calendário
 · Reservas · Clientes · Salas · Espaços · Pacotes · Banco de horas ·
 Pedidos de ajuda · Histórico · Definições. **Scope:** Espaços
 `/admin/spaces`, `/new`, `/[id]` (Identificação, Localização incl.

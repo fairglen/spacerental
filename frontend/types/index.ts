@@ -450,6 +450,9 @@ export type OrganizationSettings = {
   created_at: string
   updated_at: string
 }
+// The organisation's public contact on the space detail (G04); nulls when unset.
+export type PublicContact = { email: string | null; phone: string | null }
+
 export type OrganizationSettingsPatch = {
   name?: string
   contact_email?: string | null

@@ -461,6 +461,13 @@ describe('space location shape (C10)', () => {
     expect(unlocated.longitude).toBeNull()
   })
 
+  it('spacesApi.get carries the organisation contact, nulls when the API sends none (G04)', async () => {
+    const withContact = { get: vi.fn().mockResolvedValue({ data: { space: { id: 's1' }, rooms: [], contact: { email: 'ola@flowspace.pt', phone: null } } }) } as any
+    expect((await spacesApi.get('s1', withContact)).contact).toEqual({ email: 'ola@flowspace.pt', phone: null })
+    const without = { get: vi.fn().mockResolvedValue({ data: { space: { id: 's1' }, rooms: [] } }) } as any
+    expect((await spacesApi.get('s1', without)).contact).toEqual({ email: null, phone: null })
+  })
+
   it('spacesApi.get converts the space and still normalizes its rooms', async () => {
     const mockApi = {
       get: vi.fn().mockResolvedValue({ data: { space: wire, rooms: [{ id: 'r1', hourly_rate: '11.00' }] } }),
