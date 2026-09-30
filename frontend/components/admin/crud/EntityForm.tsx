@@ -86,7 +86,7 @@ export function EntityForm<T extends FieldValues>({
   }
 
   return (
-    <form onSubmit={submit} noValidate className="relative pb-24">
+    <form onSubmit={submit} noValidate className="relative">
       <div className="space-y-8">{children}</div>
       {error?.message && (
         <div role="alert" className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

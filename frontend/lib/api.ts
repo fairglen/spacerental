@@ -329,7 +329,7 @@ export const adminApi = {
   // ── Users (A05) ──────────────────────────────────────────────────────
   // The org's members, searchable (`q`) and paged; the calendar's customer
   // picker uses the same call with a short page.
-  getUsers: (params: { q?: string; page?: number; page_size?: number }, api: Api): Promise<PaginatedOrgUsers> =>
+  getUsers: (params: { q?: string; page?: number; page_size?: number; role?: string; disabled?: string; sort?: string }, api: Api): Promise<PaginatedOrgUsers> =>
     api.get<PaginatedOrgUsers>('/admin/users', { params }).then(r => r.data),
 
   getUser: (id: string, api: Api): Promise<OrgUserDetail> =>

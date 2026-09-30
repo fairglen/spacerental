@@ -21,6 +21,8 @@ export type Space = {
   // sends Decimal strings and lib/api.ts converts them at the boundary.
   latitude?: number | null
   longitude?: number | null
+  // The clock the rooms' opening hours are read on (R01), an IANA name.
+  timezone?: string
   images: string[]
   // In display order; the first is the cover.
   photos?: Photo[]

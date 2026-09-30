@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { detailOf } from '@/lib/httpError'
+import { blockerLines, parseApiError } from './apiErrors'
 
 /**
  * One dialog for every action that needs a reason (G05): the price override,
@@ -30,7 +30,7 @@ export const MIN_REASON = 5
 export function ReasonDialog({ open, title, description, confirmLabel = 'Confirmar', destructive, children, canConfirm = true, onConfirm, onClose }: ReasonDialogProps) {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ message?: string; blockers: string[] } | null>(null)
   useEffect(() => { if (open) { setReason(''); setError(null) } }, [open])
   const ok = reason.trim().length >= MIN_REASON && canConfirm
 
@@ -41,7 +41,8 @@ export function ReasonDialog({ open, title, description, confirmLabel = 'Confirm
       await onConfirm(reason.trim())
       onClose()
     } catch (err) {
-      setError(detailOf(err) ?? 'Não foi possível concluir. Tente novamente.')
+      const parsed = parseApiError(err, 'Não foi possível concluir. Tente novamente.')
+      setError({ message: parsed.message, blockers: blockerLines(parsed.blockers) })
     } finally {
       setBusy(false)
     }
@@ -61,7 +62,12 @@ export function ReasonDialog({ open, title, description, confirmLabel = 'Confirm
             <Textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1" rows={3} placeholder="Fica registado no histórico." />
             <p className="text-xs text-muted-foreground mt-1">Pelo menos {MIN_REASON} caracteres.</p>
           </div>
-          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <div role="alert" className="text-sm text-red-600">
+              <p>{error.message}</p>
+              {error.blockers.length > 0 && <ul className="mt-1 list-disc pl-5">{error.blockers.map((b) => <li key={b}>{b}</li>)}</ul>}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancelar</Button>

@@ -1,186 +1,77 @@
 'use client'
-import { useState } from 'react'
-import { useSession } from 'next-auth/react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm, type FieldErrors, type UseFormRegister, type UseFormSetValue } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import Link from 'next/link'
-import { Plus, MapPin, DoorOpen, Pencil, Trash2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Plus } from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import { useApi } from '@/lib/hooks/useApi'
-import { useOrg } from '@/contexts/OrgContext'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { useCrud } from '@/components/admin/crud/useCrud'
+import { useListState } from '@/components/admin/crud/useListState'
+import { EntityList, type Column } from '@/components/admin/crud/EntityList'
+import { PageHeader } from '@/components/admin/crud/PageHeader'
 import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { SpaceLocationFields } from '@/components/admin/SpaceLocationFields'
-import { PhotoManager } from '@/components/admin/PhotoManager'
+import { Button } from '@/components/ui/button'
 import { addressLines } from '@/lib/location'
-import {
-  locationDefaults, locationFormShape, locationPayload, refineCoordinatePair, type LocationFormValues,
-} from '@/lib/spaceLocationForm'
 import type { Space } from '@/types'
 
-const editSpaceSchema = z.object({
-  name: z.string().min(2),
-  description: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  ...locationFormShape,
-}).superRefine(refineCoordinatePair)
-type EditSpaceFormData = z.infer<typeof editSpaceSchema>
+const FILTERS = ['active'] as const
 
+/** Espaços (G06): the list over the kit; each row opens its page. */
 export default function AdminSpacesPage() {
-  const { data: session } = useSession()
-  const api = useApi()
-  const { currentOrgId } = useOrg()
-  const qc = useQueryClient()
-  const [editingSpace, setEditingSpace] = useState<Space | null>(null)
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<EditSpaceFormData>({
-    resolver: zodResolver(editSpaceSchema),
-  })
-
-  const { data: spaces, isLoading } = useQuery({
+  const { api, enabled, currentOrgId } = useCrud('spaces')
+  const { state, set } = useListState(FILTERS, { sort: 'name' })
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['admin', 'spaces', currentOrgId],
     queryFn: () => adminApi.getSpaces(api),
-    enabled: !!session?.accessToken && !!currentOrgId,
+    enabled,
   })
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => adminApi.updateSpace(id, { is_active: false }, api),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'spaces'] }),
-  })
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Space> }) => adminApi.updateSpace(id, data, api),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin', 'spaces'] })
-      setEditingSpace(null)
-    },
-  })
-
-  function openEdit(space: Space) {
-    setEditingSpace(space)
-    reset({
-      name: space.name,
-      description: space.description ?? '',
-      address: space.address ?? '',
-      city: space.city ?? '',
-      ...locationDefaults(space),
+  const q = state.q.trim().toLowerCase()
+  const rows = (data ?? [])
+    .filter((s) => !q || s.name.toLowerCase().includes(q) || addressLines(s).join(' ').toLowerCase().includes(q))
+    .filter((s) => !state.filters.active || String(s.is_active) === state.filters.active)
+    .sort((a, b) => {
+      const dir = state.sort.startsWith('-') ? -1 : 1
+      const key = state.sort.replace(/^-/, '')
+      if (key === 'rooms') return dir * ((a.rooms?.length ?? 0) - (b.rooms?.length ?? 0))
+      return dir * a.name.localeCompare(b.name, 'pt')
     })
-  }
+  const pageSize = 20
+  const paged = rows.slice((state.page - 1) * pageSize, state.page * pageSize)
+
+  const columns: Column<Space>[] = [
+    { key: 'name', header: 'Nome', sortKey: 'name', render: (s) => <span className="font-medium text-foreground">{s.name}</span> },
+    { key: 'address', header: 'Morada', render: (s) => <span className="text-muted-foreground">{addressLines(s).join(', ') || '—'}</span> },
+    { key: 'rooms', header: 'Salas', sortKey: 'rooms', render: (s) => String(s.rooms?.length ?? 0) },
+    { key: 'state', header: 'Estado', render: (s) => <Badge variant={s.is_active ? 'default' : 'secondary'}>{s.is_active ? 'Ativo' : 'Inativo'}</Badge> },
+  ]
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Espaços</h1>
-          <p className="text-muted-foreground text-sm mt-1">Gira os seus espaços e salas.</p>
-        </div>
-        <Link href="/admin/spaces/new"><Button className="gap-2"><Plus className="h-4 w-4" /> Novo Espaço</Button></Link>
-      </div>
-      {isLoading ? (
-        <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
-      ) : (
-        <div className="space-y-4">
-          {(spaces ?? []).map((space) => (
-            <Card key={space.id}>
-              <CardContent className="p-5 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-foreground">{space.name}</h3>
-                    <Badge variant={space.is_active ? 'default' : 'secondary'}>{space.is_active ? 'Ativo' : 'Inativo'}</Badge>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                    <MapPin className="h-3 w-3" /> {addressLines(space).join(', ') || 'Sem morada'}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => openEdit(space)}>
-                    <Pencil className="h-4 w-4 mr-1" /> Editar
-                  </Button>
-                  <Link href={`/admin/rooms/${space.id}`}><Button variant="outline" size="sm"><DoorOpen className="h-4 w-4 mr-1" /> Salas</Button></Link>
-                  <Button variant="ghost" size="sm" className="text-red-500" onClick={() => deleteMutation.mutate(space.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <Dialog open={!!editingSpace} onOpenChange={(open) => !open && setEditingSpace(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Espaço</DialogTitle>
-            <DialogDescription>
-              Atualize o nome, a descrição e a morada deste espaço visíveis aos clientes.
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            onSubmit={handleSubmit((d) => {
-              if (!editingSpace) return
-              const data = {
-                ...d,
-                description: d.description?.trim() ? d.description : undefined,
-                address: d.address?.trim() ? d.address : undefined,
-                city: d.city?.trim() ? d.city : undefined,
-                ...locationPayload(d),
-              }
-              updateMutation.mutate({ id: editingSpace.id, data })
-            })}
-            className="space-y-4"
-          >
-            <div>
-              <Label>Nome</Label>
-              <Input {...register('name')} className="mt-1" />
-              {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>}
-            </div>
-            <div>
-              <Label>Descrição</Label>
-              <Input {...register('description')} className="mt-1" />
-            </div>
-            <div>
-              <Label>Morada</Label>
-              <Input {...register('address')} className="mt-1" />
-            </div>
-            <div>
-              <Label>Cidade</Label>
-              <Input {...register('city')} className="mt-1" />
-            </div>
-            <SpaceLocationFields
-              idPrefix="edit-space"
-              register={register as unknown as UseFormRegister<LocationFormValues>}
-              setValue={setValue as unknown as UseFormSetValue<LocationFormValues>}
-              errors={errors as FieldErrors<LocationFormValues>}
-            />
-            <DialogFooter>
-              <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'A guardar...' : 'Guardar'}
-              </Button>
-            </DialogFooter>
-          </form>
-          {/* Outside the form: photos save themselves, one request per change. */}
-          {editingSpace && (
-            <div className="mt-6 border-t border-border pt-4">
-              <PhotoManager
-                kind="spaces"
-                entityId={editingSpace.id}
-                entityName={editingSpace.name}
-                photos={editingSpace.photos ?? []}
-                onChange={(photos) => {
-                  setEditingSpace((s) => (s ? { ...s, photos } : s))
-                  qc.invalidateQueries({ queryKey: ['admin', 'spaces'] })
-                  qc.invalidateQueries({ queryKey: ['spaces'] })
-                }}
-              />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <PageHeader
+        title="Espaços"
+        description="Os locais e as suas salas."
+        actions={<Button asChild className="gap-2"><Link href="/admin/spaces/new"><Plus className="h-4 w-4" /> Novo espaço</Link></Button>}
+      />
+      <EntityList<Space>
+        caption="Espaços da organização"
+        columns={columns}
+        rows={isLoading ? undefined : paged}
+        rowKey={(s) => s.id}
+        rowHref={(s) => `/admin/spaces/${s.id}`}
+        total={rows.length}
+        page={state.page}
+        pageSize={pageSize}
+        onPageChange={(page) => set({ page })}
+        search={{ value: state.q, onChange: (q) => set({ q }), placeholder: 'Nome ou morada' }}
+        filters={{
+          chips: [{ key: 'active', label: 'Estado', options: [{ value: 'true', label: 'Ativos' }, { value: 'false', label: 'Inativos' }] }],
+          values: state.filters,
+          onChange: (key, value) => set({ filters: { [key]: value } }),
+        }}
+        sort={{ options: [{ value: 'name', label: 'Nome' }, { value: '-name', label: 'Nome ↓' }, { value: '-rooms', label: 'Mais salas' }], value: state.sort, onChange: (sort) => set({ sort }) }}
+        isLoading={isLoading}
+        isError={isError}
+        onRetry={() => refetch()}
+        empty={{ title: 'Ainda não há espaços.', description: 'Crie o primeiro para começar a receber reservas.', action: <Button asChild><Link href="/admin/spaces/new">Novo espaço</Link></Button> }}
+      />
     </div>
   )
 }

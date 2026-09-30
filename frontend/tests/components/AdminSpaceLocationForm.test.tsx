@@ -3,7 +3,7 @@ import { render, screen, waitFor, within, fireEvent } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import NewSpacePage from '@/app/admin/spaces/new/page'
-import AdminSpacesPage from '@/app/admin/spaces/page'
+import AdminSpacePage from '@/app/admin/spaces/[id]/page'
 import { adminApi } from '@/lib/api'
 import type { Space } from '@/types'
 
@@ -17,14 +17,20 @@ vi.mock('@/contexts/OrgContext', () => ({
   useOrg: () => ({ currentOrgId: 'org-1', memberships: [], currentMembership: null, setCurrentOrgId: vi.fn(), isLoading: false }),
 }))
 vi.mock('@/lib/hooks/useApi', () => ({ useApi: () => ({}) }))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+  usePathname: () => '/admin/spaces/s-1',
+  useSearchParams: () => new URLSearchParams(),
+  useParams: () => ({ id: 's-1' }),
+}))
 vi.mock('@/lib/api', () => ({
-  adminApi: { getSpaces: vi.fn(), createSpace: vi.fn(), updateSpace: vi.fn() },
+  adminApi: { getSpaces: vi.fn(), getSpace: vi.fn(), createSpace: vi.fn(), updateSpace: vi.fn(), updateRoom: vi.fn(), duplicateRoom: vi.fn(), createRoom: vi.fn(), deleteSpace: vi.fn(), getHistory: vi.fn() },
 }))
 
 const space: Space = {
   id: 's-1', org_id: 'org-1', name: 'Espaço Calmo', description: '', address: 'R. 12 de Julho de 1997 5, Loja 1',
   city: 'Queluz', postal_code: '2745-841', latitude: 38.755723, longitude: -9.279799,
-  images: [], amenities: [], is_active: true, created_at: '',
+  images: [], amenities: [], is_active: true, created_at: '', timezone: 'Europe/Lisbon',
 }
 
 function renderWithClient(ui: React.ReactElement) {
@@ -129,52 +135,45 @@ describe('new space form — location', () => {
   })
 })
 
-describe('edit space dialog — location', () => {
-  async function openDialog(user: ReturnType<typeof userEvent.setup>) {
-    renderWithClient(<AdminSpacesPage />)
-    await user.click(await screen.findByRole('button', { name: /Editar/ }))
-    return screen.findByRole('dialog')
+describe('space page — location (G06: the edit dialog became the page)', () => {
+  async function openPage(user: ReturnType<typeof userEvent.setup>) {
+    vi.mocked(adminApi.getSpace).mockResolvedValue({ space: { ...space, rooms: [] }, photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    renderWithClient(<AdminSpacePage />)
+    await screen.findByRole('heading', { level: 1, name: /Espaço Calmo/ })
+    // The form is filled once the query lands.
+    await waitFor(() => expect(screen.getByLabelText(/Código postal/)).toHaveValue('2745-841'))
+    return user
   }
 
   it('opens pre-filled with the stored location', async () => {
-    const dialog = await openDialog(userEvent.setup())
-    expect(within(dialog).getByLabelText(/Código postal/)).toHaveValue('2745-841')
-    expect(within(dialog).getByLabelText(/Latitude/)).toHaveValue('38.755723')
-    expect(within(dialog).getByLabelText(/Longitude/)).toHaveValue('-9.279799')
+    await openPage(userEvent.setup())
+    expect(screen.getByLabelText(/Latitude/)).toHaveValue('38.755723')
+    expect(screen.getByLabelText(/Longitude/)).toHaveValue('-9.279799')
+    expect(screen.getByLabelText(/Fuso horário/)).toHaveValue('Europe/Lisbon')
   })
 
   it('always sends the coordinates together', async () => {
-    const user = userEvent.setup()
-    const dialog = await openDialog(user)
-    await user.clear(within(dialog).getByLabelText(/Latitude/))
-    await user.type(within(dialog).getByLabelText(/Latitude/), '38.76')
-    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }))
-
+    const user = await openPage(userEvent.setup())
+    await user.clear(screen.getByLabelText(/Latitude/))
+    await user.type(screen.getByLabelText(/Latitude/), '38.76')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
     await waitFor(() => expect(adminApi.updateSpace).toHaveBeenCalled())
     expect(vi.mocked(adminApi.updateSpace).mock.calls[0][1]).toMatchObject({ latitude: 38.76, longitude: -9.279799 })
   })
 
   it('clears the location with explicit nulls', async () => {
-    const user = userEvent.setup()
-    const dialog = await openDialog(user)
-    for (const label of [/Código postal/, /Latitude/, /Longitude/]) {
-      await user.clear(within(dialog).getByLabelText(label))
-    }
-    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }))
-
+    const user = await openPage(userEvent.setup())
+    for (const label of [/Código postal/, /Latitude/, /Longitude/]) await user.clear(screen.getByLabelText(label))
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
     await waitFor(() => expect(adminApi.updateSpace).toHaveBeenCalled())
-    expect(vi.mocked(adminApi.updateSpace).mock.calls[0][1]).toMatchObject({
-      postal_code: null, latitude: null, longitude: null,
-    })
+    expect(vi.mocked(adminApi.updateSpace).mock.calls[0][1]).toMatchObject({ postal_code: null, latitude: null, longitude: null })
   })
 
   it('refuses half a coordinate inline', async () => {
-    const user = userEvent.setup()
-    const dialog = await openDialog(user)
-    await user.clear(within(dialog).getByLabelText(/Longitude/))
-    await user.click(within(dialog).getByRole('button', { name: 'Guardar' }))
-
-    expect(await within(dialog).findByRole('alert')).toBeVisible()
+    const user = await openPage(userEvent.setup())
+    await user.clear(screen.getByLabelText(/Longitude/))
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    expect(await screen.findByRole('alert')).toBeVisible()
     expect(adminApi.updateSpace).not.toHaveBeenCalled()
   })
 })

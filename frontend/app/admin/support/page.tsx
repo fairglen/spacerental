@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -118,6 +119,7 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex gap-1">
                           <Button size="sm" variant="outline" onClick={() => setOpenRow(r)} aria-label={`Ver pedido #${r.reference}`}>Ver pedido</Button>
+                          <Button asChild size="sm" variant="outline"><Link href={`/admin/support/${r.id}`} aria-label={`Abrir pedido #${r.reference}`}>Abrir</Link></Button>
                           {r.status === 'new' && (
                             <Button size="sm" variant="ghost" disabled={update.isPending}
                               onClick={() => update.mutate({ id: r.id, next: 'in_progress' })}

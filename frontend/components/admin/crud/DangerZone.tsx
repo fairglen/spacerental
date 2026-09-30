@@ -17,7 +17,7 @@ export type DangerZoneProps = {
   name: string
   shortId: string
   keeps: string
-  soft?: { active: boolean; onToggle: () => Promise<unknown>; activeLabel?: string; inactiveLabel?: string; hint?: string }
+  soft?: { active: boolean; onToggle: () => Promise<unknown>; activeLabel?: string; inactiveLabel?: string; hint?: string; buttonLabel?: string }
   hard?: { onDelete: (confirm: string) => Promise<unknown>; label?: string; hint?: string; disabledReason?: string }
   onDone?: () => void
 }
@@ -54,7 +54,7 @@ export function DangerZone({ entityLabel, name, shortId, keeps, soft, hard, onDo
             <p className="text-xs text-muted-foreground">{soft.hint ?? (soft.active ? 'Deixa de estar disponível; nada é apagado.' : 'Volta a estar disponível.')}</p>
           </div>
           <Button type="button" variant={soft.active ? 'destructive' : 'outline'} disabled={busy !== null} onClick={() => run('soft', soft.onToggle)}>
-            {busy === 'soft' ? 'A guardar…' : soft.active ? 'Desativar' : 'Reativar'}
+            {busy === 'soft' ? 'A guardar…' : soft.buttonLabel ?? (soft.active ? 'Desativar' : 'Reativar')}
           </Button>
         </div>
       )}

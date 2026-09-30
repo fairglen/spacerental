@@ -1,6 +1,7 @@
 'use client'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useOrg } from '@/contexts/OrgContext'
 
 /**
  * List state that lives in the URL (G05): `?q=&page=&sort=&<filter>=`, so a
@@ -45,5 +46,14 @@ export function useListState(filterKeys: readonly string[], defaults: { sort?: s
     },
     [params, pathname, router, defaults.sort],
   )
+  // Switching organisation (B22-style deep links aside): a later page may not
+  // exist in the smaller one, so the list goes back to page one.
+  const { currentOrgId } = useOrg()
+  const seenOrg = useRef(currentOrgId)
+  useEffect(() => {
+    if (seenOrg.current === currentOrgId) return
+    seenOrg.current = currentOrgId
+    if (state.page > 1) set({ page: 1 })
+  }, [currentOrgId, state.page, set])
   return { state, set }
 }
