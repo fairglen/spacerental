@@ -207,6 +207,13 @@ class SpaceCreate(BaseModel):
         return self
 
 
+class CopyToAllDaysBody(BaseModel):
+    """POST /admin/rooms/{id}/availability/copy-to-all-days (G04): the weekday
+    whose window(s) every other day gets."""
+
+    day_of_week: Weekday
+
+
 class SpaceUpdate(RejectExplicitNull):
     nullable_fields = frozenset(
         {"description", "address", "city", "postal_code", "latitude", "longitude"}

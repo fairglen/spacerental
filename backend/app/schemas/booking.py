@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator, model_validator
 
 from app.models.booking import BookingStatus, PaymentMethod
-from app.schemas.bounds import Notes, before_latest_instant
+from app.schemas.bounds import Money, Notes, before_latest_instant
 from app.schemas.package import BookingPackageDebitOut
 from app.schemas.space import RoomOut
 from app.schemas.user import UserOut
@@ -121,15 +121,30 @@ class AdminBookingOut(BookingOut):
         return sorted(debits, key=key)
 
 
+class AdminBookingDetailOut(AdminBookingOut):
+    """GET /admin/bookings/{id} (G04): plus the provider's session id, so the
+    operator can find the payment. Never in a customer response."""
+
+    stripe_checkout_session_id: str | None = None
+
+
 class BookingStatusUpdate(BaseModel):
     """PUT /admin/bookings/{id}: any combination of a status change, a move
-    (time and/or room) and a note (A01). Omitted = unchanged."""
+    (time and/or room), the notes, and the price override (A01, G04).
+    Omitted = unchanged. A new `total_amount` needs a `reason`: no money
+    moves, the trail says why."""
 
     status: BookingStatus | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
     room_id: uuid.UUID | None = None
     admin_note: Notes | None = None
+    notes: Notes | None = None
+    total_amount: Money | None = None
+    reason: (
+        Annotated[str, StringConstraints(min_length=1, max_length=2000, strip_whitespace=True)]
+        | None
+    ) = None
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -140,6 +155,10 @@ class BookingStatusUpdate(BaseModel):
     def _something_to_do(self):
         if not self.model_fields_set:
             raise ValueError("nothing to change")
+        if "total_amount" in self.model_fields_set and (
+            self.total_amount is None or self.reason is None
+        ):
+            raise ValueError("a reason is required to change the amount")
         return self
 
     @property

@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import audit, email
+from app import audit, deletion, email
 from app.auth import get_current_user, oauth2_scheme, require_admin
 from app.config import settings
 from app.database import get_db
@@ -26,6 +26,7 @@ from app.models.user import User
 from app.ratelimit import SUPPORT_TIER, rate_limit
 from app.schemas.support import (
     SupportRequestCreate,
+    SupportRequestDetailOut,
     SupportRequestOut,
     SupportRequestReceipt,
     SupportStatusUpdate,
@@ -180,6 +181,34 @@ async def admin_list_support_requests(
     }
 
 
+async def _request_in_org(db: AsyncSession, request_id: uuid.UUID, org_id: uuid.UUID):
+    result = await db.execute(
+        select(SupportRequest)
+        .options(
+            selectinload(SupportRequest.booking).selectinload(Booking.room),
+            selectinload(SupportRequest.user),
+        )
+        .where(SupportRequest.id == request_id, SupportRequest.org_id == org_id)
+    )
+    request = result.scalar_one_or_none()
+    if request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    return request
+
+
+@admin_router.get("/requests/{request_id}")
+async def admin_get_support_request(
+    request_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """One request for its page (G04): the full message and context, the
+    linked booking and person, the operator's note."""
+    request = await _request_in_org(db, request_id, org_id)
+    return {"request": SupportRequestDetailOut.model_validate(request)}
+
+
 @admin_router.put("/requests/{request_id}")
 async def admin_update_support_request(
     request_id: uuid.UUID,
@@ -188,16 +217,13 @@ async def admin_update_support_request(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(SupportRequest)
-        .options(selectinload(SupportRequest.booking).selectinload(Booking.room))
-        .where(SupportRequest.id == request_id, SupportRequest.org_id == org_id)
-    )
-    request = result.scalar_one_or_none()
-    if request is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    """Status (`new`, `in_progress`, `closed`) and/or the private note (C19, G04)."""
+    request = await _request_in_org(db, request_id, org_id)
     before = audit.snapshot(request)
-    request.status = body.status
+    if body.status is not None:
+        request.status = body.status
+    if "admin_note" in body.model_fields_set:
+        request.admin_note = body.admin_note
     await db.flush()
     await db.refresh(request)
     await audit.record(
@@ -209,4 +235,30 @@ async def admin_update_support_request(
         before=before,
         after=audit.snapshot(request),
     )
-    return {"request": SupportRequestOut.model_validate(request)}
+    return {"request": SupportRequestDetailOut.model_validate(request)}
+
+
+@admin_router.delete("/requests/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_support_request(
+    request_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    confirm: str | None = Query(default=None, max_length=255),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hard delete (G02), for spam; the trail keeps the whole request."""
+    result = await db.execute(
+        select(SupportRequest)
+        .options(selectinload(SupportRequest.booking).selectinload(Booking.room))
+        .where(SupportRequest.id == request_id, SupportRequest.org_id == org_id)
+    )
+    request = result.scalar_one_or_none()
+    if request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    deletion.require_confirm(confirm, request.id)
+    before = audit.snapshot(request)
+    await db.delete(request)
+    await db.flush()
+    await audit.record(
+        db, actor=admin, org_id=org_id, entity=request, action="delete", before=before
+    )

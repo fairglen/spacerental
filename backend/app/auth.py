@@ -130,3 +130,27 @@ async def require_admin(
         )
 
     return user
+
+
+async def require_owner(
+    org_id: uuid.UUID = Query(...),
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """The organisation's owner only (G04): what admins may read but not
+    change. Built on `require_admin`, so an owner route is an operator route
+    first (the S01 matrix checks that) and refuses everyone else the same way."""
+    result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.org_id == org_id,
+            OrganizationMember.role == MemberRole.owner,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the organisation's owner can do this",
+        )
+
+    return user

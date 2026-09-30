@@ -44,7 +44,9 @@ PACKAGE_FIELDS = {
 }  # fmt: skip
 USER_FIELDS = {"id", "email", "name", "avatar_url", "created_at"}
 # The operator's members list (A05): the membership, never the account.
-ORG_USER_FIELDS = {"id", "email", "name", "role", "joined_at", "bookings_count", "created_at"}
+ORG_USER_FIELDS = {
+    "id", "email", "name", "role", "joined_at", "bookings_count", "disabled_at", "created_at",
+}  # fmt: skip
 # `reason` (H01) is one of four words about the slot, never about a person.
 SLOT_FIELDS = {"start", "end", "available", "reason"}
 
@@ -118,7 +120,10 @@ class TestPublicResponses:
         detail = (await client.get(f"{API}/spaces/{test_space.id}")).json()
         packages = (await client.get(f"{API}/packages", params={"org_id": str(test_org.id)})).json()
         assert [set(space) for space in listed] == [SPACE_FIELDS]
-        assert set(detail) == {"space", "rooms"}
+        assert set(detail) == {"space", "rooms", "contact"}
+        # G04: the organisation's public contact, and nothing else of its
+        # settings, rides along for the "Onde estamos" block.
+        assert set(detail["contact"]) == {"email", "phone"}
         assert set(detail["space"]) == SPACE_FIELDS
         assert [set(room) for room in detail["rooms"]] == [ROOM_FIELDS]
         assert all(

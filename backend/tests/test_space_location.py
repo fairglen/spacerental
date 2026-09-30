@@ -290,7 +290,8 @@ class TestPublicShape:
         assert Decimal(listed[0]["longitude"]) == Decimal("-9.279799")
 
         detail = (await client.get(f"{API}/spaces/{test_space.id}")).json()
-        assert set(detail) == {"space", "rooms"}
+        # `contact` is the organisation's public contact (G04).
+        assert set(detail) == {"space", "rooms", "contact"}
         assert detail["space"]["postal_code"] == "2745-841"
         assert Decimal(detail["space"]["latitude"]) == Decimal("38.755723")
 

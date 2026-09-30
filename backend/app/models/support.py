@@ -20,6 +20,8 @@ class SupportCategory(StrEnum):
 
 class SupportStatus(StrEnum):
     new = "new"
+    # G04: someone is on it.
+    in_progress = "in_progress"
     closed = "closed"
 
 
@@ -66,6 +68,8 @@ class SupportRequest(Base):
         default=SupportStatus.new,
         server_default="new",
     )
+    # The operator's private note (G04); never customer-facing.
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

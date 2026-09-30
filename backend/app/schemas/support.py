@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, model_validator
 
 from app.models.support import SupportCategory, SupportStatus
 from app.schemas.booking import BookingOut
@@ -84,4 +84,28 @@ class SupportRequestOut(BaseModel):
 
 
 class SupportStatusUpdate(BaseModel):
-    status: SupportStatus
+    """PUT /admin/support/requests/{id} (C19, G04): status and/or the note."""
+
+    status: SupportStatus | None = None
+    admin_note: _text(2000) | None = None
+
+    @model_validator(mode="after")
+    def _something_to_do(self):
+        if not self.model_fields_set:
+            raise ValueError("nothing to change")
+        return self
+
+
+class SupportUserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str | None
+    email: str
+
+
+class SupportRequestDetailOut(SupportRequestOut):
+    """The operator's full view (G04): plus the private note and the person."""
+
+    admin_note: str | None = None
+    user: SupportUserOut | None = None

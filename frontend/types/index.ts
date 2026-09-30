@@ -269,11 +269,14 @@ export type SupportRequestBody = {
   website: string
 }
 
+// Triage (C19, G04): `in_progress` means someone is on it.
+export type SupportStatus = 'new' | 'in_progress' | 'closed'
+
 // What the sender gets back: a reference to quote, never the message.
 export type SupportRequestReceipt = {
   id: string
   reference: string
-  status: 'new' | 'closed'
+  status: SupportStatus
   created_at: string
 }
 
@@ -282,7 +285,7 @@ export type SupportRequestRow = {
   id: string
   reference: string
   category: SupportCategory
-  status: 'new' | 'closed'
+  status: SupportStatus
   contact_email: string
   user_id: string | null
   booking_id: string | null

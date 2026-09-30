@@ -5,7 +5,7 @@ import type {
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
   SupportRequestBody, SupportRequestReceipt, SupportRequestRow, PaginatedSupportRequests,
   OrgUser, OrgUserDetail, PaginatedOrgUsers, AdminPurchase, ComplimentaryHoursBody,
-  RoomBlock, AdminBookingPatch, PackageBalance, MyPackages,
+  RoomBlock, AdminBookingPatch, PackageBalance, MyPackages, SupportStatus,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -374,7 +374,7 @@ export const adminApi = {
       params: { ...(api.defaults.params || {}), ...params },
     }).then(r => ({ ...r.data, requests: r.data.requests.map(row => ({ ...row, booking: row.booking ? normBooking(row.booking) : null })) })),
 
-  updateSupportRequest: (id: string, status: 'new' | 'closed', api: Api): Promise<SupportRequestRow> =>
+  updateSupportRequest: (id: string, status: SupportStatus, api: Api): Promise<SupportRequestRow> =>
     api.put<{ request: SupportRequestRow }>(`/admin/support/requests/${id}`, { status }).then(r => r.data.request),
 
   getAvailability: (roomId: string, api: Api) =>

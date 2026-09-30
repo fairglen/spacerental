@@ -280,7 +280,21 @@ async def create_booking(
         booking.stripe_checkout_session_id = session.id
         checkout_url = session.url
 
-    await db.flush()
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        # The same race, reported one step later: writing the session id is
+        # an UPDATE of the row just inserted, and a non-HOT update re-runs the
+        # GIST exclusion check — which can end in a deadlock report against
+        # a concurrent insert on the same slot, exactly as the first flush
+        # can. Still a lost race, still a 409.
+        if not is_lost_slot_race(exc):
+            raise
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This time slot is already booked",
+        ) from None
     await db.refresh(booking)
 
     # Load room for response

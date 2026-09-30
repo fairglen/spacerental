@@ -19,6 +19,7 @@ import pytest
 import pytest_asyncio
 from app import audit
 from app.auth import create_access_token, hash_password
+from app.config import settings
 from app.main import app
 from app.models.audit import AdminAction
 from app.models.booking import Booking, BookingStatus, PaymentMethod
@@ -71,8 +72,10 @@ async def _rows(db_session, org_id) -> list[AdminAction]:
 
 
 @pytest_asyncio.fixture
-async def w(db_session) -> SimpleNamespace:
+async def w(db_session, monkeypatch) -> SimpleNamespace:
     """One organisation with a bit of everything, and a second one for scoping."""
+    # A customer who registers through the public form lands in org A.
+    monkeypatch.setattr(settings, "CUSTOMER_ENROLLMENT_ORG_SLUG", "org-a")
     w = SimpleNamespace()
     password = hash_password("password123")
     w.org = Organization(name="Org A", slug="org-a", plan=OrgPlan.starter, settings={})
@@ -238,6 +241,66 @@ async def _block(client, w):
     w.block_id = resp.json()["block"]["id"]
 
 
+async def _spare_room(client, w):
+    resp = await client.post(
+        f"{API}/admin/spaces/{w.space.id}/rooms",
+        params=w.params,
+        json={"name": "Sala livre", "hourly_rate": "9.00"},
+        headers=w.headers,
+    )
+    assert resp.status_code == 201, resp.text
+    w.spare_room = SimpleNamespace(id=resp.json()["room"]["id"])
+
+
+async def _first_rule(client, w):
+    resp = await client.get(
+        f"{API}/admin/rooms/{w.room.id}/availability", params=w.params, headers=w.headers
+    )
+    w.rule_id = resp.json()["rules"][0]["id"]
+
+
+async def _expire_pending(client, w):
+    # Through the API so the row is what an expired hold really looks like.
+    resp = await client.put(
+        f"{API}/admin/bookings/{w.pending.id}",
+        params=w.params,
+        json={"status": "expired"},
+        headers=w.headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def _fresh_user(client, w):
+    resp = await client.post(
+        f"{API}/auth/register", json={"email": "fresh@test.com", "password": "password123"}
+    )
+    assert resp.status_code == 201, resp.text
+    w.fresh = SimpleNamespace(id=resp.json()["user"]["id"])
+
+
+async def _unsold_package(client, w):
+    resp = await client.post(
+        f"{API}/admin/packages",
+        params=w.params,
+        json={"name": "Pack 5", "hours": 5, "price": "50"},
+        headers=w.headers,
+    )
+    assert resp.status_code == 201, resp.text
+    w.unsold = SimpleNamespace(id=resp.json()["package"]["id"])
+
+
+async def _granted_purchase(client, w):
+    resp = await client.post(
+        f"{API}/admin/users/{w.member.id}/complimentary-hours",
+        params=w.params,
+        json={"hours": "2", "package_id": str(w.package.id), "reason": "Oferta"},
+        headers=w.headers,
+    )
+    assert resp.status_code == 201, resp.text
+    w.granted_id = resp.json()["purchase"]["id"].replace("-", "")
+    w.granted_uuid = resp.json()["purchase"]["id"]
+
+
 def _json(method: str, path: Callable, body: Callable | dict | None = None) -> Act:
     async def act(client, w):
         kwargs = {"params": w.params, "headers": w.headers}
@@ -274,7 +337,63 @@ SCENARIOS: dict[tuple[str, str], Scenario] = {
         _json("PUT", lambda w: f"{API}/admin/spaces/{w.space.id}", {"name": "Renamed"})
     ),
     ("DELETE", f"{API}/admin/spaces/{{space_id}}"): Scenario(
-        _json("DELETE", lambda w: f"{API}/admin/spaces/{w.empty_space.id}")
+        _json("DELETE", lambda w: f"{API}/admin/spaces/{w.empty_space.id}?confirm=Empty")
+    ),
+    ("DELETE", f"{API}/admin/rooms/{{room_id}}"): Scenario(
+        _json("DELETE", lambda w: f"{API}/admin/rooms/{w.spare_room.id}?confirm=Sala+livre"),
+        setup=_spare_room,
+    ),
+    ("DELETE", f"{API}/admin/rooms/{{room_id}}/availability/{{rule_id}}"): Scenario(
+        _json("DELETE", lambda w: f"{API}/admin/rooms/{w.room.id}/availability/{w.rule_id}"),
+        setup=_first_rule,
+    ),
+    ("DELETE", f"{API}/admin/bookings/{{booking_id}}"): Scenario(
+        _json(
+            "DELETE",
+            lambda w: f"{API}/admin/bookings/{w.pending.id}?confirm={w.pending.id.hex[:8]}",
+        ),
+        setup=_expire_pending,
+    ),
+    ("POST", f"{API}/admin/users/{{user_id}}/anonymise"): Scenario(
+        _json(
+            "POST",
+            lambda w: f"{API}/admin/users/{w.member.id}/anonymise",
+            lambda w: {"confirm": w.member.id.hex[:8]},
+        )
+    ),
+    ("DELETE", f"{API}/admin/users/{{user_id}}"): Scenario(
+        _json("DELETE", lambda w: f"{API}/admin/users/{w.fresh.id}?confirm=fresh@test.com"),
+        setup=_fresh_user,
+    ),
+    ("DELETE", f"{API}/admin/users/{{user_id}}/membership"): Scenario(
+        _json(
+            "DELETE",
+            lambda w: f"{API}/admin/users/{w.member.id}/membership?confirm=member-a@test.com",
+        )
+    ),
+    ("DELETE", f"{API}/admin/packages/{{package_id}}"): Scenario(
+        _json("DELETE", lambda w: f"{API}/admin/packages/{w.unsold.id}?confirm=Pack+5"),
+        setup=_unsold_package,
+    ),
+    ("PUT", f"{API}/admin/purchases/{{purchase_id}}"): Scenario(
+        _json(
+            "PUT",
+            lambda w: f"{API}/admin/purchases/{w.purchase.id}",
+            {"status": "cancelled", "reason": "Reembolsado fora"},
+        )
+    ),
+    ("DELETE", f"{API}/admin/purchases/{{purchase_id}}"): Scenario(
+        _json(
+            "DELETE",
+            lambda w: f"{API}/admin/purchases/{w.granted_uuid}?confirm={w.granted_id[:8]}",
+        ),
+        setup=_granted_purchase,
+    ),
+    ("DELETE", f"{API}/admin/support/requests/{{request_id}}"): Scenario(
+        _json(
+            "DELETE",
+            lambda w: f"{API}/admin/support/requests/{w.request.id}?confirm={w.request.id.hex[:8]}",
+        )
     ),
     ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"): Scenario(
         _json(
@@ -285,6 +404,36 @@ SCENARIOS: dict[tuple[str, str], Scenario] = {
     ),
     ("PUT", f"{API}/admin/rooms/{{room_id}}"): Scenario(
         _json("PUT", lambda w: f"{API}/admin/rooms/{w.room.id}", {"capacity": 6})
+    ),
+    ("POST", f"{API}/admin/rooms/{{room_id}}/duplicate"): Scenario(
+        _json("POST", lambda w: f"{API}/admin/rooms/{w.room.id}/duplicate")
+    ),
+    ("POST", f"{API}/admin/rooms/{{room_id}}/availability/copy-to-all-days"): Scenario(
+        _json(
+            "POST",
+            lambda w: f"{API}/admin/rooms/{w.room.id}/availability/copy-to-all-days",
+            {"day_of_week": 0},
+        )
+    ),
+    ("POST", f"{API}/admin/users"): Scenario(
+        _json(
+            "POST",
+            lambda w: f"{API}/admin/users",
+            {"email": "invited@test.com", "name": "Convidada"},
+        )
+    ),
+    ("PUT", f"{API}/admin/users/{{user_id}}"): Scenario(
+        _json("PUT", lambda w: f"{API}/admin/users/{w.member.id}", {"name": "Renamed"})
+    ),
+    ("POST", f"{API}/admin/purchases/{{purchase_id}}/adjust"): Scenario(
+        _json(
+            "POST",
+            lambda w: f"{API}/admin/purchases/{w.purchase.id}/adjust",
+            {"hours": "1", "reason": "Compensação"},
+        )
+    ),
+    ("PUT", f"{API}/admin/organization"): Scenario(
+        _json("PUT", lambda w: f"{API}/admin/organization", {"name": "Org A renamed"})
     ),
     ("POST", f"{API}/admin/rooms/{{room_id}}/availability"): Scenario(
         _json(
@@ -501,7 +650,7 @@ class TestWhatARowHolds:
         user = w.admin
         user.password_hash = "$argon2id$v=19$m=65536,t=3,p=4$secret"
         snap = audit.snapshot(user)
-        assert set(snap) == {"id", "email", "name", "avatar_url", "created_at"}
+        assert set(snap) == {"id", "email", "name", "avatar_url", "disabled_at", "created_at"}
         flat = " ".join(f"{k}={v}" for k, v in snap.items()).lower()
         for needle in ("password", "hash", "token", "argon2", "version"):
             assert needle not in flat

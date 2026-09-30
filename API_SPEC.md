@@ -67,6 +67,9 @@ List all active spaces (public). Each space carries its location: `address`,
 Response: `{ spaces: Space[] }`
 
 ### GET /spaces/:id
+Response: `{ space, rooms, contact: { email, phone } }` — `contact` is the
+organisation's public contact when the owner set one (G04), else nulls, and
+the customer-facing block keeps its default then.
 Each room carries `availability_rules: [{ day_of_week, open_time, close_time }]`
 (V06): its active opening windows, weekday 0 = Monday, times in UTC like every
 rule (R01). "Onde estamos" derives the space's hours from their union. The
@@ -317,6 +320,55 @@ one is a 404 with no further detail. A user's history stays readable after
 the membership is gone (anonymised or removed) because the trail itself is
 the proof they were here.
 
+### Deletion policy (G02)
+Deleting a money-bearing or history-bearing row is never a plain DELETE.
+Every hard delete below, the membership removal and anonymisation take
+`confirm=<entity name or short id>` — the short id is the first 8 hex
+characters of the uuid — and answer 422 without it or with a mismatch. A
+refused delete is a 409 whose `detail` is `{ message, blockers }`. Each
+successful one writes one audit row with the whole entity in `before`.
+
+| Entity | Everyday delete | Hard `DELETE` allowed when | Otherwise |
+|---|---|---|---|
+| Space | `PUT is_active=false` | no room of the space ever had a booking | 409, `blockers: [{ room_id, name, bookings }]` |
+| Room | `PUT is_active=false` (A07's future-bookings 409 stays) | zero bookings and zero blocks ever (cancelled and expired count) | 409, `blockers: { bookings, blocks }` |
+| Availability rule | — | always (`DELETE /admin/rooms/:id/availability/:rule_id`, no confirm: recreated in one click) | — |
+| Booking | cancel (`PUT status=cancelled`) | `expired`; or `cancelled` with `total_amount` 0 and no debit rows; or an operator's `manual` booking with `reason=` (422 without one) | 409 "cancel it instead" |
+| User | `POST /admin/users/:id/anonymise` (below) | nothing references the account: no booking, purchase or help request anywhere; not yourself; not the last owner; no membership in another organisation | 409 with the counts or the rule |
+| Membership | — | `DELETE /admin/users/:id/membership`: not yourself, not the last owner | 409 |
+| Package | `PUT is_active=false` | zero purchases ever | 409, `blockers: { purchases }` |
+| Purchase | `PUT /admin/purchases/:id` `{ status: "cancelled", reason }` | `amount_paid` 0 and no debit rows | 409, `blockers: { amount_paid, debits }` |
+| Support request | — | always (spam) | — |
+| Organisation | not deletable from the panel | — | — |
+
+### POST /admin/users/:id/anonymise
+Body: `{ confirm, reason? }` → `{ user: { id, email, name, disabled_at } }`.
+Name, email and avatar become placeholders (`Utilizador removido`,
+`utilizador-<short id>@anon.invalid`), the password is removed, the account
+is disabled for good, `token_version` is bumped (every session out), every
+reset link is deleted and the membership here is removed. Bookings,
+purchases and help requests keep pointing at the placeholder. 409 for
+yourself, for the organisation's last owner, and for an account that also
+belongs to another organisation (the row is global, the operator's authority
+is not); 404 for a non-member. Audited as `anonymise` with the reason.
+
+### PUT /admin/purchases/:id
+Body: `{ status?: "active" | "cancelled", admin_note?, reason? }` → `{ purchase:
+AdminPurchase }`. A status change requires `reason` (422 otherwise);
+`cancelled` sets `hours_remaining` to 0 and leaves the debit rows of bookings
+already paid with it untouched — no money moves; `active` brings it back with
+`hours_total - hours_used`. 409 for a `pending` (unpaid) purchase. Audited as
+`cancel` / `reactivate` / `update`.
+
+### GET /admin/organization · PUT /admin/organization
+The organisation's settings (G04): `{ organization: { id, name, slug, plan,
+contact_email, contact_phone, timezone, created_at, updated_at } }`. Admins
+read; only the owner writes (403 otherwise). PUT body: `{ name?,
+contact_email?, contact_phone?, timezone? }` — an explicit `null` clears a
+contact; `slug` is read-only; `timezone` is an IANA name. The contact and
+the timezone live in `organizations.settings`; the public space detail
+carries the contact.
+
 ### GET /admin/dashboard
 Stats: total bookings, revenue, occupancy rate, active users.
 
@@ -336,6 +388,11 @@ Location rules (422 otherwise): `postal_code` is at most 20 characters;
 decimal string, rounded to 6 decimal places; `latitude` and `longitude` are
 given together or not at all.
 
+### GET /admin/spaces/:id
+One space for its page (G04): `{ space (rooms embedded, each with its active
+`availability_rules`), photo_count (space + rooms), bookings: { total,
+upcoming } }`. 404 for another org's space.
+
 ### PUT /admin/spaces/:id
 Update a space. Omitted fields are left as they are. `postal_code`, `latitude`
 and `longitude` may be cleared with an explicit `null`. The two coordinates are
@@ -343,7 +400,9 @@ one value: a body that carries one must carry the other (both numbers, or both
 `null`), so an update can never leave half a point — sending only one is a 422.
 
 ### DELETE /admin/spaces/:id
-Soft-delete a space.
+Hard delete under the deletion policy above (`confirm=` required). The rooms,
+their rules and blocks and every photo file go with it. Deactivating is
+`PUT { is_active: false }`.
 
 ### GET /admin/support/requests
 The help-form inbox (C19), operator of `org_id` only. Newest first. Query:
@@ -353,7 +412,13 @@ Response: `{ requests: SupportRequest[], total, page, page_size }` where each
 row is `{ id, reference, category, status, contact_email, user_id, booking_id,
 booking: Booking | null, message, context, created_at, updated_at }`.
 
+### GET /admin/support/requests/:id
+One request for its page (G04): the inbox row plus `admin_note` and `user:
+{ id, name, email } | null`.
+
 ### PUT /admin/support/requests/:id
+Body (G04): `{ status?: new | in_progress | closed, admin_note? }`, at least
+one. `{ request }` with the note and the person.
 Body: `{ status: "new" | "closed" }` — mark handled, or reopen. `404` for
 another organisation's request. Response: `{ request: SupportRequest }`.
 Answering happens by email (the notification carries `Reply-To`); nothing here
@@ -410,6 +475,21 @@ Body: `{ name, description, capacity, hourly_rate, color, amenities?, images? }`
 room endpoints for compatibility but no customer screen renders it — the
 photos say what the room is like.
 
+### GET /admin/rooms/:id
+One room for its page (G04): `{ room, space, rules: [AvailabilityRule with
+ids], blocks: [RoomBlock] (the next 30 days), photo_count, bookings: { total,
+upcoming } }`.
+
+### POST /admin/rooms/:id/duplicate
+A copy in the same space (G04): name + " (cópia)", description, capacity,
+rate, colour, amenities and the opening rules; not the photos. 201 `{ room }`,
+audited as `duplicate` on the new room.
+
+### POST /admin/rooms/:id/availability/copy-to-all-days
+Body: `{ day_of_week }` (0 = Monday). Every other weekday gets that day's
+window(s); 422 when the source day is closed. `{ rules }`, audited like the
+replace-all (`availability.set`, whole schedule before/after).
+
 ### PUT /admin/rooms/:id
 Update a room. `is_active: false` switches it off for customers (A07) — but
 not while bookings still hold future slots in it: then **409** with
@@ -422,7 +502,19 @@ true count) and the room stays active. Move or cancel them first.
 Set availability rules for a room.
 Body: `{ rules: [{ day_of_week, open_time, close_time }] }`
 
+### GET /admin/bookings/:id
+One booking for its page (G04): `{ booking: AdminBookingDetail, history:
+[AdminAction] (last 20) }`. `AdminBookingDetail` is the admin booking plus
+`stripe_checkout_session_id` — never in a customer response — with the
+customer, room, `payment_method`, `total_amount`, `package_debits` per
+purchase, `access_code`, `notes`, `admin_note` and `hold_expires_at`.
+
 ### GET /admin/bookings
+Query (G04): `q` matches the customer's name or email (case-insensitive) or
+the booking's short id prefix; `payment_method`; `include_cancelled`
+(default true; false hides `cancelled` rows); `sort` = `start_time` |
+`-start_time` (default) | `created_at` | `-created_at`; plus `room_id`,
+`status`, `from`, `to`, `page`, `page_size` as before.
 All bookings for org.
 Query: `?status=&room_id=&from=&to=`
 
@@ -447,6 +539,12 @@ again (`409` if gone). `409` for anything that is not an unpaid hourly/mixed
 hold. Response: `{ booking: AdminBooking }`.
 
 ### PUT /admin/bookings/:id
+Also (G04): `notes` (the customer-visible note) and the price override —
+`total_amount` (≥ 0, 2 decimals) with a required `reason` (422 without one).
+No charge and no refund is made; the recorded amount changes, the customer's
+dashboard shows it, and the trail keeps the old and new amounts with the
+reason (`price.override`). `status` may be set to any value, `completed`
+included and back, under the same slot and pack-hour rules.
 Any combination of (A01): a status change (`status`), a move (`start_time`,
 `end_time`, `room_id` — the room must be in the same org, else `404`) and a
 private note (`admin_note`). Omitted fields are unchanged; an empty body is
@@ -496,7 +594,23 @@ rate-limit tier.
 "sent", so a browser test can follow a reset link. Absent from a production
 app.
 
+### POST /admin/users
+Body: `{ email, name?, password? (8–128) }` → 201 `{ user: OrgUser }`, enrolled
+as a member. Without `password` the person gets a "Defina a sua password"
+email with a one-hour link (the G03 flow); with one, nothing is sent. 409
+when the email has an account. The response and the trail never carry a
+password.
+
+### PUT /admin/users/{user_id}
+Body: `{ name?, email? (409 when taken), disabled_at? }` → `{ user: OrgUser }`.
+An instant in `disabled_at` suspends the account (signed out everywhere at
+once; login and reset requests refused); an explicit `null` reactivates.
+409 for your own account. Audited as `suspend` / `reactivate` / `update`.
+
 ### GET /admin/users
+Query (G04): `role` (owner|admin|member), `disabled` (true|false), `sort` =
+`name` (default) | `-name` | `email` | `-email` | `joined_at` | `-joined_at`;
+plus `q`, `page`, `page_size`. Rows carry `disabled_at`.
 The org's members (A05), searchable and paged.
 Query: `q` (name or email, case-insensitive, ≤200 chars), `page` (≥1),
 `page_size` (1–100, default 20).
@@ -530,6 +644,22 @@ non-member or a package of another org; 400 for a past `expires_at`.
 purchase time, or `"0.00"` for granted hours). `admin_note` is never returned
 by a customer endpoint.
 
+### GET /admin/purchases
+"Banco de horas" (G04). Query: `user_id`, `package_id`, `status`,
+`expiring_before` (tz-aware), `page`, `page_size`. `{ purchases: [AdminPurchase
++ user: { id, name, email }], total, page, page_size }`, newest first.
+
+### GET /admin/purchases/{purchase_id}
+`{ purchase: AdminPurchase, user: { id, name, email }, debits: [{ booking_id,
+hours, start_time, end_time, status, room_name }] }` — every booking still
+drawing on it.
+
+### POST /admin/purchases/{purchase_id}/adjust
+Body: `{ hours (≠ 0, ± with 2 decimals), reason }` → `{ purchase }`. Both
+`hours_total` and `hours_remaining` move by the delta. The balance can never
+go below zero: the hours bookings already drew stay theirs, and the 409 lists
+them (`blockers: [debit]`). Audited as `adjust` with the reason.
+
 ### PUT /admin/purchases/{purchase_id}/expiry
 "Prolongar validade" (A06). Body: `{ expires_at (tz-aware; later than the
 current expiry and in the future), reason (1–2000) }` → `{ purchase:
@@ -539,6 +669,10 @@ org's purchase or an unknown id.
 
 ### GET /admin/packages
 List packages for this org.
+
+### GET /admin/packages/:id
+`{ package, purchases: { total, active }, hours_outstanding }` (G04) —
+`active` = spendable now, `hours_outstanding` their remaining hours.
 
 ### POST /admin/packages
 Create a package.
