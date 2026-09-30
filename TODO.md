@@ -4809,11 +4809,12 @@ last day, a calendar day off within the first hour of a day across the
 autumn clock change — it now uses `bookingWindowLastDay()`. **DECISIONS:**
 (1) `/admin/rooms/[id]` is the room page; a space id there is looked up
 and redirected to `/admin/spaces/[id]`, where the rooms section (create,
-duplicate, activate) now lives. (2) The customer-facing contact reads the
-organisation's value through the public space detail's `contact` (G04);
-the frontend's `CONTACT_EMAIL` stays the fallback, wired in the settings
-page's description — the "Onde estamos" block itself keeps the constant
-until the org contact is set by an owner (no seed change). (3) Sign-in
+duplicate, activate) now lives. (2) "Onde estamos" (both the landing block and the rooms page) reads the
+organisation's contact from the public space detail's `contact` (G04) and
+falls back to `lib/contact.ts`'s constants when the owner set none
+(`942262b`); `WhereWeAre.test.tsx` and an api shape test cover both. The
+footer and the contact note keep the constant (the footer is not
+per-space). (3) Sign-in
 and the G03 reset pages already share the auth card layout; nothing to
 change. Sidebar: Dashboard · Calendário
 · Reservas · Clientes · Salas · Espaços · Pacotes · Banco de horas ·
