@@ -67,15 +67,33 @@ describe('/admin/support (C19)', () => {
     expect(within(dialog).getByText(/abc1234/)).toBeVisible()
   })
 
-  it('toggles a request between new and closed', async () => {
+  it('moves a request between new, in progress and closed with explicit actions (G04)', async () => {
     vi.mocked(adminApi.updateSupportRequest).mockResolvedValue(row('11111111-aaaa', { status: 'closed' }))
     const user = userEvent.setup()
     renderPage()
     const rows = await screen.findAllByRole('row')
+    // A new request: take it or close it; never "reopen".
+    expect(within(rows[1]).queryByRole('button', { name: /Reabrir/ })).toBeNull()
+    await user.click(within(rows[1]).getByRole('button', { name: /Marcar em curso/ }))
+    await waitFor(() => expect(adminApi.updateSupportRequest).toHaveBeenCalledWith('11111111-aaaa', 'in_progress', expect.anything()))
     await user.click(within(rows[1]).getByRole('button', { name: /Marcar como fechada/ }))
-    await waitFor(() => expect(adminApi.updateSupportRequest).toHaveBeenCalledWith('11111111-aaaa', 'closed', expect.anything()))
+    await waitFor(() => expect(adminApi.updateSupportRequest).toHaveBeenLastCalledWith('11111111-aaaa', 'closed', expect.anything()))
+    // A closed one: only reopen.
+    expect(within(rows[2]).queryByRole('button', { name: /Marcar como fechada/ })).toBeNull()
     await user.click(within(rows[2]).getByRole('button', { name: /Reabrir/ }))
     await waitFor(() => expect(adminApi.updateSupportRequest).toHaveBeenLastCalledWith('22222222-bbbb', 'new', expect.anything()))
+  })
+
+  it('an in-progress request can be closed or reopened, not taken again', async () => {
+    vi.mocked(adminApi.getSupportRequests).mockResolvedValue({
+      requests: [row('33333333-cccc', { status: 'in_progress' })], total: 1, page: 1, page_size: 20,
+    })
+    renderPage()
+    const rows = await screen.findAllByRole('row')
+    expect(within(rows[1]).getByText('Em curso')).toBeVisible()
+    expect(within(rows[1]).queryByRole('button', { name: /Marcar em curso/ })).toBeNull()
+    expect(within(rows[1]).getByRole('button', { name: /Marcar como fechada/ })).toBeVisible()
+    expect(within(rows[1]).getByRole('button', { name: /Reabrir/ })).toBeVisible()
   })
 
   it('filters by status', async () => {

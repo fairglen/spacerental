@@ -93,6 +93,20 @@ class TestRequest:
         assert resp.status_code == 202
         assert len(emails.sent) == 1
 
+    async def test_two_accounts_differing_only_by_case_get_the_exact_one_or_nobody(
+        self, client, emails, db_session, test_user
+    ):
+        # B37: `users.email` is unique case-sensitively, so this can exist.
+        db_session.add(User(email=test_user.email.upper(), name="Shouty", password_hash="x"))
+        await db_session.commit()
+        exact = await client.post(REQUEST, json={"email": test_user.email})
+        assert exact.status_code == 202
+        assert [m.to for m in emails.sent] == [test_user.email]
+        emails.sent.clear()
+        neither = await client.post(REQUEST, json={"email": test_user.email.title()})
+        assert neither.status_code == 202
+        assert emails.sent == []
+
     async def test_a_new_request_invalidates_the_older_unused_token(
         self, client, emails, db_session, test_user
     ):
@@ -344,20 +358,26 @@ class TestEmailHook:
         assert listed[0]["subject"]
         assert listed[0]["links"] == [_link(emails.sent[0])]
 
-    def test_the_hook_is_mounted_only_for_a_stub_outside_production(self):
-        assert test_hooks.should_mount(email_mode="stub", app_env="development") is True
-        assert test_hooks.should_mount(email_mode="stub", app_env="test") is True
-        assert test_hooks.should_mount(email_mode="stub", app_env="production") is False
-        assert test_hooks.should_mount(email_mode="live", app_env="development") is False
-        assert test_hooks.should_mount(email_mode="live", app_env="production") is False
+    def test_the_hook_needs_the_opt_in_a_stub_and_a_non_production_env(self):
+        on = {"enabled": True, "email_mode": "stub", "app_env": "development"}
+        assert test_hooks.should_mount(**on) is True
+        assert test_hooks.should_mount(**{**on, "app_env": "test"}) is True
+        assert test_hooks.should_mount(**{**on, "app_env": "staging"}) is True
+        assert test_hooks.should_mount(**{**on, "app_env": "production"}) is False
+        assert test_hooks.should_mount(**{**on, "email_mode": "live"}) is False
+        # The default: off, whatever the environment says.
+        assert test_hooks.should_mount(**{**on, "enabled": False}) is False
+        assert test_hooks.should_mount(enabled=False, email_mode="stub", app_env="test") is False
 
-    async def test_an_app_built_for_production_has_no_hook(self):
-        production = FastAPI()
-        test_hooks.mount(production, email_mode="stub", app_env="production")
-        async with AsyncClient(
-            transport=ASGITransport(app=production), base_url="http://test"
-        ) as c:
-            assert (await c.get("/__test__/emails")).status_code == 404
+    async def test_an_app_built_for_production_or_without_the_opt_in_has_no_hook(self):
+        for kwargs in (
+            {"enabled": True, "email_mode": "stub", "app_env": "production"},
+            {"enabled": False, "email_mode": "stub", "app_env": "development"},
+        ):
+            app_ = FastAPI()
+            assert test_hooks.mount(app_, **kwargs) is False
+            async with AsyncClient(transport=ASGITransport(app=app_), base_url="http://test") as c:
+                assert (await c.get("/__test__/emails")).status_code == 404
         development = FastAPI()
-        test_hooks.mount(development, email_mode="stub", app_env="development")
+        assert test_hooks.mount(development, enabled=True, email_mode="stub", app_env="development")
         assert any(getattr(r, "path", "") == "/__test__/emails" for r in development.routes)

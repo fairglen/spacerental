@@ -6,12 +6,14 @@ membership row: a person who is not a member is not there, whatever their id.
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import AwareDatetime
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +29,12 @@ from app.models.password_reset import PasswordResetToken
 from app.models.space import Room
 from app.models.support import SupportRequest
 from app.models.user import User
+from app.payments import (
+    CheckoutSessionCompletedError,
+    PaymentGateway,
+    PaymentProviderError,
+    get_payment_gateway,
+)
 from app.ratelimit import AUTH_TIER, rate_limit
 from app.schemas.admin_users import (
     AdminUserCreate,
@@ -164,7 +172,15 @@ async def admin_create_user(
         password_hash=hash_password(body.password) if body.password else None,
     )
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # A concurrent creation or registration with the same email won the
+        # unique index between the lookup above and this insert.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="An account with this email exists"
+        ) from None
     member = OrganizationMember(org_id=org_id, user_id=user.id, role=MemberRole.member)
     db.add(member)
     await db.flush()
@@ -207,6 +223,9 @@ async def admin_update_user(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="You cannot suspend your own account"
         )
+    # The account is global: renaming, re-addressing or suspending someone
+    # who also belongs to another organisation would reach into that tenant.
+    await _refuse_other_memberships(db, member)
     if "email" in changes and changes["email"].lower() != user.email.lower():
         taken = await db.scalar(
             select(func.count())
@@ -230,7 +249,13 @@ async def admin_update_user(
             action = "reactivate"
     for field, value in changes.items():
         setattr(user, field, value)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="An account with this email exists"
+        ) from None
     await db.refresh(user)
     await audit.record(
         db,
@@ -565,6 +590,9 @@ async def admin_set_password(
     account (the person still cannot sign in until it is reactivated)."""
     member = await _membership(db, user_id, org_id)
     user = member.user
+    # A password is the global credential: never set it for someone who also
+    # belongs to another organisation (the same rule as anonymisation).
+    await _refuse_other_memberships(db, member)
     await password_reset.set_password(db, user, hash_password(body.password))
     await audit.record(
         db,
@@ -646,7 +674,7 @@ async def admin_list_purchases(
     user_id: uuid.UUID | None = Query(default=None),
     package_id: uuid.UUID | None = Query(default=None),
     purchase_status: PurchaseStatus | None = Query(default=None, alias="status"),
-    expiring_before: datetime | None = Query(default=None),
+    expiring_before: AwareDatetime | None = Query(default=None),
     page: int = Query(default=1, ge=1, le=1_000_000),
     page_size: int = Query(default=20, ge=1, le=100),
     _: User = Depends(require_admin),
@@ -910,9 +938,13 @@ async def admin_delete_purchase(
     confirm: str | None = Query(default=None, max_length=255),
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    gateway: PaymentGateway = Depends(get_payment_gateway),
 ):
     """Hard delete (G02): only a purchase no money was paid for and no
-    booking ever drew on; a paid one is cancelled instead."""
+    booking ever drew on; a paid one is cancelled instead. A `pending`
+    purchase still has a payable Checkout Session: it is expired at the
+    provider first, and one that already completed keeps the row (409) so
+    the webhook can still activate it."""
     purchase = await db.scalar(
         select(UserPackagePurchase)
         .options(selectinload(UserPackagePurchase.package))
@@ -931,6 +963,19 @@ async def admin_delete_purchase(
             "The purchase was paid for or has been drawn on; cancel it instead",
             {"amount_paid": f"{purchase.amount_paid:.2f}", "debits": debits or 0},
         )
+    if purchase.stripe_checkout_session_id:
+        try:
+            await gateway.expire_checkout_session(purchase.stripe_checkout_session_id)
+        except CheckoutSessionCompletedError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payment already received for this purchase; waiting for confirmation",
+            ) from None
+        except PaymentProviderError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not close the payment session",
+            ) from exc
     before = audit.snapshot(purchase)
     await db.delete(purchase)
     await db.flush()

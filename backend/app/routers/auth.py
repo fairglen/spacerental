@@ -220,6 +220,21 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
     return TokenOut(access_token=token, user=UserOut.model_validate(user), role=role)
 
 
+async def _user_by_email(db: AsyncSession, email: str) -> User | None:
+    """The account for an address, matched without regard to case. `users.email`
+    is unique case-sensitively (B37), so two accounts may differ only by case:
+    then the exact spelling wins, and with no exact match nobody does — the
+    endpoint must never pick one of two people."""
+    rows = (
+        (await db.execute(select(User).where(func.lower(User.email) == email.lower())))
+        .scalars()
+        .all()
+    )
+    if len(rows) == 1:
+        return rows[0]
+    return next((u for u in rows if u.email == email), None)
+
+
 RESET_REQUESTED = (
     "Se existir uma conta com este email, vai receber uma ligação para repor a password."
 )
@@ -237,7 +252,7 @@ async def request_password_reset(
     """Always the same 202, whether or not the email exists or the account
     is enabled (G03): this endpoint must not say who has an account. When it
     does exist and is enabled, one email with a single-use, one-hour link."""
-    user = await db.scalar(select(User).where(func.lower(User.email) == body.email.lower()))
+    user = await _user_by_email(db, body.email)
     if user is not None and user.disabled_at is None:
         raw = await password_reset.issue(db, user, now=clock.utcnow())
         email.enqueue_email(

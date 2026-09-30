@@ -19,6 +19,8 @@ TEST_DATABASE_URL = os.getenv(
 )
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["SECRET_KEY"] = "test-secret-key-32-chars-min-test-test"
+# The stub mailbox hook (G03) is an opt-in; the suite tests it.
+os.environ["TEST_HOOKS_ENABLED"] = "true"
 # Uploaded photos go to a throwaway directory, never into the checkout (C14).
 os.environ["MEDIA_ROOT"] = tempfile.mkdtemp(prefix="spacerental-test-media-")
 

@@ -7,10 +7,10 @@ tenant's rows can be learned here.
 """
 
 import uuid
-from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import AwareDatetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -66,8 +66,10 @@ async def admin_list_audit(
     entity_type: EntityType | None = Query(default=None),
     entity_id: uuid.UUID | None = Query(default=None),
     actor: uuid.UUID | None = Query(default=None),
-    from_time: datetime | None = Query(default=None, alias="from"),
-    to_time: datetime | None = Query(default=None, alias="to"),
+    # Aware instants only: `created_at` is TIMESTAMPTZ and a naive value would
+    # reach asyncpg as one it cannot compare (a 500 instead of a 422).
+    from_time: AwareDatetime | None = Query(default=None, alias="from"),
+    to_time: AwareDatetime | None = Query(default=None, alias="to"),
     page: int = Query(default=1, ge=1, le=1_000_000),
     page_size: int = Query(default=20, ge=1, le=100),
     _: User = Depends(require_admin),

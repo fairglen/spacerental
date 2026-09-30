@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -66,6 +67,8 @@ from app.schemas.space import (
     SpaceOut,
     SpaceUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -303,11 +306,16 @@ async def admin_delete_space(
 
 
 async def _delete_photo_files(storage: MediaStorage, photos: list[dict]) -> None:
-    # After the rows are gone: an orphan file is a nuisance, a dangling row a bug.
+    # After the rows are gone. A file that will not go is logged, never
+    # raised: an orphan file is a nuisance, a rolled-back delete that left
+    # some files already gone would be a dangling row.
     for photo in photos:
         for key in (photo.get("key"), photo.get("thumb_key")):
             if key:
-                await storage.delete(key)
+                try:
+                    await storage.delete(key)
+                except OSError:
+                    logger.exception("Could not delete media file %s", key)
 
 
 # ─── Rooms ────────────────────────────────────────────────────────────────────
@@ -1434,13 +1442,16 @@ async def admin_delete_booking(
     reason: str | None = Query(default=None, max_length=2000),
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    gateway: PaymentGateway = Depends(get_payment_gateway),
     lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
     """Hard delete (G02): "delete" is cancel. Only a booking that never held
     money and holds no pack hours may go: an expired hold; a cancelled one
     with amount 0 and no debit rows; or an operator's `manual` booking, with
-    a reason. Anything else is a 409 "cancel instead". The trail keeps the
-    whole booking."""
+    a reason. Anything else is a 409 "cancel instead". An expired hold's
+    Checkout Session is still payable (the webhook accepts a late payment,
+    C03), so it is expired at the provider first — a session that already
+    completed keeps the row (409). The trail keeps the whole booking."""
     booking = await _locked_booking(db, booking_id, org_id)
     deletion.require_confirm(confirm, booking.id)
     debits = await db.scalar(
@@ -1464,6 +1475,19 @@ async def admin_delete_booking(
             status_code=status.HTTP_409_CONFLICT,
             detail="This booking held money or pack hours; cancel it instead",
         )
+    if booking.stripe_checkout_session_id:
+        try:
+            await gateway.expire_checkout_session(booking.stripe_checkout_session_id)
+        except CheckoutSessionCompletedError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payment already received for this booking; waiting for confirmation",
+            ) from None
+        except PaymentProviderError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not close the payment session",
+            ) from exc
     before = audit.snapshot(booking)
     await db.delete(booking)
     await db.flush()
@@ -1549,14 +1573,15 @@ async def admin_get_package(
     )
     live = UserPackagePurchase.status == PurchaseStatus.active
     unexpired = UserPackagePurchase.expires_at > now
+    spendable = UserPackagePurchase.hours_remaining > 0
     active = await db.scalar(
         select(func.count())
         .select_from(UserPackagePurchase)
-        .where(UserPackagePurchase.package_id == package.id, live, unexpired)
+        .where(UserPackagePurchase.package_id == package.id, live, unexpired, spendable)
     )
     outstanding = await db.scalar(
         select(func.coalesce(func.sum(UserPackagePurchase.hours_remaining), 0)).where(
-            UserPackagePurchase.package_id == package.id, live, unexpired
+            UserPackagePurchase.package_id == package.id, live, unexpired, spendable
         )
     )
     return PackageDetailOut(

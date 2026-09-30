@@ -754,6 +754,12 @@ class TestReading:
             headers=w.headers,
         )
         assert bad.status_code == 422
+        naive = await client.get(
+            f"{API}/admin/audit",
+            params={**w.params, "from": "2026-09-30T10:00:00"},
+            headers=w.headers,
+        )
+        assert naive.status_code == 422
 
     async def test_history_of_one_entity_and_nothing_across_tenants(self, client, w):
         await self._seed(client, w)

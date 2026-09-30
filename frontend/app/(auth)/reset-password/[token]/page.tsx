@@ -68,9 +68,9 @@ export default function ResetPasswordPage({ params }: { params: { token: string 
                 <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
                   A ligação é inválida ou já expirou. Peça uma nova ligação para repor a password.
                 </p>
-                <Link href="/forgot-password" className="block">
-                  <Button type="button" className="w-full">Pedir nova ligação</Button>
-                </Link>
+                <Button asChild className="w-full">
+                  <Link href="/forgot-password">Pedir nova ligação</Link>
+                </Button>
               </div>
             ) : (
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

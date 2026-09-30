@@ -220,11 +220,13 @@ interfaces. `STRIPE_MODE`, `EMAIL_MODE` and `SEAM_MODE` default to `stub`; all t
 run without third-party accounts or network access.
 
 **Email** (`backend/app/email.py`): with `EMAIL_MODE=stub` (the default)
-every message is logged and kept in process memory, and — outside
-`APP_ENV=production` — listed by `GET /__test__/emails` (the last 20: to,
-subject, links). That hook is how the password-reset browser test follows the
-link nobody can otherwise receive locally; the same route does not exist on
-a production app, and `tests/test_password_reset.py` proves it. The reset
+every message is logged and kept in process memory, and — with the explicit
+opt-in `TEST_HOOKS_ENABLED=true` (the dev Compose stack sets it; the app's
+default is off) outside `APP_ENV=production` — listed by `GET
+/__test__/emails` (the last 20: to, subject, links). That hook is how the
+password-reset browser test follows the link nobody can otherwise receive
+locally; the route does not exist without the opt-in or on a production
+app, and `tests/test_password_reset.py` proves both. The reset
 flow itself: `POST /auth/password-reset/request` always answers 202 with the
 same sentence (nobody learns whether an email has an account); the link in
 the email is single-use and lives 60 minutes; `POST /auth/password-reset/

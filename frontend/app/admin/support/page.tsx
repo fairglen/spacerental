@@ -113,20 +113,32 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
                           : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant={r.status === 'new' ? 'default' : 'secondary'}>{STATUS_LABELS[r.status]}</Badge>
+                        <Badge variant={r.status === 'closed' ? 'secondary' : 'default'}>{STATUS_LABELS[r.status]}</Badge>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex gap-1">
                           <Button size="sm" variant="outline" onClick={() => setOpenRow(r)} aria-label={`Ver pedido #${r.reference}`}>Ver pedido</Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={update.isPending}
-                            onClick={() => update.mutate({ id: r.id, next: r.status === 'new' ? 'closed' : 'new' })}
-                            aria-label={r.status === 'new' ? `Marcar como fechada #${r.reference}` : `Reabrir #${r.reference}`}
-                          >
-                            {r.status === 'new' ? 'Marcar como fechada' : 'Reabrir'}
-                          </Button>
+                          {r.status === 'new' && (
+                            <Button size="sm" variant="ghost" disabled={update.isPending}
+                              onClick={() => update.mutate({ id: r.id, next: 'in_progress' })}
+                              aria-label={`Marcar em curso #${r.reference}`}>
+                              Em curso
+                            </Button>
+                          )}
+                          {r.status !== 'closed' && (
+                            <Button size="sm" variant="ghost" disabled={update.isPending}
+                              onClick={() => update.mutate({ id: r.id, next: 'closed' })}
+                              aria-label={`Marcar como fechada #${r.reference}`}>
+                              Marcar como fechada
+                            </Button>
+                          )}
+                          {r.status !== 'new' && (
+                            <Button size="sm" variant="ghost" disabled={update.isPending}
+                              onClick={() => update.mutate({ id: r.id, next: 'new' })}
+                              aria-label={`Reabrir #${r.reference}`}>
+                              Reabrir
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

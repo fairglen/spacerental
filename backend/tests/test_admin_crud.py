@@ -440,6 +440,40 @@ class TestUsers:
         )
         assert me.status_code == 409
 
+    async def test_global_edits_are_refused_for_a_member_of_another_organisation(
+        self, client, db_session, w
+    ):
+        # The account is shared with org B: A's operator cannot rename it,
+        # re-address it, suspend it or set its password.
+        db_session.add(
+            OrganizationMember(org_id=w.other_org.id, user_id=w.member.id, role=MemberRole.member)
+        )
+        await db_session.commit()
+        for body in (
+            {"name": "X"},
+            {"email": "x@test.com"},
+            {"disabled_at": datetime.now(tz=UTC).isoformat()},
+        ):
+            resp = await client.put(
+                f"{API}/admin/users/{w.member.id}", params=w.params, json=body, headers=w.headers
+            )
+            assert resp.status_code == 409, resp.text
+        pw = await client.post(
+            f"{API}/admin/users/{w.member.id}/set-password",
+            params=w.params,
+            json={"password": "definida123"},
+            headers=w.headers,
+        )
+        assert pw.status_code == 409
+        user = await db_session.get(User, w.member.id)
+        await db_session.refresh(user)
+        assert (user.name, user.email, user.disabled_at, user.token_version) == (
+            "Member A",
+            "member-a@test.com",
+            None,
+            0,
+        )
+
     async def test_list_filters_and_sort(self, client, db_session, w):
         w.member.disabled_at = datetime.now(tz=UTC)
         await db_session.commit()
@@ -461,7 +495,7 @@ class TestUsers:
 
 
 class TestPackages:
-    async def test_the_detail_counts_purchases_and_outstanding_hours(self, client, w):
+    async def test_the_detail_counts_purchases_and_outstanding_hours(self, client, db_session, w):
         resp = await client.get(
             f"{API}/admin/packages/{w.package.id}", params=w.params, headers=w.headers
         )
@@ -470,6 +504,15 @@ class TestPackages:
         assert body["package"]["name"] == "Pack 10"
         assert body["purchases"] == {"total": 1, "active": 1}
         assert body["hours_outstanding"] == "10.00"
+        # A used-up purchase is not "active" in the spendable sense.
+        w.purchase.hours_remaining = Decimal("0.00")
+        w.purchase.hours_used = Decimal("10.00")
+        await db_session.commit()
+        resp = await client.get(
+            f"{API}/admin/packages/{w.package.id}", params=w.params, headers=w.headers
+        )
+        assert resp.json()["purchases"] == {"total": 1, "active": 0}
+        assert resp.json()["hours_outstanding"] == "0.00"
 
 
 class TestPurchases:
@@ -512,6 +555,12 @@ class TestPurchases:
         assert await ids(package_id=str(uuid.uuid4())) == []
         cutoff = (datetime.now(tz=UTC) + timedelta(days=30)).isoformat()
         assert await ids(expiring_before=cutoff) == [str(soon.id)]
+        naive = await client.get(
+            f"{API}/admin/purchases",
+            params={**w.params, "expiring_before": "2026-09-30T10:00:00"},
+            headers=w.headers,
+        )
+        assert naive.status_code == 422
         listed = await client.get(f"{API}/admin/purchases", params=w.params, headers=w.headers)
         assert listed.json()["total"] == 2
         assert listed.json()["purchases"][0]["user"]["email"] == "member-a@test.com"

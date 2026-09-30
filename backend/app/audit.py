@@ -30,7 +30,7 @@ from app.schemas.organization import OrganizationOut
 from app.schemas.package import AdminPurchaseOut, PackageOut
 from app.schemas.room_block import RoomBlockOut
 from app.schemas.space import AvailabilityRuleOut, RoomOut, SpaceOut
-from app.schemas.support import SupportRequestOut
+from app.schemas.support import SupportRequestDetailOut
 
 # Set per request by `RequestIdMiddleware`; None outside a request (a script).
 request_id_var: ContextVar[str | None] = ContextVar("audit_request_id", default=None)
@@ -47,7 +47,7 @@ _ENTITIES: dict[type, tuple[str, type[BaseModel]]] = {
     User: ("user", AuditUserOut),
     Package: ("package", PackageOut),
     UserPackagePurchase: ("purchase", AdminPurchaseOut),
-    SupportRequest: ("support_request", SupportRequestOut),
+    SupportRequest: ("support_request", SupportRequestDetailOut),
     Organization: ("organization", OrganizationOut),
 }
 ENTITY_TYPES = frozenset(name for name, _ in _ENTITIES.values())

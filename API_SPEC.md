@@ -589,7 +589,9 @@ sign in until reactivated). Audited as `password.set` without the value. Auth
 rate-limit tier.
 
 ### GET /__test__/emails
-**Local only.** Mounted when `EMAIL_MODE=stub` and `APP_ENV != production`:
+**Local only.** Mounted only with the explicit opt-in `TEST_HOOKS_ENABLED=true`
+(off by default; the dev Compose stack sets it), `EMAIL_MODE=stub` and
+`APP_ENV != production`:
 `{ emails: [{ to, subject, links }] }`, the last 20 messages the stub gateway
 "sent", so a browser test can follow a reset link. Absent from a production
 app.

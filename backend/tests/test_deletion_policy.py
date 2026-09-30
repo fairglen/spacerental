@@ -8,18 +8,19 @@ cancelled unless it never held money or pack hours.
 """
 
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.models.audit import AdminAction
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import MemberRole, OrganizationMember
-from app.models.package import BookingPackageDebit, Package, UserPackagePurchase
+from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
 from app.models.password_reset import PasswordResetToken
 from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule, Room, Space
 from app.models.support import SupportRequest
 from app.models.user import User
+from app.payments import CheckoutKind, CheckoutSessionCompletedError
 from sqlalchemy import func, select
 
 from tests.test_audit import API, _headers, _monday, w  # noqa: F401 — the fixture
@@ -389,6 +390,85 @@ class TestBooking:
             headers=w.headers,
         )
         assert rebooked.status_code == 201, rebooked.text
+
+
+class TestPayableSessions:
+    async def test_deleting_an_expired_hold_expires_its_checkout_session_first(
+        self, client, db_session, w, payments
+    ):
+        # A late payment on a deleted row would have no booking to confirm.
+        session = await payments.create_checkout_session(
+            amount=Decimal("11.00"),
+            description="x",
+            kind=CheckoutKind.booking,
+            reference_id=w.pending.id,
+            org_id=w.org.id,
+        )
+        w.pending.stripe_checkout_session_id = session.id
+        w.pending.status = BookingStatus.expired
+        await db_session.commit()
+        assert session.id in payments.sessions
+        resp = await client.delete(
+            f"{API}/admin/bookings/{w.pending.id}",
+            params={**w.params, "confirm": _short(w.pending.id)},
+            headers=w.headers,
+        )
+        assert resp.status_code == 204, resp.text
+        assert session.id not in payments.sessions
+        assert await _count(db_session, Booking, Booking.id == w.pending.id) == 0
+
+    async def test_a_session_already_paid_keeps_the_booking(
+        self, client, db_session, w, payments, monkeypatch
+    ):
+        w.pending.stripe_checkout_session_id = "cs_stub_paid"
+        w.pending.status = BookingStatus.expired
+        await db_session.commit()
+
+        async def completed(session_id):
+            raise CheckoutSessionCompletedError(session_id)
+
+        monkeypatch.setattr(payments, "expire_checkout_session", completed)
+        resp = await client.delete(
+            f"{API}/admin/bookings/{w.pending.id}",
+            params={**w.params, "confirm": _short(w.pending.id)},
+            headers=w.headers,
+        )
+        assert resp.status_code == 409
+        assert await _count(db_session, Booking, Booking.id == w.pending.id) == 1
+
+    async def test_deleting_a_pending_purchase_expires_its_session_first(
+        self, client, db_session, w, payments
+    ):
+        pending = UserPackagePurchase(
+            user_id=w.member.id,
+            package_id=w.package.id,
+            org_id=w.org.id,
+            hours_total=Decimal("10.00"),
+            hours_used=Decimal("0.00"),
+            hours_remaining=Decimal("10.00"),
+            amount_paid=Decimal("0.00"),
+            status=PurchaseStatus.pending,
+            purchased_at=datetime.now(tz=UTC),
+            expires_at=datetime.now(tz=UTC) + timedelta(days=365),
+        )
+        db_session.add(pending)
+        await db_session.flush()
+        session = await payments.create_checkout_session(
+            amount=Decimal("100.00"),
+            description="x",
+            kind=CheckoutKind.package_purchase,
+            reference_id=pending.id,
+            org_id=w.org.id,
+        )
+        pending.stripe_checkout_session_id = session.id
+        await db_session.commit()
+        resp = await client.delete(
+            f"{API}/admin/purchases/{pending.id}",
+            params={**w.params, "confirm": _short(pending.id)},
+            headers=w.headers,
+        )
+        assert resp.status_code == 204, resp.text
+        assert session.id not in payments.sessions
 
 
 class TestUser:
