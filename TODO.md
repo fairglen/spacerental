@@ -125,6 +125,14 @@ did not give are taken the conservative way, recorded under the task and
 tagged `DECISION:` in the commit body. Commits stay local; the owner reviews
 and opens the PRs.
 
+**Admin CRUD, customer credit and brand (2026-09-30, after #64):** by
+explicit owner assignment, delivered unattended in four stacked parts that
+become four PRs the loop opens and never merges: `feat/admin-crud-backend`
+(G01–G04), `feat/admin-crud-ui` (G05–G06),
+`feat/customer-credit-pack-upsell-notifications` (K01–K03), `feat/brand-logo`
+(B50). Recorded as the G/K/B series near the end of this file, with the
+owner's decisions and the CRUD matrix the admin parts start from.
+
 States used below:
 
 - **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
@@ -4275,7 +4283,8 @@ click. Links V06, V07, R01, C09.
 ## Site copy and form tweaks (M-series) — owner assignment 2026-09-23
 
 Branch `fix/site-copy-form-tweaks`, one PR — [PR #64](https://github.com/fairglen/spacerental/pull/64),
-opened by the loop with CI green (unit, e2e; backend jobs path-filtered,
+**merged as `8ec27cd` on 2026-09-30** (the owner redeployed the Apps Script
+first, per M01). Opened by the loop with CI green (unit, e2e; backend jobs path-filtered,
 nothing under `backend/` changed; locally pytest 663, Vitest 546, tsc,
 `next build`, Playwright 48/48, static smoke 33, node tests 44). Merging is
 the owner's call because M01 needs the Apps Script redeployed FIRST. Binding as ever: formal register, tests with every change, nothing
@@ -4285,9 +4294,8 @@ parity table).
 
 ### M01 — Remove "Especialidade" from the static site's contact form
 
-**Priority: P1. State: IN PROGRESS** — implemented on
-`fix/site-copy-form-tweaks`; DONE only once the Apps Script is redeployed AND
-the PR merged, in that order. **Before this task** the `#especialidade`
+**Priority: P1. State: DONE** — merged on main in `8ec27cd` (#64) after the
+Apps Script redeploy. **Before this task** the `#especialidade`
 select was validated client-side (`contact-form.js`: `ALLOWED_ESPECIALIDADE`,
 required) and server-side (`apps-script/Code.gs`: required + allowlist); both
 are gone from the client and the server now treats the field as optional —
@@ -4339,8 +4347,7 @@ the top of the PR description. Links F01, S27, B49.
 
 ### M02 — Recurring booking card: at least 4 hours a week
 
-**Priority: P2. State: IN PROGRESS** — implemented on
-`fix/site-copy-form-tweaks`; DONE only once merged. **Evidence
+**Priority: P2. State: DONE** — merged on main in `8ec27cd` (#64). **Evidence
 (2026-09-23):** the card's line reads "Negociado a partir de 4 horas
 semanais." and nothing else on the card changed. Grep of both sites for the
 recurring arrangement's number (`3+`, `3 horas`, `three hours`, `semanais`
@@ -4361,8 +4368,7 @@ no prose pin. Links F01, W01, Q-H04 (prices stay untouched).
 
 ### M03 — "Onde estamos": drop the venue name line
 
-**Priority: P2. State: IN PROGRESS** — implemented on
-`fix/site-copy-form-tweaks`; DONE only once merged. **Evidence
+**Priority: P2. State: DONE** — merged on main in `8ec27cd` (#64). **Evidence
 (2026-09-23):** app — `WhereWeAre` no longer renders the `<p>` with
 `space.name`; the heading's next sibling is the `where-lines` list; the name
 still titles the map iframe ("Mapa de {name}", not visible text).
@@ -4383,6 +4389,435 @@ is rendered and the line order hours → email → address → "Como chegar" is
 unchanged. Static — `<p class="where-name">FlowSpace</p>` removed with its
 CSS rule; smoke structural. Both sites still match (L03's parity table
 updated). Links L04, L03, V06, V07.
+
+## Admin CRUD, customer credit and brand (G/K/B series) — owner assignment 2026-09-30
+
+One assignment in FOUR sequential parts, each on its own branch stacked on
+the previous one and published as its own PR by the loop (never merged by
+it): **Part A1** `feat/admin-crud-backend` (from main `8ec27cd`, #64) — G01
+audit log, G02 deletion policy, G03 password reset flow, G04 the missing
+admin endpoints; **Part A2** `feat/admin-crud-ui` — G05 the shared admin
+CRUD kit and G06 every entity page; **Part C**
+`feat/customer-credit-pack-upsell-notifications` — K01 cancellation credit
+in hours, K02 pack upsell when the bank cannot cover a booking, K03 support
+notifications both ways; **Part L** `feat/brand-logo` — B50 the new logo on
+both sites. Links: A01–A07 (operator tooling this completes), O05 (G01 is
+its minimal mandatory scope), O02 (K01 supersedes cash refunds for
+cancellations), H02 (the hour bank K01 credits into), C13 (mixed payment),
+C07 (cancellation eligibility), C15–C19 (photos, help requests, inbox),
+F01 (the static site B50 changes). Binding: tenant lookup BEFORE any other
+validation (403/404 before any detail leaks), `require_admin` per org,
+wrapped responses, Decimal money, formal register, `frontend/lib/api.ts`
+only, an Alembic migration for every schema change, tests with every
+change, nothing weakened, no new dependencies. Out of scope everywhere:
+money refunds (O02 stays deferred), recurring bookings (code stays, flag
+off), prices, multi-org UX beyond what exists, RLS, bulk edits (follow-up),
+new dependencies.
+
+**Decisions taken by the owner (recorded, not re-opened):** admins can BOTH
+set a user's password directly AND send the self-service reset link (the
+reset flow did not exist; G03 builds it). A booking price override with a
+required reason is allowed; no money moves. A user is never hard-deleted
+while anything references them; "delete" is anonymisation. Cancelling a PAID
+booking never refunds money; the paid hours are credited to the customer's
+hour bank (K01). When the bank cannot cover a booking the customer is
+offered a new pack as well as paying the remainder (K02). Every support
+request emails the requester a copy and the support inbox
+`geral+support@flowspace.pt` (K03). Credit is in HOURS, not euros (K01
+records the caveat).
+
+**Decisions the loop took (each tagged `DECISION:` in its commit; the
+alternative is one commit away):** see each task. The brand task is **B50**:
+the owner asked for "series B for brand", and the B-series here is the bug
+series (B14–B49), so the brand item continues its numbering rather than
+colliding with it.
+
+### G01 — Audit log: `admin_actions` (O05, minimal and mandatory)
+
+**Priority: P1. State: QUEUED (Part A1).** **Scope:** table `admin_actions`
+(id, org_id, actor_user_id nullable SET NULL, entity_type, entity_id,
+action, before JSONB, after JSONB, reason Text nullable, request_id,
+created_at) with indexes (org_id, entity_type, entity_id, created_at desc)
+and (org_id, created_at desc); one migration. One helper
+`audit.record(db, *, actor, org_id, entity, action, before, after, reason)`
+that serialises with the entity's PUBLIC schema (password hashes, reset
+tokens and token versions never land in JSON — negative test), stores only
+the changed keys plus identifiers, and runs in the SAME transaction as the
+change (a rollback writes nothing). Wired into EVERY existing admin
+mutation (bookings, users, packages, purchases, spaces, rooms, availability,
+blocks, photos, support) and every new one in G02–G04. Read endpoints
+`GET /admin/audit?entity_type=&entity_id=&actor=&from=&to=&page=`
+(org-scoped, paginated, newest first) and `GET /admin/<entity>/{id}/history`
+with the same shape. Retention: deferred (record only). **Validation:** a
+test parametrised over the admin mutation route table asserts each writes
+exactly one row (a future endpoint without an entry fails the
+classification test); rollback writes none; the negative secrets test;
+wrong-role/org denial; API shape tests.
+
+### G02 — Deletion policy (recorded, then enforced)
+
+**Priority: P1. State: QUEUED (Part A1).** **Policy:** deleting
+money-bearing or history-bearing rows is never a plain DELETE. Space:
+`is_active` is the normal delete; hard `DELETE /admin/spaces/{id}` only when
+no room of the space has any booking ever, otherwise 409 listing blockers.
+Room: soft via `is_active` (A07's future-bookings 409 kept); hard
+`DELETE /admin/rooms/{id}` only with zero bookings and zero blocks ever,
+photos removed with it. Availability rule: replace-all stays; per-rule
+`DELETE /admin/rooms/{id}/availability/{rule_id}`. Booking: "delete" is
+cancel; hard `DELETE /admin/bookings/{id}` only when the booking never held
+money and holds no pack hours (`expired`; or `cancelled` with amount 0 and
+no debit rows; or admin-created `manual` with a `reason`) — otherwise 409
+"cancel instead"; the audit row keeps the full `before`. User: never
+hard-deleted while any booking/purchase references them;
+`POST /admin/users/{id}/anonymise` replaces name/email/avatar with
+placeholders (`utilizador-<short id>@anon.invalid`), sets `disabled_at`,
+revokes sessions (`users.token_version`, checked by the JWT dependency),
+invalidates open reset tokens, removes the membership, keeps bookings and
+purchases; hard `DELETE /admin/users/{id}` only when nothing references the
+user. `disabled_at` also backs "Suspender / Reativar": a disabled user
+cannot sign in (401 with a distinct detail), request a reset, or use a
+token (so cannot book). Membership: `DELETE /admin/users/{id}/membership`
+(not yourself; not the last owner — 409). Package: `is_active` is the
+delete; hard `DELETE` only with zero purchases. Package purchase: `status:
+cancelled` with a reason is the delete (no money moves; `hours_remaining` →
+0, debits untouched); hard `DELETE` only with no debit rows and
+`amount_paid` 0. Support request: hard `DELETE` allowed (spam), audited
+with `before`. Organisation: not deletable from the panel. Every hard
+delete, the membership removal and anonymisation require
+`?confirm=<entity name or short id>` (the first 8 hex characters of the
+id) matching, else 422. **DECISIONS:** (1) today's `DELETE
+/admin/spaces/{id}` was a SOFT delete (`is_active=false`; the inventory
+said "hard-delete only" — wrong); no UI calls it (the list page deactivates
+through `PUT`), so the verb becomes the guarded hard delete and soft stays
+on `PUT is_active` — alt: keep DELETE soft and add `/purge`. (2) A rule or
+block delete needs no `confirm`: both are recreated in one click and the
+replace-all path deleted rules without one already — alt: confirm
+everywhere. (3) Anonymisation refuses (409) a user who is also a member of
+ANOTHER organisation: the user row is global and an operator's authority is
+not — alt: strip only this org's membership and anonymise anyway. (4)
+Anonymising yourself or the org's last owner is refused (the membership
+rule). **Validation:** each guard's 409 with blockers and the gone-plus-
+audited path; anonymise keeps bookings, revokes an old JWT, kills reset
+tokens; cross-tenant 403/404 with no leak (S01 matrix).
+
+### G03 — Password reset: customer self-service and admin trigger
+
+**Priority: P1. State: QUEUED (Part A1).** **Scope:** table
+`password_reset_tokens` (id, user_id, token_hash, expires_at, used_at,
+created_by_admin_id nullable, created_at): only the SHA-256 of a 32-byte
+urlsafe token is stored; TTL 60 minutes; single use; a new request
+invalidates the user's older unused tokens. `POST
+/auth/password-reset/request` (public, auth rate-limit tier, body `email`):
+ALWAYS 202 with the same body whether or not the email exists or the user
+is disabled; when it exists and is enabled, one email
+(`password_reset_email(to, link)`, link
+`<FRONTEND_URL>/reset-password/<token>`). `POST
+/auth/password-reset/confirm` (token, new password ≥ 8): 400 for
+invalid/expired/used; success sets the password, marks the token used,
+bumps `token_version` so older JWTs are rejected. Frontend: "Esqueceu-se da
+password?" on sign-in → `/forgot-password` (always "Se existir uma conta
+com este email, vai receber uma ligação…") and `/reset-password/[token]`
+(new password + confirm → sign-in with a success notice; invalid/expired →
+message + link to request anew). Admin: `POST
+/admin/users/{id}/password-reset` sends the same email (records
+`created_by_admin_id`, audited; 409 if disabled); `POST
+/admin/users/{id}/set-password` (≥ 8, bumps `token_version`, invalidates
+open tokens, audited WITHOUT the value, auth rate limit). Admin-created
+users (G04) with no `password` get a token and a "Defina a sua password"
+variant; the response never contains a password. Test hook `GET
+/__test__/emails` (last 20: to, subject, links) mounted ONLY when
+`EMAIL_MODE=stub` and `APP_ENV != production` (new setting `APP_ENV`,
+default `development`), with a test proving it is absent otherwise.
+**Validation (real PG):** unknown email and disabled user both 202 and send
+nothing; known user gets one email with a working link; single use;
+expiry; a new request invalidates the old; confirm bumps `token_version` so
+an old JWT is rejected; admin trigger and set-password audited without
+secrets; rate limit. Playwright: forgot → link from the hook → reset → sign
+in.
+
+### G04 — Missing admin endpoints (tenant-scoped, audited, tested)
+
+**Priority: P1. State: QUEUED (Part A1).** Add only what the matrix below
+lacks; nothing that works is rewritten. **Scope:** Spaces `GET
+/admin/spaces/{id}` (rooms, rule summary, photo count, booking counts).
+Rooms `GET /admin/rooms/{id}` (rules, blocks next 30 days, photos, counts);
+`DELETE` per G02; `POST /admin/rooms/{id}/duplicate` (rules, amenities,
+capacity, rate; not photos; name + " (cópia)"); per-rule `DELETE`; `POST
+/admin/rooms/{id}/availability/copy-to-all-days`. Bookings `GET
+/admin/bookings/{id}` (customer, room, method, amount, pack debits per
+purchase, access code, notes, admin_note, hold expiry, Stripe id, history);
+the list gains `q` (customer name/email, short id), `payment_method`,
+`sort` (start_time|created_at ±), `include_cancelled`; `PUT` gains `notes`
+and the price override `total_amount` + required `reason` (no
+charge/refund; audited; the dashboard shows the new amount); status may be
+set to any value incl. `completed` and back under the existing slot/pack
+settle rules; `DELETE` per G02. Users `POST /admin/users` (name, email,
+optional password per G03; enrolled as `member`; 409 duplicate); `PUT
+/admin/users/{id}` (name, email with 409, `disabled_at`); anonymise and
+membership delete per G02; the list gains `role`, `disabled`, `sort`.
+Packages `GET /admin/packages/{id}` (purchase counts, hours outstanding);
+`DELETE` per G02. Purchases `GET /admin/purchases` (filters user, package,
+status, expiring_before; paginated), `GET /admin/purchases/{id}` (debits →
+bookings), `POST /admin/purchases/{id}/adjust` (hours delta ±, reason
+required; cannot go below the hours debited to active bookings — 409
+listing them), `PUT /admin/purchases/{id}` (status, admin_note), `DELETE`
+per G02; the expiry and complimentary endpoints stay. Support `GET
+/admin/support/requests/{id}` (full message, context, linked booking/user);
+`PUT` gains `admin_note` and status `new|in_progress|closed` (enum
+migration); `DELETE` per G02. Organisation `GET/PUT /admin/organization` —
+name, contact email, contact phone (nullable), default timezone; slug
+read-only; PUT owner-only (`require_owner`, new); the public space detail
+carries the org's contact so the customer-facing constant can read the org
+value when set (the frontend wiring is G06). `API_SPEC.md` for all of the
+above, the deletion policy table, the reset flow and `confirm`.
+**DECISIONS:** (1) the support detail/delete keep the existing
+`/admin/support/requests/...` prefix rather than adding a second path
+shape. (2) `include_cancelled` defaults to true (today's list shows
+cancelled rows; a default of false would hide them from the existing
+table). (3) Organisation contact/timezone live in the existing
+`organizations.settings` JSON column (Q-A12's design; no schema change),
+validated by a typed schema — alt: three typed columns and a migration.
+**Validation (real PG) per endpoint:** happy path; validation; cross-tenant
+403/404 with no leak (each new route in the S01 matrix); delete guards;
+anonymise keeps bookings, revokes JWT, kills reset tokens; adjust below
+debited → 409; org PUT by an admin → 403; price override without reason →
+422; the parametrised audit test.
+
+**CRUD matrix (verified against main `8ec27cd` before implementation;
+corrections to the owner's inventory in bold).** UI column = today's
+panel; "state" says which task fills the gap.
+
+| Entity × operation | Backend today | UI today | State |
+|---|---|---|---|
+| Space · create | `POST /admin/spaces` ✓ | `/admin/spaces/new` ✓ | done |
+| Space · read list | `GET /admin/spaces` ✓ (rooms embedded) | `/admin/spaces` ✓ | done |
+| Space · read one | none | none | G04 `GET /admin/spaces/{id}` |
+| Space · update | `PUT /admin/spaces/{id}` ✓ | inline edit on the list page; no page | G06 `/admin/spaces/[id]` |
+| Space · deactivate | `PUT is_active` ✓; **`DELETE` is a soft delete today (sets `is_active=false`), not a hard delete; no future-bookings check (Q-A13)** | list "Desativar" via `PUT` | done (G02 keeps it; Q-A13 stays queued) |
+| Space · hard delete | none (see above) | none | G02 guarded `DELETE ?confirm=` |
+| Room · create | `POST /admin/spaces/{id}/rooms` ✓ | inline on `/admin/rooms/[id]` (**that route is keyed by the SPACE id**) ✓ | done; G06 moves the page |
+| Room · read list | rooms embedded in `GET /admin/spaces` | same page | done (G06 `/admin/rooms` composes it) |
+| Room · read one | none | none | G04 `GET /admin/rooms/{id}` |
+| Room · update incl. `is_active` | `PUT /admin/rooms/{id}` ✓ (A07 409) | inline form + `RoomActiveDialog` ✓ | done |
+| Room · duplicate | none | none | G04 |
+| Room · hard delete | none | none | G02 guarded `DELETE ?confirm=` |
+| Availability · read / replace-all | `GET`/`POST /admin/rooms/{id}/availability` ✓ | per-day editor ✓ | done |
+| Availability · per-rule delete / copy-to-all-days | none | none | G02 / G04 |
+| Blocks · CRUD | `GET/POST/PUT/DELETE /admin/rooms/{id}/blocks…` ✓ | calendar only | done; G06 inline on the room page |
+| Photos · upload / reorder / delete (rooms and spaces) | ✓ | `PhotoManager` ✓ | done |
+| Booking · create (manual) | `POST /admin/bookings` ✓ | calendar "Nova reserva" ✓ | done |
+| Booking · read list | `GET /admin/bookings` (room, status, from, to, page) — **no `q`, `payment_method`, `sort`, `include_cancelled`** | `/admin/bookings` table ✓ | G04 extends |
+| Booking · read one | none | calendar sheet | G04 `GET /admin/bookings/{id}` |
+| Booking · status / move / `admin_note` / mark-paid / cancel | `PUT` ✓, `POST …/mark-paid` ✓ | sheet ✓ | done |
+| Booking · `notes`, price override | none | none | G04 |
+| Booking · hard delete | none | none | G02 guarded `DELETE ?confirm=` |
+| User · create | none | none | G04 `POST /admin/users` |
+| User · read list | `GET /admin/users` (`q`, page) — **no `role`, `disabled`, `sort`** | `/admin/users` ✓ | G04 extends |
+| User · read one | `GET /admin/users/{id}` ✓ | `/admin/users/[id]` ✓ | done |
+| User · update name / email / suspend | none | none | G04 `PUT /admin/users/{id}` |
+| User · role | `PUT …/role` ✓ | `RoleDialog` ✓ | done |
+| User · complimentary hours | `POST …/complimentary-hours` ✓ | `GrantHoursDialog` ✓ | done |
+| User · password (set / reset link) | none; no reset flow anywhere | none | G03 |
+| User · membership remove | none | none | G02 |
+| User · anonymise / hard delete | none | none | G02 |
+| Package · create / list / update (+ active toggle) | ✓ | `/admin/packages` ✓ | done |
+| Package · read one / hard delete | none | none | G04 / G02 |
+| Purchase · create (complimentary) | ✓ | `GrantHoursDialog` ✓ | done |
+| Purchase · read list / read one | none (embedded on the user page only) | user page | G04 |
+| Purchase · extend expiry | `PUT …/expiry` ✓ | `ExtendValidityDialog` ✓ | done |
+| Purchase · adjust hours / status + note / hard delete | none | none | G04 / G04 / G02 |
+| Support · read list | `GET /admin/support/requests` (status, page) ✓ | `/admin/support` ✓ | done |
+| Support · read one | none (the list carries the message) | none | G04 |
+| Support · update | `PUT …/requests/{id}` status `new\|closed` only | ✓ | G04 (`in_progress`, `admin_note`) |
+| Support · hard delete | none | none | G02 |
+| Organisation · read / update | none (`OrganizationUpdate` schema exists, unused) | none | G04 |
+| Audit log | none | none | G01 |
+
+### G05 — Shared admin CRUD kit (`frontend/components/admin/crud/`)
+
+**Priority: P1. State: QUEUED (Part A2).** **Scope:** `EntityList`
+(toolbar: search with 300 ms debounce, filter chips, sort select;
+sticky-header table; row click → detail; per-row ⋯ menu; empty state with
+the primary action; skeleton rows; error state with retry; URL-synced
+state `?q=&page=&sort=&…`; the existing pagination shape; 44 px rows;
+keyboard row navigation ↑↓ Enter). `EntityForm` (sectioned, two columns ≥
+1024 px, inline field errors from the API `detail` — 422 → fields, 409 →
+banner listing blockers —, sticky bottom bar with "Guardar" disabled until
+dirty and "Cancelar", unsaved-changes guard beforeunload + router, success
+toast, refetch after save, never optimistic). `DangerZone`
+(deactivate/reactivate and hard delete with type-to-confirm; explains what
+is kept; disabled with the blockers listed when the backend refuses).
+`HistoryPanel` (collapsible "Histórico" over `/history`: actor, action,
+time, changed keys before → after, reason; link to `/admin/audit`).
+`ReasonDialog` (shared: price override, purchase adjust, cancel,
+anonymise; textarea ≥ 5 chars). `Breadcrumbs`, `PageHeader`,
+`useCrud(entity)` over `api.ts`. Accessibility: labels everywhere,
+focus-trapped dialogs, table captions, colour never the only status
+signal. **Validation:** component tests per piece.
+
+### G06 — Entity pages (migrate and complete; routes stable)
+
+**Priority: P1. State: QUEUED (Part A2).** Sidebar: Dashboard · Calendário
+· Reservas · Clientes · Salas · Espaços · Pacotes · Banco de horas ·
+Pedidos de ajuda · Histórico · Definições. **Scope:** Espaços
+`/admin/spaces`, `/new`, `/[id]` (Identificação, Localização incl.
+timezone, Fotografias, Salas new/duplicate/activate, DangerZone,
+Histórico). Salas `/admin/rooms` (across spaces; filter space/active) and
+`/admin/rooms/[id]` = the ROOM page (today it shows a SPACE's rooms — that
+moves under `/admin/spaces/[id]`, with a redirect when the id is a space
+id): Detalhes, Horário (per-day editor, "copiar para todos os dias",
+closed-day toggle), Bloqueios (30 days, inline CRUD), Fotografias,
+DangerZone, Histórico. Reservas `/admin/bookings` (search customer/id;
+filters room/status/payment/date; include cancelled; sort) and `/[id]`
+(Cliente; Quando/Onde with "Alterar horário" = the existing move logic;
+Pagamento with "Corrigir valor" → ReasonDialog, pack debits per purchase,
+mark-paid, copyable Stripe id; Acesso; Notas; DangerZone — cancel with
+reason, hard delete only when allowed; Histórico); the calendar sheet links
+here ("Abrir"). Clientes `/admin/users`, `/new` (name, email; "Enviar
+ligação para definir password" default or "Definir password agora"),
+`/[id]` (Conta: name, email, role, suspend; Acesso: "Enviar ligação de
+recuperação" with the last-sent time, "Definir password" dialog with a
+confirm field and no reveal, membership remove; Reservas embedded; Banco
+de horas: purchases adjust/extend/cancel, "Atribuir horas"; Pedidos de
+ajuda; DangerZone: anonymise type-to-confirm, hard delete when allowed;
+Histórico). Pacotes `/admin/packages`, `/[id]` (form, purchase counts,
+DangerZone, Histórico). Banco de horas `/admin/purchases`, `/[id]`
+(filters customer, package, status, expiring in 30 days; debits →
+bookings; adjust/extend/cancel/delete per policy; Histórico). Pedidos de
+ajuda `/admin/support`, `/[id]` (full message, context, links, status
+new/in_progress/closed, admin note, "Responder por email" mailto, delete).
+Histórico `/admin/audit` (global list with filters; a row expands to the
+diff). Definições `/admin/settings` (organisation form: the owner edits,
+admins read with a note; the customer-facing contact reads the org value
+when set). Sign-in page: the G03 reset pages match the auth pages' look.
+**Validation:** component tests per page; Playwright as admin: create room
+→ duplicate → edit hours → block an hour → deactivate (409 with a future
+booking, then succeed after cancelling it); booking → correct amount with
+reason → history diff and the customer dashboard shows it; create customer
+(link option) → link from the hook → set password → sign in → suspend →
+refused → set password directly → still refused → reactivate → sign in;
+adjust purchase below debited → 409 inline; anonymise → the booking lists
+with the placeholder, old JWT rejected; a non-owner cannot save settings.
+
+### K01 — Cancellation credit: paid hours go to the hour bank
+
+**Priority: P1. State: QUEUED (Part C).** Today cancelling a money-paid
+booking just loses the money. **Scope:** `UserPackagePurchase` gains
+`source` (`purchase | complimentary | cancellation_credit`; backfill:
+`amount_paid` 0 and no Stripe session → complimentary, else purchase) and
+`source_booking_id` (nullable FK, UNIQUE — one credit per booking, ever);
+one migration. Amount: `credit_hours = booking.total_amount /
+room.hourly_rate` rounded to 0.01; the credit row stores `amount_paid =
+booking.total_amount` so money reports still add up; `mixed`: the pack
+share is restored to its own purchases as today, ONLY the money share
+becomes a credit; `package_id` nullable if allowed, else a hidden system
+package "Crédito" (record which); `hours_total = hours_remaining =
+credit_hours`. Expiry `CANCELLATION_CREDIT_VALIDITY_DAYS` (default 365) in
+config, Compose, `.env.example`. Triggers: customer cancel (24 h rule
+unchanged), admin cancel (default ON; the admin cancel form gets "Creditar
+as horas ao cliente" and a required reason when unticked; audited), admin
+status → `cancelled` through the generic update. Never for
+pending-unpaid, expired or `package` bookings; `manual` DOES credit.
+Reversal: reinstating a cancelled booking cancels the credit if whole; if
+any credited hour was spent → 409 "o crédito já foi usado; crie uma nova
+reserva"; no partial reversal. **DECISION to record:** hours rather than a
+euro wallet (reuses the bank, mixed payment, adjust, expiry); caveat:
+hours from one room's rate may be spent in another room if rates diverge;
+alternative: a euro wallet at checkout. Email: the cancellation email gains
+"As <N> horas pagas ficam no seu banco de horas até <data>." when a credit
+was created. Customer UI: the cancel dialog for hourly/mixed says "Ao
+cancelar, as <N>h pagas ficam no seu banco de horas (válidas até
+<data>)." (computed client-side), "Precisa de outra solução? Fale
+connosco" stays muted; the bank card labels credit rows "Crédito —
+cancelamento de <d MMM>" with expiry; totals and soonest-expiry include
+them. Admin: purchases list/detail show `source`; the booking detail shows
+"Crédito criado: <N>h" with a link. O02 gains the note "cancellation
+refunds superseded by hour credit". **Validation (real PG, controlled
+clock):** hourly cancel → one credit with the right hours/amount/expiry;
+mixed → pack restored + money-share credit only; no second credit; manual
+credits; pending/expired/package do not; admin cancel unticked → none +
+audited reason; reinstate whole → credit cancelled; reinstate after spend →
+409; credited hours spendable via mixed; expired credit excluded. Component
+tests for the dialog copy and bank labels. Playwright: pay → cancel → the
+bank shows the hours → rebook with them, no checkout.
+
+### K02 — Offer a new pack when the bank cannot cover the booking
+
+**Priority: P1. State: QUEUED (Part C).** **Scope:** backend `POST
+/packages/{id}/purchase` accepts optional `return_to` (a relative path:
+starts with "/", no scheme/host/"//", ≤ 512 chars; else 422); when present
+the checkout success URL is `<FRONTEND_URL><return_to>` + `pagamento=
+sucesso` (cancel: `pagamento=cancelado`); the stub checkout honours it.
+Frontend: the space/booking page accepts `?room=&start=&end=` (ISO
+instants, whole hours): selects the room, opens the calendar at that day
+and, once availability loads, reopens the `BookingModal` for the range if
+still free, else the existing "já está reservada" notice; `?pagamento=` is
+handled here with the dashboard's notice component, then the params are
+stripped. `BookingModal` when the plan is `none` or `partial`: a third
+choice "Comprar um pack" expanding an inline list of active packages (name,
+hours, price, "válido N dias") with "Comprar" → purchase with `return_to` =
+this page + `?room=&start=&end=` → follow the checkout URL; the slot is NOT
+held (one muted line says so). Order: bank empty AND never bought a pack →
+"Comprar um pack" first, then "Pagar agora"; otherwise "Usar as horas e
+pagar o resto", "Pagar tudo agora", "Comprar um pack". After return: the
+balance is refetched, the breakdown updated, confirm as usual.
+**Validation:** backend as above incl. the rejections; component tests for
+plan states and option order; Playwright: empty bank → slot → "Comprar um
+pack" → stub checkout → back on the same slot with the modal open and the
+pack preselected → confirm with no second checkout; and the taken-meanwhile
+case (booked via the API as another user during the detour → notice, no
+modal).
+
+### K03 — Support request notifications, both directions
+
+**Priority: P1. State: QUEUED (Part C).** **Scope:** config
+`SUPPORT_INBOX_EMAIL` default `geral+support@flowspace.pt` (the
+notification destination; `SUPPORT_EMAIL` was only that target, so it is
+renamed — Compose, `.env.example`, README); the customer-facing contact
+address stays `geral@flowspace.pt`. Requester copy: template
+`support_request_received_email(to, reference, category, message,
+booking_summary | None)` — subject "[FlowSpace] Recebemos o seu pedido
+#<short id>"; body: thanks, category and the message quoted verbatim but
+ESCAPED, a booking line when linked, "Respondemos por email para
+<address>", Reply-To = the support inbox. Inbox copy: the existing
+template; Reply-To = the requester; subject "[Ajuda] <categoria> — #<short
+id>"; link to `/admin/support/<id>`. Both via `enqueue_email`; a failed
+send is logged, the request stored. Dialog success adds "Enviámos uma cópia
+para <email>". **Validation:** the stub records exactly two emails with the
+right recipients/subjects/Reply-To; `<script>` in the message arrives
+escaped in both; the honeypot sends nothing; component test for the copy;
+Playwright: submit → the hook shows both.
+
+### B50 — New logo on both sites (brand set `flowspace-site/assets/img/brand/`)
+
+**Priority: P2. State: QUEUED (Part L).** The cleaned brand set (16 files:
+`logo-full.svg`, `logo-mark.svg`, `wordmark.svg`, `spiral-mark.svg`,
+`favicon.svg`, favicon-16/32/48/192/512.png, `apple-touch-icon.png`,
+`logo-email.png`, `logo-email-white-bg.png`, `logo-full-white.png`,
+`og-image.png`, `README.md`) is committed in Part L. **Scope:** build
+`logo-horizontal.svg` (currentColor; mark left, wordmark right,
+baseline-aligned, gap ≈ 0.35× the mark height, tight viewBox) into the
+same folder. App: the folder copied to `frontend/public/brand/` with a
+Vitest checksum-parity test so the two cannot drift; Navbar: the Building2
+icon + text wordmark replaced by `logo-horizontal.svg` (28 px tall, `alt=
+"FlowSpace"`, `color: var(--primary)`, link to "/"); Footer (dark): the
+lockup in white, 24 px; admin sidebar and the sign-in/sign-up/reset pages:
+mark + wordmark or the lockup, same colour rules; `app/layout.tsx`
+metadata `icons`, `openGraph.images` = `/brand/og-image.png` (1200×630), a
+`manifest` with the 192/512 icons and theme colour #3D7A5E; email
+templates' header uses `<FRONTEND_URL>/brand/logo-email.png` (absolute,
+200 px wide, alt "FlowSpace"), stub emails still render. Static site: the
+same lockup in header and footer, `assets/img/favicon.svg` replaced, PNG
+icons + apple-touch-icon added, `<link rel="icon">`s, `og:image` at the
+deployed absolute URL, `theme-color`. Both: no layout shift (explicit
+width/height), the header stays 64 px, legible at 390 px (`logo-mark.svg`
+alone below 400 px if the lockup exceeds 60% of the header width); old
+icon/wordmark code removed and the unused `brand.name` render dropped (the
+key stays for `<title>` and alt text). **Validation:** component tests for
+Navbar/Footer (img with alt "FlowSpace", link to "/"), the checksum parity
+test, static smoke asserts the header logo and the favicon links;
+screenshots of both headers (light) and both footers (dark) at 1280 px and
+390 px, and the favicon in a tab.
 
 ## Deferred scope
 
