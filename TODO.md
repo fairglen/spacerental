@@ -131,7 +131,9 @@ become four PRs the loop opens and never merges: `feat/admin-crud-backend`
 (G01–G04), `feat/admin-crud-ui` (G05–G06),
 `feat/customer-credit-pack-upsell-notifications` (K01–K03), `feat/brand-logo`
 (B50). Recorded as the G/K/B series near the end of this file, with the
-owner's decisions and the CRUD matrix the admin parts start from.
+owner's decisions and the CRUD matrix the admin parts start from. Part A1
+opened as [PR #65](https://github.com/fairglen/spacerental/pull/65)
+(G01–G04, base `main`) on 2026-09-30; the owner reviews and merges.
 
 States used below:
 
@@ -4401,7 +4403,7 @@ CRUD kit and G06 every entity page; **Part C**
 `feat/customer-credit-pack-upsell-notifications` — K01 cancellation credit
 in hours, K02 pack upsell when the bank cannot cover a booking, K03 support
 notifications both ways; **Part L** `feat/brand-logo` — B50 the new logo on
-both sites. Links: A01–A07 (operator tooling this completes), O05 (G01 is
+both sites. **Part A1 is [PR #65](https://github.com/fairglen/spacerental/pull/65).** Links: A01–A07 (operator tooling this completes), O05 (G01 is
 its minimal mandatory scope), O02 (K01 supersedes cash refunds for
 cancellations), H02 (the hour bank K01 credits into), C13 (mixed payment),
 C07 (cancellation eligibility), C15–C19 (photos, help requests, inbox),
@@ -4434,7 +4436,26 @@ colliding with it.
 
 ### G01 — Audit log: `admin_actions` (O05, minimal and mandatory)
 
-**Priority: P1. State: QUEUED (Part A1).** **Scope:** table `admin_actions`
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-crud-backend` (`45b1993`); DONE only once merged. **Evidence
+(2026-09-30):** `tests/test_audit.py` — a scenario table over every admin
+mutation route (a route without a scenario fails the classification test),
+each call writes exactly one row with the actor and the request id; an
+edit keeps only the changed keys plus the id; a create keeps the whole
+snapshot and the reason; a well-formed `X-Request-ID` is honoured and a
+malformed one replaced; a user snapshot carries no secret (negative test
+over the words password/hash/token/argon2/version); `diff` ignores
+`updated_at`; a rolled-back session writes nothing; `GET /admin/audit`
+newest first with the actor, every filter and paging, 422 for an unknown
+entity type; `/history` scoped (404 across tenants, empty trail for the
+other org, 403 for a member). S01 matrix: the eight read routes classified
+and swept cross-org. Migration `0013` round trip clean (ascending
+indexes — DECISION: PostgreSQL reads a B-tree backwards for newest-first
+and an ascending index is what `alembic check` compares; alt: DESC via
+`text()`, invisible to autogenerate). DECISION: `expire_stale_holds`
+flipping other bookings inside an admin write is a system reconciliation,
+not an operator action — not audited. **Retention: deferred** (no purge
+job; the table grows with operator activity). **Scope:** table `admin_actions`
 (id, org_id, actor_user_id nullable SET NULL, entity_type, entity_id,
 action, before JSONB, after JSONB, reason Text nullable, request_id,
 created_at) with indexes (org_id, entity_type, entity_id, created_at desc)
@@ -4456,7 +4477,33 @@ wrong-role/org denial; API shape tests.
 
 ### G02 — Deletion policy (recorded, then enforced)
 
-**Priority: P1. State: QUEUED (Part A1).** **Policy:** deleting
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-crud-backend` (`4dd258a`, together with G04); DONE only once
+merged. **Evidence (2026-09-30):** `tests/test_deletion_policy.py` (22,
+real PG): confirm required and matched by name or short id (422 otherwise,
+nothing changes, no audit row); a space with a booked room refused with
+the blockers, an empty one goes with its rooms and rules, soft delete
+stays on `PUT`; a room with any booking (cancelled/expired count) or block
+refused with the counts, an empty one goes with its rules and photo files
+(the file is checked gone on disk); a per-rule delete, 404 for another
+room's rule; a paid/pending/package booking must be cancelled instead, an
+expired hold and a zero cancelled booking go, a cancelled zero one with
+debit rows stays, a manual one goes with a reason (422 without), revokes
+the code and frees the slot; anonymise replaces identity, keeps
+bookings/purchases/requests, kills the session, the old email, the reset
+link and the membership, is audited with the reason, the trail stays
+readable and the bookings list shows the placeholder; refused for
+yourself, the last owner, a member of another org, and 404 across orgs;
+user hard delete only when unreferenced (409 with the counts); membership
+removal (not yourself, not the last owner, account untouched); package
+with purchases refused; purchase cancel needs a reason, zeroes the balance,
+keeps the debits, leaves the bank; note alone and reactivation; purchase
+hard delete only unpaid and undrawn; support spam delete keeps the row in
+the trail; a cross-tenant sweep over every delete moves nothing. Every
+route in the S01 matrix and the audit scenario table. **Residual:**
+`support_requests.contact_email` keeps the person's address after
+anonymisation (the row's own contact field, not the account) — recorded,
+not changed. **Policy:** deleting
 money-bearing or history-bearing rows is never a plain DELETE. Space:
 `is_active` is the normal delete; hard `DELETE /admin/spaces/{id}` only when
 no room of the space has any booking ever, otherwise 409 listing blockers.
@@ -4502,7 +4549,33 @@ tokens; cross-tenant 403/404 with no leak (S01 matrix).
 
 ### G03 — Password reset: customer self-service and admin trigger
 
-**Priority: P1. State: QUEUED (Part A1).** **Scope:** table
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-crud-backend` (`fc38059`); DONE only once merged. **Evidence
+(2026-09-30):** `tests/test_password_reset.py` (21, real PG): a known
+enabled user gets one email with a working link and only the hash is
+stored; unknown and disabled emails get the same 202 and no email; case-
+insensitive match; a new request invalidates the older token; both
+endpoints in the auth tier (429 on the 11th); confirm sets the password,
+the token is single-use, an expired one is refused (clock moved 61 min),
+a made-up token is 400 and a short password 422; confirm bumps
+`token_version` so the earlier session is 401 and a fresh login works; a
+disabled user cannot sign in ("A conta está desativada."), use a token
+("Account disabled") or book; a token from an older version is refused;
+the admin trigger sends the same link (recorded on the token) and is
+audited without it, 409 on a disabled account; set-password bumps the
+version, kills open tokens, never carries the value in the response or
+the trail, is validated and rate-limited; the `/__test__/emails` hook
+lists the last emails with links, `should_mount` is true only for a stub
+outside production, and an app built for production has no such route.
+S02's bounded-claims test now includes `tv` = 0. Frontend: Vitest
+`PasswordResetPages.test.tsx` (7) + 1 api shape test; Playwright
+`password-reset.spec.ts`: forgot → link from the hook → reset → the old
+password refused, the new one signs in, the link is spent; an invalid
+link says so and links to a new request. Migration `0014` round trip
+clean. DECISION: a disabled account is refused by `get_current_user`
+itself, not only at login. DECISION: setting a password on a suspended
+account is allowed (the owner's flow does it before reactivating).
+**Scope:** table
 `password_reset_tokens` (id, user_id, token_hash, expires_at, used_at,
 created_by_admin_id nullable, created_at): only the SHA-256 of a 32-byte
 urlsafe token is stored; TTL 60 minutes; single use; a new request
@@ -4537,8 +4610,40 @@ in.
 
 ### G04 — Missing admin endpoints (tenant-scoped, audited, tested)
 
-**Priority: P1. State: QUEUED (Part A1).** Add only what the matrix below
-lacks; nothing that works is rewritten. **Scope:** Spaces `GET
+**Priority: P1. State: IN PROGRESS** — implemented on
+`feat/admin-crud-backend` (`4dd258a`, together with G02); DONE only once
+merged. **Evidence (2026-09-30):** `tests/test_admin_crud.py` (16, real
+PG): space detail (rooms with rules, photo count, booking counts, 404
+across orgs); room detail (rules with ids, the next 30 days of blocks
+only, counts), duplicate (fields, amenities and rules copied, photos not,
+audited as `duplicate` on the copy), copy-to-all-days (every weekday gets
+the source window, audited as `availability.set`, 422 for a closed source
+day); booking detail (customer, room, method, amount, debits, notes,
+admin_note, Stripe id, access code, history) and the Stripe id never in a
+customer response; list `q` by name/email/short id, `payment_method`,
+`include_cancelled`, `sort` both ways, 422 for an unknown sort; the price
+override needs a reason, moves no money, is audited with old/new amounts,
+the customer sees the new amount, negative refused; status to `completed`
+and back; users: create without a password sends the "Defina a sua
+password" link that works, 409 on a duplicate (case-insensitive), create
+with a password sends nothing and the trail has no value; update name/
+email (409 when taken), suspend (session dead at once, login refused with
+the distinct detail), reactivate, self-suspend 409; list `role`,
+`disabled`, `sort`; package detail counts and outstanding hours;
+purchases list filters (user, package, status, expiring_before) with the
+customer alongside, detail with debits → bookings (room name, hours),
+adjust up and down, never below the debited hours (409 listing them),
+422 for zero or no reason, audited; support detail with the person and
+note, `in_progress` + note, list filter; organisation read, owner-only
+update (403 for an admin), 422 for an unknown timezone, contact cleared
+with null, the public space detail carries `contact` and nothing else of
+`settings`. Migration `0015` (enum value + `admin_note`) round trip clean
+incl. the enum rebuild on downgrade. API_SPEC covers every endpoint and
+the policy table. **Found on the way:** the customer booking's second
+flush could surface the exclusion race as a deadlock 500 — the race test
+flaked 1 in ~4 runs; now the same 409 as the first flush. **Frontend
+wiring of the org contact and of every new endpoint is G05/G06.**
+**Scope:** Spaces `GET
 /admin/spaces/{id}` (rooms, rule summary, photo count, booking counts).
 Rooms `GET /admin/rooms/{id}` (rules, blocks next 30 days, photos, counts);
 `DELETE` per G02; `POST /admin/rooms/{id}/duplicate` (rules, amenities,
