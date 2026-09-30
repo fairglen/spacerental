@@ -62,7 +62,7 @@ const rules = [0, 1, 2].map((d) => ({ id: `rule-${d}`, room_id: 'r-1', day_of_we
 const booking: Booking & { stripe_checkout_session_id: string | null } = {
   id: 'b1b1b1b1-0000-0000-0000-000000000001', org_id: 'org-1', room_id: 'r-1', user_id: 'u-1', start_time: '2030-03-04T10:00:00Z', end_time: '2030-03-04T12:00:00Z',
   duration_hours: 2, total_amount: 22, package_hours_used: 0, status: 'confirmed', payment_method: 'hourly', notes: 'Projetor', admin_note: null,
-  access_code: '4321', room, user: { id: 'u-1', email: 'ana@x.pt', name: 'Ana', created_at: '' }, created_at: '2030-01-01T00:00:00Z',
+  access_code: '4321', room, user: { id: 'u-1', email: 'ana@x.pt', name: 'Ana' }, created_at: '2030-01-01T00:00:00Z',
   stripe_checkout_session_id: 'cs_test_abc', package_debits: [],
 }
 const orgUser: OrgUser = { id: 'u-1', email: 'ana@x.pt', name: 'Ana', role: 'member', joined_at: '2030-01-01T00:00:00Z', bookings_count: 1, created_at: '', disabled_at: null }
