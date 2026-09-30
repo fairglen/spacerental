@@ -1,3 +1,4 @@
+from app.models.audit import AdminAction
 from app.models.booking import Booking
 from app.models.organization import Organization, OrganizationMember
 from app.models.package import BookingPackageDebit, Package, UserPackagePurchase
@@ -8,6 +9,7 @@ from app.models.support import SupportRequest
 from app.models.user import User
 
 __all__ = [
+    "AdminAction",
     "AvailabilityRule",
     "Booking",
     "BookingPackageDebit",

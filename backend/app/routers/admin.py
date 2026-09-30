@@ -8,7 +8,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import clock, email, package_hours
+from app import audit, clock, email, package_hours
 from app.auth import require_admin
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
@@ -154,7 +154,7 @@ async def admin_list_spaces(
 async def admin_create_space(
     body: SpaceCreate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     space = Space(
@@ -172,6 +172,9 @@ async def admin_create_space(
     db.add(space)
     await db.flush()
     await db.refresh(space)
+    await audit.record(
+        db, actor=admin, org_id=org_id, entity=space, action="create", after=audit.snapshot(space)
+    )
     return {"space": SpaceOut.model_validate(space)}
 
 
@@ -180,19 +183,29 @@ async def admin_update_space(
     space_id: uuid.UUID,
     body: SpaceUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
+    before = audit.snapshot(space)
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(space, field, value)
 
     await db.flush()
     await db.refresh(space)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=space,
+        action="update",
+        before=before,
+        after=audit.snapshot(space),
+    )
     return {"space": SpaceOut.model_validate(space)}
 
 
@@ -200,15 +213,27 @@ async def admin_update_space(
 async def admin_delete_space(
     space_id: uuid.UUID,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
+    before = audit.snapshot(space)
 
     space.is_active = False
+    await db.flush()
+    await db.refresh(space)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=space,
+        action="deactivate",
+        before=before,
+        after=audit.snapshot(space),
+    )
 
 
 # ─── Rooms ────────────────────────────────────────────────────────────────────
@@ -219,7 +244,7 @@ async def admin_create_room(
     space_id: uuid.UUID,
     body: RoomCreate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
@@ -241,6 +266,9 @@ async def admin_create_room(
     db.add(room)
     await db.flush()
     await db.refresh(room)
+    await audit.record(
+        db, actor=admin, org_id=org_id, entity=room, action="create", after=audit.snapshot(room)
+    )
     return {"room": RoomOut.model_validate(room)}
 
 
@@ -249,13 +277,14 @@ async def admin_update_room(
     room_id: uuid.UUID,
     body: RoomUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    before = audit.snapshot(room)
 
     changes = body.model_dump(exclude_unset=True)
     if room.is_active and changes.get("is_active") is False:
@@ -272,6 +301,15 @@ async def admin_update_room(
 
     await db.flush()
     await db.refresh(room)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=room,
+        action="update",
+        before=before,
+        after=audit.snapshot(room),
+    )
     return {"room": RoomOut.model_validate(room)}
 
 
@@ -339,7 +377,7 @@ async def admin_set_availability(
     room_id: uuid.UUID,
     body: AvailabilityRulesSetBody,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Replace all availability rules for a room."""
@@ -350,9 +388,13 @@ async def admin_set_availability(
 
     # Delete existing rules
     existing_result = await db.execute(
-        select(AvailabilityRule).where(AvailabilityRule.room_id == room_id)
+        select(AvailabilityRule)
+        .where(AvailabilityRule.room_id == room_id)
+        .order_by(AvailabilityRule.day_of_week, AvailabilityRule.open_time)
     )
-    for rule in existing_result.scalars().all():
+    existing = existing_result.scalars().all()
+    before = {"id": str(room.id), "rules": _rules_for_audit(existing)}
+    for rule in existing:
         await db.delete(rule)
 
     # Insert new rules
@@ -370,8 +412,30 @@ async def admin_set_availability(
     await db.flush()
     for r in new_rules:
         await db.refresh(r)
+    # One row for the whole replacement, on the room: the rules are the
+    # room's schedule, and a per-rule trail would say nothing readable.
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=room,
+        action="availability.set",
+        before=before,
+        after={"id": str(room.id), "rules": _rules_for_audit(new_rules)},
+    )
 
     return {"rules": [AvailabilityRuleOut.model_validate(r) for r in new_rules]}
+
+
+def _rules_for_audit(rules) -> list[dict]:
+    return [
+        {
+            "day_of_week": r.day_of_week,
+            "open_time": r.open_time.isoformat(),
+            "close_time": r.close_time.isoformat(),
+        }
+        for r in sorted(rules, key=lambda r: (r.day_of_week, r.open_time))
+    ]
 
 
 # ─── Bookings ─────────────────────────────────────────────────────────────────
@@ -542,7 +606,7 @@ async def admin_update_booking(
     body: BookingStatusUpdate,
     background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
     lock_gateway: LockGateway = Depends(get_lock_gateway),
@@ -561,6 +625,7 @@ async def admin_update_booking(
     now = clock.utcnow()
     previous_status = booking.status
     hours_before = booking.duration_hours
+    before = audit.snapshot(booking)
     response: dict = {}
 
     if body.admin_note is not None or "admin_note" in body.model_fields_set:
@@ -746,8 +811,28 @@ async def admin_update_booking(
             changed=True,
         )
 
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=booking,
+        action=_booking_action(previous_status, new_status, moved),
+        before=before,
+        after=audit.snapshot(booking),
+    )
     attach_access_codes(lock_gateway, booking)
     return {"booking": AdminBookingOut.model_validate(booking), **response}
+
+
+def _booking_action(previous: BookingStatus, new: BookingStatus, moved: bool) -> str:
+    """The verb the trail shows for a generic booking update."""
+    if new != previous:
+        return {
+            BookingStatus.cancelled: "cancel",
+            BookingStatus.confirmed: "confirm",
+            BookingStatus.completed: "complete",
+        }.get(new, f"status.{new.value}")
+    return "move" if moved else "update"
 
 
 @router.post("/bookings", status_code=status.HTTP_201_CREATED)
@@ -755,7 +840,7 @@ async def admin_create_booking(
     body: AdminBookingCreate,
     background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
     lock_gateway: LockGateway = Depends(get_lock_gateway),
@@ -819,6 +904,14 @@ async def admin_create_booking(
         .execution_options(populate_existing=True)
     )
     booking = result.scalar_one()
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=booking,
+        action="create.manual",
+        after=audit.snapshot(booking),
+    )
     await _confirm_side_effects(
         booking,
         background_tasks=background_tasks,
@@ -835,7 +928,7 @@ async def admin_mark_booking_paid(
     body: MarkPaidBody,
     background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     gateway: PaymentGateway = Depends(get_payment_gateway),
     email_gateway: EmailGateway = Depends(get_email_gateway),
@@ -849,6 +942,7 @@ async def admin_mark_booking_paid(
     """
     booking = await _locked_booking(db, booking_id, org_id)
     now = clock.utcnow()
+    before = audit.snapshot(booking)
     live_or_lapsed_hold = booking.status in (BookingStatus.pending, BookingStatus.expired) and (
         booking.hold_expires_at is not None or booking.status is BookingStatus.expired
     )
@@ -922,6 +1016,16 @@ async def admin_mark_booking_paid(
         .execution_options(populate_existing=True)
     )
     booking = result.scalar_one()
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=booking,
+        action="mark_paid",
+        before=before,
+        after=audit.snapshot(booking),
+        reason=body.reason,
+    )
     await _confirm_side_effects(
         booking,
         background_tasks=background_tasks,
@@ -955,7 +1059,7 @@ async def admin_list_packages(
 async def admin_create_package(
     body: PackageCreate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     package = Package(
@@ -968,6 +1072,14 @@ async def admin_create_package(
     db.add(package)
     await db.flush()
     await db.refresh(package)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=package,
+        action="create",
+        after=audit.snapshot(package),
+    )
     return {"package": PackageOut.model_validate(package)}
 
 
@@ -976,7 +1088,7 @@ async def admin_update_package(
     package_id: uuid.UUID,
     body: PackageUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Edit a package's price/hours/validity, or soft-deactivate it via is_active=false."""
@@ -986,10 +1098,20 @@ async def admin_update_package(
     package = result.scalar_one_or_none()
     if package is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Package not found")
+    before = audit.snapshot(package)
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(package, field, value)
 
     await db.flush()
     await db.refresh(package)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=package,
+        action="update",
+        before=before,
+        after=audit.snapshot(package),
+    )
     return {"package": PackageOut.model_validate(package)}

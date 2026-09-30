@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import email
+from app import audit, email
 from app.auth import get_current_user, oauth2_scheme, require_admin
 from app.config import settings
 from app.database import get_db
@@ -185,7 +185,7 @@ async def admin_update_support_request(
     request_id: uuid.UUID,
     body: SupportStatusUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -196,7 +196,17 @@ async def admin_update_support_request(
     request = result.scalar_one_or_none()
     if request is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    before = audit.snapshot(request)
     request.status = body.status
     await db.flush()
     await db.refresh(request)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=request,
+        action="update",
+        before=before,
+        after=audit.snapshot(request),
+    )
     return {"request": SupportRequestOut.model_validate(request)}

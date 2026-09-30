@@ -26,6 +26,20 @@ class OrgUserOut(BaseModel):
     created_at: datetime
 
 
+class AuditUserOut(BaseModel):
+    """A user as the audit trail snapshots them (G01): the account's public
+    fields only — never the password hash, a reset token or the token
+    version, which is what `tests/test_audit.py` checks."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: str
+    name: str | None
+    avatar_url: str | None
+    created_at: datetime
+
+
 class RoleUpdate(BaseModel):
     # `owner` is deliberately not grantable here: ownership transfer is a
     # different decision with different consequences (billing, deletion).

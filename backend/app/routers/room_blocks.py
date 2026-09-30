@@ -13,7 +13,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import clock
+from app import audit, clock
 from app.auth import require_admin
 from app.booking_validity import (
     MAX_BLOCK_DURATION,
@@ -162,6 +162,15 @@ async def create_block(
         await db.rollback()
         raise _lost_race() from None
     await db.refresh(block)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=room.org_id,
+        entity=block,
+        action="create",
+        after=audit.snapshot(block),
+        reason=body.reason,
+    )
     return {"block": RoomBlockOut.model_validate(block)}
 
 
@@ -171,11 +180,12 @@ async def update_block(
     block_id: uuid.UUID,
     body: RoomBlockUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     room = await _room(db, room_id, org_id)
     block = await _block(db, room, block_id)
+    before = audit.snapshot(block)
     now = clock.utcnow()
     start = body.start_time or block.start_time
     end = body.end_time or block.end_time
@@ -194,6 +204,15 @@ async def update_block(
         await db.rollback()
         raise _lost_race() from None
     await db.refresh(block)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=room.org_id,
+        entity=block,
+        action="update",
+        before=before,
+        after=audit.snapshot(block),
+    )
     return {"block": RoomBlockOut.model_validate(block)}
 
 
@@ -202,10 +221,14 @@ async def delete_block(
     room_id: uuid.UUID,
     block_id: uuid.UUID,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     room = await _room(db, room_id, org_id)
     block = await _block(db, room, block_id)
+    before = audit.snapshot(block)
     await db.delete(block)
     await db.flush()
+    await audit.record(
+        db, actor=admin, org_id=room.org_id, entity=block, action="delete", before=before
+    )

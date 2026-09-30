@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import clock, package_hours
+from app import audit, clock, package_hours
 from app.auth import require_admin
 from app.booking_validity import expire_user_holds
 from app.database import get_db
@@ -194,8 +194,18 @@ async def admin_set_role(
             status_code=status.HTTP_409_CONFLICT,
             detail="An owner's role cannot be changed here",
         )
+    before = {"id": str(user_id), "role": member.role.value}
     member.role = MemberRole(body.role)
     await db.flush()
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=member.user,
+        action="role.set",
+        before=before,
+        after={"id": str(user_id), "role": member.role.value},
+    )
     count = await db.scalar(
         select(func.count()).where(Booking.user_id == user_id, Booking.org_id == org_id)
     )
@@ -207,7 +217,7 @@ async def admin_grant_hours(
     user_id: uuid.UUID,
     body: ComplimentaryHoursCreate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Complimentary hours: a purchase of N hours at 0,00 € with a reason.
@@ -250,6 +260,15 @@ async def admin_grant_hours(
         .where(UserPackagePurchase.id == purchase.id)
         .execution_options(populate_existing=True)
     )
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=row,
+        action="create.complimentary",
+        after=audit.snapshot(row),
+        reason=body.reason,
+    )
     return {"purchase": AdminPurchaseOut.model_validate(row)}
 
 
@@ -258,7 +277,7 @@ async def admin_extend_purchase(
     purchase_id: uuid.UUID,
     body: ExpiryUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """ "Prolongar validade" (A06): push a purchase's expiry later.
@@ -282,6 +301,7 @@ async def admin_extend_purchase(
             detail=f"A {purchase.status.value} purchase cannot be extended",
         )
     now = clock.utcnow()
+    before = audit.snapshot(purchase)
     if body.expires_at <= now or body.expires_at <= purchase.expires_at:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -294,4 +314,14 @@ async def admin_extend_purchase(
     purchase.admin_note = f"{purchase.admin_note}\n{line}" if purchase.admin_note else line
     purchase.expires_at = body.expires_at
     await db.flush()
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=purchase,
+        action="expiry.extend",
+        before=before,
+        after=audit.snapshot(purchase),
+        reason=body.reason,
+    )
     return {"purchase": AdminPurchaseOut.model_validate(purchase)}

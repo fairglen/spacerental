@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from app import media
+from app import audit, media
 from app.auth import require_admin
 from app.database import get_db
 from app.media import MediaStorage, get_media_storage
@@ -143,6 +143,18 @@ async def _reorder(db: AsyncSession, entity, order: list[uuid.UUID]) -> None:
     await db.flush()
 
 
+async def _audited(db: AsyncSession, admin: User, org_id, entity, action: str, before) -> None:
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=entity,
+        action=action,
+        before=before,
+        after=audit.snapshot(entity),
+    )
+
+
 def _room_out(room: Room) -> dict:
     return {"room": RoomOut.model_validate(room)}
 
@@ -158,13 +170,15 @@ async def upload_room_image(
     room_id: uuid.UUID,
     file: UploadFile,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ):
     room = await _entity(db, Room, room_id, org_id)
+    before = audit.snapshot(room)
     await _add_photo(db, storage, room, "rooms", file)
     await db.refresh(room)
+    await _audited(db, admin, org_id, room, "photo.add", before)
     return _room_out(room)
 
 
@@ -174,13 +188,15 @@ async def upload_space_image(
     space_id: uuid.UUID,
     file: UploadFile,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ):
     space = await _entity(db, Space, space_id, org_id)
+    before = audit.snapshot(space)
     await _add_photo(db, storage, space, "spaces", file)
     await db.refresh(space)
+    await _audited(db, admin, org_id, space, "photo.add", before)
     return _space_out(space)
 
 
@@ -190,12 +206,14 @@ async def reorder_room_images(
     room_id: uuid.UUID,
     body: PhotoOrder,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     room = await _entity(db, Room, room_id, org_id)
+    before = audit.snapshot(room)
     await _reorder(db, room, body.order)
     await db.refresh(room)
+    await _audited(db, admin, org_id, room, "photo.reorder", before)
     return _room_out(room)
 
 
@@ -204,12 +222,14 @@ async def reorder_space_images(
     space_id: uuid.UUID,
     body: PhotoOrder,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     space = await _entity(db, Space, space_id, org_id)
+    before = audit.snapshot(space)
     await _reorder(db, space, body.order)
     await db.refresh(space)
+    await _audited(db, admin, org_id, space, "photo.reorder", before)
     return _space_out(space)
 
 
@@ -220,13 +240,15 @@ async def delete_room_image(
     room_id: uuid.UUID,
     image_id: uuid.UUID,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ):
     room = await _entity(db, Room, room_id, org_id)
+    before = audit.snapshot(room)
     await _remove_photo(db, storage, room, image_id)
     await db.refresh(room)
+    await _audited(db, admin, org_id, room, "photo.remove", before)
     return _room_out(room)
 
 
@@ -235,11 +257,13 @@ async def delete_space_image(
     space_id: uuid.UUID,
     image_id: uuid.UUID,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ):
     space = await _entity(db, Space, space_id, org_id)
+    before = audit.snapshot(space)
     await _remove_photo(db, storage, space, image_id)
     await db.refresh(space)
+    await _audited(db, admin, org_id, space, "photo.remove", before)
     return _space_out(space)

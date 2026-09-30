@@ -269,6 +269,31 @@ the number.
 
 ## Admin Endpoints (requires admin/owner role)
 
+Every admin mutation below writes exactly one row to the audit trail (G01)
+in the same transaction as the change, so a refused or rolled-back call
+leaves no row. Rows carry the entity's PUBLIC schema reduced to the keys
+that changed (plus `id`); a create or delete keeps the whole snapshot. A
+response carries `X-Request-ID` (honoured from the request when well-formed,
+`[A-Za-z0-9._-]{1,64}`), and every row written during that request stores it.
+
+### GET /admin/audit
+The organisation's trail, newest first. Query: `entity_type?` (one of `space`,
+`room`, `availability_rule`, `room_block`, `booking`, `user`, `package`,
+`purchase`, `support_request`, `organization`; 422 otherwise), `entity_id?`,
+`actor?` (user id), `from?`/`to?` (tz-aware instants on `created_at`),
+`page` (default 1), `page_size` (default 20, max 100).
+Response: `{ actions: [AdminAction], total, page, page_size }` where
+`AdminAction = { id, org_id, actor: { id, name, email } | null, entity_type,
+entity_id, action, before, after, reason, request_id, created_at }`.
+`actor` is null for a system action or an account that no longer exists.
+
+### GET /admin/spaces/:id/history · /admin/rooms/:id/history · /admin/bookings/:id/history · /admin/users/:id/history · /admin/packages/:id/history · /admin/purchases/:id/history · /admin/support/requests/:id/history
+One entity's rows, same shape and paging as `/admin/audit`. The entity is
+first found INSIDE the caller's organisation: another org's id or an unknown
+one is a 404 with no further detail. A user's history stays readable after
+the membership is gone (anonymised or removed) because the trail itself is
+the proof they were here.
+
 ### GET /admin/dashboard
 Stats: total bookings, revenue, occupancy rate, active users.
 

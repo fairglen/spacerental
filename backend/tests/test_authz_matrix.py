@@ -101,6 +101,15 @@ ROUTES: dict[tuple[str, str], str] = {
     ("PUT", f"{API}/admin/support/requests/{{request_id}}"): OPERATOR,
     ("POST", f"{API}/admin/packages"): OPERATOR,
     ("PUT", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
+    # G01 audit trail; its cross-org cases are in test_audit.py.
+    ("GET", f"{API}/admin/audit"): OPERATOR,
+    ("GET", f"{API}/admin/spaces/{{space_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/rooms/{{room_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/bookings/{{booking_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/users/{{user_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/packages/{{package_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/purchases/{{purchase_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/support/requests/{{request_id}}/history"): OPERATOR,
     # C17 help form: open to visitors by design (whoever cannot sign in needs it
     # most). A signed-in sender is identified from their token; someone else's
     # booking, a bad token, throttling and the honeypot are in test_support.py.
@@ -525,6 +534,7 @@ class TestOperatorCannotTouchAnotherOrgsResources:
         for method, path in (
             ("PUT", f"{API}/admin/spaces/{{space_id}}"),
             ("DELETE", f"{API}/admin/spaces/{{space_id}}"),
+            ("GET", f"{API}/admin/spaces/{{space_id}}/history"),
             ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"),
             ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"),
             ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"),
@@ -548,6 +558,7 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"),
             ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"),
             ("DELETE", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"),
+            ("GET", f"{API}/admin/rooms/{{room_id}}/history"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
@@ -557,28 +568,36 @@ class TestOperatorCannotTouchAnotherOrgsResources:
         assert rules == 6
 
     async def test_booking(self, client, world, db_session):
-        resp = await _send(
-            client,
-            "PUT",
-            f"{API}/admin/bookings/{{booking_id}}",
-            headers=_as(world.op_a, "owner"),
-            org_id=world.org_a.id,
-            ids={"booking_id": world.booking_b.id},
-        )
-        assert resp.status_code == 404, resp.text
+        for method, path in (
+            ("PUT", f"{API}/admin/bookings/{{booking_id}}"),
+            ("GET", f"{API}/admin/bookings/{{booking_id}}/history"),
+        ):
+            resp = await _send(
+                client,
+                method,
+                path,
+                headers=_as(world.op_a, "owner"),
+                org_id=world.org_a.id,
+                ids={"booking_id": world.booking_b.id},
+            )
+            assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
         booking = await _fresh(db_session, Booking, world.booking_b.id)
         assert booking.status is BookingStatus.confirmed
 
     async def test_package(self, client, world, db_session):
-        resp = await _send(
-            client,
-            "PUT",
-            f"{API}/admin/packages/{{package_id}}",
-            headers=_as(world.op_a, "owner"),
-            org_id=world.org_a.id,
-            ids={"package_id": world.package_b.id},
-        )
-        assert resp.status_code == 404, resp.text
+        for method, path in (
+            ("PUT", f"{API}/admin/packages/{{package_id}}"),
+            ("GET", f"{API}/admin/packages/{{package_id}}/history"),
+        ):
+            resp = await _send(
+                client,
+                method,
+                path,
+                headers=_as(world.op_a, "owner"),
+                org_id=world.org_a.id,
+                ids={"package_id": world.package_b.id},
+            )
+            assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
         package = await _fresh(db_session, Package, world.package_b.id)
         assert (package.price, package.is_active) == (Decimal("100.00"), True)
 
@@ -592,6 +611,8 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("PUT", f"{API}/admin/users/{{user_id}}/role"),
             ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"),
             ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"),
+            ("GET", f"{API}/admin/users/{{user_id}}/history"),
+            ("GET", f"{API}/admin/purchases/{{purchase_id}}/history"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
