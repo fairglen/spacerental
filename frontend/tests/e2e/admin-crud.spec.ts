@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { test, expect, request as playwrightRequest, type APIRequestContext } from '@playwright/test'
 import { ADMIN_STORAGE_STATE } from './global-setup'
+import { waitOutPublicRateWindow } from './helpers/rooms'
 
 /**
  * Part A2 (G05/G06) as the seeded owner: the room lifecycle on the new pages,
@@ -36,7 +37,7 @@ test.afterAll(async () => {
   await api.dispose()
   // This file spends most of the auth tier's minute (logins, a reset, a
   // set-password); the next file starts with a fresh window.
-  await delay(61_000)
+  await waitOutPublicRateWindow()
 })
 
 function futureSlot(daysAhead: number, hour: number) {
