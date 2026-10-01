@@ -444,8 +444,13 @@ class TestHoursComeBack:
 
         # 2. Free the hours again, then a hold that HAS been reconciled (`expired`,
         #    hours returned) is confirmed by the operator: re-debited, once.
+        #    Without the K01 credit for the paid hour, or the bank would cover
+        #    the next 8h outright and there would be no hold to lapse.
         undone = await client.put(
-            url_of(first), params=org, json={"status": "cancelled"}, headers=admin
+            url_of(first),
+            params=org,
+            json={"status": "cancelled", "credit_hours": False, "reason": "teste: sem crédito"},
+            headers=admin,
         )
         assert undone.status_code == 200, undone.text
         assert await _balance(db_session, seven_hours) == (Decimal(7), Decimal(0))

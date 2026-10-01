@@ -112,22 +112,29 @@ export type Package = {
   is_active: boolean
 }
 
+// K01: where the hours came from — bought, granted by the operator, or the
+// paid hours of a cancelled booking.
+export type PurchaseSource = 'purchase' | 'complimentary' | 'cancellation_credit'
+
 export type UserPackagePurchase = {
   id: string
   user_id: string
-  package_id: string
+  // null for a cancellation credit: hours that belong to no pack.
+  package_id: string | null
   org_id: string
   hours_total: number
   hours_used: number
   hours_remaining: number
   // What was paid, at purchase time: the pack's price, or 0 for hours the
-  // operator granted (A05).
+  // operator granted (A05); for a credit, what the cancelled booking cost.
   amount_paid: number
   // Hours only become spendable once Stripe confirms the payment.
   status: 'pending' | 'active' | 'cancelled'
+  source: PurchaseSource
+  source_booking_id: string | null
   purchased_at: string
   expires_at: string
-  package?: Package
+  package?: Package | null
 }
 
 // The operator's view of a purchase (A05): plus the private note.
@@ -348,6 +355,9 @@ export type AdminBookingPatch = {
   // G04: the customer-visible note, and the price override (needs a reason).
   notes?: string | null
   total_amount?: number
+  // K01: cancelling credits the paid hours unless this is false (then a
+  // reason is required).
+  credit_hours?: boolean
   reason?: string
 }
 
@@ -393,8 +403,16 @@ export type AdminRoomDetail = {
   photo_count: number
   bookings: BookingCounts
 }
+// K01: the credit a cancelled paid booking left in the customer's bank.
+export type CancellationCredit = {
+  id: string
+  hours_total: number
+  hours_remaining: number
+  status: UserPackagePurchase['status']
+  expires_at: string
+}
 export type AdminBookingDetail = {
-  booking: Booking & { stripe_checkout_session_id: string | null }
+  booking: Booking & { stripe_checkout_session_id: string | null; cancellation_credit?: CancellationCredit | null }
   history: AdminAction[]
 }
 export type AdminPackageDetail = {

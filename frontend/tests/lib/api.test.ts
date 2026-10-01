@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, supportApi, createAuthenticatedApi } from '@/lib/api'
+import { AxiosError, AxiosHeaders } from 'axios'
+import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, supportApi, createAuthenticatedApi, withSessionRevocation } from '@/lib/api'
 
 describe('spacesApi.list', () => {
   it('extracts spaces array from wrapped response', async () => {
@@ -63,6 +64,41 @@ describe('createAuthenticatedApi', () => {
   it('omits Authorization when no token', () => {
     const api = createAuthenticatedApi(null)
     expect(api.defaults.headers.common['Authorization']).toBeUndefined()
+  })
+
+  // Review on #65: in the signed-in areas a revoked bearer token must end
+  // the NextAuth session too; a plain authenticated client (public pages,
+  // B14) keeps its own 401 handling.
+  it('withSessionRevocation: a 401 signs the browser out, once; other errors, the anonymous client and a plain client do not', async () => {
+    const { signOut } = await import('next-auth/react')
+    const { resetSessionRevoked } = await import('@/lib/sessionRevoked')
+    resetSessionRevoked()
+    vi.mocked(signOut).mockClear()
+    const api = withSessionRevocation(createAuthenticatedApi('stale-token'))
+    const reject = (status: number) => Promise.reject(new AxiosError('x', String(status), undefined, undefined, {
+      status, statusText: 'x', data: {}, headers: {}, config: { headers: new AxiosHeaders() },
+    }))
+    api.defaults.adapter = () => reject(401)
+    await expect(api.get('/bookings/me')).rejects.toBeTruthy()
+    await expect(api.get('/packages/me')).rejects.toBeTruthy()
+    expect(signOut).toHaveBeenCalledTimes(1)
+    expect(signOut).toHaveBeenCalledWith({ callbackUrl: '/sign-in?session=expired' })
+
+    resetSessionRevoked()
+    vi.mocked(signOut).mockClear()
+    api.defaults.adapter = () => reject(403)
+    await expect(api.get('/admin/users')).rejects.toBeTruthy()
+    expect(signOut).not.toHaveBeenCalled()
+
+    const anonymous = withSessionRevocation(createAuthenticatedApi(null))
+    anonymous.defaults.adapter = () => reject(401)
+    await expect(anonymous.post('/auth/login', {})).rejects.toBeTruthy()
+    expect(signOut).not.toHaveBeenCalled()
+
+    const plain = createAuthenticatedApi('stale-token')
+    plain.defaults.adapter = () => reject(401)
+    await expect(plain.post('/packages/p/purchase', {})).rejects.toBeTruthy()
+    expect(signOut).not.toHaveBeenCalled()
   })
 })
 
@@ -605,6 +641,20 @@ describe('adminApi support inbox (C19)', () => {
 })
 
 // A01/A02/A03: what the admin calendar calls.
+// K02: a purchase started from the booking page says where to come back to.
+describe('packagesApi.purchase return_to (K02)', () => {
+  const data = { purchase: { id: 'p1', hours_total: '10.00', hours_used: '0', hours_remaining: '10.00' }, checkout_url: 'http://x/checkout' }
+  it('sends return_to only when given', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data }) } as any
+    await packagesApi.purchase('pkg', 'org', mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/packages/pkg/purchase', { org_id: 'org' })
+    const result = await packagesApi.purchase('pkg', 'org', mockApi, '/spaces/s?room=r&start=a&end=b')
+    expect(mockApi.post).toHaveBeenLastCalledWith('/packages/pkg/purchase', { org_id: 'org', return_to: '/spaces/s?room=r&start=a&end=b' })
+    expect(result.checkout_url).toBe('http://x/checkout')
+    expect(result.purchase.hours_remaining).toBe(10)
+  })
+})
+
 describe('adminApi booking management and blocks (A01, A02)', () => {
   const booking = { id: 'b1', total_amount: '22.00', duration_hours: '2.00', package_hours_used: '0', admin_note: 'n' }
 
@@ -623,6 +673,15 @@ describe('adminApi booking management and blocks (A01, A02)', () => {
     const mockApi = { put: vi.fn().mockResolvedValue({ data: { booking, hours: { before: '2.00', after: '4.00', uncovered: '1.00' } } }) } as any
     const result = await adminApi.updateBookingDetails('b1', { end_time: 'e' }, mockApi)
     expect(result.hours).toEqual({ before: 2, after: 4, uncovered: 1 })
+  })
+
+  it('updateBookingDetails carries the credit a cancellation created, with its hours as a number (K01)', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { booking, credit: { id: 'c1', hours: '2.00', expires_at: '2027-10-01T00:00:00Z' } } }) } as any
+    const result = await adminApi.updateBookingDetails('b1', { status: 'cancelled', reason: 'r' }, mockApi)
+    expect(result.credit).toEqual({ id: 'c1', hours: 2, expires_at: '2027-10-01T00:00:00Z' })
+    expect(result.hours).toBeUndefined()
+    const none = await adminApi.updateBookingDetails('b1', { status: 'cancelled', reason: 'r', credit_hours: false }, { put: vi.fn().mockResolvedValue({ data: { booking } }) } as any)
+    expect(none.credit).toBeUndefined()
   })
 
   it('updateBooking (status only) still works and normalizes', async () => {

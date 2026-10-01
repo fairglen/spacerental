@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Building2 } from 'lucide-react'
+import { BrandLogo } from '@/components/layout/BrandLogo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -44,9 +44,8 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-primary">
-            <Building2 className="h-6 w-6" />
-            <span className="text-xl font-bold text-foreground">{t('brand.name')}</span>
+          <Link href="/" className="inline-flex items-center text-primary" aria-label={t('brand.name')}>
+            <BrandLogo height={32} />
           </Link>
         </div>
         <Card>

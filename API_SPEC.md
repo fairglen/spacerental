@@ -55,8 +55,14 @@ message (20–2000 chars), contact_email?, booking_id?, context?, website? }`
   and nothing is stored or sent.
 Stores a `support_requests` row (status `new`; `org_id` from the booking, else
 the customer's only organisation, else `CUSTOMER_ENROLLMENT_ORG_SLUG`, else
-null) and emails `SUPPORT_EMAIL` with `Reply-To` = the customer and subject
-`[Ajuda] <categoria> — #<reference>`. A mail failure does not lose the request.
+null) and sends two emails (K03): the inbox copy to `SUPPORT_INBOX_EMAIL`
+(default `geral+support@flowspace.pt`) with `Reply-To` = the customer,
+subject `[Ajuda] <categoria> — #<reference>` and a link to
+`/admin/support/<id>`; and the requester's copy to their address with
+`Reply-To` = the inbox, subject `[FlowSpace] Recebemos o seu pedido
+#<reference>`, the category, the booking's date and hours when one is
+linked, and the message quoted (escaped). A mail failure does not lose the
+request; the honeypot sends nothing.
 Throttled tightly (`RATE_LIMIT_SUPPORT_*`, default 5/hour per client) → `429`.
 Response `201`: `{ request: { id, reference, status, created_at } }` — never the
 message: a public endpoint does not reflect what it was sent.
@@ -147,7 +153,15 @@ Body: `{ token, password (8–128) }`. 400 `A ligação é inválida ou já expi
 for a token that is unknown, used, expired, or belongs to a disabled account
 (one message for all, so tokens cannot be probed). Success (200) sets the
 password, marks the token used and bumps the account's `token_version`,
-which signs every earlier session out. Auth rate-limit tier.
+which signs every earlier session out: the backend refuses the old bearer
+token, and in the signed-in areas the app ends the NextAuth session that
+carried it the moment a call answers 401 (`useApi` →
+`withSessionRevocation`, `lib/sessionRevoked.ts`) — the dashboard layout
+also checks the token against `GET /auth/me` before rendering, so a stale
+cookie never gets the page (it lands on `/sign-in?session=expired`).
+Public pages keep their own 401 handling: the pack button's "Entrar e
+continuar a compra" preserves the chosen pack across re-authentication
+(B14). Auth rate-limit tier.
 
 **Sessions and suspended accounts (G02/G03).** Every token carries `tv`, the
 `token_version` it was issued under (older tokens without the claim read as
@@ -227,6 +241,22 @@ cancel **one occurrence** of a recurring series: the occurrence is marked
 for any method. `400` for `expired` and
 `paid_unfulfilled` rows: they hold no slot to cancel.
 
+**Cancellation credit (K01).** The money share of a cancelled paid booking —
+all of an `hourly` or `manual` one, the paid hours of a `mixed` one — comes
+back as hours in the customer's bank, never as a refund: one
+`UserPackagePurchase` with `source: "cancellation_credit"`, `package: null`,
+`source_booking_id` = the booking, `hours_total = hours_remaining =
+total_amount / room.hourly_rate` (to 0.01), `amount_paid = total_amount` (so
+money reports still add up), and `expires_at` = now +
+`CANCELLATION_CREDIT_VALIDITY_DAYS` (default 365). Only a `confirmed` or
+`completed` booking with `total_amount > 0` is credited: an unpaid hold, an
+`expired` row and a `package` booking credit nothing. One credit per booking,
+ever (unique `source_booking_id`); a booking cancelled, reinstated and
+cancelled again reactivates its one row with a fresh expiry. The cancellation
+email gains the line "As N horas pagas ficaram no seu banco de horas, válidas
+até <data>." when a credit was created. Credited hours spend like any other:
+`package` and `mixed` bookings draw them soonest-expiring first.
+
 ### POST /bookings/:id/checkout
 "Pagar agora" for an unpaid hold (own only). An hourly booking holds its slot
 until `hold_expires_at` (`BOOKING_HOLD_MINUTES`, default 15); after that it reads
@@ -277,8 +307,17 @@ Purchase a package. Same Checkout pattern as `POST /bookings`: the purchase is
 recorded `pending` and only the `checkout.session.completed` webhook (Stripe
 or the local stub) flips it to `active` — that's what makes its hours
 spendable.
-Body: `{ org_id }`
+Body: `{ org_id, return_to? }`
 Response: `{ purchase: UserPackagePurchase, checkout_url: string }`
+
+`return_to` (K02) is where Checkout sends the customer back to instead of the
+dashboard: a relative path on the frontend — starts with a single `/`, no
+`//`, backslash, scheme, host, fragment, whitespace or control characters,
+at most 512 characters; anything else is `422` and no purchase is created.
+The success URL becomes `<FRONTEND_URL><return_to>` + `pagamento=sucesso`
+(`&` when the path already has a query, `?` otherwise), the cancel URL the
+same with `pagamento=cancelado`; the stub checkout honours both. The booking
+page sends `/spaces/<id>?room=&start=&end=` so it can reopen the slot.
 
 ### GET /packages/me
 My package purchases and remaining hours, plus the hour bank they form (H02).
@@ -351,6 +390,16 @@ purchases and help requests keep pointing at the placeholder. 409 for
 yourself, for the organisation's last owner, and for an account that also
 belongs to another organisation (the row is global, the operator's authority
 is not); 404 for a non-member. Audited as `anonymise` with the reason.
+
+**Owners are only another owner's to change.** `PUT /admin/users/:id`
+(name, email, suspension), `POST …/set-password`, `POST …/anonymise`,
+`DELETE /admin/users/:id` and `DELETE …/membership` answer 403 when the
+target is an owner of the organisation and the caller is an admin: any of
+them would let an admin take the organisation over (re-address the owner,
+then use the public reset flow). Sending the reset link (`POST
+…/password-reset`) stays allowed — it reaches the owner's own inbox. The
+last-owner rule counts under the organisation's row lock, so two owners
+removing each other at once leave one (the second answers 409).
 
 ### PUT /admin/purchases/:id
 Body: `{ status?: "active" | "cancelled", admin_note?, reason? }` → `{ purchase:
@@ -565,7 +614,20 @@ platform; no charge is created). A write that still trips a database
 constraint answers `409` `The change violates a constraint (<name>)`, never
 `500`. A moved confirmed booking gets the confirmation email again with the
 line "A sua reserva foi alterada" and a new access code.
-Response: `{ booking: AdminBooking, hours? }`.
+Response: `{ booking: AdminBooking, hours?, credit? }`.
+
+Cancelling (K01): `status: "cancelled"` on a paid booking creates the
+cancellation credit described under `DELETE /bookings/:id` unless
+`credit_hours: false` is sent — which needs a `reason` (`422` without one;
+the trail keeps it). The response then carries `credit: { id, hours,
+expires_at }` when one was created. Reinstating a cancelled booking
+(`status` back to `pending`/`confirmed`/`completed`) takes the credit back
+if none of it was spent; once any credited hour went into another booking
+the reinstatement is `409` `The hours credited for this cancellation were
+already used; make a new booking instead`.
+
+`GET /admin/bookings/:id` also carries `cancellation_credit: { id,
+hours_total, hours_remaining, status, expires_at } | null`.
 
 `AdminBooking` = `Booking` + `admin_note: string | null` +
 `package_debits: [{ purchase_id, hours, package_name, expires_at }]` (H02: the
@@ -788,16 +850,19 @@ type Package = {
 type UserPackagePurchase = {
   id: string
   user_id: string
-  package_id: string
+  package_id: string | null   // null for a cancellation credit (K01)
   org_id: string
   hours_total: number
   hours_used: number
   hours_remaining: number
-  amount_paid: number      // the package's price at purchase time; 0 for granted hours (A05)
+  amount_paid: number      // the package's price at purchase time; 0 for granted hours (A05);
+                           // what the cancelled booking cost for a credit (K01)
   status: "pending" | "active" | "cancelled"
+  source: "purchase" | "complimentary" | "cancellation_credit"   // K01
+  source_booking_id: string | null                              // the cancelled booking of a credit
   purchased_at: string
   expires_at: string
-  package: Package
+  package: Package | null
 }
 
 type OrgMembership = {

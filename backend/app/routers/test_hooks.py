@@ -40,6 +40,7 @@ async def stub_emails(gateway: EmailGateway = Depends(get_email_gateway)):
             {
                 "to": m.to,
                 "subject": m.subject,
+                "reply_to": m.reply_to,
                 "links": _LINK.findall(m.text_body),
             }
             for m in sent[-LAST:]

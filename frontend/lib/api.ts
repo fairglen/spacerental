@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { sessionRevoked } from '@/lib/sessionRevoked'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase, Photo,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
@@ -21,6 +22,25 @@ export function createAuthenticatedApi(accessToken: string | null | undefined) {
   if (accessToken) {
     instance.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
   }
+  return instance
+}
+
+/**
+ * For the signed-in areas (`useApi`): a token the backend no longer accepts
+ * ends the NextAuth session as well, instead of leaving a signed-in shell
+ * whose every call fails (review on #65). Public pages keep their own 401
+ * handling — the pack button offers "Entrar e continuar a compra" so the
+ * chosen pack survives re-authentication (B14).
+ */
+export function withSessionRevocation(instance: Api): Api {
+  if (!instance.defaults.headers.common['Authorization']) return instance
+  instance.interceptors.response.use(
+    (response) => response,
+    (error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 401) sessionRevoked()
+      return Promise.reject(error)
+    },
+  )
   return instance
 }
 
@@ -228,8 +248,10 @@ export const packagesApi = {
       balance: normBalance(r.data.balance),
     })),
 
-  purchase: (packageId: string, orgId: string, api: Api) =>
-    api.post<PackagePurchaseCheckout>(`/packages/${packageId}/purchase`, { org_id: orgId })
+  // K02: `returnTo` is the relative path Checkout comes back to (the booking
+  // page with its slot) instead of the dashboard.
+  purchase: (packageId: string, orgId: string, api: Api, returnTo?: string) =>
+    api.post<PackagePurchaseCheckout>(`/packages/${packageId}/purchase`, returnTo ? { org_id: orgId, return_to: returnTo } : { org_id: orgId })
       .then(r => ({
         purchase: normPurchase(r.data.purchase),
         checkout_url: r.data.checkout_url,
@@ -298,14 +320,28 @@ export const adminApi = {
   // ── Booking management (A01) ──────────────────────────────────────────
   // A move answers with `hours` (before/after): a duration change moves no
   // money, the operator settles it; the calendar shows both numbers.
-  updateBookingDetails: (id: string, body: AdminBookingPatch, api: Api) =>
-    api.put<{ booking: Booking; hours?: { before: string; after: string; uncovered?: string } }>(`/admin/bookings/${id}`, body)
+  updateBookingDetails: (
+    id: string,
+    body: AdminBookingPatch,
+    api: Api,
+  ): Promise<{
+    booking: Booking
+    hours?: { before: number; after: number; uncovered: number }
+    credit?: { id: string; hours: number; expires_at: string }
+  }> =>
+    api.put<{
+      booking: Booking
+      hours?: { before: string; after: string; uncovered?: string }
+      credit?: { id: string; hours: string; expires_at: string }
+    }>(`/admin/bookings/${id}`, body)
       .then(r => ({
         booking: normBooking(r.data.booking),
         // H03: `uncovered` = hours of a longer booking the customer's bank could not give.
         hours: r.data.hours
           ? { before: num(r.data.hours.before), after: num(r.data.hours.after), uncovered: num(r.data.hours.uncovered ?? '0') }
           : undefined,
+        // K01: the hour credit a cancellation created, when it did.
+        credit: r.data.credit ? { id: r.data.credit.id, hours: num(r.data.credit.hours), expires_at: r.data.credit.expires_at } : undefined,
       })),
 
   createManualBooking: (

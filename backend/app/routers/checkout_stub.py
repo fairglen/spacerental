@@ -208,7 +208,9 @@ async def pay_checkout(
         email_gateway=email_gateway,
         lock_gateway=lock_gateway,
     )
-    return RedirectResponse(gateway.success_url, status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        session.get("success_url") or gateway.success_url, status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post("/{session_id}/cancel")
@@ -244,4 +246,6 @@ async def cancel_checkout(
             )
             booking.hold_expires_at = now
             booking.status = BookingStatus.expired
-    return RedirectResponse(gateway.cancel_url, status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        session.get("cancel_url") or gateway.cancel_url, status_code=status.HTTP_303_SEE_OTHER
+    )

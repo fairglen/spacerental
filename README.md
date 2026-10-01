@@ -223,7 +223,7 @@ run without third-party accounts or network access.
 every message is logged and kept in process memory, and — with the explicit
 opt-in `TEST_HOOKS_ENABLED=true` (the dev Compose stack sets it; the app's
 default is off) outside `APP_ENV=production` — listed by `GET
-/__test__/emails` (the last 20: to, subject, links). That hook is how the
+/__test__/emails` (the last 20: to, subject, reply_to, links). That hook is how the
 password-reset browser test follows the link nobody can otherwise receive
 locally; the route does not exist without the opt-in or on a production
 app, and `tests/test_password_reset.py` proves both. The reset
@@ -231,7 +231,12 @@ flow itself: `POST /auth/password-reset/request` always answers 202 with the
 same sentence (nobody learns whether an email has an account); the link in
 the email is single-use and lives 60 minutes; `POST /auth/password-reset/
 confirm` sets the password and signs every earlier session out (`users.
-token_version`, carried in the JWT as `tv`). An operator can send the same
+token_version`, carried in the JWT as `tv`; in the signed-in areas the app
+also ends the NextAuth session on the first 401 and the dashboard layout
+checks the token server-side, so a stale browser lands on
+`/sign-in?session=expired`; public pages keep B14's "Entrar e continuar a
+compra"). An
+operator can send the same
 link from the customer's page or set a password directly (`/admin/users/
 {id}/password-reset`, `/set-password`); a suspended account
 (`users.disabled_at`) can do none of it.
@@ -298,6 +303,39 @@ Compose hands the same value to the frontend as
 BOOKING_MAX_ADVANCE_DAYS=7 docker compose up -d --build backend frontend
 ```
 
+Cancelling a paid booking never refunds money (K01): the paid hours —
+`total_amount / hourly_rate` — go to the customer's hour bank as a
+"Crédito — cancelamento de <data>" row that spends like any pack, valid for
+`CANCELLATION_CREDIT_VALIDITY_DAYS` (default 365; Compose hands it to the
+frontend as `NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS` for the cancel
+dialog's wording). The customer's cancel dialog and the cancellation email
+say so; the operator's cancel dialog has "Creditar as horas ao cliente"
+ticked by default and needs a reason when unticked. Reinstating a cancelled
+booking takes the credit back unless some of it was already spent (409).
+
+```bash
+# As a customer (stub gateways): book 2h hourly, pay on the stub page, then
+# cancel from /dashboard — "Os seus packs" lists the 2h credit; book 2h
+# again with "Usar horas do pack": confirmed, no checkout.
+cd frontend && npx playwright test tests/e2e/cancellation-credit.spec.ts
+```
+
+When the hour bank cannot cover a booking (K02), the booking modal offers
+"Comprar um pack" next to paying by the hour — first for a customer who
+never bought one — with the packs on sale inline. "Comprar" starts the
+purchase with `return_to` = the booking page and its slot
+(`/spaces/<id>?room=&start=&end=`), so Checkout (Stripe or the stub) lands
+back on that slot: the page shows the outcome, reopens the modal with the
+new pack preselected if the hours are still free, or the "já está
+reservada" notice if someone took them meanwhile. The slot is not held
+during the detour.
+
+```bash
+# As a fresh customer: pick 2h → "Comprar um pack" → "Comprar" → "Pagar" on
+# the stub page → back on the same slot, "Usar horas do pack" preselected.
+cd frontend && npx playwright test tests/e2e/pack-upsell.spec.ts
+```
+
 ---
 
 ## Testing
@@ -350,7 +388,11 @@ a minute), so a few spec files deliberately wait out a 60-second window at their
 boundary; the full run takes several minutes and those pauses are not hangs.
 The help form is throttled at 5 requests an hour per client and the suite sends
 four, so restart the backend (`docker compose restart backend`) before running
-it a second time within an hour, or the fifth request answers 429.
+it a second time within an hour, or the fifth request answers 429. Each request
+sends two emails (K03): one to `SUPPORT_INBOX_EMAIL` (default
+`geral+support@flowspace.pt`, Reply-To the requester, with a link to the
+request in the admin inbox) and a copy to the requester (Reply-To the inbox);
+`help.spec.ts` reads both from the stub mailbox.
 CI runs this suite with `RECURRING_BOOKINGS_ENABLED=true` (the weekly-series
 spec only runs its full body then), so before opening a PR run it that way too:
 start the stack with that variable set and pass it to `npm run test:e2e`.
@@ -472,3 +514,15 @@ This repo also contains an unrelated static marketing site for the real
 flowspace.pt business in `flowspace-site/`, fully decoupled from the
 FlowSpace app in `frontend/`/`backend/` (no shared build, no shared server;
 they share the brand since W02). See `flowspace-site/README.md`.
+
+**Brand set (B50).** `flowspace-site/assets/img/brand/` is the one source
+of the logo, favicons, Open Graph card and email logo (its `README.md` lists
+each file). The app serves a byte-for-byte copy from `frontend/public/brand/`
+— `tests/lib/brandParity.test.ts` fails if the two drift, so change the
+static site's folder and copy it over. Both sites render the horizontal
+lockup through `<svg><use href="…/logo-horizontal.svg#lockup">` so the
+file's `currentColor` follows the CSS `color` of its link (green in the
+header, white in the footer) with one asset; HTML emails open with
+`<FRONTEND_URL>/brand/logo-email.png`. `metadataBase` comes from
+`NEXTAUTH_URL`, so Open Graph image URLs are absolute on a deployed app
+(Next 14 always uses `localhost` in `next dev`).

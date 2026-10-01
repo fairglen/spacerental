@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test'
 
+const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
+const API_ROOT = API_URL.replace(/\/api\/v1$/, '')
+
 /**
  * C17 — "Ajuda": a visitor who is not signed in reports a problem from the
  * navbar and gets a reference back. The row's arrival is checked from the
@@ -10,7 +13,7 @@ import { test, expect } from '@playwright/test'
  * fits in one window; restart the backend before running it twice within an
  * hour, or the fifth request answers 429.
  */
-test('a signed-out visitor sends a help request and gets a reference', async ({ page }) => {
+test('a signed-out visitor sends a help request and gets a reference, and both emails go out', async ({ page, request }) => {
   await page.goto('/')
   await page.getByRole('navigation').getByRole('button', { name: /^Ajuda$/ }).click()
 
@@ -33,10 +36,26 @@ test('a signed-out visitor sends a help request and gets a reference', async ({ 
   const status = dialog.getByRole('status')
   await expect(status).toBeVisible({ timeout: 10000 })
   await expect(status).toContainText(/#[0-9A-F]{8}/)
-  await expect(status).toContainText('Respondemos por email')
-  await expect(status).toContainText('visitante-e2e@example.com')
+  await expect(status).toContainText('Enviámos uma cópia para visitante-e2e@example.com')
+  await expect(status).toContainText('respondemos por email')
+  const reference = (await status.textContent())!.match(/#([0-9A-F]{8})/)![1]
   await dialog.getByRole('button', { name: 'Fechar' }).click()
   await expect(dialog).toHaveCount(0)
+
+  // K03: the inbox copy (answerable to the visitor) and the visitor's own copy
+  // (answerable to the inbox), both from the stub mailbox.
+  const mailbox = await request.get(`${API_ROOT}/__test__/emails`)
+  expect(mailbox.ok(), await mailbox.text()).toBeTruthy()
+  const { emails } = (await mailbox.json()) as { emails: Array<{ to: string; subject: string; reply_to: string | null; links: string[] }> }
+  const inbox = emails.find((m) => m.subject === `[Ajuda] Problema técnico — #${reference}`)
+  expect(inbox, 'the inbox copy reached the stub mailbox').toBeTruthy()
+  expect(inbox!.to).toBe('geral+support@flowspace.pt')
+  expect(inbox!.reply_to).toBe('visitante-e2e@example.com')
+  expect(inbox!.links.some((l) => l.includes('/admin/support/'))).toBe(true)
+  const copy = emails.find((m) => m.subject === `[FlowSpace] Recebemos o seu pedido #${reference}`)
+  expect(copy, 'the requester copy reached the stub mailbox').toBeTruthy()
+  expect(copy!.to).toBe('visitante-e2e@example.com')
+  expect(copy!.reply_to).toBe('geral+support@flowspace.pt')
 })
 
 // C18: from the cancel dialog of a paid booking, the money question goes to a

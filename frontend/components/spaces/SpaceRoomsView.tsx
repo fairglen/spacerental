@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
 import { RoomCard } from '@/components/spaces/RoomCard'
@@ -9,6 +9,8 @@ import { PhotoMosaic } from '@/components/spaces/PhotoMosaic'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { BookingModal } from '@/components/booking/BookingModal'
 import { ContactNote } from '@/components/booking/ContactNote'
+import { PaymentNotice, paymentOutcomeOf, type PaymentOutcome } from '@/components/booking/PaymentNotice'
+import { parseSlotParams } from '@/lib/bookingDeepLink'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Room } from '@/types'
@@ -37,6 +39,34 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
   const [bookingStart, setBookingStart] = useState<Date | null>(null)
   const [bookingEnd, setBookingEnd] = useState<Date | null>(null)
   const [calendarRoom, setCalendarRoom] = useState<Room | null>(null)
+  // K02: the slot the customer left to buy a pack, and how Checkout ended.
+  // Read once from the URL, then the query is stripped so a reload does not
+  // repeat the notice or reopen the modal (`?room=` stays, as before).
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [reopen, setReopen] = useState<{ start: Date; end: Date } | null>(null)
+  const [paymentNotice, setPaymentNotice] = useState<PaymentOutcome | null>(null)
+  const requestedRoomId = searchParams.get('room')
+  // Keyed on the query string, not the params object: one pass per URL. The
+  // router rides in a ref so the effect does not depend on its identity.
+  const query = searchParams.toString()
+  const routerRef = useRef(router)
+  routerRef.current = router
+  useEffect(() => {
+    const params = new URLSearchParams(query)
+    const outcome = paymentOutcomeOf(params.get('pagamento'))
+    const slot = parseSlotParams(params.get('start'), params.get('end'))
+    if (!outcome && !slot) return
+    if (outcome) setPaymentNotice(outcome)
+    if (slot) {
+      setReopen((current) =>
+        current && current.start.getTime() === slot.start.getTime() && current.end.getTime() === slot.end.getTime() ? current : slot,
+      )
+    }
+    const room = params.get('room')
+    routerRef.current.replace(room ? `${pathname}?room=${encodeURIComponent(room)}` : pathname, { scroll: false })
+  }, [query, pathname])
 
   const { data, isLoading } = useQuery({
     queryKey: ['space', spaceId],
@@ -49,7 +79,6 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
   // clicks decide. An id that is not one of this space's active rooms (stale
   // link, typo, a room since deactivated) is ignored without comment — the
   // page is still perfectly usable, so there is nothing to report.
-  const requestedRoomId = useSearchParams().get('room')
   const deepLinkApplied = useRef(false)
   useEffect(() => {
     if (deepLinkApplied.current || !data) return
@@ -96,6 +125,7 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+          {paymentNotice && <PaymentNotice outcome={paymentNotice} context="booking" onClose={() => setPaymentNotice(null)} />}
           <h2 className="text-xl font-semibold text-foreground mb-6">Salas Disponíveis</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
             {rooms.filter((r) => r.is_active).map((room) => (
@@ -130,7 +160,13 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
                 Clique numa hora livre para reservar 1 hora, ou arraste para reservar várias seguidas.
               </p>
               <ContactNote roomName={calendarRoom.name} className="mb-4" />
-              <BookingCalendar room={calendarRoom} onSlotSelect={handleSlotSelect} />
+              <BookingCalendar
+                room={calendarRoom}
+                onSlotSelect={handleSlotSelect}
+                initialDate={reopen?.start}
+                reopen={reopen}
+                onReopenDone={() => setReopen(null)}
+              />
             </div>
           )}
         </div>
