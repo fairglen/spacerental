@@ -133,9 +133,15 @@ become four PRs the loop opens and never merges: `feat/admin-crud-backend`
 (B50). Recorded as the G/K/B series near the end of this file, with the
 owner's decisions and the CRUD matrix the admin parts start from. Part A1
 opened as [PR #65](https://github.com/fairglen/spacerental/pull/65)
-(G01–G04, base `main`) on 2026-09-30, and Part A2 as
+(G01–G04, base `main`) on 2026-09-30, Part A2 as
 [PR #66](https://github.com/fairglen/spacerental/pull/66) (G05–G06, base
-`feat/admin-crud-backend`) on 2026-10-01; the owner reviews and merges.
+`feat/admin-crud-backend`), Part C as
+[PR #67](https://github.com/fairglen/spacerental/pull/67) (K01–K03, base
+`feat/admin-crud-ui`) and Part L as
+[PR #68](https://github.com/fairglen/spacerental/pull/68) (B50, base
+`feat/customer-credit-pack-upsell-notifications`), the last three on
+2026-10-01; each retargets to `main` as the one below it merges. The owner
+reviews and merges; the loop never does.
 
 States used below:
 
@@ -2369,6 +2375,19 @@ failed revoke retained/retried, wrong-user/org code access denial, and local
 stub customer-code → cancel → revoke walkthrough including series changes.
 
 ### O05 — Tenant-scoped audit history
+
+**State: DONE for the minimal mandatory scope (G01, 2026-10-01, PR #65; the
+admin browsing page in PR #66).** `admin_actions` (migration 0013) records
+actor, organisation, action, entity, before/after snapshot, reason and
+request id in the same transaction as every admin mutation route (the
+scenario table in `tests/test_audit.py` enforces one row per route; a
+rollback leaves none); system actors are distinguished; passwords, tokens
+and access codes are never snapshotted; `GET /admin/audit` and the seven
+`/history` routes are admin-only, tenant-scoped, newest-first, paged;
+`/admin/audit` browses it. What this entry still names beyond that —
+series changes, refund operations, role changes as first-class audited
+transitions, and the O04 dependency — stays open and is not blocked on
+anything here.
 
 **Depends on:** O04. **Scope:** `AuditLog` model/migration, transition call sites,
 admin endpoint/API wrapper and `frontend/app/admin/audit/page.tsx`.
@@ -5065,7 +5084,7 @@ summary.
 
 ### B50 — New logo on both sites (brand set `flowspace-site/assets/img/brand/`)
 
-**Priority: P2. State: DONE (Part L, 2026-10-01, PR TBD).** The cleaned brand set (16 files:
+**Priority: P2. State: DONE (Part L, 2026-10-01, PR #68).** The cleaned brand set (16 files:
 `logo-full.svg`, `logo-mark.svg`, `wordmark.svg`, `spiral-mark.svg`,
 `favicon.svg`, favicon-16/32/48/192/512.png, `apple-touch-icon.png`,
 `logo-email.png`, `logo-email-white-bg.png`, `logo-full-white.png`,
