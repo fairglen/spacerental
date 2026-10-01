@@ -164,7 +164,8 @@ function SpaceDetail({ spaceId }: { spaceId: string }) {
 
       <div className="space-y-6 mt-8">
         <section aria-labelledby="fotografias" className="rounded-xl border border-border bg-white p-5">
-          <h2 id="fotografias" className="text-base font-semibold text-foreground mb-3">Fotografias</h2>
+          {/* The manager prints its own "Fotografias"; this one names the section for assistive tech only. */}
+          <h2 id="fotografias" className="sr-only">Fotografias</h2>
           <PhotoManager
             kind="spaces"
             entityId={space.id}
