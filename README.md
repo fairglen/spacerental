@@ -298,6 +298,23 @@ Compose hands the same value to the frontend as
 BOOKING_MAX_ADVANCE_DAYS=7 docker compose up -d --build backend frontend
 ```
 
+Cancelling a paid booking never refunds money (K01): the paid hours —
+`total_amount / hourly_rate` — go to the customer's hour bank as a
+"Crédito — cancelamento de <data>" row that spends like any pack, valid for
+`CANCELLATION_CREDIT_VALIDITY_DAYS` (default 365; Compose hands it to the
+frontend as `NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS` for the cancel
+dialog's wording). The customer's cancel dialog and the cancellation email
+say so; the operator's cancel dialog has "Creditar as horas ao cliente"
+ticked by default and needs a reason when unticked. Reinstating a cancelled
+booking takes the credit back unless some of it was already spent (409).
+
+```bash
+# As a customer (stub gateways): book 2h hourly, pay on the stub page, then
+# cancel from /dashboard — "Os seus packs" lists the 2h credit; book 2h
+# again with "Usar horas do pack": confirmed, no checkout.
+cd frontend && npx playwright test tests/e2e/cancellation-credit.spec.ts
+```
+
 ---
 
 ## Testing

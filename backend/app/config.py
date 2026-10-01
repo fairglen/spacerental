@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # untouched). The frontend mirrors it as NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS
     # for the calendar's hint; the API stays authoritative.
     BOOKING_MAX_ADVANCE_DAYS: int = Field(default=30, gt=0)
+    # How long the hours credited for a cancelled paid booking stay in the
+    # customer's bank (K01). The frontend mirrors it as
+    # NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS for the cancel dialog.
+    CANCELLATION_CREDIT_VALIDITY_DAYS: int = Field(default=365, gt=0)
 
     # ── Rate limiting ────────────────────────────────────────────────────
     RATE_LIMIT_ENABLED: bool = True

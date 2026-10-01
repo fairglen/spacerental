@@ -77,7 +77,7 @@ function purchase(hours: number, overrides: Partial<UserPackagePurchase> = {}): 
     hours_used: 10 - hours,
     hours_remaining: hours, amount_paid: 100,
     status: 'active',
-    purchased_at: new Date('2026-01-01T00:00:00Z').toISOString(),
+    source: 'purchase' as const, source_booking_id: null, purchased_at: new Date('2026-01-01T00:00:00Z').toISOString(),
     expires_at: new Date('2027-01-01T00:00:00Z').toISOString(),
     ...overrides,
   }

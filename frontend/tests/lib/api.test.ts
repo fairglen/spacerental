@@ -625,6 +625,15 @@ describe('adminApi booking management and blocks (A01, A02)', () => {
     expect(result.hours).toEqual({ before: 2, after: 4, uncovered: 1 })
   })
 
+  it('updateBookingDetails carries the credit a cancellation created, with its hours as a number (K01)', async () => {
+    const mockApi = { put: vi.fn().mockResolvedValue({ data: { booking, credit: { id: 'c1', hours: '2.00', expires_at: '2027-10-01T00:00:00Z' } } }) } as any
+    const result = await adminApi.updateBookingDetails('b1', { status: 'cancelled', reason: 'r' }, mockApi)
+    expect(result.credit).toEqual({ id: 'c1', hours: 2, expires_at: '2027-10-01T00:00:00Z' })
+    expect(result.hours).toBeUndefined()
+    const none = await adminApi.updateBookingDetails('b1', { status: 'cancelled', reason: 'r', credit_hours: false }, { put: vi.fn().mockResolvedValue({ data: { booking } }) } as any)
+    expect(none.credit).toBeUndefined()
+  })
+
   it('updateBooking (status only) still works and normalizes', async () => {
     const mockApi = { put: vi.fn().mockResolvedValue({ data: { booking } }) } as any
     expect((await adminApi.updateBooking('b1', 'cancelled', mockApi)).total_amount).toBe(22)

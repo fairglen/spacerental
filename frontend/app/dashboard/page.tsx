@@ -13,6 +13,7 @@ import { bookingsApi, packagesApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { formatBookingCost, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS, isUnpaidHold } from '@/lib/utils'
 import { cancellationErrorMessage, bookingErrorMessage } from '@/lib/httpError'
+import { creditExpiry, creditHoursFor, purchaseLabel } from '@/lib/cancellationCredit'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { Card, CardContent } from '@/components/ui/card'
@@ -85,6 +86,8 @@ export default function DashboardPage() {
   // Money went out for it (hourly/mixed, past the unpaid hold): the one case
   // where "what about what I paid?" is a real question — for a person (C18).
   const paidMoney = !!cancelling && cancelling.payment_method !== 'package' && !isUnpaidHold(cancelling)
+  // K01: what those euros become — hours in the bank, computed the backend's way.
+  const creditHours = cancelling ? creditHoursFor(cancelling) : null
 
   // "Pagar agora" / "Tentar pagar de novo" (C03): resume or retry the hold's
   // Checkout on the same booking row, then leave for the payment page.
@@ -168,7 +171,7 @@ export default function DashboardPage() {
               <ul className="mt-2 divide-y divide-border text-sm">
                 {activePacks.map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
-                    <span className="font-medium text-foreground">{p.package?.name ?? 'Pack'}</span>
+                    <span className="font-medium text-foreground">{purchaseLabel(p)}</span>
                     <span className="text-muted-foreground">
                       <span className="font-semibold text-primary">{formatHours(p.hours_remaining)}</span> restantes ·
                       expira {format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}
@@ -330,6 +333,13 @@ export default function DashboardPage() {
               pagas com um pack voltam ao seu saldo.
             </DialogDescription>
           </DialogHeader>
+          {creditHours !== null && (
+            // The paid hours are not refunded: they stay spendable in the bank (K01).
+            <p className="text-sm text-foreground rounded-lg bg-accent px-3 py-2">
+              Ao cancelar, as {formatHours(creditHours)} pagas ficam no seu banco de horas
+              (válidas até {format(creditExpiry(), 'd MMM yyyy', { locale: pt })}).
+            </p>
+          )}
           {cancelMutation.isError && (
             <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
               {cancellationErrorMessage(cancelMutation.error)}
@@ -348,9 +358,9 @@ export default function DashboardPage() {
             </Button>
           </DialogFooter>
           {paidMoney && (
-            // Says nothing about whether money comes back: a person answers that.
+            // Money never comes back by itself; a person can find another way.
             <p className="text-xs text-muted-foreground">
-              Questões sobre o valor pago?{' '}
+              Precisa de outra solução?{' '}
               <button
                 type="button"
                 onClick={() => { closeCancelDialog(); openHelp({ category: 'payment', bookingId: cancelling.id }) }}

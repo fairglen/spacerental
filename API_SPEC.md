@@ -227,6 +227,22 @@ cancel **one occurrence** of a recurring series: the occurrence is marked
 for any method. `400` for `expired` and
 `paid_unfulfilled` rows: they hold no slot to cancel.
 
+**Cancellation credit (K01).** The money share of a cancelled paid booking —
+all of an `hourly` or `manual` one, the paid hours of a `mixed` one — comes
+back as hours in the customer's bank, never as a refund: one
+`UserPackagePurchase` with `source: "cancellation_credit"`, `package: null`,
+`source_booking_id` = the booking, `hours_total = hours_remaining =
+total_amount / room.hourly_rate` (to 0.01), `amount_paid = total_amount` (so
+money reports still add up), and `expires_at` = now +
+`CANCELLATION_CREDIT_VALIDITY_DAYS` (default 365). Only a `confirmed` or
+`completed` booking with `total_amount > 0` is credited: an unpaid hold, an
+`expired` row and a `package` booking credit nothing. One credit per booking,
+ever (unique `source_booking_id`); a booking cancelled, reinstated and
+cancelled again reactivates its one row with a fresh expiry. The cancellation
+email gains the line "As N horas pagas ficaram no seu banco de horas, válidas
+até <data>." when a credit was created. Credited hours spend like any other:
+`package` and `mixed` bookings draw them soonest-expiring first.
+
 ### POST /bookings/:id/checkout
 "Pagar agora" for an unpaid hold (own only). An hourly booking holds its slot
 until `hold_expires_at` (`BOOKING_HOLD_MINUTES`, default 15); after that it reads
@@ -565,7 +581,20 @@ platform; no charge is created). A write that still trips a database
 constraint answers `409` `The change violates a constraint (<name>)`, never
 `500`. A moved confirmed booking gets the confirmation email again with the
 line "A sua reserva foi alterada" and a new access code.
-Response: `{ booking: AdminBooking, hours? }`.
+Response: `{ booking: AdminBooking, hours?, credit? }`.
+
+Cancelling (K01): `status: "cancelled"` on a paid booking creates the
+cancellation credit described under `DELETE /bookings/:id` unless
+`credit_hours: false` is sent — which needs a `reason` (`422` without one;
+the trail keeps it). The response then carries `credit: { id, hours,
+expires_at }` when one was created. Reinstating a cancelled booking
+(`status` back to `pending`/`confirmed`/`completed`) takes the credit back
+if none of it was spent; once any credited hour went into another booking
+the reinstatement is `409` `The hours credited for this cancellation were
+already used; make a new booking instead`.
+
+`GET /admin/bookings/:id` also carries `cancellation_credit: { id,
+hours_total, hours_remaining, status, expires_at } | null`.
 
 `AdminBooking` = `Booking` + `admin_note: string | null` +
 `package_debits: [{ purchase_id, hours, package_name, expires_at }]` (H02: the
@@ -788,16 +817,19 @@ type Package = {
 type UserPackagePurchase = {
   id: string
   user_id: string
-  package_id: string
+  package_id: string | null   // null for a cancellation credit (K01)
   org_id: string
   hours_total: number
   hours_used: number
   hours_remaining: number
-  amount_paid: number      // the package's price at purchase time; 0 for granted hours (A05)
+  amount_paid: number      // the package's price at purchase time; 0 for granted hours (A05);
+                           // what the cancelled booking cost for a credit (K01)
   status: "pending" | "active" | "cancelled"
+  source: "purchase" | "complimentary" | "cancellation_credit"   // K01
+  source_booking_id: string | null                              // the cancelled booking of a credit
   purchased_at: string
   expires_at: string
-  package: Package
+  package: Package | null
 }
 
 type OrgMembership = {

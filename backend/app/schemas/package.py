@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.models.package import PurchaseStatus
+from app.models.package import PurchaseSource, PurchaseStatus
 from app.schemas.bounds import Money, Name, PackageHours, RejectExplicitNull, ValidityDays
 
 
@@ -56,7 +56,8 @@ class UserPackagePurchaseOut(BaseModel):
 
     id: uuid.UUID
     user_id: uuid.UUID
-    package_id: uuid.UUID
+    # None for a cancellation credit (K01).
+    package_id: uuid.UUID | None = None
     org_id: uuid.UUID
     hours_total: Decimal
     hours_used: Decimal
@@ -64,12 +65,16 @@ class UserPackagePurchaseOut(BaseModel):
     # 0,00 for complimentary hours (A05); the package's price when bought.
     amount_paid: Decimal = Decimal(0)
     status: PurchaseStatus
+    # K01: bought, granted, or the paid hours of a cancelled booking.
+    source: PurchaseSource = PurchaseSource.purchase
+    source_booking_id: uuid.UUID | None = None
     purchased_at: datetime
     expires_at: datetime
     # Callers (the dashboard, B12) show the package name next to the balance —
     # without this the frontend has nothing to render but a generic "Pacote".
     # Requires the router to eager-load `.package` (it's `lazy="noload"`).
-    package: PackageOut
+    # None for a cancellation credit, which belongs to no package.
+    package: PackageOut | None = None
 
 
 class PackagePurchaseBody(BaseModel):

@@ -167,17 +167,61 @@ describe('Reserva', () => {
     await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(booking.id, { total_amount: 20, reason: 'Desconto de fidelidade' }, expect.anything()))
   })
 
-  it('a paid booking cannot be hard-deleted; cancelling asks for a reason', async () => {
-    vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({ booking: { ...booking, status: 'cancelled' }, hours: undefined })
+  it('a paid booking cannot be hard-deleted; cancelling asks for a reason and credits the hours by default (K01)', async () => {
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({
+      booking: { ...booking, status: 'cancelled' }, hours: undefined,
+      credit: { id: 'c-1', hours: 2, expires_at: '2031-01-01T00:00:00Z' },
+    })
     const user = userEvent.setup()
     renderPage(<AdminBookingPage />)
     await screen.findByRole('heading', { level: 1 })
     expect(screen.getByTestId('danger-disabled')).toHaveTextContent('cancele-a')
     await user.click(screen.getByRole('button', { name: 'Cancelar reserva' }))
     const dialog = await screen.findByRole('dialog')
+    // 22,00 € at 11 €/h: the box names the 2h and starts ticked.
+    expect(within(dialog).getByRole('checkbox', { name: /Creditar as horas ao cliente \(2h\)/ })).toBeChecked()
     await user.type(within(dialog).getByLabelText('Motivo'), 'Cliente pediu')
     await user.click(within(dialog).getByRole('button', { name: 'Sim, cancelar' }))
-    await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(booking.id, { status: 'cancelled', admin_note: 'Cancelada pelo espaço: Cliente pediu' }, expect.anything()))
+    await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(
+      booking.id, { status: 'cancelled', reason: 'Cliente pediu', admin_note: 'Cancelada pelo espaço: Cliente pediu' }, expect.anything(),
+    ))
+    expect((await screen.findAllByText(/Reserva cancelada\. 2h creditadas ao cliente\./))[0]).toBeInTheDocument()
+  })
+
+  it('unticking the credit sends credit_hours: false with the reason (K01)', async () => {
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({ booking: { ...booking, status: 'cancelled' }, hours: undefined })
+    const user = userEvent.setup()
+    renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Cancelar reserva' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('checkbox', { name: /Creditar as horas/ }))
+    await user.type(within(dialog).getByLabelText('Motivo'), 'Não compareceu')
+    await user.click(within(dialog).getByRole('button', { name: 'Sim, cancelar' }))
+    await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(
+      booking.id, { status: 'cancelled', reason: 'Não compareceu', admin_note: 'Cancelada pelo espaço: Não compareceu', credit_hours: false }, expect.anything(),
+    ))
+  })
+
+  it('a package booking offers no credit box; a cancelled one shows the credit it created (K01)', async () => {
+    vi.mocked(adminApi.getBooking).mockResolvedValue({ booking: { ...booking, payment_method: 'package', package_hours_used: 2, stripe_checkout_session_id: null }, history: [] })
+    const user = userEvent.setup()
+    const { unmount } = renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Cancelar reserva' }))
+    expect(within(await screen.findByRole('dialog')).queryByRole('checkbox')).toBeNull()
+    unmount()
+
+    vi.mocked(adminApi.getBooking).mockResolvedValue({
+      booking: { ...booking, status: 'cancelled', cancellation_credit: { id: 'c-1', hours_total: 2, hours_remaining: 1.5, status: 'active', expires_at: '2031-01-01T00:00:00Z' } },
+      history: [],
+    })
+    renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    const link = screen.getByTestId('booking-credit')
+    expect(link).toHaveAttribute('href', '/admin/purchases/c-1')
+    expect(link).toHaveTextContent('2h')
+    expect(link.parentElement).toHaveTextContent('1,5h por usar')
   })
 
   it('an expired hold can be hard-deleted after typing the id', async () => {
@@ -277,7 +321,7 @@ describe('Banco de horas', () => {
   it('adjusting below the debited hours shows the 409 inline', async () => {
     nav.params = { id: 'p-1' }
     vi.mocked(adminApi.getPurchase).mockResolvedValue({
-      purchase: { id: 'p-1', user_id: 'u-1', package_id: 'k', org_id: 'org-1', hours_total: 10, hours_used: 4, hours_remaining: 6, amount_paid: 100, status: 'active', purchased_at: '2030-01-01T00:00:00Z', expires_at: '2031-01-01T00:00:00Z', package: { id: 'k', org_id: 'org-1', name: 'Pack 10', hours: 10, price: 100, validity_days: 365, is_active: true }, admin_note: null },
+      purchase: { id: 'p-1', user_id: 'u-1', package_id: 'k', org_id: 'org-1', hours_total: 10, hours_used: 4, hours_remaining: 6, amount_paid: 100, status: 'active', source: 'purchase' as const, source_booking_id: null, purchased_at: '2030-01-01T00:00:00Z', expires_at: '2031-01-01T00:00:00Z', package: { id: 'k', org_id: 'org-1', name: 'Pack 10', hours: 10, price: 100, validity_days: 365, is_active: true }, admin_note: null },
       user: { id: 'u-1', name: 'Ana', email: 'ana@x.pt' },
       debits: [{ booking_id: booking.id, hours: 4, start_time: booking.start_time, end_time: booking.end_time, status: 'confirmed', room_name: 'Sala A' }],
     })

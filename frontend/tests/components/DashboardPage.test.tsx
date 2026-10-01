@@ -246,13 +246,13 @@ describe('Dashboard — packs summary (B30)', () => {
       {
         id: 'p-1', user_id: 'user-1', package_id: 'pkg-10', org_id: 'org-1',
         hours_total: 10, hours_used: 2.5, hours_remaining: 7.5, amount_paid: 100, status: 'active',
-        purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
+        source: 'purchase' as const, source_booking_id: null, purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
         package: { id: 'pkg-10', org_id: 'org-1', name: 'Pack 10h', hours: 10, price: 100, validity_days: 365, is_active: true },
       },
       {
         id: 'p-2', user_id: 'user-1', package_id: 'pkg-20', org_id: 'org-1',
         hours_total: 20, hours_used: 0, hours_remaining: 20, amount_paid: 100, status: 'pending',
-        purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
+        source: 'purchase' as const, source_booking_id: null, purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
       },
     ])
     renderPage()
@@ -355,7 +355,7 @@ describe('Dashboard — unpaid holds (C03)', () => {
 describe('Dashboard — packs summary counts only spendable packs (review)', () => {
   const purchase = (id: string, overrides: Record<string, unknown>) => ({
     id, user_id: 'user-1', package_id: 'pkg', org_id: 'org-1', hours_total: 10, hours_used: 0, hours_remaining: 10, amount_paid: 100,
-    status: 'active' as const, purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
+    status: 'active' as const, source: 'purchase' as const, source_booking_id: null, purchased_at: new Date().toISOString(), expires_at: '2027-03-01T00:00:00Z',
     package: { id: 'pkg', org_id: 'org-1', name: 'Pack 10h', hours: 10, price: 100, validity_days: 365, is_active: true },
     ...overrides,
   })
@@ -394,7 +394,7 @@ describe('Dashboard — cancellations route to the help dialog (C18)', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByRole('button', { name: /Sim, cancelar/i })).toBeEnabled()
-    const line = within(dialog).getByText(/Questões sobre o valor pago\?/)
+    const line = within(dialog).getByText(/Precisa de outra solução\?/)
     expect(line.className).toMatch(/muted/)
     // Below the buttons, and no claim either way about the money.
     const confirm = within(dialog).getByRole('button', { name: /Sim, cancelar/i })
@@ -409,7 +409,7 @@ describe('Dashboard — cancellations route to the help dialog (C18)', () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).queryByText(/valor pago/)).toBeNull()
+    expect(within(dialog).queryByText(/outra solução/)).toBeNull()
   })
 
   it('an unpaid hold gets no money line either', async () => {
@@ -418,7 +418,7 @@ describe('Dashboard — cancellations route to the help dialog (C18)', () => {
     ])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
-    expect(within(await screen.findByRole('dialog')).queryByText(/valor pago/)).toBeNull()
+    expect(within(await screen.findByRole('dialog')).queryByText(/outra solução/)).toBeNull()
   })
 
   it('inside the 24h window, Cancel stays disabled with its reason and offers the help dialog instead', async () => {
@@ -436,5 +436,53 @@ describe('Dashboard — cancellations route to the help dialog (C18)', () => {
     renderPage()
     await screen.findByRole('button', { name: /^Cancelar$/ })
     expect(screen.queryByRole('button', { name: /Precisa de cancelar/ })).toBeNull()
+  })
+})
+
+// K01: the paid hours of a cancelled booking go to the bank, never back as
+// money. The dialog says how many and until when (the backend's formula,
+// computed here); the bank card names the credit by its origin.
+describe('Dashboard — cancellation credit in hours (K01)', () => {
+  it.each([
+    ['an hourly booking: the whole amount at the room rate', { payment_method: 'hourly' as const, total_amount: 22, duration_hours: 2 }, '2h'],
+    ['a mixed booking: only the money share', { payment_method: 'mixed' as const, package_hours_used: 2, total_amount: 11, duration_hours: 3 }, '1h'],
+    ['an overridden amount, to the cent of an hour', { payment_method: 'hourly' as const, total_amount: 25 }, '2,27h'],
+  ])('%s', async (_label, extra, hours) => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-paid', ...extra })])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
+    const dialog = await screen.findByRole('dialog')
+    const line = within(dialog).getByText(/Ao cancelar, as .* pagas ficam no seu banco de horas/)
+    expect(line).toHaveTextContent(`Ao cancelar, as ${hours} pagas ficam no seu banco de horas`)
+    const until = new Date(Date.now() + 365 * 86_400_000).getFullYear()
+    expect(line).toHaveTextContent(new RegExp(`válidas até .*${until}`))
+  })
+
+  it.each([
+    ['a package booking', { payment_method: 'package' as const, package_hours_used: 1 }],
+    ['an unpaid hold', { status: 'pending' as const, hold_expires_at: new Date(Date.now() + 600_000).toISOString() }],
+  ])('%s gets no bank line: nothing was paid', async (_label, extra) => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([booking({ id: 'b-none', ...extra })])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /^Cancelar$/ }))
+    expect(within(await screen.findByRole('dialog')).queryByText(/banco de horas/)).toBeNull()
+  })
+
+  it('labels a credit row in the bank card by its cancellation date, with its expiry, and counts it', async () => {
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([])
+    vi.mocked(packagesApi.listMine).mockResolvedValue([
+      {
+        id: 'c-1', user_id: 'user-1', package_id: null, org_id: 'org-1',
+        hours_total: 2, hours_used: 0, hours_remaining: 2, amount_paid: 22, status: 'active',
+        source: 'cancellation_credit' as const, source_booking_id: 'b-old',
+        purchased_at: '2026-10-01T10:00:00Z', expires_at: '2027-10-01T10:00:00Z', package: null,
+      },
+    ])
+    renderPage()
+    const summary = await screen.findByRole('region', { name: /packs/i })
+    await within(summary).findByText(/Crédito — cancelamento de 1 out/)
+    expect(summary).toHaveTextContent('2h')
+    expect(summary).toHaveTextContent(/expira 1 out 2027/)
+    expect(summary).not.toHaveTextContent('Pack')
   })
 })

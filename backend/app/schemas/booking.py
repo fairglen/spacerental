@@ -121,11 +121,25 @@ class AdminBookingOut(BookingOut):
         return sorted(debits, key=key)
 
 
+class CancellationCreditOut(BaseModel):
+    """The hour credit a cancelled paid booking left in the bank (K01)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    hours_total: Decimal
+    hours_remaining: Decimal
+    status: str
+    expires_at: datetime
+
+
 class AdminBookingDetailOut(AdminBookingOut):
     """GET /admin/bookings/{id} (G04): plus the provider's session id, so the
     operator can find the payment. Never in a customer response."""
 
     stripe_checkout_session_id: str | None = None
+    # K01: the credit this booking's cancellation created, if any.
+    cancellation_credit: CancellationCreditOut | None = None
 
 
 class BookingStatusUpdate(BaseModel):
@@ -141,6 +155,9 @@ class BookingStatusUpdate(BaseModel):
     admin_note: Notes | None = None
     notes: Notes | None = None
     total_amount: Money | None = None
+    # K01: cancelling a paid booking puts its hours in the customer's bank.
+    # Unticking needs a reason (the trail says why the customer gets nothing).
+    credit_hours: bool = True
     reason: (
         Annotated[str, StringConstraints(min_length=1, max_length=2000, strip_whitespace=True)]
         | None
@@ -159,6 +176,8 @@ class BookingStatusUpdate(BaseModel):
             self.total_amount is None or self.reason is None
         ):
             raise ValueError("a reason is required to change the amount")
+        if self.credit_hours is False and self.reason is None:
+            raise ValueError("a reason is required to cancel without crediting the hours")
         return self
 
     @property

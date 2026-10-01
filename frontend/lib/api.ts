@@ -298,14 +298,28 @@ export const adminApi = {
   // ── Booking management (A01) ──────────────────────────────────────────
   // A move answers with `hours` (before/after): a duration change moves no
   // money, the operator settles it; the calendar shows both numbers.
-  updateBookingDetails: (id: string, body: AdminBookingPatch, api: Api) =>
-    api.put<{ booking: Booking; hours?: { before: string; after: string; uncovered?: string } }>(`/admin/bookings/${id}`, body)
+  updateBookingDetails: (
+    id: string,
+    body: AdminBookingPatch,
+    api: Api,
+  ): Promise<{
+    booking: Booking
+    hours?: { before: number; after: number; uncovered: number }
+    credit?: { id: string; hours: number; expires_at: string }
+  }> =>
+    api.put<{
+      booking: Booking
+      hours?: { before: string; after: string; uncovered?: string }
+      credit?: { id: string; hours: string; expires_at: string }
+    }>(`/admin/bookings/${id}`, body)
       .then(r => ({
         booking: normBooking(r.data.booking),
         // H03: `uncovered` = hours of a longer booking the customer's bank could not give.
         hours: r.data.hours
           ? { before: num(r.data.hours.before), after: num(r.data.hours.after), uncovered: num(r.data.hours.uncovered ?? '0') }
           : undefined,
+        // K01: the hour credit a cancellation created, when it did.
+        credit: r.data.credit ? { id: r.data.credit.id, hours: num(r.data.credit.hours), expires_at: r.data.credit.expires_at } : undefined,
       })),
 
   createManualBooking: (

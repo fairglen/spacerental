@@ -28,6 +28,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from functools import cache
 from html import escape
 from zoneinfo import ZoneInfo
@@ -173,6 +174,11 @@ def _format_datetime_pt(start: datetime, end: datetime) -> tuple[str, str]:
     return date_str, time_str
 
 
+def _format_date_pt(when: datetime) -> str:
+    local = when.astimezone(LISBON_TZ)
+    return f"{local.day} de {_MONTHS_PT[local.month - 1]} de {local.year}"
+
+
 # Every customer email ends the same way; the operator-facing support mail
 # (an internal forward) does not.
 SIGN_OFF_TEXT = f"Até breve,\nA equipa {BRAND_NAME}\n"
@@ -228,6 +234,11 @@ def booking_confirmation_email(
     return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
 
 
+def _format_hours_pt(hours: Decimal) -> str:
+    text = f"{hours:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+    return f"{text} hora" if text == "1" else f"{text} horas"
+
+
 def booking_cancellation_email(
     *,
     to: str,
@@ -235,16 +246,34 @@ def booking_cancellation_email(
     room_name: str,
     start_time: datetime,
     end_time: datetime,
+    credit_hours: Decimal | None = None,
+    credit_expires_at: datetime | None = None,
 ) -> EmailMessage:
     date_str, time_str = _format_datetime_pt(start_time, end_time)
     browse_url = f"{settings.FRONTEND_URL}/spaces"
+    bank_url = f"{settings.FRONTEND_URL}/dashboard"
     subject = f"Reserva cancelada — {room_name}"
+    # K01: the paid hours are in the bank, not refunded — say so, with the
+    # expiry, so the customer knows what to do with them.
+    credit_text = credit_html = ""
+    if credit_hours is not None and credit_hours > 0 and credit_expires_at is not None:
+        hours_str = _format_hours_pt(credit_hours)
+        until = _format_date_pt(credit_expires_at)
+        credit_text = (
+            f"As {hours_str} pagas ficaram no seu banco de horas, válidas até {until}. "
+            f"Pode usá-las numa nova reserva, sem novo pagamento:\n{bank_url}\n\n"
+        )
+        credit_html = (
+            f"<p>As {hours_str} pagas ficaram no seu banco de horas, válidas até {until}. "
+            f'<a href="{bank_url}">Pode usá-las numa nova reserva</a>, sem novo pagamento.</p>'
+        )
     text_body = (
         "A sua reserva foi cancelada.\n\n"
         f"Espaço: {space_name}\n"
         f"Sala: {room_name}\n"
         f"Data: {date_str}\n"
         f"Horário: {time_str}\n\n"
+        f"{credit_text}"
         f"Pode fazer uma nova reserva em:\n{browse_url}\n\n"
         f"{SIGN_OFF_TEXT}"
     )
@@ -256,6 +285,7 @@ def booking_cancellation_email(
         f"<li><strong>Data:</strong> {date_str}</li>"
         f"<li><strong>Horário:</strong> {time_str}</li>"
         "</ul>"
+        f"{credit_html}"
         f'<p><a href="{browse_url}">Fazer nova reserva</a></p>'
         f"{SIGN_OFF_HTML}"
     )

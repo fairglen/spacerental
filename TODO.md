@@ -2304,6 +2304,12 @@ worker/startup commands in README.
 
 ### O02 — Consistent cancellations and refunds
 
+**Note (2026-10-01, K01):** cancellation refunds are superseded by the hour
+credit — a cancelled paid booking's money share goes to the customer's hour
+bank (`source = cancellation_credit`), never back as money. What remains of
+O02 is cash refunds outside cancellation (goodwill, disputes), the durable
+refund ledger and the provider round trip; still deferred.
+
 **Depends on:** O01. **Scope:** payment/refund persistence, gateway operations,
 webhooks, user/admin views and all booking/package/series cancellation paths.
 
@@ -4864,7 +4870,7 @@ with the placeholder, old JWT rejected; a non-owner cannot save settings.
 
 ### K01 — Cancellation credit: paid hours go to the hour bank
 
-**Priority: P1. State: QUEUED (Part C).** Today cancelling a money-paid
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR TBD).** Today cancelling a money-paid
 booking just loses the money. **Scope:** `UserPackagePurchase` gains
 `source` (`purchase | complimentary | cancellation_credit`; backfill:
 `amount_paid` 0 and no Stripe session → complimentary, else purchase) and
@@ -4903,6 +4909,49 @@ audited reason; reinstate whole → credit cancelled; reinstate after spend →
 409; credited hours spendable via mixed; expired credit excluded. Component
 tests for the dialog copy and bank labels. Playwright: pay → cancel → the
 bank shows the hours → rebook with them, no checkout.
+
+**Delivered (2026-10-01):** migration `0016_cancellation_credit` (enum
+`purchase_source`, backfill, `source_booking_id` UNIQUE FK SET NULL,
+`package_id` nullable); `app/cancellation_credit.py` (`create_credit`,
+`reverse_credit`, `CreditSpentError`) wired into `booking_cancellation.
+apply_cancellation` (customer and series cancels) and the admin status
+change; `BookingStatusUpdate.credit_hours` (default true, reason required
+when false); `GET /admin/bookings/{id}.cancellation_credit`; the email
+line; `CANCELLATION_CREDIT_VALIDITY_DAYS` in config/Compose/`.env.example`
+mirrored as `NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS`
+(`lib/cancellationCredit.ts`); customer dialog line + "Precisa de outra
+solução? Fale connosco"; bank card and `/dashboard/packages` label
+"Crédito — cancelamento de <d MMM>"; admin cancel dialog checkbox
+"Creditar as horas ao cliente (<N>h)", success toast with the hours, booking
+detail "Crédito criado: <N>h" linking the purchase, purchases list/detail
+"Origem". Evidence: `backend/tests/test_cancellation_credit.py` (16, real
+PG, pinned clock) covering every validation bullet above; `tests/
+test_mixed_payment.py`'s lapsed-hold test cancels with `credit_hours:
+false` so its 8h hold still lapses (the credit would otherwise cover it —
+by design); migration round trip 0016 up → check → base → up → check on a
+throwaway PG 16; Vitest `DashboardPage` +7, `AdminEntityPages` +2 (+1
+reworked), `api.test` +1, `adminBookingErrors` +1; Playwright
+`tests/e2e/cancellation-credit.spec.ts` (pay → cancel → bank → rebook, no
+checkout).
+
+**DECISION (loop, K01):** `package_id` is nullable — a credit belongs to no
+pack — rather than a hidden system package "Crédito". Alternatives: a hidden
+inactive package per org (keeps NOT NULL, but every package list/count and
+the hour-bank maths would have to special-case it). Reverse: add the system
+package in a migration, backfill credit rows to it, restore NOT NULL.
+**DECISION (loop, K01):** a booking cancelled → reinstated → cancelled again
+reactivates its one credit row (fresh expiry, unspent by construction)
+instead of refusing a second credit, so the customer is never short the
+hours they paid for; the UNIQUE `source_booking_id` still holds. Reverse:
+return None in `create_credit` when a row exists in any state.
+**DECISION (loop, K01):** the "Precisa de outra solução? Fale connosco"
+line keeps the `payment` help category and stays muted below the buttons,
+exactly where the old "Questões sobre o valor pago?" was.
+**DECISION (loop, K01):** `is_creditable` treats an operator-confirmed
+booking as paid (status `confirmed`/`completed`, method hourly/mixed/manual,
+amount > 0): the operator asserted the payment when confirming. The
+alternative — only Stripe-paid rows — would leave cash/MB WAY customers
+without their hours.
 
 ### K02 — Offer a new pack when the bank cannot cover the booking
 

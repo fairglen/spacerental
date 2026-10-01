@@ -79,6 +79,9 @@ services:
       # Days ahead a customer may book (H01); operators have no horizon. The
       # frontend gets the same value below for the calendar's hint.
       BOOKING_MAX_ADVANCE_DAYS: ${BOOKING_MAX_ADVANCE_DAYS:-30}
+      # How long the hours credited for a cancelled paid booking stay in the
+      # bank (K01). The frontend gets the same value below for its wording.
+      CANCELLATION_CREDIT_VALIDITY_DAYS: ${CANCELLATION_CREDIT_VALIDITY_DAYS:-365}
       # Same stub/live shape as Stripe above: stub (default) just logs the
       # email and requires nothing; live calls Resend and RESEND_API_KEY
       # becomes mandatory — app.email.validate_email_settings() dies at boot
@@ -120,6 +123,7 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required — copy .env.example to .env}
       NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: ${RECURRING_BOOKINGS_ENABLED:-false}
       NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS: ${BOOKING_MAX_ADVANCE_DAYS:-30}
+      NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS: ${CANCELLATION_CREDIT_VALIDITY_DAYS:-365}
       # Optional phone line in "Onde estamos" (V06); empty = no line.
       NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
