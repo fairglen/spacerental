@@ -98,6 +98,28 @@ describe('EntityList', () => {
     vi.useRealTimers()
   })
 
+  it('opening a row right after typing settles the search first, then pushes — never the other way round', async () => {
+    // The CI race: the search's debounced `router.replace` fired after the
+    // row's `router.push` and pulled the browser back to the list.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const calls: string[] = []
+    const onSearch = vi.fn((q: string) => calls.push(`search:${q}`))
+    push.mockImplementation((href: string) => calls.push(`push:${href}`))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(
+      <EntityList caption="Coisas" columns={columns} rows={rows} rowKey={(t) => t.id} rowHref={(t) => `/admin/things/${t.id}`}
+        page={1} pageSize={20} total={3} onPageChange={vi.fn()} search={{ value: '', onChange: onSearch }} empty={{ title: 'Nada' }} />,
+    )
+    await user.type(screen.getByRole('textbox', { name: 'Pesquisar' }), 'be')
+    await user.click(screen.getByText('Beta'))
+    expect(calls).toEqual(['search:be', 'push:/admin/things/bbbbbbbb-2'])
+    await act(async () => { vi.advanceTimersByTime(400) })
+    // The flushed timer does not fire a second time.
+    expect(onSearch).toHaveBeenCalledTimes(1)
+    push.mockReset()
+    vi.useRealTimers()
+  })
+
   it('shows skeletons while loading, an error with retry, and the empty state with its action', () => {
     const onRetry = vi.fn()
     const { rerender } = render(

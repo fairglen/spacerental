@@ -23,6 +23,9 @@ test('users: search, open a customer, grant hours, and the customer can spend th
   await page.goto('/admin/users')
   await expect(page.getByRole('heading', { name: 'Clientes' })).toBeVisible()
   await page.getByLabel('Pesquisar').fill(`e2e-users-${stamp}`)
+  // The search lands in the URL after a debounce; wait for it like a person
+  // watching the list settle would, rather than clicking the unfiltered row.
+  await expect(page).toHaveURL(new RegExp(`q=e2e-users-${stamp}`))
   const row = page.getByRole('row').filter({ hasText: email })
   await expect(row).toBeVisible({ timeout: 10000 })
   await expect(row).toContainText('Cliente')

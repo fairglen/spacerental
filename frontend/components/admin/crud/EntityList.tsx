@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoreHorizontal, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -48,18 +48,36 @@ export type EntityListProps<T> = {
   toolbarExtra?: ReactNode
 }
 
+/**
+ * `flush` settles a pending debounce now. Opening a row right after typing
+ * must call it first: the list syncs the search into the URL with
+ * `router.replace`, and a replace that fires after the row's `router.push`
+ * pulls the browser back to the list.
+ */
 export function useDebounced(value: string, onChange: (v: string) => void, ms = 300) {
   const [draft, setDraft] = useState(value)
   const first = useRef(true)
+  // The latest `onChange`, so a flush never replays a stale filter state.
+  const latest = useRef(onChange)
+  latest.current = onChange
+  const pending = useRef<{ id: ReturnType<typeof setTimeout>; draft: string } | null>(null)
   useEffect(() => { setDraft(value) }, [value])
   useEffect(() => {
     if (first.current) { first.current = false; return }
     if (draft === value) return
-    const id = setTimeout(() => onChange(draft), ms)
-    return () => clearTimeout(id)
+    const id = setTimeout(() => { pending.current = null; latest.current(draft) }, ms)
+    pending.current = { id, draft }
+    return () => { clearTimeout(id); if (pending.current?.id === id) pending.current = null }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft])
-  return [draft, setDraft] as const
+  const flush = useCallback(() => {
+    if (!pending.current) return
+    const { id, draft: value } = pending.current
+    clearTimeout(id)
+    pending.current = null
+    latest.current(value)
+  }, [])
+  return [draft, setDraft, flush] as const
 }
 
 export function EntityList<T>({
@@ -67,7 +85,7 @@ export function EntityList<T>({
   search, filters, sort, isLoading, isError, onRetry, empty, toolbarExtra,
 }: EntityListProps<T>) {
   const router = useRouter()
-  const [draft, setDraft] = useDebounced(search?.value ?? '', (q) => search?.onChange(q))
+  const [draft, setDraft, flushSearch] = useDebounced(search?.value ?? '', (q) => search?.onChange(q))
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [focusIndex, setFocusIndex] = useState<number>(-1)
   const bodyRef = useRef<HTMLTableSectionElement>(null)
@@ -81,7 +99,11 @@ export function EntityList<T>({
   }, [focusIndex])
 
   function open(row: T) {
-    if (rowHref) router.push(rowHref(row))
+    if (!rowHref) return
+    // The pending search lands in the URL before the push, in this order,
+    // so the back button returns to the filtered list — not after it.
+    flushSearch()
+    router.push(rowHref(row))
   }
 
   function onRowKey(e: KeyboardEvent<HTMLTableRowElement>, index: number, row: T) {
