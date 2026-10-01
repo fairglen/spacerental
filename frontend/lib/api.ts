@@ -21,16 +21,26 @@ export function createAuthenticatedApi(accessToken: string | null | undefined) {
   const instance = axios.create({ baseURL })
   if (accessToken) {
     instance.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
-    // A token the backend no longer accepts ends the NextAuth session as
-    // well, instead of leaving a signed-in shell whose every call fails.
-    instance.interceptors.response.use(
-      (response) => response,
-      (error: unknown) => {
-        if (axios.isAxiosError(error) && error.response?.status === 401) sessionRevoked()
-        return Promise.reject(error)
-      },
-    )
   }
+  return instance
+}
+
+/**
+ * For the signed-in areas (`useApi`): a token the backend no longer accepts
+ * ends the NextAuth session as well, instead of leaving a signed-in shell
+ * whose every call fails (review on #65). Public pages keep their own 401
+ * handling — the pack button offers "Entrar e continuar a compra" so the
+ * chosen pack survives re-authentication (B14).
+ */
+export function withSessionRevocation(instance: Api): Api {
+  if (!instance.defaults.headers.common['Authorization']) return instance
+  instance.interceptors.response.use(
+    (response) => response,
+    (error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 401) sessionRevoked()
+      return Promise.reject(error)
+    },
+  )
   return instance
 }
 

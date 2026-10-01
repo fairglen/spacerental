@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { AxiosError, AxiosHeaders } from 'axios'
-import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, supportApi, createAuthenticatedApi } from '@/lib/api'
+import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, supportApi, createAuthenticatedApi, withSessionRevocation } from '@/lib/api'
 
 describe('spacesApi.list', () => {
   it('extracts spaces array from wrapped response', async () => {
@@ -66,13 +66,15 @@ describe('createAuthenticatedApi', () => {
     expect(api.defaults.headers.common['Authorization']).toBeUndefined()
   })
 
-  // Review on #65: a revoked bearer token must end the NextAuth session too.
-  it('a 401 on an authenticated client signs the browser out, once; other errors and the anonymous client do not', async () => {
+  // Review on #65: in the signed-in areas a revoked bearer token must end
+  // the NextAuth session too; a plain authenticated client (public pages,
+  // B14) keeps its own 401 handling.
+  it('withSessionRevocation: a 401 signs the browser out, once; other errors, the anonymous client and a plain client do not', async () => {
     const { signOut } = await import('next-auth/react')
     const { resetSessionRevoked } = await import('@/lib/sessionRevoked')
     resetSessionRevoked()
     vi.mocked(signOut).mockClear()
-    const api = createAuthenticatedApi('stale-token')
+    const api = withSessionRevocation(createAuthenticatedApi('stale-token'))
     const reject = (status: number) => Promise.reject(new AxiosError('x', String(status), undefined, undefined, {
       status, statusText: 'x', data: {}, headers: {}, config: { headers: new AxiosHeaders() },
     }))
@@ -88,9 +90,14 @@ describe('createAuthenticatedApi', () => {
     await expect(api.get('/admin/users')).rejects.toBeTruthy()
     expect(signOut).not.toHaveBeenCalled()
 
-    const anonymous = createAuthenticatedApi(null)
+    const anonymous = withSessionRevocation(createAuthenticatedApi(null))
     anonymous.defaults.adapter = () => reject(401)
     await expect(anonymous.post('/auth/login', {})).rejects.toBeTruthy()
+    expect(signOut).not.toHaveBeenCalled()
+
+    const plain = createAuthenticatedApi('stale-token')
+    plain.defaults.adapter = () => reject(401)
+    await expect(plain.post('/packages/p/purchase', {})).rejects.toBeTruthy()
     expect(signOut).not.toHaveBeenCalled()
   })
 })
