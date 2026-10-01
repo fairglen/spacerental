@@ -231,9 +231,11 @@ flow itself: `POST /auth/password-reset/request` always answers 202 with the
 same sentence (nobody learns whether an email has an account); the link in
 the email is single-use and lives 60 minutes; `POST /auth/password-reset/
 confirm` sets the password and signs every earlier session out (`users.
-token_version`, carried in the JWT as `tv`; the app also ends the NextAuth
-session on the first 401 and the dashboard layout checks the token
-server-side, so a stale browser lands on `/sign-in?session=expired`). An
+token_version`, carried in the JWT as `tv`; in the signed-in areas the app
+also ends the NextAuth session on the first 401 and the dashboard layout
+checks the token server-side, so a stale browser lands on
+`/sign-in?session=expired`; public pages keep B14's "Entrar e continuar a
+compra"). An
 operator can send the same
 link from the customer's page or set a password directly (`/admin/users/
 {id}/password-reset`, `/set-password`); a suspended account
