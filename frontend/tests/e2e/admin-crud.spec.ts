@@ -32,7 +32,12 @@ test.beforeAll(async () => {
   me = await (await api.get(`${API_URL}/auth/me`, { headers: auth })).json()
 })
 
-test.afterAll(async () => { await api.dispose() })
+test.afterAll(async () => {
+  await api.dispose()
+  // This file spends most of the auth tier's minute (logins, a reset, a
+  // set-password); the next file starts with a fresh window.
+  await delay(61_000)
+})
 
 function futureSlot(daysAhead: number, hour: number) {
   const d = new Date(); d.setUTCDate(d.getUTCDate() + daysAhead); while (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1)
@@ -122,6 +127,12 @@ test('room: create → duplicate → edit hours → block an hour → deactivate
   await api.put(`${API_URL}/admin/bookings/${booking.id}`, { headers: auth, params: { org_id: org }, data: { status: 'cancelled' } })
   await page.getByRole('button', { name: 'Desativar' }).click()
   await expect(page.getByRole('heading', { level: 1 }).getByText('Inativa')).toBeVisible({ timeout: 10000 })
+
+  // Leave the seeded space as found: the original (no bookings, no blocks)
+  // is hard-deleted; the copy is inactive and therefore off the public
+  // detail, which the other specs read their "last room" from.
+  const gone = await api.delete(`${API_URL}/admin/rooms/${roomId}`, { headers: auth, params: { org_id: org, confirm: name } })
+  expect(gone.status(), await gone.text()).toBe(204)
 })
 
 test('booking: correct the amount with a reason → history diff → the customer sees the new amount', async ({ page }) => {
@@ -234,6 +245,8 @@ test('purchase: adjusting below the hours already booked is refused inline, nami
   await dialog.getByRole('button', { name: 'Ajustar' }).click()
   await expect(dialog.getByRole('alert')).toContainText('held by bookings')
   await expect(dialog.getByRole('alert')).toContainText('2.00 h')
+  const { booking } = await booked!.json()
+  await api.put(`${API_URL}/admin/bookings/${booking.id}`, { headers: auth, params: { org_id: org }, data: { status: 'cancelled' } })
 })
 
 test('anonymise: the booking lists the placeholder and the old session is dead', async ({ page }) => {

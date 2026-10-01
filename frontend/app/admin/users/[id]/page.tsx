@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { formatBookingCost, formatCurrency, formatHours, STATUS_LABELS } from '@/lib/utils'
+import { formatBookingCost, formatCurrency, formatHours, packSplitLines, STATUS_LABELS } from '@/lib/utils'
 import { SUPPORT_CATEGORY_LABELS } from '@/components/help/HelpDialog'
 import { ROLE_LABELS, RoleDialog } from '@/components/admin/users/RoleDialog'
 import { GrantHoursDialog } from '@/components/admin/users/GrantHoursDialog'
@@ -193,7 +193,15 @@ function UserDetail({ userId }: { userId: string }) {
                     <td className="px-2 py-2 whitespace-nowrap"><Link href={`/admin/bookings/${b.id}`} className="underline underline-offset-2">{format(parseISO(b.start_time), 'd MMM yyyy, HH:mm', { locale: pt })}–{format(parseISO(b.end_time), 'HH:mm')}</Link></td>
                     <td className="px-2 py-2">{b.room?.name ?? '—'}</td>
                     <td className="px-2 py-2"><Badge variant="secondary">{STATUS_LABELS[b.status]}</Badge></td>
-                    <td className="px-2 py-2">{formatBookingCost(b)}</td>
+                    <td className="px-2 py-2">
+                      {formatBookingCost(b)}
+                      {/* H02: which packs, on hover — the same hint as the bookings table. */}
+                      {(b.package_debits?.length ?? 0) > 0 && (
+                        <span className="block text-xs text-muted-foreground underline decoration-dotted cursor-help" title={packSplitLines(b.package_debits).join('\n')}>
+                          {b.package_debits!.length === 1 ? '1 pack' : `de ${b.package_debits!.length} packs`}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
