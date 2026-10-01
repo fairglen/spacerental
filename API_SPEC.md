@@ -293,8 +293,17 @@ Purchase a package. Same Checkout pattern as `POST /bookings`: the purchase is
 recorded `pending` and only the `checkout.session.completed` webhook (Stripe
 or the local stub) flips it to `active` — that's what makes its hours
 spendable.
-Body: `{ org_id }`
+Body: `{ org_id, return_to? }`
 Response: `{ purchase: UserPackagePurchase, checkout_url: string }`
+
+`return_to` (K02) is where Checkout sends the customer back to instead of the
+dashboard: a relative path on the frontend — starts with a single `/`, no
+`//`, backslash, scheme, host, fragment, whitespace or control characters,
+at most 512 characters; anything else is `422` and no purchase is created.
+The success URL becomes `<FRONTEND_URL><return_to>` + `pagamento=sucesso`
+(`&` when the path already has a query, `?` otherwise), the cancel URL the
+same with `pagamento=cancelado`; the stub checkout honours both. The booking
+page sends `/spaces/<id>?room=&start=&end=` so it can reopen the slot.
 
 ### GET /packages/me
 My package purchases and remaining hours, plus the hour bank they form (H02).

@@ -8,7 +8,8 @@ import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { bookingsApi, recurrencesApi, packagesApi, createAuthenticatedApi } from '@/lib/api'
 import { formatCurrency, formatHours } from '@/lib/utils'
-import { planPayment } from '@/lib/paymentSplit'
+import { paymentOptions, planPayment } from '@/lib/paymentSplit'
+import { slotReturnPath } from '@/lib/bookingDeepLink'
 import { statusOf, conflictsOf, bookingErrorMessage } from '@/lib/httpError'
 import { signInHref } from '@/lib/navigation'
 import { expandWeeklyOccurrences } from '@/lib/recurrence'
@@ -29,9 +30,10 @@ interface BookingModalProps {
 }
 
 type PaymentMethod = 'hourly' | 'package' | 'mixed'
-// The customer's choice is only "my pack" or "money for everything"; whether
-// "my pack" means `package` or `mixed` follows from what the pack can cover.
-type PaymentChoice = 'pack' | 'hourly'
+// The customer's choice is "my pack", "money for everything" or, when the
+// bank cannot cover the block, "buy a pack first" (K02); whether "my pack"
+// means `package` or `mixed` follows from what the pack can cover.
+type PaymentChoice = 'pack' | 'hourly' | 'buy'
 
 export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   const { data: session, status } = useSession()
@@ -51,7 +53,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
     () => (repeatWeekly && start ? expandWeeklyOccurrences(start, untilDate) : []),
     [repeatWeekly, start, untilDate],
   )
-  const { data: purchases = [] } = useQuery({
+  const { data: purchases = [], isSuccess: purchasesLoaded } = useQuery({
     queryKey: ['packages', 'me'],
     queryFn: () => packagesApi.listMine(createAuthenticatedApi(session?.accessToken)),
     enabled: status === 'authenticated',
@@ -62,12 +64,35 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   // `lib/paymentSplit.ts`.
   const plan = room && !repeatWeekly ? planPayment(purchases, room.org_id, duration) : ({ kind: 'none' } as const)
   const canPayWithPackage = plan.kind === 'full'
+  // K02: the choices on offer, in order; "buy" only while the bank falls short.
+  const options = room && !repeatWeekly ? paymentOptions(plan, purchases.length > 0) : []
+  const buying = options.includes('buy') && choice === 'buy'
   // Default to spending hours the customer has already paid for — charging them
   // again while a valid pack sits unused is the wrong way round. Falls back to
   // hourly when there is no usable pack. Re-derived on every render, so a
   // longer block the hours no longer cover becomes pack-plus-money by itself.
   const usesPack = plan.kind !== 'none' && (choice ?? 'pack') === 'pack'
   const effectiveMethod: PaymentMethod = !usesPack ? 'hourly' : plan.kind === 'full' ? 'package' : 'mixed'
+  // The packs a customer may buy here (K02), fetched only once "buy" is on offer.
+  const { data: packages = [] } = useQuery({
+    queryKey: ['packages', room?.org_id],
+    queryFn: () => packagesApi.list(room!.org_id),
+    enabled: !!room && purchasesLoaded && options.includes('buy'),
+  })
+  const purchase = useMutation({
+    mutationFn: async (packageId: string) => {
+      if (!room || !start || !end) throw new Error('Missing data')
+      const api = createAuthenticatedApi(session?.accessToken)
+      // Back to this slot after Checkout, with the outcome in the query.
+      const result = await packagesApi.purchase(packageId, room.org_id, api, slotReturnPath(pathname, room.id, start, end))
+      if (!result.checkout_url) throw new Error('Purchase created without a checkout_url')
+      return result
+    },
+    onSuccess: ({ checkout_url }) => {
+      queryClient.invalidateQueries({ queryKey: ['packages', 'me'] })
+      window.location.assign(checkout_url)
+    },
+  })
   const hoursLeft = plan.kind === 'none' ? 0 : plan.packHours + plan.hoursLeftAfter
   const paidHours = usesPack ? plan.paidHours : duration
   const amountDue = room ? paidHours * room.hourly_rate : 0
@@ -122,6 +147,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
     setRepeatWeekly(false)
     setUntilDate('')
     mutation.reset()
+    purchase.reset()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [start])
 
@@ -321,35 +347,90 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
             )}
           </div>
           )}
-          {plan.kind !== 'none' && (
+          {options.length > 1 && (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium text-foreground mb-1">Pagamento</legend>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  name="payment_method"
-                  value="pack"
-                  checked={usesPack}
-                  onChange={() => setChoice('pack')}
-                  disabled={mutation.isPending}
-                />
-                <span>
-                  {canPayWithPackage
-                    ? `Usar horas do pack (${formatHours(hoursLeft)} disponíveis)`
-                    : 'Usar as horas do pack e pagar o resto'}
-                </span>
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  name="payment_method"
-                  value="hourly"
-                  checked={!usesPack}
-                  onChange={() => setChoice('hourly')}
-                  disabled={mutation.isPending}
-                />
-                <span>{canPayWithPackage ? `Pagar ${formatCurrency(total)} agora` : 'Pagar tudo agora'}</span>
-              </label>
+              {options.map((option) => option === 'pack' ? (
+                <label key={option} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="payment_method"
+                    value="pack"
+                    checked={usesPack}
+                    onChange={() => setChoice('pack')}
+                    disabled={mutation.isPending}
+                  />
+                  <span>
+                    {canPayWithPackage
+                      ? `Usar horas do pack (${formatHours(hoursLeft)} disponíveis)`
+                      : 'Usar as horas do pack e pagar o resto'}
+                  </span>
+                </label>
+              ) : option === 'hourly' ? (
+                <label key={option} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="payment_method"
+                    value="hourly"
+                    checked={!usesPack && !buying}
+                    onChange={() => setChoice('hourly')}
+                    disabled={mutation.isPending}
+                  />
+                  <span>{plan.kind === 'none' ? `Pagar ${formatCurrency(total)} agora` : canPayWithPackage ? `Pagar ${formatCurrency(total)} agora` : 'Pagar tudo agora'}</span>
+                </label>
+              ) : (
+                <div key={option} className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="payment_method"
+                      value="buy"
+                      checked={buying}
+                      onChange={() => setChoice('buy')}
+                      disabled={mutation.isPending}
+                    />
+                    <span>Comprar um pack</span>
+                  </label>
+                  {buying && (
+                    // K02: the packs on sale, inline; "Comprar" leaves for
+                    // Checkout and comes back to this slot.
+                    <div className="pl-6 space-y-2" data-testid="buy-pack">
+                      {packages.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Não há packs à venda neste momento.</p>
+                      ) : (
+                        <ul className="divide-y divide-border rounded-lg border border-border text-sm">
+                          {packages.map((pkg) => (
+                            <li key={pkg.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                              <span>
+                                <span className="font-medium text-foreground">{pkg.name}</span>
+                                <span className="block text-xs text-muted-foreground">
+                                  {formatHours(pkg.hours)} · {formatCurrency(pkg.price)} · válido {pkg.validity_days} dias
+                                </span>
+                              </span>
+                              <Button
+                                size="sm"
+                                type="button"
+                                onClick={() => purchase.mutate(pkg.id)}
+                                disabled={purchase.isPending || isUnauthenticated}
+                              >
+                                {purchase.isPending && purchase.variables === pkg.id ? 'A processar...' : 'Comprar'}
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        O horário não fica reservado enquanto compra o pack; volta a esta hora depois do pagamento.
+                      </p>
+                      {purchase.isError && (
+                        <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                          Não foi possível iniciar a compra. Tente novamente.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
             </fieldset>
           )}
           {isUnauthenticated && (
@@ -391,7 +472,7 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
           <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || isUnauthenticated || !canSubmit}
+            disabled={mutation.isPending || isUnauthenticated || !canSubmit || buying}
           >
             {mutation.isPending ? 'A confirmar...' : repeatWeekly ? 'Confirmar Série' : 'Confirmar Reserva'}
           </Button>

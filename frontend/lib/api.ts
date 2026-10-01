@@ -228,8 +228,10 @@ export const packagesApi = {
       balance: normBalance(r.data.balance),
     })),
 
-  purchase: (packageId: string, orgId: string, api: Api) =>
-    api.post<PackagePurchaseCheckout>(`/packages/${packageId}/purchase`, { org_id: orgId })
+  // K02: `returnTo` is the relative path Checkout comes back to (the booking
+  // page with its slot) instead of the dashboard.
+  purchase: (packageId: string, orgId: string, api: Api, returnTo?: string) =>
+    api.post<PackagePurchaseCheckout>(`/packages/${packageId}/purchase`, returnTo ? { org_id: orgId, return_to: returnTo } : { org_id: orgId })
       .then(r => ({
         purchase: normPurchase(r.data.purchase),
         checkout_url: r.data.checkout_url,

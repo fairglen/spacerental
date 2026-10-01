@@ -4955,7 +4955,7 @@ without their hours.
 
 ### K02 — Offer a new pack when the bank cannot cover the booking
 
-**Priority: P1. State: QUEUED (Part C).** **Scope:** backend `POST
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR TBD).** **Scope:** backend `POST
 /packages/{id}/purchase` accepts optional `return_to` (a relative path:
 starts with "/", no scheme/host/"//", ≤ 512 chars; else 422); when present
 the checkout success URL is `<FRONTEND_URL><return_to>` + `pagamento=
@@ -4979,6 +4979,44 @@ pack" → stub checkout → back on the same slot with the modal open and the
 pack preselected → confirm with no second checkout; and the taken-meanwhile
 case (booked via the API as another user during the detour → notice, no
 modal).
+
+**Delivered (2026-10-01):** `PackagePurchaseBody.return_to` with
+`validate_return_to` (422 for anything but a relative path);
+`PaymentGateway.create_checkout_session(success_url=, cancel_url=)` on both
+implementations, the stub page redirecting to the session's own URLs;
+`packagesApi.purchase(…, returnTo)`; `lib/bookingDeepLink.ts`
+(`parseSlotParams`, `slotReturnPath`); `components/booking/PaymentNotice.tsx`
+(the dashboard's notice, now shared, with a `booking` context);
+`BookingCalendar` `initialDate`/`reopen`/`onReopenDone` (free → modal, taken
+→ the existing "já está reservada" notice, gone → "já não está
+disponível"); `SpaceRoomsView` reads `?start=&end=&pagamento=` once and
+strips them (keeping `?room=`); `paymentOptions()` in `lib/paymentSplit.ts`
+gives the order; `BookingModal` lists "Comprar um pack" with the inline
+packs (name, hours, price, "válido N dias"), the "O horário não fica
+reservado…" line, "Comprar" → purchase with `return_to` → Checkout, and
+disables "Confirmar Reserva" while buying. Evidence: backend
+`tests/test_packages.py::TestReturnTo` (3 + 8 rejections); Vitest
+`BookingModal` +5 (+6 reworked for the new empty-bank options),
+`BookingCalendar` +3, `SpaceRoomDeepLink` +6, `bookingDeepLink` +14,
+`PaymentNotice` +3, `api.test` +1; Playwright `tests/e2e/pack-upsell.spec.ts`
+(empty bank → buy → back on the slot with the pack preselected → confirmed,
+no second checkout; taken meanwhile → notice, no modal, the pack in the
+bank all the same).
+
+**DECISION (loop, K02):** with an empty bank the hourly option stays
+preselected even when "Comprar um pack" is listed first (the order changes,
+the default — confirm → Checkout — keeps today's behaviour). Alternative:
+preselect the pack for a first-time customer. Reverse: default `choice` to
+`'buy'` when `options[0] === 'buy'`.
+**DECISION (loop, K02):** "bought a pack before" = any row in `/packages/me`
+(active, spent, expired, cancelled, or a cancellation credit). Alternative:
+only `source = purchase` rows.
+**DECISION (loop, K02):** the packs on sale are fetched only once the bank
+is known to fall short (no request for a customer whose hours cover the
+block).
+**DECISION (loop, K02):** `?start=&end=` must be whole hours, in order, at
+most a day apart; anything else is ignored like a bad `?room=` is (no
+error on a page that works without it).
 
 ### K03 — Support request notifications, both directions
 

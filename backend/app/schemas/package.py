@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.models.package import PurchaseSource, PurchaseStatus
 from app.schemas.bounds import Money, Name, PackageHours, RejectExplicitNull, ValidityDays
@@ -77,8 +77,33 @@ class UserPackagePurchaseOut(BaseModel):
     package: PackageOut | None = None
 
 
+def validate_return_to(value: str | None) -> str | None:
+    """A relative path on our own frontend (K02): starts with "/", never
+    "//" or a backslash (browsers read those as another host), no scheme,
+    no fragment, no whitespace or control characters, at most 512 chars."""
+    if value is None:
+        return None
+    if len(value) > 512:
+        raise ValueError("return_to is too long (max 512)")
+    if not value.startswith("/") or value.startswith("//") or value.startswith("/\\"):
+        raise ValueError("return_to must be a relative path starting with a single '/'")
+    if "://" in value or "#" in value:
+        raise ValueError("return_to must not carry a scheme, host or fragment")
+    if any(ch.isspace() or ord(ch) < 32 or ch == "\x7f" for ch in value):
+        raise ValueError("return_to must not contain whitespace or control characters")
+    return value
+
+
 class PackagePurchaseBody(BaseModel):
     org_id: uuid.UUID
+    # K02: where Checkout sends the customer back to — the booking page with
+    # the slot in its query — instead of the dashboard.
+    return_to: str | None = None
+
+    @field_validator("return_to")
+    @classmethod
+    def _return_to(cls, value: str | None) -> str | None:
+        return validate_return_to(value)
 
 
 class PackagePurchaseCheckoutOut(BaseModel):

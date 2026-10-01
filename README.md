@@ -315,6 +315,22 @@ booking takes the credit back unless some of it was already spent (409).
 cd frontend && npx playwright test tests/e2e/cancellation-credit.spec.ts
 ```
 
+When the hour bank cannot cover a booking (K02), the booking modal offers
+"Comprar um pack" next to paying by the hour — first for a customer who
+never bought one — with the packs on sale inline. "Comprar" starts the
+purchase with `return_to` = the booking page and its slot
+(`/spaces/<id>?room=&start=&end=`), so Checkout (Stripe or the stub) lands
+back on that slot: the page shows the outcome, reopens the modal with the
+new pack preselected if the hours are still free, or the "já está
+reservada" notice if someone took them meanwhile. The slot is not held
+during the detour.
+
+```bash
+# As a fresh customer: pick 2h → "Comprar um pack" → "Comprar" → "Pagar" on
+# the stub page → back on the same slot, "Usar horas do pack" preselected.
+cd frontend && npx playwright test tests/e2e/pack-upsell.spec.ts
+```
+
 ---
 
 ## Testing

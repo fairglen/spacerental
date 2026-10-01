@@ -605,6 +605,20 @@ describe('adminApi support inbox (C19)', () => {
 })
 
 // A01/A02/A03: what the admin calendar calls.
+// K02: a purchase started from the booking page says where to come back to.
+describe('packagesApi.purchase return_to (K02)', () => {
+  const data = { purchase: { id: 'p1', hours_total: '10.00', hours_used: '0', hours_remaining: '10.00' }, checkout_url: 'http://x/checkout' }
+  it('sends return_to only when given', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data }) } as any
+    await packagesApi.purchase('pkg', 'org', mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/packages/pkg/purchase', { org_id: 'org' })
+    const result = await packagesApi.purchase('pkg', 'org', mockApi, '/spaces/s?room=r&start=a&end=b')
+    expect(mockApi.post).toHaveBeenLastCalledWith('/packages/pkg/purchase', { org_id: 'org', return_to: '/spaces/s?room=r&start=a&end=b' })
+    expect(result.checkout_url).toBe('http://x/checkout')
+    expect(result.purchase.hours_remaining).toBe(10)
+  })
+})
+
 describe('adminApi booking management and blocks (A01, A02)', () => {
   const booking = { id: 'b1', total_amount: '22.00', duration_hours: '2.00', package_hours_used: '0', admin_note: 'n' }
 
