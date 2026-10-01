@@ -32,6 +32,9 @@ export default function SignInPage() {
   const callbackUrl = safeInternalPath(searchParams.get('callbackUrl'))
   // Set by /reset-password after a successful change (G03).
   const passwordReset = searchParams.get('password') === 'reset'
+  // The backend refused the session's token (a password change elsewhere, a
+  // suspension, or it expired) and the app signed out (review on #65).
+  const sessionExpired = searchParams.get('session') === 'expired'
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
@@ -71,6 +74,11 @@ export default function SignInPage() {
             {passwordReset && (
               <p role="status" className="text-sm text-primary bg-primary/10 rounded-lg px-3 py-2 mb-4">
                 A sua password foi alterada. Inicie sessão com a nova password.
+              </p>
+            )}
+            {sessionExpired && !passwordReset && (
+              <p role="status" className="text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2 mb-4">
+                A sua sessão terminou — por exemplo, depois de uma alteração de password. Inicie sessão de novo.
               </p>
             )}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

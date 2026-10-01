@@ -147,7 +147,12 @@ Body: `{ token, password (8–128) }`. 400 `A ligação é inválida ou já expi
 for a token that is unknown, used, expired, or belongs to a disabled account
 (one message for all, so tokens cannot be probed). Success (200) sets the
 password, marks the token used and bumps the account's `token_version`,
-which signs every earlier session out. Auth rate-limit tier.
+which signs every earlier session out: the backend refuses the old bearer
+token, and the app ends the NextAuth session that carried it the moment a
+call answers 401 (`lib/sessionRevoked.ts`) — the dashboard layout also
+checks the token against `GET /auth/me` before rendering, so a stale
+cookie never gets the page (it lands on `/sign-in?session=expired`). Auth
+rate-limit tier.
 
 **Sessions and suspended accounts (G02/G03).** Every token carries `tv`, the
 `token_version` it was issued under (older tokens without the claim read as
@@ -351,6 +356,16 @@ purchases and help requests keep pointing at the placeholder. 409 for
 yourself, for the organisation's last owner, and for an account that also
 belongs to another organisation (the row is global, the operator's authority
 is not); 404 for a non-member. Audited as `anonymise` with the reason.
+
+**Owners are only another owner's to change.** `PUT /admin/users/:id`
+(name, email, suspension), `POST …/set-password`, `POST …/anonymise`,
+`DELETE /admin/users/:id` and `DELETE …/membership` answer 403 when the
+target is an owner of the organisation and the caller is an admin: any of
+them would let an admin take the organisation over (re-address the owner,
+then use the public reset flow). Sending the reset link (`POST
+…/password-reset`) stays allowed — it reaches the owner's own inbox. The
+last-owner rule counts under the organisation's row lock, so two owners
+removing each other at once leave one (the second answers 409).
 
 ### PUT /admin/purchases/:id
 Body: `{ status?: "active" | "cancelled", admin_note?, reason? }` → `{ purchase:

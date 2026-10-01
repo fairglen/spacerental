@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { AxiosError, AxiosHeaders } from 'axios'
 import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, supportApi, createAuthenticatedApi } from '@/lib/api'
 
 describe('spacesApi.list', () => {
@@ -63,6 +64,34 @@ describe('createAuthenticatedApi', () => {
   it('omits Authorization when no token', () => {
     const api = createAuthenticatedApi(null)
     expect(api.defaults.headers.common['Authorization']).toBeUndefined()
+  })
+
+  // Review on #65: a revoked bearer token must end the NextAuth session too.
+  it('a 401 on an authenticated client signs the browser out, once; other errors and the anonymous client do not', async () => {
+    const { signOut } = await import('next-auth/react')
+    const { resetSessionRevoked } = await import('@/lib/sessionRevoked')
+    resetSessionRevoked()
+    vi.mocked(signOut).mockClear()
+    const api = createAuthenticatedApi('stale-token')
+    const reject = (status: number) => Promise.reject(new AxiosError('x', String(status), undefined, undefined, {
+      status, statusText: 'x', data: {}, headers: {}, config: { headers: new AxiosHeaders() },
+    }))
+    api.defaults.adapter = () => reject(401)
+    await expect(api.get('/bookings/me')).rejects.toBeTruthy()
+    await expect(api.get('/packages/me')).rejects.toBeTruthy()
+    expect(signOut).toHaveBeenCalledTimes(1)
+    expect(signOut).toHaveBeenCalledWith({ callbackUrl: '/sign-in?session=expired' })
+
+    resetSessionRevoked()
+    vi.mocked(signOut).mockClear()
+    api.defaults.adapter = () => reject(403)
+    await expect(api.get('/admin/users')).rejects.toBeTruthy()
+    expect(signOut).not.toHaveBeenCalled()
+
+    const anonymous = createAuthenticatedApi(null)
+    anonymous.defaults.adapter = () => reject(401)
+    await expect(anonymous.post('/auth/login', {})).rejects.toBeTruthy()
+    expect(signOut).not.toHaveBeenCalled()
   })
 })
 

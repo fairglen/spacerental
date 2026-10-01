@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { sessionRevoked } from '@/lib/sessionRevoked'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase, Photo,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
@@ -20,6 +21,15 @@ export function createAuthenticatedApi(accessToken: string | null | undefined) {
   const instance = axios.create({ baseURL })
   if (accessToken) {
     instance.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
+    // A token the backend no longer accepts ends the NextAuth session as
+    // well, instead of leaving a signed-in shell whose every call fails.
+    instance.interceptors.response.use(
+      (response) => response,
+      (error: unknown) => {
+        if (axios.isAxiosError(error) && error.response?.status === 401) sessionRevoked()
+        return Promise.reject(error)
+      },
+    )
   }
   return instance
 }

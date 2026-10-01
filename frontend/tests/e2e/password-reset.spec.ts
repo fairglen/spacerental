@@ -15,6 +15,16 @@ test.describe('Password reset', () => {
     })
     expect(registered.status(), await registered.text()).toBe(201)
 
+    // A browser signed in with the OLD password, left open across the reset
+    // (review on #65): the NextAuth cookie alone must not keep it in.
+    const stale = await page.context().browser()!.newContext()
+    const stalePage = await stale.newPage()
+    await stalePage.goto('/sign-in')
+    await stalePage.getByLabel(/Email/i).fill(email)
+    await stalePage.getByLabel('Password').fill('antiga-123')
+    await stalePage.getByRole('button', { name: /Entrar/i }).click()
+    await stalePage.waitForURL('**/dashboard', { timeout: 15000 })
+
     await page.context().clearCookies()
     await page.goto('/sign-in')
     await page.getByRole('link', { name: 'Esqueceu-se da password?' }).click()
@@ -53,6 +63,12 @@ test.describe('Password reset', () => {
       data: { token, password: 'outra-pass-123' },
     })
     expect(spent.status()).toBe(400)
+
+    // The stale browser is shown the door, with the reason, on its next page.
+    await stalePage.goto('/dashboard')
+    await stalePage.waitForURL('**/sign-in?session=expired', { timeout: 15000 })
+    await expect(stalePage.getByRole('status')).toContainText('A sua sessão terminou')
+    await stale.close()
   })
 
   test('an expired or made-up link says so and offers a new request', async ({ page }) => {

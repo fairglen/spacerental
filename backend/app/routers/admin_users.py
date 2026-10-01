@@ -23,7 +23,7 @@ from app.booking_validity import expire_user_holds
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.models.booking import Booking
-from app.models.organization import MemberRole, OrganizationMember
+from app.models.organization import MemberRole, Organization, OrganizationMember
 from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
 from app.models.password_reset import PasswordResetToken
 from app.models.space import Room
@@ -226,6 +226,7 @@ async def admin_update_user(
     # The account is global: renaming, re-addressing or suspending someone
     # who also belongs to another organisation would reach into that tenant.
     await _refuse_other_memberships(db, member)
+    await _refuse_non_owner_on_owner(db, admin, member)
     if "email" in changes and changes["email"].lower() != user.email.lower():
         taken = await db.scalar(
             select(func.count())
@@ -384,6 +385,26 @@ async def admin_set_role(
     return {"user": _row(member, count or 0)}
 
 
+async def _refuse_non_owner_on_owner(
+    db: AsyncSession, admin: User, member: OrganizationMember
+) -> None:
+    """An owner's account is only another owner's to change (review on #65):
+    an admin who could re-address, suspend, re-password or remove an owner
+    could take the organisation over through the public reset flow."""
+    if member.role is not MemberRole.owner or member.user_id == admin.id:
+        return
+    actor = await db.scalar(
+        select(OrganizationMember.role).where(
+            OrganizationMember.user_id == admin.id, OrganizationMember.org_id == member.org_id
+        )
+    )
+    if actor is not MemberRole.owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only an owner can change another owner's account",
+        )
+
+
 async def _refuse_self_and_last_owner(
     db: AsyncSession, admin: User, member: OrganizationMember
 ) -> None:
@@ -394,6 +415,12 @@ async def _refuse_self_and_last_owner(
             status_code=status.HTTP_409_CONFLICT, detail="You cannot do this to your own account"
         )
     if member.role is MemberRole.owner:
+        # Serialised per organisation (review on #65): two owners removing
+        # each other at once would both count two and leave nobody. The
+        # second waits on the row and counts after the first committed.
+        await db.execute(
+            select(Organization.id).where(Organization.id == member.org_id).with_for_update()
+        )
         owners = await db.scalar(
             select(func.count())
             .select_from(OrganizationMember)
@@ -465,6 +492,7 @@ async def admin_anonymise_user(
     member = await _membership(db, user_id, org_id)
     user = member.user
     deletion.require_confirm(body.confirm, user.id, user.email)
+    await _refuse_non_owner_on_owner(db, admin, member)
     await _refuse_self_and_last_owner(db, admin, member)
     await _refuse_other_memberships(db, member)
     before = audit.snapshot(user)
@@ -506,6 +534,7 @@ async def admin_delete_user(
     member = await _membership(db, user_id, org_id)
     user = member.user
     deletion.require_confirm(confirm, user.id, user.email)
+    await _refuse_non_owner_on_owner(db, admin, member)
     await _refuse_self_and_last_owner(db, admin, member)
     await _refuse_other_memberships(db, member)
     references = await _references(db, user.id)
@@ -530,6 +559,7 @@ async def admin_remove_membership(
     member = await _membership(db, user_id, org_id)
     user = member.user
     deletion.require_confirm(confirm, user.id, user.email)
+    await _refuse_non_owner_on_owner(db, admin, member)
     await _refuse_self_and_last_owner(db, admin, member)
     before = {"id": str(user.id), "role": member.role.value}
     await db.delete(member)
@@ -591,8 +621,10 @@ async def admin_set_password(
     member = await _membership(db, user_id, org_id)
     user = member.user
     # A password is the global credential: never set it for someone who also
-    # belongs to another organisation (the same rule as anonymisation).
+    # belongs to another organisation (the same rule as anonymisation), and
+    # an owner's only by another owner.
     await _refuse_other_memberships(db, member)
+    await _refuse_non_owner_on_owner(db, admin, member)
     await password_reset.set_password(db, user, hash_password(body.password))
     await audit.record(
         db,
