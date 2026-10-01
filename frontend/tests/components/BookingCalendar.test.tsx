@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, act, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { addDays, format, parseISO } from 'date-fns'
+import { bookingWindowLastDay } from '@/lib/bookingWindow'
 import { pt } from 'date-fns/locale'
 import type { ToolbarProps } from 'react-big-calendar'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
@@ -535,14 +536,16 @@ describe('BookingCalendar booking window (H01)', () => {
     select(far.start, far.end)
     expect(onSlotSelect).not.toHaveBeenCalled()
     const alert = await screen.findByRole('alert')
-    const lastDay = format(addDays(new Date(), 30), "d 'de' MMMM", { locale: pt })
+    // Not `addDays(now, 30)`: the window is 30 × 24 h, which is a calendar
+    // day short across the autumn clock change during the first hour of a day.
+    const lastDay = format(bookingWindowLastDay(), "d 'de' MMMM", { locale: pt })
     expect(alert).toHaveTextContent(`abertas até ${lastDay}`)
     expect(alert).not.toHaveTextContent(/reservada|passou/)
   })
 
   it('always tells the customer until when bookings are open', async () => {
     await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
-    const lastDay = format(addDays(new Date(), 30), "d 'de' MMMM", { locale: pt })
+    const lastDay = format(bookingWindowLastDay(), "d 'de' MMMM", { locale: pt })
     expect(screen.getByTestId('booking-window-hint')).toHaveTextContent(`Reservas abertas até ${lastDay}.`)
   })
 
@@ -550,8 +553,8 @@ describe('BookingCalendar booking window (H01)', () => {
     setViewportWidth(1280) // the week view
     await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
     vi.mocked(spacesApi.getAvailability).mockClear()
-    // Navigate to the week holding the last open day (today + 30).
-    const lastDay = addDays(new Date(), 30)
+    // Navigate to the week holding the last open day.
+    const lastDay = bookingWindowLastDay()
     act(() => calendar!.onNavigate(lastDay))
     await waitFor(() => expect(spacesApi.getAvailability).toHaveBeenCalled())
     const asked = vi.mocked(spacesApi.getAvailability).mock.calls.map(([, d]) => d)

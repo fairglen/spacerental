@@ -19,13 +19,17 @@ test('users: search, open a customer, grant hours, and the customer can spend th
   expect(registered.ok(), await registered.text()).toBeTruthy()
   const customerToken = (await registered.json()).access_token
 
+  // G06: the list is "Clientes" on the kit — search in the toolbar, a row opens the page.
   await page.goto('/admin/users')
-  await expect(page.getByRole('heading', { name: 'Utilizadores' })).toBeVisible()
-  await page.getByLabel('Procurar').fill(`e2e-users-${stamp}`)
+  await expect(page.getByRole('heading', { name: 'Clientes' })).toBeVisible()
+  await page.getByLabel('Pesquisar').fill(`e2e-users-${stamp}`)
+  // The search lands in the URL after a debounce; wait for it like a person
+  // watching the list settle would, rather than clicking the unfiltered row.
+  await expect(page).toHaveURL(new RegExp(`q=e2e-users-${stamp}`))
   const row = page.getByRole('row').filter({ hasText: email })
   await expect(row).toBeVisible({ timeout: 10000 })
   await expect(row).toContainText('Cliente')
-  await row.getByRole('link', { name: `Ver ${email}` }).click()
+  await row.getByText(email).click()
 
   await expect(page.getByRole('heading', { name: new RegExp(`Cliente Horas ${stamp}`) })).toBeVisible({ timeout: 10000 })
   await expect(page.getByText('Sem packs.')).toBeVisible()
@@ -36,7 +40,7 @@ test('users: search, open a customer, grant hours, and the customer can spend th
   await dialog.getByRole('button', { name: 'Atribuir horas' }).click()
   await expect(dialog).toBeHidden({ timeout: 10000 })
 
-  const packs = page.getByRole('table').first()
+  const packs = page.getByRole('table', { name: 'Packs do cliente' })
   await expect(packs).toContainText('3h de 3h')
   await expect(packs).toContainText('Oferta')
   await expect(packs).toContainText('Compensação por avaria do ar condicionado')

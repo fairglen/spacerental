@@ -461,6 +461,13 @@ describe('space location shape (C10)', () => {
     expect(unlocated.longitude).toBeNull()
   })
 
+  it('spacesApi.get carries the organisation contact, nulls when the API sends none (G04)', async () => {
+    const withContact = { get: vi.fn().mockResolvedValue({ data: { space: { id: 's1' }, rooms: [], contact: { email: 'ola@flowspace.pt', phone: null } } }) } as any
+    expect((await spacesApi.get('s1', withContact)).contact).toEqual({ email: 'ola@flowspace.pt', phone: null })
+    const without = { get: vi.fn().mockResolvedValue({ data: { space: { id: 's1' }, rooms: [] } }) } as any
+    expect((await spacesApi.get('s1', without)).contact).toEqual({ email: null, phone: null })
+  })
+
   it('spacesApi.get converts the space and still normalizes its rooms', async () => {
     const mockApi = {
       get: vi.fn().mockResolvedValue({ data: { space: wire, rooms: [{ id: 'r1', hourly_rate: '11.00' }] } }),
@@ -730,5 +737,120 @@ describe('adminApi users (A05)', () => {
     const body = { expires_at: '2030-04-15T23:59:59Z', reason: 'baixa' }
     expect(await adminApi.extendPurchase('p1', body, mockApi)).toMatchObject({ hours_remaining: 7, amount_paid: 100 })
     expect(mockApi.put).toHaveBeenCalledWith('/admin/purchases/p1/expiry', body)
+  })
+})
+
+describe('Part A1 admin endpoints (G01–G04): every wrapper unwraps its envelope', () => {
+  const api = (data: unknown, method: 'get' | 'post' | 'put' | 'delete' = 'get') => {
+    const fn = vi.fn().mockResolvedValue({ data })
+    return { [method]: fn, fn } as unknown as { get: typeof fn; post: typeof fn; put: typeof fn; delete: typeof fn; fn: typeof fn }
+  }
+
+  it('audit trail and history share the paginated shape', async () => {
+    const page = { actions: [{ id: 'a1', action: 'update' }], total: 1, page: 1, page_size: 20 }
+    const trail = api(page)
+    expect(await adminApi.getAudit({ entity_type: 'room' }, trail as any)).toEqual(page)
+    expect(trail.fn).toHaveBeenCalledWith('/admin/audit', { params: { entity_type: 'room' } })
+    const history = api(page)
+    expect(await adminApi.getHistory('support', 'r1', { page: 2 }, history as any)).toEqual(page)
+    expect(history.fn).toHaveBeenCalledWith('/admin/support/requests/r1/history', { params: { page: 2 } })
+    const purchases = api(page)
+    await adminApi.getHistory('purchases', 'p1', {}, purchases as any)
+    expect(purchases.fn).toHaveBeenCalledWith('/admin/purchases/p1/history', { params: {} })
+  })
+
+  it('detail reads normalise the nested entity numbers', async () => {
+    const space = api({ space: { id: 's1', latitude: '38.7', longitude: '-9.1', rooms: [{ id: 'r1', hourly_rate: '11.00' }] }, photo_count: 2, bookings: { total: 3, upcoming: 1 } })
+    const s = await adminApi.getSpace('s1', space as any)
+    expect(s.space.latitude).toBe(38.7)
+    expect(s.space.rooms?.[0].hourly_rate).toBe(11)
+    expect(s.bookings).toEqual({ total: 3, upcoming: 1 })
+    const room = api({ room: { id: 'r1', hourly_rate: '9.50' }, space: { id: 's1' }, rules: [], blocks: [], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    expect((await adminApi.getRoom('r1', room as any)).room.hourly_rate).toBe(9.5)
+    const booking = api({ booking: { id: 'b1', total_amount: '9.00', duration_hours: '1', stripe_checkout_session_id: 'cs_1' }, history: [] })
+    const b = await adminApi.getBooking('b1', booking as any)
+    expect(b.booking.total_amount).toBe(9)
+    expect(b.booking.stripe_checkout_session_id).toBe('cs_1')
+    const pkg = api({ package: { id: 'p1', price: '100.00' }, purchases: { total: 2, active: 1 }, hours_outstanding: '7.50' })
+    const p = await adminApi.getPackage('p1', pkg as any)
+    expect(p.package.price).toBe(100)
+    expect(p.hours_outstanding).toBe(7.5)
+  })
+
+  it('room duplicate and availability helpers', async () => {
+    const dup = api({ room: { id: 'r2', hourly_rate: '11.00' } }, 'post')
+    expect((await adminApi.duplicateRoom('r1', dup as any)).id).toBe('r2')
+    expect(dup.fn).toHaveBeenCalledWith('/admin/rooms/r1/duplicate')
+    const copy = api({ rules: [{ id: 'x', day_of_week: 0 }] }, 'post')
+    expect(await adminApi.copyAvailabilityToAllDays('r1', 0, copy as any)).toHaveLength(1)
+    expect(copy.fn).toHaveBeenCalledWith('/admin/rooms/r1/availability/copy-to-all-days', { day_of_week: 0 })
+    const del = api(undefined, 'delete')
+    await adminApi.deleteAvailabilityRule('r1', 'rule1', del as any)
+    expect(del.fn).toHaveBeenCalledWith('/admin/rooms/r1/availability/rule1')
+  })
+
+  it('hard deletes send confirm as a query parameter (G02)', async () => {
+    for (const [call, path] of [
+      [(a: any) => adminApi.deleteSpace('s1', 'Espaço', a), '/admin/spaces/s1'],
+      [(a: any) => adminApi.deleteRoom('r1', 'Sala', a), '/admin/rooms/r1'],
+      [(a: any) => adminApi.deletePackage('p1', 'Pack', a), '/admin/packages/p1'],
+      [(a: any) => adminApi.deletePurchase('u1', 'abcd1234', a), '/admin/purchases/u1'],
+      [(a: any) => adminApi.deleteSupportRequest('q1', 'abcd1234', a), '/admin/support/requests/q1'],
+      [(a: any) => adminApi.deleteUser('u1', 'x@y.z', a), '/admin/users/u1'],
+      [(a: any) => adminApi.removeMembership('u1', 'x@y.z', a), '/admin/users/u1/membership'],
+    ] as const) {
+      const del = api(undefined, 'delete')
+      await call(del)
+      expect(del.fn.mock.calls[0][0]).toBe(path)
+      expect(del.fn.mock.calls[0][1].params.confirm).toBeTruthy()
+    }
+    const withReason = api(undefined, 'delete')
+    await adminApi.deleteBooking('b1', 'abcd1234', 'Criada por engano', withReason as any)
+    expect(withReason.fn).toHaveBeenCalledWith('/admin/bookings/b1', { params: { confirm: 'abcd1234', reason: 'Criada por engano' } })
+    const anon = api({ user: { id: 'u1', email: 'utilizador-abcd1234@anon.invalid', name: 'Utilizador removido', disabled_at: 't' } }, 'post')
+    expect((await adminApi.anonymiseUser('u1', { confirm: 'abcd1234', reason: 'RGPD' }, anon as any)).email).toContain('anon.invalid')
+    expect(anon.fn).toHaveBeenCalledWith('/admin/users/u1/anonymise', { confirm: 'abcd1234', reason: 'RGPD' })
+  })
+
+  it('users: create, update, reset link, set password', async () => {
+    const created = api({ user: { id: 'u1', email: 'a@b.c', role: 'member' } }, 'post')
+    expect((await adminApi.createUser({ email: 'a@b.c', name: 'A' }, created as any)).role).toBe('member')
+    expect(created.fn).toHaveBeenCalledWith('/admin/users', { email: 'a@b.c', name: 'A' })
+    const updated = api({ user: { id: 'u1', disabled_at: null } }, 'put')
+    expect((await adminApi.updateUser('u1', { disabled_at: null }, updated as any)).disabled_at).toBeNull()
+    expect(updated.fn).toHaveBeenCalledWith('/admin/users/u1', { disabled_at: null })
+    const sent = api({ sent_to: 'a@b.c', sent_at: 't' }, 'post')
+    expect((await adminApi.sendPasswordReset('u1', sent as any)).sent_to).toBe('a@b.c')
+    const pw = api({ user: { id: 'u1' } }, 'post')
+    await adminApi.setPassword('u1', 'definida123', pw as any)
+    expect(pw.fn).toHaveBeenCalledWith('/admin/users/u1/set-password', { password: 'definida123' })
+  })
+
+  it('purchases: list with the customer, detail with debits, adjust and update', async () => {
+    const list = api({ purchases: [{ id: 'p1', hours_total: '10.00', hours_used: '0', hours_remaining: '10.00', user: { id: 'u1', name: 'A', email: 'a@b.c' } }], total: 1, page: 1, page_size: 20 })
+    const l = await adminApi.getPurchases({ status: 'active' }, list as any)
+    expect(l.purchases[0].hours_remaining).toBe(10)
+    expect(l.purchases[0].user.email).toBe('a@b.c')
+    expect(list.fn).toHaveBeenCalledWith('/admin/purchases', { params: { status: 'active' } })
+    const detail = api({ purchase: { id: 'p1', hours_total: '10.00', hours_used: '1.00', hours_remaining: '9.00' }, user: { id: 'u1', name: 'A', email: 'a@b.c' }, debits: [{ booking_id: 'b1', hours: '1.00', start_time: 't', end_time: 't', status: 'confirmed', room_name: 'Sala' }] })
+    const d = await adminApi.getPurchase('p1', detail as any)
+    expect(d.debits[0].hours).toBe(1)
+    const adjust = api({ purchase: { id: 'p1', hours_total: '12.00', hours_remaining: '11.00', hours_used: '1.00' } }, 'post')
+    expect((await adminApi.adjustPurchase('p1', { hours: 2, reason: 'x' }, adjust as any)).hours_total).toBe(12)
+    expect(adjust.fn).toHaveBeenCalledWith('/admin/purchases/p1/adjust', { hours: '2', reason: 'x' })
+    const upd = api({ purchase: { id: 'p1', status: 'cancelled', hours_total: '10', hours_used: '0', hours_remaining: '0' } }, 'put')
+    expect((await adminApi.updatePurchase('p1', { status: 'cancelled', reason: 'r' }, upd as any)).status).toBe('cancelled')
+  })
+
+  it('support detail and note, organisation read and write', async () => {
+    const detail = api({ request: { id: 'q1', message: 'm', admin_note: null, user: null, booking: null } })
+    expect((await adminApi.getSupportRequest('q1', detail as any)).message).toBe('m')
+    const note = api({ request: { id: 'q1', admin_note: 'n', status: 'in_progress' } }, 'put')
+    expect((await adminApi.updateSupportRequestDetail('q1', { admin_note: 'n', status: 'in_progress' }, note as any)).admin_note).toBe('n')
+    const org = api({ organization: { id: 'o1', name: 'FlowSpace', slug: 'fs', contact_email: null, contact_phone: null, timezone: 'Europe/Lisbon' } })
+    expect((await adminApi.getOrganization(org as any)).slug).toBe('fs')
+    const put = api({ organization: { id: 'o1', name: 'Novo' } }, 'put')
+    expect((await adminApi.updateOrganization({ name: 'Novo' }, put as any)).name).toBe('Novo')
+    expect(put.fn).toHaveBeenCalledWith('/admin/organization', { name: 'Novo' })
   })
 })
