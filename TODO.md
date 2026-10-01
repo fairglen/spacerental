@@ -4806,7 +4806,9 @@ space location). Playwright `admin-crud.spec.ts` (6): the six flows the
 owner listed, green on a fresh stack. **Found on the way:**
 `BookingCalendar.test.tsx` expected `addDays(now, 30)` for the window's
 last day, a calendar day off within the first hour of a day across the
-autumn clock change — it now uses `bookingWindowLastDay()`. **DECISIONS:**
+autumn clock change — it now uses `bookingWindowLastDay()`;
+`BookingModal.test.tsx`'s "soon" purchase expired on a fixed
+`2026-10-01`, which is now a relative date. **DECISIONS:**
 (1) `/admin/rooms/[id]` is the room page; a space id there is looked up
 and redirected to `/admin/spaces/[id]`, where the rooms section (create,
 duplicate, activate) now lives. (2) "Onde estamos" (both the landing block and the rooms page) reads the
