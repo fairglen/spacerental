@@ -190,6 +190,18 @@ SIGN_OFF_TEXT = f"Até breve,\nA equipa {BRAND_NAME}\n"
 SIGN_OFF_HTML = f"<p>Até breve,<br />A equipa {escape(BRAND_NAME)}</p>"
 
 
+def _branded(html_body: str) -> str:
+    """Every HTML email opens with the logo (B50): an absolute URL on the
+    frontend, where the brand set is served, 200 px wide so mail clients
+    that ignore CSS still size it. The text part carries no header."""
+    logo = f"{settings.FRONTEND_URL.rstrip('/')}/brand/logo-email.png"
+    header = (
+        f'<p><img src="{escape(logo)}" width="200" height="182" alt="{escape(BRAND_NAME)}" '
+        'style="display:block;width:200px;height:auto" /></p>'
+    )
+    return header + html_body
+
+
 def booking_confirmation_email(
     *,
     to: str,
@@ -236,7 +248,7 @@ def booking_confirmation_email(
         f'<p><a href="{safe_cancel_url}">Cancelar reserva</a></p>'
         f"{SIGN_OFF_HTML}"
     )
-    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 
 
 def _format_hours_pt(hours: Decimal) -> str:
@@ -294,7 +306,7 @@ def booking_cancellation_email(
         f'<p><a href="{browse_url}">Fazer nova reserva</a></p>'
         f"{SIGN_OFF_HTML}"
     )
-    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 
 
 SUPPORT_CATEGORY_LABELS_PT = {
@@ -354,7 +366,7 @@ def support_request_email(
     return EmailMessage(
         to=settings.SUPPORT_INBOX_EMAIL,
         subject=f"[Ajuda] {label} — #{reference}",
-        html_body=html_body,
+        html_body=_branded(html_body),
         text_body=text_body,
         reply_to=contact_email,
     )
@@ -403,7 +415,7 @@ def support_request_received_email(
     return EmailMessage(
         to=to,
         subject=subject,
-        html_body=html_body,
+        html_body=_branded(html_body),
         text_body=text_body,
         reply_to=settings.SUPPORT_INBOX_EMAIL,
     )
@@ -428,7 +440,7 @@ def password_reset_email(*, to: str, link: str) -> EmailMessage:
         "<p>Se não fez este pedido, ignore este email: a sua password mantém-se.</p>"
         f"{SIGN_OFF_HTML}"
     )
-    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 
 
 def set_password_email(*, to: str, link: str) -> EmailMessage:
@@ -455,7 +467,7 @@ def set_password_email(*, to: str, link: str) -> EmailMessage:
         f"{escape(settings.FRONTEND_URL)}/forgot-password</a>.</p>"
         f"{SIGN_OFF_HTML}"
     )
-    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 
 
 # ─── Queueing ───────────────────────────────────────────────────────────────
