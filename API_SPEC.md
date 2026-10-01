@@ -55,8 +55,14 @@ message (20–2000 chars), contact_email?, booking_id?, context?, website? }`
   and nothing is stored or sent.
 Stores a `support_requests` row (status `new`; `org_id` from the booking, else
 the customer's only organisation, else `CUSTOMER_ENROLLMENT_ORG_SLUG`, else
-null) and emails `SUPPORT_EMAIL` with `Reply-To` = the customer and subject
-`[Ajuda] <categoria> — #<reference>`. A mail failure does not lose the request.
+null) and sends two emails (K03): the inbox copy to `SUPPORT_INBOX_EMAIL`
+(default `geral+support@flowspace.pt`) with `Reply-To` = the customer,
+subject `[Ajuda] <categoria> — #<reference>` and a link to
+`/admin/support/<id>`; and the requester's copy to their address with
+`Reply-To` = the inbox, subject `[FlowSpace] Recebemos o seu pedido
+#<reference>`, the category, the booking's date and hours when one is
+linked, and the message quoted (escaped). A mail failure does not lose the
+request; the honeypot sends nothing.
 Throttled tightly (`RATE_LIMIT_SUPPORT_*`, default 5/hour per client) → `429`.
 Response `201`: `{ request: { id, reference, status, created_at } }` — never the
 message: a public endpoint does not reflect what it was sent.

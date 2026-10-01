@@ -5020,7 +5020,7 @@ error on a page that works without it).
 
 ### K03 — Support request notifications, both directions
 
-**Priority: P1. State: QUEUED (Part C).** **Scope:** config
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR TBD).** **Scope:** config
 `SUPPORT_INBOX_EMAIL` default `geral+support@flowspace.pt` (the
 notification destination; `SUPPORT_EMAIL` was only that target, so it is
 renamed — Compose, `.env.example`, README); the customer-facing contact
@@ -5037,6 +5037,26 @@ para <email>". **Validation:** the stub records exactly two emails with the
 right recipients/subjects/Reply-To; `<script>` in the message arrives
 escaped in both; the honeypot sends nothing; component test for the copy;
 Playwright: submit → the hook shows both.
+
+**Delivered (2026-10-01):** `SUPPORT_INBOX_EMAIL` (config, Compose,
+`.env.example`, README, API_SPEC) replaces `SUPPORT_EMAIL`; `email.
+support_request_received_email` (subject "[FlowSpace] Recebemos o seu
+pedido #<ref>", category, booking date/hours when linked, the message
+escaped, "Respondemos por email para <address>", Reply-To the inbox); the
+inbox template gains "Abrir no painel" → `/admin/support/<id>`; both sent
+through `enqueue_email` after the row exists; the dialog's success line
+"Enviámos uma cópia para <email>; respondemos por email para o mesmo
+endereço."; `GET /__test__/emails` also lists `reply_to`. Evidence:
+`tests/test_support.py` (two emails with the right recipients/subjects/
+Reply-To, the escaped `<script>`-style payload in both, the booking line,
+the honeypot still sends nothing, a mail failure still keeps the request);
+`test_password_reset.py` hook shape; Vitest `HelpDialog` +1 (+1 reworked);
+Playwright `help.spec.ts` reads both emails from the stub mailbox.
+
+**DECISION (loop, K03):** the requester copy names a linked booking by its
+Lisbon date and hours only (no room name, which would need a second query
+on a public, throttled endpoint). Alternative: load the room for the
+summary.
 
 ### B50 — New logo on both sites (brand set `flowspace-site/assets/img/brand/`)
 

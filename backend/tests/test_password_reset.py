@@ -357,6 +357,8 @@ class TestEmailHook:
         assert listed[0]["to"] == test_user.email
         assert listed[0]["subject"]
         assert listed[0]["links"] == [_link(emails.sent[0])]
+        # K03: the help-request specs read who a reply goes to.
+        assert listed[0]["reply_to"] is None
 
     def test_the_hook_needs_the_opt_in_a_stub_and_a_non_production_env(self):
         on = {"enabled": True, "email_mode": "stub", "app_env": "development"}

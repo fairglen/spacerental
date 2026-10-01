@@ -127,7 +127,9 @@ async def create_support_request(
     await db.refresh(request)
 
     # After the row exists: if the mail provider is down the request is still
-    # in the inbox (`enqueue_email` logs a failed delivery and moves on).
+    # in the inbox (`enqueue_email` logs a failed delivery and moves on). Two
+    # messages (K03): the inbox copy with Reply-To = the requester, and the
+    # requester's own copy with Reply-To = the inbox.
     email.enqueue_email(
         background_tasks,
         email_gateway,
@@ -141,7 +143,25 @@ async def create_support_request(
             booking_id=request.booking_id,
         ),
     )
+    email.enqueue_email(
+        background_tasks,
+        email_gateway,
+        email.support_request_received_email(
+            to=request.contact_email,
+            reference=request.id.hex[:8].upper(),
+            category=request.category,
+            message=request.message,
+            booking_summary=_booking_summary(booking) if booking is not None else None,
+        ),
+    )
     return {"request": SupportRequestReceipt.model_validate(request)}
+
+
+def _booking_summary(booking: Booking) -> str:
+    """One line a customer recognises their booking by: the room is loaded
+    separately so the summary stays cheap (date and hours in Lisbon time)."""
+    date_str, time_str = email.format_datetime_pt(booking.start_time, booking.end_time)
+    return f"{date_str}, {time_str}"
 
 
 # ─── Operator inbox (C19) ───────────────────────────────────────────────────

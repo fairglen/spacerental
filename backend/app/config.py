@@ -110,7 +110,10 @@ class Settings(BaseSettings):
     EMAIL_FROM_ADDRESS: str = "FlowSpace <no-reply@flowspace.pt>"
     # Where help-form requests are sent (C17). The public contact address, the
     # same one the frontend shows (frontend/lib/contact.ts, C09).
-    SUPPORT_EMAIL: str = "geral@flowspace.pt"
+    # Where help-form requests are delivered (K03; renamed from SUPPORT_EMAIL,
+    # which was only ever this destination). The address the site shows the
+    # public stays geral@flowspace.pt (frontend/lib/contact.ts).
+    SUPPORT_INBOX_EMAIL: str = "geral+support@flowspace.pt"
     # Base URL used to build links inside outgoing emails (e.g. "cancel this
     # booking"). This is handed to the user's mail client, so localhost is
     # correct here — unlike backend-to-backend calls (CLAUDE.md §6.3).

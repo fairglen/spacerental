@@ -90,8 +90,9 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       # flowspace.pt must be verified at the email provider before live mode.
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-FlowSpace <no-reply@flowspace.pt>}
-      # Where help-form requests go (C17); the public contact address (C09).
-      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-geral@flowspace.pt}
+      # Where help-form requests are delivered (C17, K03). The public contact
+      # address (C09) is a frontend constant and stays geral@flowspace.pt.
+      SUPPORT_INBOX_EMAIL: ${SUPPORT_INBOX_EMAIL:-geral+support@flowspace.pt}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       # Local process-memory access codes. Live startup is gated until durable
       # identifiers and retry state ship (roadmap O04), even with credentials.

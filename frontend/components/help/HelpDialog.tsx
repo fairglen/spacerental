@@ -125,8 +125,9 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
         {mutation.isSuccess ? (
           <div className="space-y-3">
             <p role="status" className="rounded-lg bg-accent p-4 text-sm text-foreground">
-              Referência <strong>#{mutation.data.reference}</strong>. Respondemos por email
-              {signedIn ? ` para ${session?.user?.email}` : ` para ${email.trim()}`}. Guarde a referência se quiser perguntar por ele.
+              Referência <strong>#{mutation.data.reference}</strong>. Enviámos uma cópia para{' '}
+              {signedIn ? session?.user?.email : email.trim()}; respondemos por email para o mesmo endereço.
+              Guarde a referência se quiser perguntar por ele.
             </p>
             <DialogFooter>
               <Button onClick={() => onOpenChange(false)}>Fechar</Button>

@@ -174,6 +174,11 @@ def _format_datetime_pt(start: datetime, end: datetime) -> tuple[str, str]:
     return date_str, time_str
 
 
+def format_datetime_pt(start: datetime, end: datetime) -> tuple[str, str]:
+    """`_format_datetime_pt` for callers outside this module (K03)."""
+    return _format_datetime_pt(start, end)
+
+
 def _format_date_pt(when: datetime) -> str:
     local = when.astimezone(LISBON_TZ)
     return f"{local.day} de {_MONTHS_PT[local.month - 1]} de {local.year}"
@@ -330,24 +335,77 @@ def support_request_email(
         ("Versão", context.get("app_version", "—")),
         ("Enviado às", context.get("timestamp", "—")),
     ]
+    # K03: straight to the request in the admin inbox.
+    admin_url = f"{settings.FRONTEND_URL}/admin/support/{request_id}"
     text_body = (
         f"Novo pedido de ajuda #{reference}\n\n{message}\n\n"
         + "\n".join(f"{name}: {value}" for name, value in facts)
-        + "\n\nResponda a este email para falar com o cliente.\n"
+        + f"\n\nAbrir no painel: {admin_url}\n"
+        + "Responda a este email para falar com o cliente.\n"
     )
     html_body = (
         f"<p>Novo pedido de ajuda <strong>#{escape(reference)}</strong></p>"
         f'<p style="white-space:pre-wrap">{escape(message)}</p>'
         "<ul>"
         + "".join(f"<li><strong>{escape(n)}:</strong> {escape(str(v))}</li>" for n, v in facts)
-        + "</ul><p>Responda a este email para falar com o cliente.</p>"
+        + f'</ul><p><a href="{escape(admin_url)}">Abrir no painel</a></p>'
+        "<p>Responda a este email para falar com o cliente.</p>"
     )
     return EmailMessage(
-        to=settings.SUPPORT_EMAIL,
+        to=settings.SUPPORT_INBOX_EMAIL,
         subject=f"[Ajuda] {label} — #{reference}",
         html_body=html_body,
         text_body=text_body,
         reply_to=contact_email,
+    )
+
+
+def support_request_received_email(
+    *,
+    to: str,
+    reference: str,
+    category: str,
+    message: str,
+    booking_summary: str | None,
+) -> EmailMessage:
+    """The requester's copy of their own help request (K03): what they sent,
+    quoted verbatim but escaped, and where the answer will come from. Reply-To
+    is the support inbox so a reply lands next to the original."""
+    label = SUPPORT_CATEGORY_LABELS_PT.get(str(category), str(category))
+    subject = f"[{BRAND_NAME}] Recebemos o seu pedido #{reference}"
+    booking_text = f"Reserva: {booking_summary}\n" if booking_summary else ""
+    booking_html = (
+        f"<li><strong>Reserva:</strong> {escape(booking_summary)}</li>" if booking_summary else ""
+    )
+    text_body = (
+        f"Obrigado por nos contactar. Recebemos o seu pedido #{reference} e vamos "
+        "responder o mais depressa possível.\n\n"
+        f"Assunto: {label}\n"
+        f"{booking_text}"
+        f"\nA sua mensagem:\n{message}\n\n"
+        f"Respondemos por email para {to}. Se quiser acrescentar algo, "
+        "responda a este email.\n\n"
+        f"{SIGN_OFF_TEXT}"
+    )
+    html_body = (
+        f"<p>Obrigado por nos contactar. Recebemos o seu pedido <strong>#{escape(reference)}"
+        "</strong> e vamos responder o mais depressa possível.</p>"
+        "<ul>"
+        f"<li><strong>Assunto:</strong> {escape(label)}</li>"
+        f"{booking_html}"
+        "</ul>"
+        "<p>A sua mensagem:</p>"
+        f'<blockquote style="white-space:pre-wrap">{escape(message)}</blockquote>'
+        f"<p>Respondemos por email para {escape(to)}. Se quiser acrescentar algo, "
+        "responda a este email.</p>"
+        f"{SIGN_OFF_HTML}"
+    )
+    return EmailMessage(
+        to=to,
+        subject=subject,
+        html_body=html_body,
+        text_body=text_body,
+        reply_to=settings.SUPPORT_INBOX_EMAIL,
     )
 
 

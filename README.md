@@ -223,7 +223,7 @@ run without third-party accounts or network access.
 every message is logged and kept in process memory, and — with the explicit
 opt-in `TEST_HOOKS_ENABLED=true` (the dev Compose stack sets it; the app's
 default is off) outside `APP_ENV=production` — listed by `GET
-/__test__/emails` (the last 20: to, subject, links). That hook is how the
+/__test__/emails` (the last 20: to, subject, reply_to, links). That hook is how the
 password-reset browser test follows the link nobody can otherwise receive
 locally; the route does not exist without the opt-in or on a production
 app, and `tests/test_password_reset.py` proves both. The reset
@@ -383,7 +383,11 @@ a minute), so a few spec files deliberately wait out a 60-second window at their
 boundary; the full run takes several minutes and those pauses are not hangs.
 The help form is throttled at 5 requests an hour per client and the suite sends
 four, so restart the backend (`docker compose restart backend`) before running
-it a second time within an hour, or the fifth request answers 429.
+it a second time within an hour, or the fifth request answers 429. Each request
+sends two emails (K03): one to `SUPPORT_INBOX_EMAIL` (default
+`geral+support@flowspace.pt`, Reply-To the requester, with a link to the
+request in the admin inbox) and a copy to the requester (Reply-To the inbox);
+`help.spec.ts` reads both from the stub mailbox.
 CI runs this suite with `RECURRING_BOOKINGS_ENABLED=true` (the weekly-series
 spec only runs its full body then), so before opening a PR run it that way too:
 start the stack with that variable set and pass it to `npm run test:e2e`.
