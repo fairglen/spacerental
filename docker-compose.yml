@@ -21,6 +21,13 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://spacerental:spacerental@db:5432/spacerental
+      # `production` is the only special value: the local-only test hooks
+      # (/__test__/emails, the stub mailbox browser tests read) are never
+      # mounted there, whatever EMAIL_MODE says (G03).
+      APP_ENV: ${APP_ENV:-development}
+      # The stub mailbox hook is an explicit opt-in (off by default in the
+      # app); this is the DEV stack, so it is on unless told otherwise.
+      TEST_HOOKS_ENABLED: ${TEST_HOOKS_ENABLED:-true}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required — copy .env.example to .env}
       CUSTOMER_ENROLLMENT_ORG_SLUG: ${CUSTOMER_ENROLLMENT_ORG_SLUG-demo-space}
       CUSTOMER_ENROLLMENT_ENABLED: ${CUSTOMER_ENROLLMENT_ENABLED:-true}

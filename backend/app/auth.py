@@ -34,6 +34,21 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
+def token_claims(user: User, *, role: str, memberships: list[dict] | None = None) -> dict:
+    """The claims every login/registration token carries, in one place: the
+    version claim (`tv`) is what lets a password change revoke it (G03)."""
+    claims = {
+        "sub": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "role": role,
+        "tv": user.token_version,
+    }
+    if memberships is not None:
+        claims["memberships"] = memberships
+    return claims
+
+
 def create_access_token(data: dict) -> str:
     payload = data.copy()
     expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -70,6 +85,16 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
+    # A token issued before the last password change or anonymisation carries
+    # an older version (or none: read as 0, what every account started at).
+    if payload.get("tv", 0) != user.token_version:
+        raise credentials_exception
+    if user.disabled_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account disabled",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     return user
 
@@ -102,6 +127,30 @@ async def require_admin(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have admin access to this organization",
+        )
+
+    return user
+
+
+async def require_owner(
+    org_id: uuid.UUID = Query(...),
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """The organisation's owner only (G04): what admins may read but not
+    change. Built on `require_admin`, so an owner route is an operator route
+    first (the S01 matrix checks that) and refuses everyone else the same way."""
+    result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.org_id == org_id,
+            OrganizationMember.role == MemberRole.owner,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the organisation's owner can do this",
         )
 
     return user

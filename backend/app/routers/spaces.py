@@ -11,9 +11,11 @@ from app import clock
 from app.booking_validity import booking_window_end, holds_slot, local_hourly_slots
 from app.database import get_db
 from app.models.booking import Booking
+from app.models.organization import Organization
 from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule, Room, Space
 from app.ratelimit import PUBLIC_TIER, rate_limit
+from app.schemas.organization import PublicContactOut
 from app.schemas.space import AvailabilitySlot, RoomOut, SlotReason, SpaceOut
 
 router = APIRouter(tags=["spaces"])
@@ -45,9 +47,19 @@ async def get_space(space_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
 
     active_rooms = [r for r in space.rooms if r.is_active]
+    # The organisation's public contact (G04): the "Onde estamos" block reads
+    # it when set and keeps its default otherwise. Only the two public keys
+    # of `settings` ever leave through here.
+    org_settings = (
+        await db.scalar(select(Organization.settings).where(Organization.id == space.org_id))
+    ) or {}
     return {
         "space": SpaceOut.model_validate(space),
         "rooms": [RoomOut.model_validate(r) for r in active_rooms],
+        "contact": PublicContactOut(
+            email=org_settings.get("contact_email") or None,
+            phone=org_settings.get("contact_phone") or None,
+        ),
     }
 
 

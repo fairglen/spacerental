@@ -79,7 +79,7 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
 
   if (isLoading) return <SpaceRoomsSkeleton />
 
-  const { space, rooms } = data ?? { space: null, rooms: [] }
+  const { space, rooms, contact } = data ?? { space: null, rooms: [], contact: null }
 
   return (
     <>
@@ -92,7 +92,7 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
               {space?.amenities.map((a) => <Badge key={a} variant="secondary">{a}</Badge>)}
             </div>
             {/* Where it is, how to reach it and when it is open (V06). */}
-            {space && <WhereWeAre space={space} rooms={rooms} className="mt-6" />}
+            {space && <WhereWeAre space={space} rooms={rooms} contact={contact} className="mt-6" />}
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">

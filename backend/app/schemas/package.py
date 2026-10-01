@@ -37,6 +37,20 @@ class PackageUpdate(RejectExplicitNull):
     is_active: bool | None = None
 
 
+class PackagePurchaseCounts(BaseModel):
+    total: int
+    active: int
+
+
+class PackageDetailOut(BaseModel):
+    """GET /admin/packages/{id} (G04)."""
+
+    package: PackageOut
+    purchases: PackagePurchaseCounts
+    # Hours still spendable across the active, unexpired purchases.
+    hours_outstanding: Decimal
+
+
 class UserPackagePurchaseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

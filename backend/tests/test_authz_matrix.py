@@ -45,6 +45,9 @@ ROUTES: dict[tuple[str, str], str] = {
     ("POST", f"{API}/auth/register"): PUBLIC,
     ("POST", f"{API}/auth/register/operator"): PUBLIC,
     ("POST", f"{API}/auth/login"): PUBLIC,
+    # G03: the reset flow never says whether an email exists; test_password_reset.py.
+    ("POST", f"{API}/auth/password-reset/request"): PUBLIC,
+    ("POST", f"{API}/auth/password-reset/confirm"): PUBLIC,
     ("POST", f"{API}/auth/enroll"): CUSTOMER,
     ("GET", f"{API}/auth/me"): CUSTOMER,
     ("GET", f"{API}/auth/memberships"): CUSTOMER,
@@ -68,6 +71,33 @@ ROUTES: dict[tuple[str, str], str] = {
     ("DELETE", f"{API}/admin/spaces/{{space_id}}"): OPERATOR,
     ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"): OPERATOR,
     ("PUT", f"{API}/admin/rooms/{{room_id}}"): OPERATOR,
+    # G04 detail reads, duplicate, copy-to-all-days, purchases, organisation;
+    # happy paths and cross-org cases in test_admin_crud.py.
+    ("GET", f"{API}/admin/spaces/{{space_id}}"): OPERATOR,
+    ("GET", f"{API}/admin/rooms/{{room_id}}"): OPERATOR,
+    ("POST", f"{API}/admin/rooms/{{room_id}}/duplicate"): OPERATOR,
+    ("POST", f"{API}/admin/rooms/{{room_id}}/availability/copy-to-all-days"): OPERATOR,
+    ("GET", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
+    ("POST", f"{API}/admin/users"): OPERATOR,
+    ("PUT", f"{API}/admin/users/{{user_id}}"): OPERATOR,
+    ("GET", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
+    ("GET", f"{API}/admin/purchases"): OPERATOR,
+    ("GET", f"{API}/admin/purchases/{{purchase_id}}"): OPERATOR,
+    ("POST", f"{API}/admin/purchases/{{purchase_id}}/adjust"): OPERATOR,
+    ("GET", f"{API}/admin/support/requests/{{request_id}}"): OPERATOR,
+    ("GET", f"{API}/admin/organization"): OPERATOR,
+    ("PUT", f"{API}/admin/organization"): OPERATOR,
+    # G02 deletion policy; guards and cross-org cases in test_deletion_policy.py.
+    ("DELETE", f"{API}/admin/rooms/{{room_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/rooms/{{room_id}}/availability/{{rule_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/anonymise"): OPERATOR,
+    ("DELETE", f"{API}/admin/users/{{user_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/users/{{user_id}}/membership"): OPERATOR,
+    ("DELETE", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
+    ("PUT", f"{API}/admin/purchases/{{purchase_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/purchases/{{purchase_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/support/requests/{{request_id}}"): OPERATOR,
     ("GET", f"{API}/admin/rooms/{{room_id}}/availability"): OPERATOR,
     ("POST", f"{API}/admin/rooms/{{room_id}}/availability"): OPERATOR,
     # C14 photos. The uploads are multipart, which the JSON sweeps below cannot
@@ -94,6 +124,8 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/admin/users/{{user_id}}"): OPERATOR,
     ("PUT", f"{API}/admin/users/{{user_id}}/role"): OPERATOR,
     ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/password-reset"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/set-password"): OPERATOR,
     ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"): OPERATOR,
     ("GET", f"{API}/admin/packages"): OPERATOR,
     # C19 inbox; its cross-org cases are in test_support.py.
@@ -101,6 +133,15 @@ ROUTES: dict[tuple[str, str], str] = {
     ("PUT", f"{API}/admin/support/requests/{{request_id}}"): OPERATOR,
     ("POST", f"{API}/admin/packages"): OPERATOR,
     ("PUT", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
+    # G01 audit trail; its cross-org cases are in test_audit.py.
+    ("GET", f"{API}/admin/audit"): OPERATOR,
+    ("GET", f"{API}/admin/spaces/{{space_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/rooms/{{room_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/bookings/{{booking_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/users/{{user_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/packages/{{package_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/purchases/{{purchase_id}}/history"): OPERATOR,
+    ("GET", f"{API}/admin/support/requests/{{request_id}}/history"): OPERATOR,
     # C17 help form: open to visitors by design (whoever cannot sign in needs it
     # most). A signed-in sender is identified from their token; someone else's
     # booking, a bad token, throttling and the honeypot are in test_support.py.
@@ -110,6 +151,9 @@ ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/checkout/stub/{session_id}/pay"): STUB,
     ("POST", "/checkout/stub/{session_id}/cancel"): STUB,
     ("GET", "/health"): PUBLIC,
+    # G03: the stub mailbox for browser tests; mounted only outside production
+    # (test_password_reset.py proves the production app has no such route).
+    ("GET", "/__test__/emails"): PUBLIC,
 }
 
 # Minimal valid bodies, so a sweep's 401/403/404 is the authorization answer and
@@ -141,11 +185,19 @@ BODIES: dict[tuple[str, str], dict] = {
         "expires_at": "2099-01-01T00:00:00Z",
         "reason": "sweep",
     },
+    ("POST", f"{API}/admin/users/{{user_id}}/anonymise"): {"confirm": "sweep"},
+    ("POST", f"{API}/admin/rooms/{{room_id}}/availability/copy-to-all-days"): {"day_of_week": 0},
+    ("POST", f"{API}/admin/users"): {"email": "sweep-new@test.com", "password": "sweep-pass-123"},
+    ("PUT", f"{API}/admin/users/{{user_id}}"): {"name": "Sweep"},
+    ("POST", f"{API}/admin/purchases/{{purchase_id}}/adjust"): {"hours": "1", "reason": "sweep"},
+    ("PUT", f"{API}/admin/organization"): {"name": "Sweep org"},
+    ("PUT", f"{API}/admin/purchases/{{purchase_id}}"): {"admin_note": "sweep"},
     ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"): {
         "hours": "1",
         "package_id": str(uuid.UUID(int=3)),
         "reason": "sweep",
     },
+    ("POST", f"{API}/admin/users/{{user_id}}/set-password"): {"password": "sweep-pass-123"},
     ("POST", f"{API}/admin/packages"): {"name": "Sweep pack", "hours": 1, "price": "1.00"},
     ("PUT", f"{API}/admin/packages/{{package_id}}"): {"price": "0.01"},
     ("PUT", f"{API}/admin/support/requests/{{request_id}}"): {"status": "closed"},
@@ -525,6 +577,8 @@ class TestOperatorCannotTouchAnotherOrgsResources:
         for method, path in (
             ("PUT", f"{API}/admin/spaces/{{space_id}}"),
             ("DELETE", f"{API}/admin/spaces/{{space_id}}"),
+            ("GET", f"{API}/admin/spaces/{{space_id}}/history"),
+            ("GET", f"{API}/admin/spaces/{{space_id}}"),
             ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"),
             ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"),
             ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"),
@@ -548,6 +602,12 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"),
             ("PUT", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"),
             ("DELETE", f"{API}/admin/rooms/{{room_id}}/blocks/{{block_id}}"),
+            ("GET", f"{API}/admin/rooms/{{room_id}}/history"),
+            ("DELETE", f"{API}/admin/rooms/{{room_id}}"),
+            ("DELETE", f"{API}/admin/rooms/{{room_id}}/availability/{{rule_id}}"),
+            ("GET", f"{API}/admin/rooms/{{room_id}}"),
+            ("POST", f"{API}/admin/rooms/{{room_id}}/duplicate"),
+            ("POST", f"{API}/admin/rooms/{{room_id}}/availability/copy-to-all-days"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
@@ -557,28 +617,40 @@ class TestOperatorCannotTouchAnotherOrgsResources:
         assert rules == 6
 
     async def test_booking(self, client, world, db_session):
-        resp = await _send(
-            client,
-            "PUT",
-            f"{API}/admin/bookings/{{booking_id}}",
-            headers=_as(world.op_a, "owner"),
-            org_id=world.org_a.id,
-            ids={"booking_id": world.booking_b.id},
-        )
-        assert resp.status_code == 404, resp.text
+        for method, path in (
+            ("PUT", f"{API}/admin/bookings/{{booking_id}}"),
+            ("GET", f"{API}/admin/bookings/{{booking_id}}/history"),
+            ("DELETE", f"{API}/admin/bookings/{{booking_id}}"),
+            ("GET", f"{API}/admin/bookings/{{booking_id}}"),
+        ):
+            resp = await _send(
+                client,
+                method,
+                path,
+                headers=_as(world.op_a, "owner"),
+                org_id=world.org_a.id,
+                ids={"booking_id": world.booking_b.id},
+            )
+            assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
         booking = await _fresh(db_session, Booking, world.booking_b.id)
         assert booking.status is BookingStatus.confirmed
 
     async def test_package(self, client, world, db_session):
-        resp = await _send(
-            client,
-            "PUT",
-            f"{API}/admin/packages/{{package_id}}",
-            headers=_as(world.op_a, "owner"),
-            org_id=world.org_a.id,
-            ids={"package_id": world.package_b.id},
-        )
-        assert resp.status_code == 404, resp.text
+        for method, path in (
+            ("PUT", f"{API}/admin/packages/{{package_id}}"),
+            ("GET", f"{API}/admin/packages/{{package_id}}/history"),
+            ("DELETE", f"{API}/admin/packages/{{package_id}}"),
+            ("GET", f"{API}/admin/packages/{{package_id}}"),
+        ):
+            resp = await _send(
+                client,
+                method,
+                path,
+                headers=_as(world.op_a, "owner"),
+                org_id=world.org_a.id,
+                ids={"package_id": world.package_b.id},
+            )
+            assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"
         package = await _fresh(db_session, Package, world.package_b.id)
         assert (package.price, package.is_active) == (Decimal("100.00"), True)
 
@@ -591,7 +663,19 @@ class TestOperatorCannotTouchAnotherOrgsResources:
             ("GET", f"{API}/admin/users/{{user_id}}"),
             ("PUT", f"{API}/admin/users/{{user_id}}/role"),
             ("POST", f"{API}/admin/users/{{user_id}}/complimentary-hours"),
+            ("POST", f"{API}/admin/users/{{user_id}}/password-reset"),
+            ("POST", f"{API}/admin/users/{{user_id}}/set-password"),
             ("PUT", f"{API}/admin/purchases/{{purchase_id}}/expiry"),
+            ("GET", f"{API}/admin/users/{{user_id}}/history"),
+            ("GET", f"{API}/admin/purchases/{{purchase_id}}/history"),
+            ("POST", f"{API}/admin/users/{{user_id}}/anonymise"),
+            ("DELETE", f"{API}/admin/users/{{user_id}}"),
+            ("DELETE", f"{API}/admin/users/{{user_id}}/membership"),
+            ("PUT", f"{API}/admin/purchases/{{purchase_id}}"),
+            ("DELETE", f"{API}/admin/purchases/{{purchase_id}}"),
+            ("PUT", f"{API}/admin/users/{{user_id}}"),
+            ("GET", f"{API}/admin/purchases/{{purchase_id}}"),
+            ("POST", f"{API}/admin/purchases/{{purchase_id}}/adjust"),
         ):
             resp = await _send(client, method, path, headers=headers, org_id=org, ids=ids)
             assert resp.status_code == 404, f"{method} {path} -> {resp.status_code} {resp.text}"

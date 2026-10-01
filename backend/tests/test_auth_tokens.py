@@ -157,14 +157,17 @@ class TestLoginGivesNothingAway:
         claims = jwt.decode(
             resp.json()["access_token"], settings.SECRET_KEY, algorithms=[ALGORITHM]
         )
-        assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp"}
+        assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp", "tv"}
         # Values, not only names: an allowed claim is base64 inside the token, so
         # the plain-text scans elsewhere would not see a secret parked in one.
-        assert {k: claims[k] for k in ("sub", "email", "name", "role")} == {
+        assert {k: claims[k] for k in ("sub", "email", "name", "role", "tv")} == {
             "sub": str(test_user.id),
             "email": test_user.email,
             "name": test_user.name,
             "role": "member",
+            # G03: the version the token was issued under — a small integer,
+            # never the hash or a reset token.
+            "tv": 0,
         }
         # Exact, so nothing can ride along inside a membership either.
         assert claims["memberships"] == [{"org_id": str(test_member.org_id), "role": "member"}]
@@ -188,12 +191,13 @@ class TestLoginGivesNothingAway:
             claims = jwt.decode(
                 resp.json()["access_token"], settings.SECRET_KEY, algorithms=[ALGORITHM]
             )
-            assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp"}
-            assert {k: claims[k] for k in ("sub", "email", "name", "role")} == {
+            assert set(claims) <= {"sub", "email", "name", "role", "memberships", "exp", "tv"}
+            assert {k: claims[k] for k in ("sub", "email", "name", "role", "tv")} == {
                 "sub": resp.json()["user"]["id"],
                 "email": email,
                 "name": "Claims",
                 "role": role,
+                "tv": 0,
             }
             # `exp` must be present and bounded here too: a subset check alone
             # would accept a registration token that never expires.

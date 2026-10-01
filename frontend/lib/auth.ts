@@ -28,6 +28,25 @@ function decodeJwtMemberships(token: string): SessionMembership[] {
   }
 }
 
+/**
+ * Whether the backend still accepts the session's bearer token (review on
+ * #65): a password change, suspension or anonymisation revokes it while the
+ * NextAuth cookie lives on. `false` only on a definite 401 — a backend that
+ * is down is not a reason to sign anyone out.
+ */
+export async function backendAcceptsToken(accessToken: string | undefined): Promise<boolean> {
+  if (!accessToken) return false
+  try {
+    const res = await fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    })
+    return res.status !== 401
+  } catch {
+    return true
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({

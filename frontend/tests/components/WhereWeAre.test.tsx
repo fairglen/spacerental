@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { WhereWeAre } from '@/components/spaces/WhereWeAre'
+import { CONTACT_EMAIL } from '@/lib/contact'
 import type { OpeningWindow } from '@/types'
 
 const full = {
@@ -173,5 +174,16 @@ describe('WhereWeAre', () => {
       const { container } = render(<WhereWeAre space={{ name: 'Sem morada' }} rooms={rooms} />)
       expect(container).toBeEmptyDOMElement()
     })
+  })
+})
+
+describe('WhereWeAre — the organisation\'s contact (G04/G06)', () => {
+  it('shows the org contact when set and falls back to the constants otherwise', () => {
+    const { unmount } = render(<WhereWeAre space={full} rooms={rooms} contact={{ email: 'ola@flowspace.pt', phone: '+351 210 000 000' }} />)
+    expect(screen.getByRole('link', { name: 'ola@flowspace.pt' })).toHaveAttribute('href', 'mailto:ola@flowspace.pt')
+    expect(screen.getByRole('link', { name: '+351 210 000 000' })).toHaveAttribute('href', 'tel:+351210000000')
+    unmount()
+    render(<WhereWeAre space={full} rooms={rooms} contact={{ email: null, phone: null }} />)
+    expect(screen.getByRole('link', { name: CONTACT_EMAIL })).toBeInTheDocument()
   })
 })

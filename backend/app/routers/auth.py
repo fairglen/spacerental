@@ -1,19 +1,34 @@
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import create_access_token, get_current_user, hash_password, verify_password
+from app import clock, email, password_reset
+from app.auth import (
+    create_access_token,
+    get_current_user,
+    hash_password,
+    token_claims,
+    verify_password,
+)
 from app.config import settings
 from app.database import get_db
+from app.email import EmailGateway, get_email_gateway
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.user import User
 from app.ratelimit import AUTH_TIER, rate_limit
 from app.schemas.organization import EnrollmentOut, OrgMembershipDetail, OrgMembershipOut
-from app.schemas.user import TokenOut, UserLogin, UserOut, UserRegister
+from app.schemas.user import (
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    TokenOut,
+    UserLogin,
+    UserOut,
+    UserRegister,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -150,13 +165,7 @@ async def _register(body: UserRegister, db: AsyncSession, *, operator: bool = Fa
     role = await _get_highest_role(user, db)
     memberships = await _get_memberships(user, db)
     token = create_access_token(
-        {
-            "sub": str(user.id),
-            "email": user.email,
-            "name": user.name,
-            "role": role,
-            "memberships": _memberships_claim(memberships),
-        }
+        token_claims(user, role=role, memberships=_memberships_claim(memberships))
     )
     return TokenOut(access_token=token, user=UserOut.model_validate(user), role=role)
 
@@ -196,19 +205,81 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+    # After the password check on purpose: the distinct answer is for the
+    # account's own holder, not for whoever knows the email (G02).
+    if user.disabled_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="A conta está desativada."
+        )
 
     role = await _get_highest_role(user, db)
     memberships = await _get_memberships(user, db)
     token = create_access_token(
-        {
-            "sub": str(user.id),
-            "email": user.email,
-            "name": user.name,
-            "role": role,
-            "memberships": _memberships_claim(memberships),
-        }
+        token_claims(user, role=role, memberships=_memberships_claim(memberships))
     )
     return TokenOut(access_token=token, user=UserOut.model_validate(user), role=role)
+
+
+async def _user_by_email(db: AsyncSession, email: str) -> User | None:
+    """The account for an address, matched without regard to case. `users.email`
+    is unique case-sensitively (B37), so two accounts may differ only by case:
+    then the exact spelling wins, and with no exact match nobody does — the
+    endpoint must never pick one of two people."""
+    rows = (
+        (await db.execute(select(User).where(func.lower(User.email) == email.lower())))
+        .scalars()
+        .all()
+    )
+    if len(rows) == 1:
+        return rows[0]
+    return next((u for u in rows if u.email == email), None)
+
+
+RESET_REQUESTED = (
+    "Se existir uma conta com este email, vai receber uma ligação para repor a password."
+)
+RESET_LINK_INVALID = "A ligação é inválida ou já expirou."
+
+
+@router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
+@rate_limit(AUTH_TIER)
+async def request_password_reset(
+    body: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
+):
+    """Always the same 202, whether or not the email exists or the account
+    is enabled (G03): this endpoint must not say who has an account. When it
+    does exist and is enabled, one email with a single-use, one-hour link."""
+    user = await _user_by_email(db, body.email)
+    if user is not None and user.disabled_at is None:
+        raw = await password_reset.issue(db, user, now=clock.utcnow())
+        email.enqueue_email(
+            background_tasks,
+            email_gateway,
+            email.password_reset_email(to=user.email, link=password_reset.reset_link(raw)),
+        )
+    return {"detail": RESET_REQUESTED}
+
+
+@router.post("/password-reset/confirm")
+@rate_limit(AUTH_TIER)
+async def confirm_password_reset(body: PasswordResetConfirm, db: AsyncSession = Depends(get_db)):
+    """The link's token plus a new password. 400 for a token that is unknown,
+    used or expired — one message for all three, so the endpoint cannot be
+    used to probe tokens. Success bumps `token_version`: every session issued
+    before it is signed out."""
+    now = clock.utcnow()
+    token = await password_reset.consume(db, body.token, now=now)
+    if token is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=RESET_LINK_INVALID)
+    user = await db.scalar(select(User).where(User.id == token.user_id).with_for_update())
+    if user is None or user.disabled_at is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=RESET_LINK_INVALID)
+    token.used_at = now
+    await password_reset.set_password(db, user, hash_password(body.password))
+    return {"detail": "Password alterada. Já pode iniciar sessão."}
 
 
 @router.get("/me", response_model=UserOut)

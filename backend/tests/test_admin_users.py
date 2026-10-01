@@ -5,6 +5,7 @@ operator's org is simply not there. Roles change per org and an operator can
 never demote themselves.
 """
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -15,7 +16,7 @@ from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.user import User
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 API = "/api/v1"
 
@@ -419,3 +420,139 @@ class TestComplimentaryHours:
         row = (await db_session.execute(select(UserPackagePurchase))).scalar_one()
         assert row.amount_paid == Decimal(0)
         assert row.hours_total == Decimal(5)
+
+
+class TestOwnersAreOnlyAnotherOwnersToChange:
+    """Review on #65: an admin who could re-address, suspend, re-password,
+    remove or anonymise an owner could take the organisation over through
+    the public reset flow. Only an owner may do those things to an owner."""
+
+    @staticmethod
+    def _short(user_id: uuid.UUID) -> str:
+        return user_id.hex[:8]
+
+    async def _attempts(self, client, org, target: User, headers: dict) -> dict[str, int]:
+        base = f"{API}/admin/users/{target.id}"
+        org_q = {"org_id": str(org.id)}
+        confirm = {**org_q, "confirm": self._short(target.id)}
+        return {
+            "email": (
+                await client.put(
+                    base, params=org_q, json={"email": "stolen@example.com"}, headers=headers
+                )
+            ).status_code,
+            "suspend": (
+                await client.put(
+                    base,
+                    params=org_q,
+                    json={"disabled_at": "2030-01-01T00:00:00Z"},
+                    headers=headers,
+                )
+            ).status_code,
+            "set_password": (
+                await client.post(
+                    f"{base}/set-password",
+                    params=org_q,
+                    json={"password": "taken-over-123"},
+                    headers=headers,
+                )
+            ).status_code,
+            "membership": (
+                await client.delete(f"{base}/membership", params=confirm, headers=headers)
+            ).status_code,
+            "anonymise": (
+                await client.post(
+                    f"{base}/anonymise",
+                    params=org_q,
+                    json={"confirm": self._short(target.id), "reason": "x" * 5},
+                    headers=headers,
+                )
+            ).status_code,
+            "delete": (await client.delete(base, params=confirm, headers=headers)).status_code,
+        }
+
+    async def test_an_admin_cannot_touch_an_owners_account(
+        self, client, db_session, test_org, admin_user
+    ):
+        plain = await _member(db_session, test_org, "plain@example.com", "Plain", MemberRole.admin)
+        # A second owner, so "last owner" is not what refuses anything here.
+        await _member(db_session, test_org, "owner2@example.com", "Owner 2", MemberRole.owner)
+        codes = await self._attempts(client, test_org, admin_user, _headers(plain))
+        assert codes == dict.fromkeys(codes, 403), codes
+        await db_session.refresh(admin_user)
+        assert admin_user.email == "admin@test.com"
+        assert admin_user.disabled_at is None
+        # The harmless one stays: the reset link goes to the owner's own inbox.
+        sent = await client.post(
+            f"{API}/admin/users/{admin_user.id}/password-reset",
+            params={"org_id": str(test_org.id)},
+            headers=_headers(plain),
+        )
+        assert sent.status_code == 202, sent.text
+
+    async def test_another_owner_can(self, client, db_session, test_org, admin_user):
+        peer = await _member(
+            db_session, test_org, "owner2@example.com", "Owner 2", MemberRole.owner
+        )
+        headers = _headers(peer)
+        renamed = await client.put(
+            f"{API}/admin/users/{admin_user.id}",
+            params={"org_id": str(test_org.id)},
+            json={"name": "Renamed by a peer"},
+            headers=headers,
+        )
+        assert renamed.status_code == 200, renamed.text
+        gone = await client.delete(
+            f"{API}/admin/users/{admin_user.id}/membership",
+            params={"org_id": str(test_org.id), "confirm": self._short(admin_user.id)},
+            headers=headers,
+        )
+        assert gone.status_code == 204, gone.text
+
+    async def test_an_admin_still_manages_other_admins_and_members(
+        self, client, db_session, test_org
+    ):
+        plain = await _member(db_session, test_org, "plain@example.com", "Plain", MemberRole.admin)
+        other = await _member(db_session, test_org, "other@example.com", "Other", MemberRole.admin)
+        renamed = await client.put(
+            f"{API}/admin/users/{other.id}",
+            params={"org_id": str(test_org.id)},
+            json={"name": "Still fine"},
+            headers=_headers(plain),
+        )
+        assert renamed.status_code == 200, renamed.text
+
+
+class TestTheLastOwnerUnderConcurrency:
+    async def test_two_owners_removing_each_other_at_once_leave_one(
+        self, client, db_session, test_org, admin_user
+    ):
+        """Review on #65: the last-owner count is taken under the
+        organisation's row lock, so of two simultaneous removals the second
+        counts after the first committed and is refused."""
+        peer = await _member(
+            db_session, test_org, "owner2@example.com", "Owner 2", MemberRole.owner
+        )
+        org_q = {"org_id": str(test_org.id)}
+        first, second = await asyncio.gather(
+            client.delete(
+                f"{API}/admin/users/{peer.id}/membership",
+                params={**org_q, "confirm": peer.id.hex[:8]},
+                headers=_headers(admin_user),
+            ),
+            client.delete(
+                f"{API}/admin/users/{admin_user.id}/membership",
+                params={**org_q, "confirm": admin_user.id.hex[:8]},
+                headers=_headers(peer),
+            ),
+        )
+        assert sorted([first.status_code, second.status_code]) == [204, 409]
+        owners = await db_session.scalar(
+            select(func.count())
+            .select_from(OrganizationMember)
+            .where(
+                OrganizationMember.org_id == test_org.id,
+                OrganizationMember.role == MemberRole.owner,
+            )
+        )
+        assert owners == 1

@@ -28,6 +28,21 @@ class UserLogin(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class PasswordSet(BaseModel):
+    """An operator setting a customer's password directly (G03)."""
+
+    password: str = Field(min_length=8, max_length=128)
+
+
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"

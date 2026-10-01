@@ -3,20 +3,31 @@ import { useSession } from 'next-auth/react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 import Link from 'next/link'
-import { LayoutDashboard, Building2, Calendar, CalendarDays, Package, LogOut, LifeBuoy, Users } from 'lucide-react'
+import { LayoutDashboard, Building2, Calendar, CalendarDays, Package, LogOut, LifeBuoy, Users, DoorOpen, Clock, History, Settings } from 'lucide-react'
+import { ToastProvider } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { useOrg } from '@/contexts/OrgContext'
 import { useT } from '@/lib/i18n'
 
+// The order the owner asked for (G06).
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/spaces', label: 'Espaços', icon: Building2 },
   { href: '/admin/calendar', label: 'Calendário', icon: CalendarDays },
   { href: '/admin/bookings', label: 'Reservas', icon: Calendar },
+  { href: '/admin/users', label: 'Clientes', icon: Users },
+  { href: '/admin/rooms', label: 'Salas', icon: DoorOpen },
+  { href: '/admin/spaces', label: 'Espaços', icon: Building2 },
   { href: '/admin/packages', label: 'Pacotes', icon: Package },
-  { href: '/admin/users', label: 'Utilizadores', icon: Users },
+  { href: '/admin/purchases', label: 'Banco de horas', icon: Clock },
   { href: '/admin/support', label: 'Pedidos de ajuda', icon: LifeBuoy },
+  { href: '/admin/audit', label: 'Histórico', icon: History },
+  { href: '/admin/settings', label: 'Definições', icon: Settings },
 ]
+
+// The section a path belongs to: `/admin/rooms/abc` lights "Salas".
+function isActive(pathname: string, href: string) {
+  return href === '/admin' ? pathname === '/admin' : pathname === href || pathname.startsWith(`${href}/`)
+}
 
 /**
  * The admin chrome: session/role gate, sidebar and content area. A client
@@ -63,6 +74,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <ToastProvider>
     <div className="flex min-h-screen bg-background">
       <aside className="w-56 bg-white border-r border-border flex flex-col">
         <div className="p-4 border-b border-border">
@@ -77,7 +89,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <Link key={item.href} href={item.href}
               className={cn(
                 'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors',
-                pathname === item.href
+                isActive(pathname, item.href)
                   ? 'bg-accent text-primary font-medium'
                   : 'text-muted-foreground hover:bg-background hover:text-foreground'
               )}>
@@ -94,5 +106,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </aside>
       <main className="flex-1 overflow-auto">{children}</main>
     </div>
+    </ToastProvider>
   )
 }

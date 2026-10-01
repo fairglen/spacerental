@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -14,10 +15,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import type { SupportRequestRow } from '@/types'
+import type { SupportRequestRow, SupportStatus } from '@/types'
 
 const PAGE_SIZE = 20
-const STATUS_LABELS = { new: 'Nova', closed: 'Fechada' } as const
+const STATUS_LABELS = { new: 'Nova', in_progress: 'Em curso', closed: 'Fechada' } as const
 
 /**
  * The minimal inbox for help requests (C19): the first slice of D06. Read,
@@ -34,7 +35,7 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
   const api = useApi()
   const qc = useQueryClient()
   const [page, setPage] = useState(1)
-  const [status, setStatus] = useState<'' | 'new' | 'closed'>('')
+  const [status, setStatus] = useState<'' | SupportStatus>('')
   const [openRow, setOpenRow] = useState<SupportRequestRow | null>(null)
 
   const { data, isLoading, isError } = useQuery({
@@ -43,7 +44,7 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
     enabled: !!session?.accessToken && !!currentOrgId,
   })
   const update = useMutation({
-    mutationFn: ({ id, next }: { id: string; next: 'new' | 'closed' }) => adminApi.updateSupportRequest(id, next, api),
+    mutationFn: ({ id, next }: { id: string; next: SupportStatus }) => adminApi.updateSupportRequest(id, next, api),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'support'] }),
   })
 
@@ -69,6 +70,7 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
           >
             <option value="">Todos</option>
             <option value="new">Novos</option>
+            <option value="in_progress">Em curso</option>
             <option value="closed">Fechados</option>
           </select>
         </div>
@@ -112,20 +114,33 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
                           : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant={r.status === 'new' ? 'default' : 'secondary'}>{STATUS_LABELS[r.status]}</Badge>
+                        <Badge variant={r.status === 'closed' ? 'secondary' : 'default'}>{STATUS_LABELS[r.status]}</Badge>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex gap-1">
                           <Button size="sm" variant="outline" onClick={() => setOpenRow(r)} aria-label={`Ver pedido #${r.reference}`}>Ver pedido</Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={update.isPending}
-                            onClick={() => update.mutate({ id: r.id, next: r.status === 'new' ? 'closed' : 'new' })}
-                            aria-label={r.status === 'new' ? `Marcar como fechada #${r.reference}` : `Reabrir #${r.reference}`}
-                          >
-                            {r.status === 'new' ? 'Marcar como fechada' : 'Reabrir'}
-                          </Button>
+                          <Button asChild size="sm" variant="outline"><Link href={`/admin/support/${r.id}`} aria-label={`Abrir pedido #${r.reference}`}>Abrir</Link></Button>
+                          {r.status === 'new' && (
+                            <Button size="sm" variant="ghost" disabled={update.isPending}
+                              onClick={() => update.mutate({ id: r.id, next: 'in_progress' })}
+                              aria-label={`Marcar em curso #${r.reference}`}>
+                              Em curso
+                            </Button>
+                          )}
+                          {r.status !== 'closed' && (
+                            <Button size="sm" variant="ghost" disabled={update.isPending}
+                              onClick={() => update.mutate({ id: r.id, next: 'closed' })}
+                              aria-label={`Marcar como fechada #${r.reference}`}>
+                              Marcar como fechada
+                            </Button>
+                          )}
+                          {r.status !== 'new' && (
+                            <Button size="sm" variant="ghost" disabled={update.isPending}
+                              onClick={() => update.mutate({ id: r.id, next: 'new' })}
+                              aria-label={`Reabrir #${r.reference}`}>
+                              Reabrir
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

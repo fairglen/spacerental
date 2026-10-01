@@ -1,15 +1,17 @@
+import logging
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import and_, distinct, func, select
+from sqlalchemy import String, and_, distinct, func, or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import clock, email, package_hours
-from app.auth import require_admin
+from app import audit, clock, deletion, email, package_hours
+from app.auth import require_admin, require_owner
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
     expire_stale_holds,
@@ -29,9 +31,12 @@ from app.locks import (
     try_issue_access_code,
     try_revoke_access_code,
 )
+from app.media import MediaStorage, get_media_storage
+from app.models.audit import AdminAction
 from app.models.booking import PAID_AT_CHECKOUT, Booking, BookingStatus, PaymentMethod
-from app.models.organization import OrganizationMember
-from app.models.package import BookingPackageDebit, Package, UserPackagePurchase
+from app.models.organization import Organization, OrganizationMember
+from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
+from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
 from app.payments import (
@@ -40,16 +45,21 @@ from app.payments import (
     PaymentProviderError,
     get_payment_gateway,
 )
+from app.schemas.audit import AdminActionOut
 from app.schemas.booking import (
     AdminBookingCreate,
+    AdminBookingDetailOut,
     AdminBookingOut,
     BookingStatusUpdate,
     MarkPaidBody,
 )
-from app.schemas.package import PackageCreate, PackageOut, PackageUpdate
+from app.schemas.organization import OrganizationSettingsOut, OrganizationSettingsUpdate
+from app.schemas.package import PackageCreate, PackageDetailOut, PackageOut, PackageUpdate
+from app.schemas.room_block import RoomBlockOut
 from app.schemas.space import (
     AvailabilityRuleOut,
     AvailabilityRulesSetBody,
+    CopyToAllDaysBody,
     RoomCreate,
     RoomOut,
     RoomUpdate,
@@ -57,6 +67,8 @@ from app.schemas.space import (
     SpaceOut,
     SpaceUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -154,7 +166,7 @@ async def admin_list_spaces(
 async def admin_create_space(
     body: SpaceCreate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     space = Space(
@@ -172,7 +184,51 @@ async def admin_create_space(
     db.add(space)
     await db.flush()
     await db.refresh(space)
+    await audit.record(
+        db, actor=admin, org_id=org_id, entity=space, action="create", after=audit.snapshot(space)
+    )
     return {"space": SpaceOut.model_validate(space)}
+
+
+async def _booking_counts(db: AsyncSession, *where) -> dict[str, int]:
+    now = clock.utcnow()
+    total = await db.scalar(select(func.count()).select_from(Booking).where(*where)) or 0
+    upcoming = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Booking)
+            .where(*where, Booking.end_time > now, holds_slot(now))
+        )
+        or 0
+    )
+    return {"total": total, "upcoming": upcoming}
+
+
+@router.get("/spaces/{space_id}")
+async def admin_get_space(
+    space_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """One space for its page (G04): rooms with their opening windows, how
+    many photos, how many bookings ever and still ahead."""
+    result = await db.execute(
+        select(Space)
+        .options(selectinload(Space.rooms).selectinload(Room.availability_rules))
+        .where(Space.id == space_id, Space.org_id == org_id)
+    )
+    space = result.scalar_one_or_none()
+    if space is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
+    room_ids = [r.id for r in space.rooms]
+    return {
+        "space": SpaceOut.model_validate(space),
+        "photo_count": len(space.photos) + sum(len(r.photos) for r in space.rooms),
+        "bookings": await _booking_counts(db, Booking.room_id.in_(room_ids))
+        if room_ids
+        else {"total": 0, "upcoming": 0},
+    }
 
 
 @router.put("/spaces/{space_id}")
@@ -180,19 +236,29 @@ async def admin_update_space(
     space_id: uuid.UUID,
     body: SpaceUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
+    before = audit.snapshot(space)
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(space, field, value)
 
     await db.flush()
     await db.refresh(space)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=space,
+        action="update",
+        before=before,
+        after=audit.snapshot(space),
+    )
     return {"space": SpaceOut.model_validate(space)}
 
 
@@ -200,15 +266,56 @@ async def admin_update_space(
 async def admin_delete_space(
     space_id: uuid.UUID,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    confirm: str | None = Query(default=None, max_length=255),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    storage: MediaStorage = Depends(get_media_storage),
 ):
-    result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
+    """Hard delete (G02): only a space none of whose rooms ever had a booking;
+    `is_active` is the everyday delete. The rooms, their rules, blocks and
+    photo files go with it, and the trail keeps the whole space."""
+    result = await db.execute(
+        select(Space)
+        .options(selectinload(Space.rooms))
+        .where(Space.id == space_id, Space.org_id == org_id)
+    )
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
+    deletion.require_confirm(confirm, space.id, space.name)
+    booked = (
+        await db.execute(
+            select(Room.id, Room.name, func.count(Booking.id))
+            .join(Booking, Booking.room_id == Room.id)
+            .where(Room.space_id == space.id)
+            .group_by(Room.id, Room.name)
+            .order_by(Room.name)
+        )
+    ).all()
+    if booked:
+        raise deletion.blocked(
+            "Rooms of this space have bookings; deactivate the space instead",
+            [{"room_id": str(rid), "name": name, "bookings": n} for rid, name, n in booked],
+        )
+    before = audit.snapshot(space)
+    photos = [*space.photos, *(p for room in space.rooms for p in room.photos)]
+    await db.delete(space)
+    await db.flush()
+    await audit.record(db, actor=admin, org_id=org_id, entity=space, action="delete", before=before)
+    await _delete_photo_files(storage, photos)
 
-    space.is_active = False
+
+async def _delete_photo_files(storage: MediaStorage, photos: list[dict]) -> None:
+    # After the rows are gone. A file that will not go is logged, never
+    # raised: an orphan file is a nuisance, a rolled-back delete that left
+    # some files already gone would be a dangling row.
+    for photo in photos:
+        for key in (photo.get("key"), photo.get("thumb_key")):
+            if key:
+                try:
+                    await storage.delete(key)
+                except OSError:
+                    logger.exception("Could not delete media file %s", key)
 
 
 # ─── Rooms ────────────────────────────────────────────────────────────────────
@@ -219,7 +326,7 @@ async def admin_create_room(
     space_id: uuid.UUID,
     body: RoomCreate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Space).where(Space.id == space_id, Space.org_id == org_id))
@@ -241,7 +348,110 @@ async def admin_create_room(
     db.add(room)
     await db.flush()
     await db.refresh(room)
+    await audit.record(
+        db, actor=admin, org_id=org_id, entity=room, action="create", after=audit.snapshot(room)
+    )
     return {"room": RoomOut.model_validate(room)}
+
+
+@router.get("/rooms/{room_id}")
+async def admin_get_room(
+    room_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """One room for its page (G04): its space, the rule rows (with ids, for
+    the editor), the blocks of the next 30 days, the counts."""
+    result = await db.execute(
+        select(Room)
+        .options(selectinload(Room.space), selectinload(Room.availability_rules))
+        .where(Room.id == room_id, Room.org_id == org_id)
+    )
+    room = result.scalar_one_or_none()
+    if room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    now = clock.utcnow()
+    blocks = (
+        (
+            await db.execute(
+                select(RoomBlock)
+                .where(
+                    RoomBlock.room_id == room.id,
+                    RoomBlock.end_time > now,
+                    RoomBlock.start_time < now + timedelta(days=30),
+                )
+                .order_by(RoomBlock.start_time)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    rules = sorted(room.availability_rules, key=lambda r: (r.day_of_week, r.open_time))
+    return {
+        "room": RoomOut.model_validate(room),
+        "space": SpaceOut.model_validate(room.space),
+        "rules": [AvailabilityRuleOut.model_validate(r) for r in rules],
+        "blocks": [RoomBlockOut.model_validate(b) for b in blocks],
+        "photo_count": len(room.photos),
+        "bookings": await _booking_counts(db, Booking.room_id == room.id),
+    }
+
+
+@router.post("/rooms/{room_id}/duplicate", status_code=status.HTTP_201_CREATED)
+async def admin_duplicate_room(
+    room_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """A copy of the room in the same space (G04): fields, amenities and
+    the opening rules; not the photos, and not the bookings, obviously."""
+    result = await db.execute(
+        select(Room)
+        .options(selectinload(Room.availability_rules))
+        .where(Room.id == room_id, Room.org_id == org_id)
+    )
+    source = result.scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    copy = Room(
+        space_id=source.space_id,
+        org_id=org_id,
+        name=f"{source.name} (cópia)",
+        description=source.description,
+        capacity=source.capacity,
+        hourly_rate=source.hourly_rate,
+        color=source.color,
+        amenities=list(source.amenities),
+        images=[],
+        photos=[],
+        is_active=source.is_active,
+    )
+    db.add(copy)
+    await db.flush()
+    for rule in source.availability_rules:
+        db.add(
+            AvailabilityRule(
+                room_id=copy.id,
+                day_of_week=rule.day_of_week,
+                open_time=rule.open_time,
+                close_time=rule.close_time,
+                is_active=rule.is_active,
+            )
+        )
+    await db.flush()
+    await db.refresh(copy)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=copy,
+        action="duplicate",
+        after=audit.snapshot(copy),
+        reason=f"Cópia de {source.name} ({deletion.short_id(source.id)})",
+    )
+    return {"room": RoomOut.model_validate(copy)}
 
 
 @router.put("/rooms/{room_id}")
@@ -249,13 +459,14 @@ async def admin_update_room(
     room_id: uuid.UUID,
     body: RoomUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    before = audit.snapshot(room)
 
     changes = body.model_dump(exclude_unset=True)
     if room.is_active and changes.get("is_active") is False:
@@ -272,6 +483,15 @@ async def admin_update_room(
 
     await db.flush()
     await db.refresh(room)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=room,
+        action="update",
+        before=before,
+        after=audit.snapshot(room),
+    )
     return {"room": RoomOut.model_validate(room)}
 
 
@@ -339,7 +559,7 @@ async def admin_set_availability(
     room_id: uuid.UUID,
     body: AvailabilityRulesSetBody,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Replace all availability rules for a room."""
@@ -350,9 +570,13 @@ async def admin_set_availability(
 
     # Delete existing rules
     existing_result = await db.execute(
-        select(AvailabilityRule).where(AvailabilityRule.room_id == room_id)
+        select(AvailabilityRule)
+        .where(AvailabilityRule.room_id == room_id)
+        .order_by(AvailabilityRule.day_of_week, AvailabilityRule.open_time)
     )
-    for rule in existing_result.scalars().all():
+    existing = existing_result.scalars().all()
+    before = {"id": str(room.id), "rules": _rules_for_audit(existing)}
+    for rule in existing:
         await db.delete(rule)
 
     # Insert new rules
@@ -370,11 +594,164 @@ async def admin_set_availability(
     await db.flush()
     for r in new_rules:
         await db.refresh(r)
+    # One row for the whole replacement, on the room: the rules are the
+    # room's schedule, and a per-rule trail would say nothing readable.
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=room,
+        action="availability.set",
+        before=before,
+        after={"id": str(room.id), "rules": _rules_for_audit(new_rules)},
+    )
 
     return {"rules": [AvailabilityRuleOut.model_validate(r) for r in new_rules]}
 
 
+@router.post("/rooms/{room_id}/availability/copy-to-all-days")
+async def admin_copy_availability_to_all_days(
+    room_id: uuid.UUID,
+    body: CopyToAllDaysBody,
+    org_id: uuid.UUID = Query(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every weekday gets the source day's window(s) (G04); a closed source
+    day has nothing to copy (422). Audited like the replace-all: one row on
+    the room with the whole schedule before and after."""
+    result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
+    room = result.scalar_one_or_none()
+    if room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    existing = (
+        (
+            await db.execute(
+                select(AvailabilityRule)
+                .where(AvailabilityRule.room_id == room.id)
+                .order_by(AvailabilityRule.day_of_week, AvailabilityRule.open_time)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    source = [r for r in existing if r.day_of_week == body.day_of_week and r.is_active]
+    if not source:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The source day is closed; nothing to copy",
+        )
+    before = {"id": str(room.id), "rules": _rules_for_audit(existing)}
+    for rule in existing:
+        if rule.day_of_week != body.day_of_week:
+            await db.delete(rule)
+    new_rules = list(source)
+    for day in range(7):
+        if day == body.day_of_week:
+            continue
+        for rule in source:
+            copy = AvailabilityRule(
+                room_id=room.id,
+                day_of_week=day,
+                open_time=rule.open_time,
+                close_time=rule.close_time,
+            )
+            db.add(copy)
+            new_rules.append(copy)
+    await db.flush()
+    for r in new_rules:
+        await db.refresh(r)
+    new_rules.sort(key=lambda r: (r.day_of_week, r.open_time))
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=room,
+        action="availability.set",
+        before=before,
+        after={"id": str(room.id), "rules": _rules_for_audit(new_rules)},
+    )
+    return {"rules": [AvailabilityRuleOut.model_validate(r) for r in new_rules]}
+
+
+@router.delete("/rooms/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_room(
+    room_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    confirm: str | None = Query(default=None, max_length=255),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    storage: MediaStorage = Depends(get_media_storage),
+):
+    """Hard delete (G02): only a room with no booking and no block ever —
+    cancelled and expired ones are history too. `is_active` (A07) is the
+    everyday delete. Rules, and the photo files, go with it."""
+    result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
+    room = result.scalar_one_or_none()
+    if room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    deletion.require_confirm(confirm, room.id, room.name)
+    bookings = await db.scalar(
+        select(func.count()).select_from(Booking).where(Booking.room_id == room.id)
+    )
+    blocks = await db.scalar(
+        select(func.count()).select_from(RoomBlock).where(RoomBlock.room_id == room.id)
+    )
+    if bookings or blocks:
+        raise deletion.blocked(
+            "The room has bookings or blocks; deactivate it instead",
+            {"bookings": bookings or 0, "blocks": blocks or 0},
+        )
+    before = audit.snapshot(room)
+    photos = list(room.photos)
+    await db.delete(room)
+    await db.flush()
+    await audit.record(db, actor=admin, org_id=org_id, entity=room, action="delete", before=before)
+    await _delete_photo_files(storage, photos)
+
+
+@router.delete("/rooms/{room_id}/availability/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_availability_rule(
+    room_id: uuid.UUID,
+    rule_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """One rule (a weekday's window) off a room's schedule; the replace-all
+    endpoint stays for the editor. No confirm: recreated in one click."""
+    result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
+    room = result.scalar_one_or_none()
+    if room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    rule = await db.scalar(
+        select(AvailabilityRule).where(
+            AvailabilityRule.id == rule_id, AvailabilityRule.room_id == room.id
+        )
+    )
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    before = audit.snapshot(rule)
+    await db.delete(rule)
+    await db.flush()
+    await audit.record(db, actor=admin, org_id=org_id, entity=rule, action="delete", before=before)
+
+
+def _rules_for_audit(rules) -> list[dict]:
+    return [
+        {
+            "day_of_week": r.day_of_week,
+            "open_time": r.open_time.isoformat(),
+            "close_time": r.close_time.isoformat(),
+        }
+        for r in sorted(rules, key=lambda r: (r.day_of_week, r.open_time))
+    ]
+
+
 # ─── Bookings ─────────────────────────────────────────────────────────────────
+
+
+BookingSort = Literal["start_time", "-start_time", "created_at", "-created_at"]
 
 
 @router.get("/bookings")
@@ -382,32 +759,57 @@ async def admin_list_bookings(
     org_id: uuid.UUID = Query(...),
     room_id: uuid.UUID | None = Query(None),
     booking_status: BookingStatus | None = Query(None, alias="status"),
+    payment_method: PaymentMethod | None = Query(None),
+    q: str | None = Query(None, max_length=200),
     from_date: datetime | None = Query(None, alias="from"),
     to_date: datetime | None = Query(None, alias="to"),
+    include_cancelled: bool = Query(True),
+    sort: BookingSort = Query("-start_time"),
     page: int = Query(1, ge=1, le=1_000_000),
     page_size: int = Query(20, ge=1, le=100),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     lock_gateway: LockGateway = Depends(get_lock_gateway),
 ):
+    """The org's bookings (G04 filters): `q` matches the customer's name or
+    email, or the booking's short id; `include_cancelled=false` hides the
+    cancelled rows; `sort` is start_time|created_at, `-` for newest first."""
     filters = [Booking.org_id == org_id]
     if room_id:
         filters.append(Booking.room_id == room_id)
     if booking_status:
         filters.append(Booking.status == booking_status)
+    if payment_method:
+        filters.append(Booking.payment_method == payment_method)
     if from_date:
         filters.append(Booking.start_time >= from_date)
     if to_date:
         filters.append(Booking.end_time <= to_date)
+    if not include_cancelled:
+        filters.append(Booking.status != BookingStatus.cancelled)
+    query = select(Booking)
+    if q and q.strip():
+        needle = q.strip().lower()
+        query = query.join(User, User.id == Booking.user_id)
+        filters.append(
+            or_(
+                func.lower(User.email).like(f"%{needle}%"),
+                func.lower(User.name).like(f"%{needle}%"),
+                func.replace(func.cast(Booking.id, String), "-", "").like(f"{needle}%"),
+            )
+        )
+    column = Booking.created_at if sort.endswith("created_at") else Booking.start_time
+    order = column.asc() if not sort.startswith("-") else column.desc()
 
-    total_result = await db.execute(select(func.count(Booking.id)).where(and_(*filters)))
+    total_result = await db.execute(
+        select(func.count()).select_from(query.where(and_(*filters)).subquery())
+    )
     total = total_result.scalar_one()
 
     result = await db.execute(
-        select(Booking)
-        .options(selectinload(Booking.room), selectinload(Booking.user), _WITH_DEBITS)
+        query.options(selectinload(Booking.room), selectinload(Booking.user), _WITH_DEBITS)
         .where(and_(*filters))
-        .order_by(Booking.start_time.desc(), Booking.id.desc())
+        .order_by(order, Booking.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -438,6 +840,53 @@ async def _locked_booking(db: AsyncSession, booking_id: uuid.UUID, org_id: uuid.
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     return booking
+
+
+@router.get("/bookings/{booking_id}")
+async def admin_get_booking(
+    booking_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
+):
+    """One booking for its page (G04): customer, room, payment (method,
+    amount, pack debits, Stripe session id), access code, both notes, the
+    hold deadline, and its last twenty trail rows."""
+    result = await db.execute(
+        select(Booking)
+        .options(
+            selectinload(Booking.room).selectinload(Room.space),
+            selectinload(Booking.user),
+            _WITH_DEBITS,
+        )
+        .where(Booking.id == booking_id, Booking.org_id == org_id)
+    )
+    booking = result.scalar_one_or_none()
+    if booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    attach_access_codes(lock_gateway, booking)
+    history = (
+        (
+            await db.execute(
+                select(AdminAction)
+                .options(selectinload(AdminAction.actor))
+                .where(
+                    AdminAction.org_id == org_id,
+                    AdminAction.entity_type == "booking",
+                    AdminAction.entity_id == booking.id,
+                )
+                .order_by(AdminAction.created_at.desc(), AdminAction.id.desc())
+                .limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "booking": AdminBookingDetailOut.model_validate(booking),
+        "history": [AdminActionOut.model_validate(a) for a in history],
+    }
 
 
 async def _validate_slot(
@@ -542,7 +991,7 @@ async def admin_update_booking(
     body: BookingStatusUpdate,
     background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
     lock_gateway: LockGateway = Depends(get_lock_gateway),
@@ -561,10 +1010,19 @@ async def admin_update_booking(
     now = clock.utcnow()
     previous_status = booking.status
     hours_before = booking.duration_hours
+    before = audit.snapshot(booking)
     response: dict = {}
 
     if body.admin_note is not None or "admin_note" in body.model_fields_set:
         booking.admin_note = body.admin_note
+    if "notes" in body.model_fields_set:
+        booking.notes = body.notes
+    overridden = False
+    if "total_amount" in body.model_fields_set:
+        # The price override (G04): the recorded amount changes, no charge and
+        # no refund is made; the reason goes to the trail.
+        overridden = booking.total_amount != body.total_amount
+        booking.total_amount = body.total_amount
 
     moved = False
     if body.moves:
@@ -746,8 +1204,33 @@ async def admin_update_booking(
             changed=True,
         )
 
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=booking,
+        action=_booking_action(previous_status, new_status, moved, overridden),
+        before=before,
+        after=audit.snapshot(booking),
+        reason=body.reason,
+    )
     attach_access_codes(lock_gateway, booking)
     return {"booking": AdminBookingOut.model_validate(booking), **response}
+
+
+def _booking_action(
+    previous: BookingStatus, new: BookingStatus, moved: bool, overridden: bool = False
+) -> str:
+    """The verb the trail shows for a generic booking update."""
+    if overridden and new == previous and not moved:
+        return "price.override"
+    if new != previous:
+        return {
+            BookingStatus.cancelled: "cancel",
+            BookingStatus.confirmed: "confirm",
+            BookingStatus.completed: "complete",
+        }.get(new, f"status.{new.value}")
+    return "move" if moved else "update"
 
 
 @router.post("/bookings", status_code=status.HTTP_201_CREATED)
@@ -755,7 +1238,7 @@ async def admin_create_booking(
     body: AdminBookingCreate,
     background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     email_gateway: EmailGateway = Depends(get_email_gateway),
     lock_gateway: LockGateway = Depends(get_lock_gateway),
@@ -819,6 +1302,14 @@ async def admin_create_booking(
         .execution_options(populate_existing=True)
     )
     booking = result.scalar_one()
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=booking,
+        action="create.manual",
+        after=audit.snapshot(booking),
+    )
     await _confirm_side_effects(
         booking,
         background_tasks=background_tasks,
@@ -835,7 +1326,7 @@ async def admin_mark_booking_paid(
     body: MarkPaidBody,
     background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     gateway: PaymentGateway = Depends(get_payment_gateway),
     email_gateway: EmailGateway = Depends(get_email_gateway),
@@ -849,6 +1340,7 @@ async def admin_mark_booking_paid(
     """
     booking = await _locked_booking(db, booking_id, org_id)
     now = clock.utcnow()
+    before = audit.snapshot(booking)
     live_or_lapsed_hold = booking.status in (BookingStatus.pending, BookingStatus.expired) and (
         booking.hold_expires_at is not None or booking.status is BookingStatus.expired
     )
@@ -922,6 +1414,16 @@ async def admin_mark_booking_paid(
         .execution_options(populate_existing=True)
     )
     booking = result.scalar_one()
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=booking,
+        action="mark_paid",
+        before=before,
+        after=audit.snapshot(booking),
+        reason=body.reason,
+    )
     await _confirm_side_effects(
         booking,
         background_tasks=background_tasks,
@@ -930,6 +1432,75 @@ async def admin_mark_booking_paid(
     )
     attach_access_codes(lock_gateway, booking)
     return {"booking": AdminBookingOut.model_validate(booking)}
+
+
+@router.delete("/bookings/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_booking(
+    booking_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    confirm: str | None = Query(default=None, max_length=255),
+    reason: str | None = Query(default=None, max_length=2000),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    gateway: PaymentGateway = Depends(get_payment_gateway),
+    lock_gateway: LockGateway = Depends(get_lock_gateway),
+):
+    """Hard delete (G02): "delete" is cancel. Only a booking that never held
+    money and holds no pack hours may go: an expired hold; a cancelled one
+    with amount 0 and no debit rows; or an operator's `manual` booking, with
+    a reason. Anything else is a 409 "cancel instead". An expired hold's
+    Checkout Session is still payable (the webhook accepts a late payment,
+    C03), so it is expired at the provider first — a session that already
+    completed keeps the row (409). The trail keeps the whole booking."""
+    booking = await _locked_booking(db, booking_id, org_id)
+    deletion.require_confirm(confirm, booking.id)
+    debits = await db.scalar(
+        select(func.count())
+        .select_from(BookingPackageDebit)
+        .where(BookingPackageDebit.booking_id == booking.id)
+    )
+    if booking.payment_method is PaymentMethod.manual:
+        if not (reason or "").strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A reason is required to delete a manual booking",
+            )
+        allowed = debits == 0
+    else:
+        allowed = booking.status is BookingStatus.expired or (
+            booking.status is BookingStatus.cancelled and booking.total_amount == 0 and debits == 0
+        )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This booking held money or pack hours; cancel it instead",
+        )
+    if booking.stripe_checkout_session_id:
+        try:
+            await gateway.expire_checkout_session(booking.stripe_checkout_session_id)
+        except CheckoutSessionCompletedError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payment already received for this booking; waiting for confirmation",
+            ) from None
+        except PaymentProviderError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not close the payment session",
+            ) from exc
+    before = audit.snapshot(booking)
+    await db.delete(booking)
+    await db.flush()
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=booking,
+        action="delete",
+        before=before,
+        reason=(reason or "").strip() or None,
+    )
+    await try_revoke_access_code(lock_gateway, booking_id=booking.id)
 
 
 # ─── Users ────────────────────────────────────────────────────────────────────
@@ -955,7 +1526,7 @@ async def admin_list_packages(
 async def admin_create_package(
     body: PackageCreate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     package = Package(
@@ -968,7 +1539,56 @@ async def admin_create_package(
     db.add(package)
     await db.flush()
     await db.refresh(package)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=package,
+        action="create",
+        after=audit.snapshot(package),
+    )
     return {"package": PackageOut.model_validate(package)}
+
+
+@router.get("/packages/{package_id}")
+async def admin_get_package(
+    package_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """One package for its page (G04): how many purchases, how many of them
+    still spendable, and the hours still outstanding on those."""
+    result = await db.execute(
+        select(Package).where(Package.id == package_id, Package.org_id == org_id)
+    )
+    package = result.scalar_one_or_none()
+    if package is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Package not found")
+    now = clock.utcnow()
+    total = await db.scalar(
+        select(func.count())
+        .select_from(UserPackagePurchase)
+        .where(UserPackagePurchase.package_id == package.id)
+    )
+    live = UserPackagePurchase.status == PurchaseStatus.active
+    unexpired = UserPackagePurchase.expires_at > now
+    spendable = UserPackagePurchase.hours_remaining > 0
+    active = await db.scalar(
+        select(func.count())
+        .select_from(UserPackagePurchase)
+        .where(UserPackagePurchase.package_id == package.id, live, unexpired, spendable)
+    )
+    outstanding = await db.scalar(
+        select(func.coalesce(func.sum(UserPackagePurchase.hours_remaining), 0)).where(
+            UserPackagePurchase.package_id == package.id, live, unexpired, spendable
+        )
+    )
+    return PackageDetailOut(
+        package=PackageOut.model_validate(package),
+        purchases={"total": total or 0, "active": active or 0},
+        hours_outstanding=Decimal(outstanding or 0).quantize(Decimal("0.01")),
+    )
 
 
 @router.put("/packages/{package_id}")
@@ -976,7 +1596,7 @@ async def admin_update_package(
     package_id: uuid.UUID,
     body: PackageUpdate,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Edit a package's price/hours/validity, or soft-deactivate it via is_active=false."""
@@ -986,10 +1606,122 @@ async def admin_update_package(
     package = result.scalar_one_or_none()
     if package is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Package not found")
+    before = audit.snapshot(package)
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(package, field, value)
 
     await db.flush()
     await db.refresh(package)
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=package,
+        action="update",
+        before=before,
+        after=audit.snapshot(package),
+    )
     return {"package": PackageOut.model_validate(package)}
+
+
+@router.delete("/packages/{package_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_package(
+    package_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    confirm: str | None = Query(default=None, max_length=255),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hard delete (G02): only a package nobody ever bought or was granted;
+    `is_active` is the everyday delete."""
+    result = await db.execute(
+        select(Package).where(Package.id == package_id, Package.org_id == org_id)
+    )
+    package = result.scalar_one_or_none()
+    if package is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Package not found")
+    deletion.require_confirm(confirm, package.id, package.name)
+    purchases = await db.scalar(
+        select(func.count())
+        .select_from(UserPackagePurchase)
+        .where(UserPackagePurchase.package_id == package.id)
+    )
+    if purchases:
+        raise deletion.blocked(
+            "The package has purchases; deactivate it instead", {"purchases": purchases}
+        )
+    before = audit.snapshot(package)
+    await db.delete(package)
+    await db.flush()
+    await audit.record(
+        db, actor=admin, org_id=org_id, entity=package, action="delete", before=before
+    )
+
+
+# ─── Organisation ─────────────────────────────────────────────────────────────
+
+_ORG_SETTINGS_KEYS = ("contact_email", "contact_phone", "timezone")
+
+
+def _org_out(org: Organization) -> OrganizationSettingsOut:
+    values = org.settings or {}
+    return OrganizationSettingsOut(
+        id=org.id,
+        name=org.name,
+        slug=org.slug,
+        plan=org.plan,
+        contact_email=values.get("contact_email") or None,
+        contact_phone=values.get("contact_phone") or None,
+        timezone=values.get("timezone") or "Europe/Lisbon",
+        created_at=org.created_at,
+        updated_at=org.updated_at,
+    )
+
+
+@router.get("/organization")
+async def admin_get_organization(
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """The organisation's settings (G04): name, public contact, default
+    timezone; `slug` is read-only. Admins read; the owner edits."""
+    org = await db.scalar(select(Organization).where(Organization.id == org_id))
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return {"organization": _org_out(org)}
+
+
+@router.put("/organization")
+async def admin_update_organization(
+    body: OrganizationSettingsUpdate,
+    org_id: uuid.UUID = Query(...),
+    owner: User = Depends(require_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    org = await db.scalar(select(Organization).where(Organization.id == org_id).with_for_update())
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    before = _org_out(org).model_dump(mode="json")
+    changes = body.model_dump(exclude_unset=True)
+    if "name" in changes:
+        org.name = changes.pop("name")
+    # JSON columns do not see in-place edits: always a new dict.
+    values = dict(org.settings or {})
+    for key in _ORG_SETTINGS_KEYS:
+        if key in changes:
+            values[key] = changes[key]
+    org.settings = values
+    await db.flush()
+    await db.refresh(org)
+    await audit.record(
+        db,
+        actor=owner,
+        org_id=org_id,
+        entity=org,
+        action="update",
+        before=before,
+        after=_org_out(org).model_dump(mode="json"),
+    )
+    return {"organization": _org_out(org)}
