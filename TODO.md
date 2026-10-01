@@ -3322,7 +3322,12 @@ is W01 below; the deploy workflow publishes it on the merge to main.
 ### B49 — The flowspace-site smoke suite is stale since the real Apps Script URL landed
 
 **Priority: P2. State: IN PROGRESS** on `feat/flowspace-brand-copy` (found as
-the W-series baseline, 2026-09-22). **Evidence:** `0fc2c10` — the rewrite matches
+the W-series baseline, 2026-09-22). **Evidence (B50, 2026-10-01, Part L):** the
+static site's header and footer carry the new lockup, the brand favicons
+replace `assets/img/favicon.svg`, `og:image`/`theme-color` are set, the
+deploy allowlist (`assets/**`) ships `assets/img/brand/`, and the standalone
+smoke suite (35) asserts the header logo, its size and colour, the footer
+lockup and every `<link rel="icon">`. **Evidence:** `0fc2c10` — the rewrite matches
 `const APPS_SCRIPT_URL = '…';` whatever it holds; the placeholder test serves the
 placeholder explicitly; a new test pins that a script without the constant still
 throws. 22 passed on the committed file (3/21 before). `flowspace-site/tests/smoke.spec.ts`
@@ -5060,7 +5065,7 @@ summary.
 
 ### B50 — New logo on both sites (brand set `flowspace-site/assets/img/brand/`)
 
-**Priority: P2. State: QUEUED (Part L).** The cleaned brand set (16 files:
+**Priority: P2. State: DONE (Part L, 2026-10-01, PR TBD).** The cleaned brand set (16 files:
 `logo-full.svg`, `logo-mark.svg`, `wordmark.svg`, `spiral-mark.svg`,
 `favicon.svg`, favicon-16/32/48/192/512.png, `apple-touch-icon.png`,
 `logo-email.png`, `logo-email-white-bg.png`, `logo-full-white.png`,
@@ -5088,6 +5093,50 @@ Navbar/Footer (img with alt "FlowSpace", link to "/"), the checksum parity
 test, static smoke asserts the header logo and the favicon links;
 screenshots of both headers (light) and both footers (dark) at 1280 px and
 390 px, and the favicon in a tab.
+
+**Delivered (2026-10-01):** the 16 files committed plus `logo-horizontal.svg`
+(built from `logo-mark.svg` + `wordmark.svg`: wordmark cap height = half
+the mark height, baseline on the mark's floor, gap 0.35× the mark height,
+viewBox 3058×749, `id="lockup"`, `currentColor`); `frontend/public/brand/`
+= a byte-for-byte copy guarded by `tests/lib/brandParity.test.ts`;
+`components/layout/BrandLogo.tsx` (`<svg><use href="/brand/
+logo-horizontal.svg#lockup">`, explicit width/height from the viewBox,
+`role="img"` `aria-label="FlowSpace"`) in the Navbar (28 px, `text-primary`,
+link to "/"), the Footer (24 px, white), the admin sidebar (24 px) and the
+four auth pages (32 px); Building2 + text wordmark removed everywhere
+(`brand.name` stays for `<title>`, aria-labels and the copyright line);
+`app/layout.tsx` icons (svg/32/16/apple), `openGraph.images` =
+`/brand/og-image.png` 1200×630, `manifest` → `public/manifest.webmanifest`
+(192/512, theme #3D7A5E), `viewport.themeColor`, `metadataBase` from
+`NEXTAUTH_URL`; every HTML email opens with `<FRONTEND_URL>/brand/
+logo-email.png` (200 px, alt FlowSpace; `_branded()` in `app/email.py`).
+Static site: the lockup in the header (`.wordmark`, 114×28, primary) and
+footer (98×24, white) of `index.html`, the header of `privacidade.html`;
+`assets/img/favicon.svg` removed in favour of `assets/img/brand/`
+(svg/32/16 `<link rel="icon">`s, apple-touch-icon, `theme-color`,
+`og:*` with the absolute `https://flowspace.pt/assets/img/brand/
+og-image.png`). No layout shift: explicit width/height everywhere, the
+header stays 64 px; at 390 px the lockup is 114 px (< 30 % of the header),
+so the mark-only fallback is not needed. Evidence: Vitest `brandParity`
+2, `Navbar` +1, `Footer` reworked (631 total); backend `test_email` +1
+(header on every template) and `test_support` escaping test adjusted;
+static smoke +2 (35 total); screenshots in `.pr-evidence/l/` (both headers
+at 1280/390, both footers at 1280/390, sign-in, admin sidebar, favicon
+sizes).
+
+**DECISION (loop, B50):** the lockup is referenced through `<use>` rather
+than an `<img>`: an `<img>` cannot take the CSS colour, and inlining 42 KB
+of path data twice per page or shipping a white duplicate were the
+alternatives. `<use>` with a same-origin file works in every current
+browser. Reverse: swap `BrandLogo` for `<img src="/brand/logo-horizontal.
+svg">` plus a white copy for the footer.
+**DECISION (loop, B50):** the wordmark in the lockup is scaled so its cap
+height is half the mark's height (ratio 4.08:1), which reads at 28 px;
+alternative: the owner's `logo-full.svg` proportions (wordmark narrower
+than the mark). Reverse: rebuild with `s = 0.45 * mark_height / cap`.
+**DECISION (loop, B50):** `metadataBase` = `NEXTAUTH_URL` when set (every
+Compose/deploy sets it), else Next's own fallback; Next 14 ignores it in
+`next dev` anyway.
 
 ## Deferred scope
 

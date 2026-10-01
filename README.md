@@ -509,3 +509,15 @@ This repo also contains an unrelated static marketing site for the real
 flowspace.pt business in `flowspace-site/`, fully decoupled from the
 FlowSpace app in `frontend/`/`backend/` (no shared build, no shared server;
 they share the brand since W02). See `flowspace-site/README.md`.
+
+**Brand set (B50).** `flowspace-site/assets/img/brand/` is the one source
+of the logo, favicons, Open Graph card and email logo (its `README.md` lists
+each file). The app serves a byte-for-byte copy from `frontend/public/brand/`
+— `tests/lib/brandParity.test.ts` fails if the two drift, so change the
+static site's folder and copy it over. Both sites render the horizontal
+lockup through `<svg><use href="…/logo-horizontal.svg#lockup">` so the
+file's `currentColor` follows the CSS `color` of its link (green in the
+header, white in the footer) with one asset; HTML emails open with
+`<FRONTEND_URL>/brand/logo-email.png`. `metadataBase` comes from
+`NEXTAUTH_URL`, so Open Graph image URLs are absolute on a deployed app
+(Next 14 always uses `localhost` in `next dev`).

@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { useSession } from 'next-auth/react'
 import { Navbar } from '@/components/layout/Navbar'
 import { useOrg } from '@/contexts/OrgContext'
@@ -35,6 +35,19 @@ describe('Navbar component i18n refactor (9.1)', () => {
 
     expect(screen.getByRole('link', { name: t('brand.name') })).toHaveAttribute('href', '/')
     expect(screen.queryByText(/espa[cç]ohora/i)).not.toBeInTheDocument()
+  })
+
+  it('the brand link carries the lockup, 28px tall with an explicit width, taking the primary colour (B50)', () => {
+    render(<Navbar />)
+    const link = screen.getByRole('link', { name: t('brand.name') })
+    const logo = within(link).getByRole('img', { name: 'FlowSpace' })
+    expect(logo.tagName).toBe('svg')
+    expect(logo).toHaveAttribute('height', '28')
+    expect(Number(logo.getAttribute('width'))).toBeCloseTo(28 * 3058.4 / 749.2, 0)
+    expect(logo.querySelector('use')).toHaveAttribute('href', '/brand/logo-horizontal.svg#lockup')
+    expect(link.className).toContain('text-primary')
+    // No text wordmark or icon next to it any more.
+    expect(link.textContent).toBe('')
   })
 
   it('renders nav links in Portuguese', () => {

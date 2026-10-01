@@ -108,7 +108,8 @@ class TestSignedOutVisitor:
         assert "onerror" not in resp.text
         [message, copy] = emails.sent
         for mail in (message, copy):
-            assert "<img" not in mail.html_body
+            # The logo header (B50) is the one <img> allowed; the payload is text.
+            assert "<img src=x onerror=alert(1)>" not in mail.html_body
             assert "&lt;img src=x onerror=alert(1)&gt;" in mail.html_body
 
     async def test_an_email_address_is_required_when_signed_out(self, client, emails, db_session):
