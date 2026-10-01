@@ -133,7 +133,9 @@ become four PRs the loop opens and never merges: `feat/admin-crud-backend`
 (B50). Recorded as the G/K/B series near the end of this file, with the
 owner's decisions and the CRUD matrix the admin parts start from. Part A1
 opened as [PR #65](https://github.com/fairglen/spacerental/pull/65)
-(G01–G04, base `main`) on 2026-09-30; the owner reviews and merges.
+(G01–G04, base `main`) on 2026-09-30, and Part A2 as
+[PR #66](https://github.com/fairglen/spacerental/pull/66) (G05–G06, base
+`feat/admin-crud-backend`) on 2026-10-01; the owner reviews and merges.
 
 States used below:
 
@@ -4403,7 +4405,7 @@ CRUD kit and G06 every entity page; **Part C**
 `feat/customer-credit-pack-upsell-notifications` — K01 cancellation credit
 in hours, K02 pack upsell when the bank cannot cover a booking, K03 support
 notifications both ways; **Part L** `feat/brand-logo` — B50 the new logo on
-both sites. **Part A1 is [PR #65](https://github.com/fairglen/spacerental/pull/65).** Links: A01–A07 (operator tooling this completes), O05 (G01 is
+both sites. **Part A1 is [PR #65](https://github.com/fairglen/spacerental/pull/65); Part A2 is [PR #66](https://github.com/fairglen/spacerental/pull/66) (base `feat/admin-crud-backend`, retargets to `main` when #65 merges).** Links: A01–A07 (operator tooling this completes), O05 (G01 is
 its minimal mandatory scope), O02 (K01 supersedes cash refunds for
 cancellations), H02 (the hour bank K01 credits into), C13 (mixed payment),
 C07 (cancellation eligibility), C15–C19 (photos, help requests, inbox),
