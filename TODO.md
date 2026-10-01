@@ -4870,7 +4870,7 @@ with the placeholder, old JWT rejected; a non-owner cannot save settings.
 
 ### K01 — Cancellation credit: paid hours go to the hour bank
 
-**Priority: P1. State: DONE (Part C, 2026-10-01, PR TBD).** Today cancelling a money-paid
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** Today cancelling a money-paid
 booking just loses the money. **Scope:** `UserPackagePurchase` gains
 `source` (`purchase | complimentary | cancellation_credit`; backfill:
 `amount_paid` 0 and no Stripe session → complimentary, else purchase) and
@@ -4955,7 +4955,7 @@ without their hours.
 
 ### K02 — Offer a new pack when the bank cannot cover the booking
 
-**Priority: P1. State: DONE (Part C, 2026-10-01, PR TBD).** **Scope:** backend `POST
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** **Scope:** backend `POST
 /packages/{id}/purchase` accepts optional `return_to` (a relative path:
 starts with "/", no scheme/host/"//", ≤ 512 chars; else 422); when present
 the checkout success URL is `<FRONTEND_URL><return_to>` + `pagamento=
@@ -5020,7 +5020,7 @@ error on a page that works without it).
 
 ### K03 — Support request notifications, both directions
 
-**Priority: P1. State: DONE (Part C, 2026-10-01, PR TBD).** **Scope:** config
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** **Scope:** config
 `SUPPORT_INBOX_EMAIL` default `geral+support@flowspace.pt` (the
 notification destination; `SUPPORT_EMAIL` was only that target, so it is
 renamed — Compose, `.env.example`, README); the customer-facing contact
