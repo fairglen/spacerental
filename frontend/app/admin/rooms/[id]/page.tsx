@@ -10,7 +10,7 @@ import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { Copy, Trash2 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import { localInputToUtc } from '@/lib/spaceClock'
+import { localInputToUtc, utcToWall } from '@/lib/spaceClock'
 import { statusOf, detailOf } from '@/lib/httpError'
 import { useCrud } from '@/components/admin/crud/useCrud'
 import { EntityForm, FormField, FormSection } from '@/components/admin/crud/EntityForm'
@@ -27,7 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PhotoManager } from '@/components/admin/PhotoManager'
 import { roomInUseOf } from '@/components/admin/RoomActiveDialog'
 import { formatCurrency } from '@/lib/utils'
-import { DAYS, rowsFromRules, rulesFromRows, type DayRow } from '@/lib/admin/openingHoursEditor'
+import { DAYS, rowsFromRules, rulesFromRows, type DayRow, type Window } from '@/lib/admin/openingHoursEditor'
 import type { Room } from '@/types'
 
 const schema = z.object({
@@ -51,9 +51,6 @@ function toForm(room: Room): FormValues {
   }
 }
 
-function toLocalInput(iso: string) {
-  return iso.slice(0, 16)
-}
 
 /** The ROOM page (G06). Under the old route the id was a SPACE's: that still
  * lands here and is sent on to the space's page. */
@@ -122,6 +119,7 @@ function RoomDetail({ roomId }: { roomId: string }) {
   }
   if (isError || !data) return <div className="p-8"><p role="alert" className="text-sm text-red-600">Não foi possível carregar esta sala. <button type="button" className="underline" onClick={() => refetch()}>Tentar novamente</button></p></div>
   const { room, space, blocks, bookings } = data
+  const zone = space.timezone ?? 'Europe/Lisbon'
 
   return (
     <div className="p-8 pb-28 max-w-5xl">
@@ -166,18 +164,30 @@ function RoomDetail({ roomId }: { roomId: string }) {
               <caption className="sr-only">Horário semanal</caption>
               <tbody>
                 {DAYS.map((d, i) => (
-                  <tr key={d.day_of_week} className="border-t border-border">
+                  <tr key={d.day_of_week} className="border-t border-border align-top">
                     <td className="py-2 pr-3">
                       <label className="flex items-center gap-2">
                         <input type="checkbox" checked={days[i].enabled} onChange={(e) => setDays(days.map((r, j) => (j === i ? { ...r, enabled: e.target.checked } : r)))} aria-label={`${d.label} aberto`} />
                         {d.label}
                       </label>
                     </td>
-                    <td className="py-2 pr-2">
-                      <Input type="time" step={3600} aria-label={`${d.label} abre`} value={days[i].open_time} disabled={!days[i].enabled} onChange={(e) => setDays(days.map((r, j) => (j === i ? { ...r, open_time: e.target.value } : r)))} />
-                    </td>
-                    <td className="py-2 pr-2">
-                      <Input type="time" step={3600} aria-label={`${d.label} fecha`} value={days[i].close_time} disabled={!days[i].enabled} onChange={(e) => setDays(days.map((r, j) => (j === i ? { ...r, close_time: e.target.value } : r)))} />
+                    <td className="py-2 pr-2" colSpan={2}>
+                      {/* Every window of the day (a lunch break makes two); none is lost on save. */}
+                      {days[i].windows.map((w, k) => {
+                        const nth = k === 0 ? '' : ` (${k + 1})`
+                        const setWindow = (patch: Partial<Window>) => setDays(days.map((r, j) => (j === i ? { ...r, windows: r.windows.map((x, l) => (l === k ? { ...x, ...patch } : x)) } : r)))
+                        return (
+                          <div key={k} className="flex items-center gap-2 mb-1">
+                            <Input type="time" step={3600} aria-label={`${d.label} abre${nth}`} value={w.open_time} disabled={!days[i].enabled} onChange={(e) => setWindow({ open_time: e.target.value })} />
+                            <span aria-hidden>–</span>
+                            <Input type="time" step={3600} aria-label={`${d.label} fecha${nth}`} value={w.close_time} disabled={!days[i].enabled} onChange={(e) => setWindow({ close_time: e.target.value })} />
+                            {days[i].windows.length > 1 && (
+                              <Button type="button" variant="ghost" size="sm" disabled={!days[i].enabled} aria-label={`Remover período ${k + 1} de ${d.label}`} onClick={() => setDays(days.map((r, j) => (j === i ? { ...r, windows: r.windows.filter((_, l) => l !== k) } : r)))}>Remover</Button>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <Button type="button" variant="ghost" size="sm" disabled={!days[i].enabled} aria-label={`Adicionar período a ${d.label}`} onClick={() => setDays(days.map((r, j) => (j === i ? { ...r, windows: [...r.windows, { open_time: r.windows[r.windows.length - 1]?.close_time ?? '14:00', close_time: '18:00' }] } : r)))}>+ período</Button>
                     </td>
                     <td className="py-2 text-right">
                       <Button type="button" variant="ghost" size="sm" disabled={!days[i].enabled || copyDay.isPending} onClick={() => copyDay.mutate(d.day_of_week)} aria-label={`Copiar ${d.label} para todos os dias`}>
@@ -214,10 +224,11 @@ function RoomDetail({ roomId }: { roomId: string }) {
               {blocks.map((b) => (
                 <li key={b.id} className="flex items-center justify-between py-2 text-sm">
                   <span>
-                    {format(parseISO(b.start_time), "EEE d MMM, HH:mm", { locale: pt })} – {format(parseISO(b.end_time), 'HH:mm', { locale: pt })}
+                    {/* The space clock, like the form above (review on #65). */}
+                    {format(parseISO(`${utcToWall(b.start_time, zone).date}T00:00:00`), 'EEE d MMM', { locale: pt })}, {utcToWall(b.start_time, zone).time} – {utcToWall(b.end_time, zone).time}
                     <span className="text-muted-foreground"> · {b.reason}</span>
                   </span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => removeBlock.mutate(b.id)} aria-label={`Remover bloqueio ${toLocalInput(b.start_time)}`}><Trash2 className="h-4 w-4" /></Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => removeBlock.mutate(b.id)} aria-label={`Remover bloqueio ${utcToWall(b.start_time, zone).date}T${utcToWall(b.start_time, zone).time}`}><Trash2 className="h-4 w-4" /></Button>
                 </li>
               ))}
             </ul>

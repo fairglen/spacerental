@@ -7,6 +7,7 @@ import { adminApi } from '@/lib/api'
 import { ToastProvider } from '@/components/ui/toast'
 import AdminRoomPage from '@/app/admin/rooms/[id]/page'
 import AdminSpacePage from '@/app/admin/spaces/[id]/page'
+import NewSpacePage from '@/app/admin/spaces/new/page'
 import AdminRoomsListPage from '@/app/admin/rooms/page'
 import AdminBookingPage from '@/app/admin/bookings/[id]/page'
 import AdminUserPage from '@/app/admin/users/[id]/page'
@@ -474,5 +475,57 @@ describe('Review on #65 — clearing fields and the space clock', () => {
     await user.type(screen.getByLabelText('Motivo'), 'Obras')
     await user.click(screen.getByRole('button', { name: 'Bloquear' }))
     await waitFor(() => expect(adminApi.createBlock).toHaveBeenCalledWith('r-1', { start_time: '2030-03-04T00:00:00.000Z', end_time: '2030-03-04T01:00:00.000Z', reason: 'Obras' }, expect.anything()))
+  })
+})
+
+// Review on #65, round 4.
+describe('Review on #65 — round 4', () => {
+  it('a day with two windows keeps both through the editor; a window can be added and removed', async () => {
+    nav.params = { id: 'r-1' }
+    const twoWindows = [
+      { id: 'a', room_id: 'r-1', day_of_week: 0, open_time: '09:00:00', close_time: '12:00:00', is_active: true },
+      { id: 'b', room_id: 'r-1', day_of_week: 0, open_time: '14:00:00', close_time: '18:00:00', is_active: true },
+    ] as typeof rules
+    vi.mocked(adminApi.getRoom).mockResolvedValue({ room, space, rules: twoWindows, blocks: [], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    vi.mocked(adminApi.setAvailability).mockResolvedValue(twoWindows)
+    const user = userEvent.setup()
+    renderPage(<AdminRoomPage />)
+    await screen.findByRole('heading', { level: 1, name: /Sala A/ })
+    expect(screen.getByLabelText('Segunda-feira abre')).toHaveValue('09:00')
+    expect(screen.getByLabelText('Segunda-feira abre (2)')).toHaveValue('14:00')
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    await waitFor(() => expect(adminApi.setAvailability).toHaveBeenCalledWith('r-1', [
+      { day_of_week: 0, open_time: '09:00', close_time: '12:00' },
+      { day_of_week: 0, open_time: '14:00', close_time: '18:00' },
+    ], expect.anything()))
+    await user.click(screen.getByRole('button', { name: 'Remover período 2 de Segunda-feira' }))
+    expect(screen.queryByLabelText('Segunda-feira abre (2)')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Adicionar período a Segunda-feira' }))
+    expect(screen.getByLabelText('Segunda-feira abre (2)')).toHaveValue('12:00')
+  })
+
+  it('the booking summary and the block list read on the space clock, like the forms', async () => {
+    nav.params = { id: booking.id }
+    const tokyo = { ...space, id: 's-jp', timezone: 'Asia/Tokyo' }
+    const roomJp = { ...room, id: 'r-jp', space_id: 's-jp', name: 'Sala Tóquio' }
+    vi.mocked(adminApi.getSpaces).mockResolvedValue([{ ...tokyo, rooms: [roomJp] }])
+    vi.mocked(adminApi.getBooking).mockResolvedValue({ booking: { ...booking, room_id: 'r-jp', room: roomJp, start_time: '2030-03-04T09:00:00Z', end_time: '2030-03-04T11:00:00Z', stripe_checkout_session_id: null }, history: [] })
+    const { unmount } = renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByText(/^18:00–20:00/)).toBeInTheDocument())
+    unmount()
+
+    nav.params = { id: 'r-1' }
+    vi.mocked(adminApi.getRoom).mockResolvedValue({ room, space: tokyo, rules: [], blocks: [{ id: 'k', org_id: 'org-1', room_id: 'r-1', start_time: '2030-03-04T00:00:00Z', end_time: '2030-03-04T01:00:00Z', reason: 'Obras', created_by: null, created_at: '' }], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    renderPage(<AdminRoomPage />)
+    await screen.findByRole('heading', { level: 1, name: /Sala A/ })
+    expect(screen.getByText(/09:00 – 10:00/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remover bloqueio 2030-03-04T09:00' })).toBeInTheDocument()
+  })
+
+  it('a new space starts on the organisation\'s timezone and sends it', async () => {
+    vi.mocked(adminApi.getOrganization).mockResolvedValue({ id: 'org-1', name: 'Org', slug: 'org', plan: 'starter', contact_email: null, contact_phone: null, timezone: 'Asia/Tokyo', created_at: '', updated_at: '' })
+    renderPage(<NewSpacePage />)
+    await waitFor(() => expect(screen.getByLabelText('Fuso horário *')).toHaveValue('Asia/Tokyo'))
   })
 })

@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
+import { useOrg } from '@/contexts/OrgContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -42,10 +43,11 @@ export default function NewSpacePage() {
   })
   // The organisation's clock is the default for a new space (review on #65);
   // the operator can still give this one its own.
+  const { currentOrgId } = useOrg()
   const { data: organisation } = useQuery({
-    queryKey: ['admin', 'organization', session?.accessToken],
+    queryKey: ['admin', 'organization', currentOrgId],
     queryFn: () => adminApi.getOrganization(api),
-    enabled: !!session?.accessToken,
+    enabled: !!session?.accessToken && !!currentOrgId,
   })
   useEffect(() => {
     if (organisation?.timezone && !dirtyFields.timezone) setValue('timezone', organisation.timezone)
