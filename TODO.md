@@ -150,6 +150,11 @@ aware instants; `confirm` is case-insensitive; the move/block forms speak
 the space clock; blank description/address/city/name clear (null); the
 cancel reason reaches the trail; an org switch clears the list filters;
 a new space defaults to the organisation's timezone.
+Round 4 (2026-10-05): the hours editor keeps every window of a day (a
+lunch break makes two) and can add/remove one; the booking summary and the
+block list read on the space clock like the forms; the new-space page keys
+the organisation query by tenant; `POST /admin/spaces` stores the
+`timezone` it is given (it used to drop it).
 
 States used below:
 

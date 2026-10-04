@@ -30,7 +30,6 @@ import type { AdminBookingPatch, Booking } from '@/types'
 // zone: an operator abroad would otherwise move a booking to the wrong
 // instant (review on #65). `DEFAULT_TZ` only until the spaces have loaded.
 const DEFAULT_TZ = 'Europe/Lisbon'
-const toLocalTime = (iso: string) => format(parseISO(iso), 'HH:mm')
 
 /** One booking (G06): Cliente, Quando/Onde, Pagamento, Acesso, Notas, DangerZone, Histórico. */
 export default function AdminBookingPage() {
@@ -118,6 +117,9 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   const canCancel = ['pending', 'confirmed'].includes(b.status)
   const canMarkPaid = isUnpaidHold(b) || b.status === 'expired'
   const deletable = hardDeleteAllowed(b)
+  // Read-only times on the same clock the form uses (review on #65).
+  const wall = utcToWall(b.start_time, zoneOfRoom(b.room_id))
+  const wallEnd = utcToWall(b.end_time, zoneOfRoom(b.room_id))
 
   async function copyStripeId() {
     if (!b.stripe_checkout_session_id) return
@@ -130,7 +132,7 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
         title={`Reserva #${short.toUpperCase()}`}
         crumbs={[{ label: 'Reservas', href: '/admin/bookings' }, { label: `#${short.toUpperCase()}` }]}
         badge={<Badge variant={b.status === 'confirmed' ? 'success' : b.status === 'pending' ? 'warning' : 'secondary'}>{STATUS_LABELS[b.status]}</Badge>}
-        description={`${format(parseISO(b.start_time), "EEEE d 'de' MMMM, HH:mm", { locale: pt })}–${format(parseISO(b.end_time), 'HH:mm', { locale: pt })} · ${b.room?.name ?? ''}`}
+        description={`${format(parseISO(`${wall.date}T00:00:00`), "EEEE d 'de' MMMM", { locale: pt })}, ${wall.time}–${wallEnd.time} · ${b.room?.name ?? ''}`}
         actions={
           <>
             {b.status === 'pending' && <Button type="button" size="sm" onClick={() => setStatus.mutate('confirmed')} disabled={setStatus.isPending}>Confirmar</Button>}
@@ -155,8 +157,8 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
           {!moving ? (
             <dl className="text-sm space-y-1">
               <div><dt className="inline text-muted-foreground">Sala: </dt><dd className="inline">{b.room ? <Link href={`/admin/rooms/${b.room.id}`} className="underline underline-offset-2">{b.room.name}</Link> : '—'}</dd></div>
-              <div><dt className="inline text-muted-foreground">Data: </dt><dd className="inline">{format(parseISO(b.start_time), "EEEE, d 'de' MMMM 'de' yyyy", { locale: pt })}</dd></div>
-              <div><dt className="inline text-muted-foreground">Horas: </dt><dd className="inline">{toLocalTime(b.start_time)}–{toLocalTime(b.end_time)} ({formatHours(b.duration_hours)})</dd></div>
+              <div><dt className="inline text-muted-foreground">Data: </dt><dd className="inline">{format(parseISO(`${wall.date}T00:00:00`), "EEEE, d 'de' MMMM 'de' yyyy", { locale: pt })}</dd></div>
+              <div><dt className="inline text-muted-foreground">Horas: </dt><dd className="inline">{wall.time}–{wallEnd.time} ({formatHours(b.duration_hours)})</dd></div>
               {b.hold_expires_at && b.status === 'pending' && <div><dt className="inline text-muted-foreground">Reserva de lugar até: </dt><dd className="inline">{format(parseISO(b.hold_expires_at), 'HH:mm', { locale: pt })}</dd></div>}
             </dl>
           ) : (
