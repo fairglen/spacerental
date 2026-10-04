@@ -10,6 +10,7 @@ import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { Copy, Trash2 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
+import { localInputToUtc } from '@/lib/spaceClock'
 import { statusOf, detailOf } from '@/lib/httpError'
 import { useCrud } from '@/components/admin/crud/useCrud'
 import { EntityForm, FormField, FormSection } from '@/components/admin/crud/EntityForm'
@@ -100,7 +101,8 @@ function RoomDetail({ roomId }: { roomId: string }) {
     onError: (err) => toast({ title: 'Não foi possível copiar o horário.', description: detailOf(err), variant: 'error' }),
   })
   const addBlock = useMutation({
-    mutationFn: () => adminApi.createBlock(roomId, { start_time: new Date(block.start).toISOString(), end_time: new Date(block.end).toISOString(), reason: block.reason }, api),
+    // The inputs are the space's wall clock (R01), whatever zone the operator is in.
+    mutationFn: () => adminApi.createBlock(roomId, { start_time: localInputToUtc(block.start, data?.space.timezone ?? 'Europe/Lisbon'), end_time: localInputToUtc(block.end, data?.space.timezone ?? 'Europe/Lisbon'), reason: block.reason }, api),
     onSuccess: async () => { setBlock({ start: '', end: '', reason: '' }); toast({ title: 'Bloqueio criado.', variant: 'success' }); await invalidate(roomId) },
     onError: (err) => toast({ title: 'Não foi possível bloquear.', description: detailOf(err) ?? 'Há reservas nesse horário.', variant: 'error' }),
   })
@@ -136,7 +138,8 @@ function RoomDetail({ roomId }: { roomId: string }) {
         onCancel={() => router.push('/admin/rooms')}
         onSubmit={(values) => adminApi.updateRoom(roomId, {
           name: values.name,
-          description: values.description.trim() || undefined,
+          // Blank clears a stored value: the API takes an explicit null.
+          description: values.description.trim() || null,
           capacity: values.capacity,
           hourly_rate: values.hourly_rate,
           color: values.color,

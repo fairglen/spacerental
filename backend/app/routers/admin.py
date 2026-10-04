@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import AwareDatetime
 from sqlalchemy import String, and_, distinct, func, or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -265,6 +266,7 @@ async def admin_update_space(
 @router.delete("/spaces/{space_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_space(
     space_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
     confirm: str | None = Query(default=None, max_length=255),
     admin: User = Depends(require_admin),
@@ -278,11 +280,16 @@ async def admin_delete_space(
         select(Space)
         .options(selectinload(Space.rooms))
         .where(Space.id == space_id, Space.org_id == org_id)
+        .with_for_update(of=Space)
     )
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
     deletion.require_confirm(confirm, space.id, space.name)
+    # The rooms' rows too: a booking being inserted takes a KEY SHARE lock on
+    # its room, which waits behind this, so no booking can slip in between
+    # the count below and the cascade.
+    await db.execute(select(Room.id).where(Room.space_id == space.id).with_for_update())
     booked = (
         await db.execute(
             select(Room.id, Room.name, func.count(Booking.id))
@@ -302,13 +309,14 @@ async def admin_delete_space(
     await db.delete(space)
     await db.flush()
     await audit.record(db, actor=admin, org_id=org_id, entity=space, action="delete", before=before)
-    await _delete_photo_files(storage, photos)
+    background_tasks.add_task(_delete_photo_files, storage, photos)
 
 
 async def _delete_photo_files(storage: MediaStorage, photos: list[dict]) -> None:
-    # After the rows are gone. A file that will not go is logged, never
-    # raised: an orphan file is a nuisance, a rolled-back delete that left
-    # some files already gone would be a dangling row.
+    # Runs after the response, i.e. after the transaction committed: a commit
+    # that fails leaves the rows and their files intact. A file that will not
+    # go is logged, never raised — an orphan file is a nuisance, a dangling
+    # row would be worse.
     for photo in photos:
         for key in (photo.get("key"), photo.get("thumb_key")):
             if key:
@@ -677,6 +685,7 @@ async def admin_copy_availability_to_all_days(
 @router.delete("/rooms/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_room(
     room_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
     confirm: str | None = Query(default=None, max_length=255),
     admin: User = Depends(require_admin),
@@ -686,7 +695,11 @@ async def admin_delete_room(
     """Hard delete (G02): only a room with no booking and no block ever —
     cancelled and expired ones are history too. `is_active` (A07) is the
     everyday delete. Rules, and the photo files, go with it."""
-    result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
+    # Locked: an inserting booking or block waits on the room's row (KEY
+    # SHARE), so nothing crosses the guard below and gets cascaded away.
+    result = await db.execute(
+        select(Room).where(Room.id == room_id, Room.org_id == org_id).with_for_update()
+    )
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
@@ -707,7 +720,7 @@ async def admin_delete_room(
     await db.delete(room)
     await db.flush()
     await audit.record(db, actor=admin, org_id=org_id, entity=room, action="delete", before=before)
-    await _delete_photo_files(storage, photos)
+    background_tasks.add_task(_delete_photo_files, storage, photos)
 
 
 @router.delete("/rooms/{room_id}/availability/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -761,8 +774,8 @@ async def admin_list_bookings(
     booking_status: BookingStatus | None = Query(None, alias="status"),
     payment_method: PaymentMethod | None = Query(None),
     q: str | None = Query(None, max_length=200),
-    from_date: datetime | None = Query(None, alias="from"),
-    to_date: datetime | None = Query(None, alias="to"),
+    from_date: AwareDatetime | None = Query(None, alias="from"),
+    to_date: AwareDatetime | None = Query(None, alias="to"),
     include_cancelled: bool = Query(True),
     sort: BookingSort = Query("-start_time"),
     page: int = Query(1, ge=1, le=1_000_000),
@@ -1635,8 +1648,10 @@ async def admin_delete_package(
 ):
     """Hard delete (G02): only a package nobody ever bought or was granted;
     `is_active` is the everyday delete."""
+    # Locked: a purchase being inserted waits on the package's row, so none
+    # can cross the guard below and be cascaded away with the package.
     result = await db.execute(
-        select(Package).where(Package.id == package_id, Package.org_id == org_id)
+        select(Package).where(Package.id == package_id, Package.org_id == org_id).with_for_update()
     )
     package = result.scalar_one_or_none()
     if package is None:

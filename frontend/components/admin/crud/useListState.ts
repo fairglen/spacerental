@@ -47,13 +47,16 @@ export function useListState(filterKeys: readonly string[], defaults: { sort?: s
     [params, pathname, router, defaults.sort],
   )
   // Switching organisation (B22-style deep links aside): a later page may not
-  // exist in the smaller one, so the list goes back to page one.
+  // exist in the smaller one, and a filter's room/user/package id belongs to
+  // the old tenant, so the list goes back to page one with no filters.
   const { currentOrgId } = useOrg()
   const seenOrg = useRef(currentOrgId)
   useEffect(() => {
     if (seenOrg.current === currentOrgId) return
     seenOrg.current = currentOrgId
-    if (state.page > 1) set({ page: 1 })
-  }, [currentOrgId, state.page, set])
+    if (state.page > 1 || Object.keys(state.filters).length > 0) {
+      set({ page: 1, filters: Object.fromEntries(filterKeys.map((key) => [key, undefined])) })
+    }
+  }, [currentOrgId, state.page, state.filters, filterKeys, set])
   return { state, set }
 }

@@ -13,7 +13,7 @@ export type Space = {
   id: string
   org_id: string
   name: string
-  description: string
+  description: string | null
   address: string
   city: string
   postal_code?: string | null
@@ -37,7 +37,7 @@ export type Room = {
   space_id: string
   org_id: string
   name: string
-  description: string
+  description: string | null
   capacity: number
   hourly_rate: number
   images: string[]
@@ -157,7 +157,7 @@ export type MyPackages = {
 export type OrgUser = {
   id: string
   email: string
-  name: string
+  name: string | null
   role: 'owner' | 'admin' | 'member'
   joined_at: string
   bookings_count: number
@@ -411,7 +411,7 @@ export type DeleteBlockers =
 
 // Users (G03/G04).
 export type AdminUserCreateBody = { email: string; name?: string; password?: string }
-export type AdminUserPatch = { name?: string; email?: string; disabled_at?: string | null }
+export type AdminUserPatch = { name?: string | null; email?: string; disabled_at?: string | null }
 export type AnonymisedUser = { id: string; email: string; name: string | null; disabled_at: string | null }
 
 // Purchases (G04): the list carries the customer alongside each row.

@@ -31,8 +31,9 @@ import { GrantHoursDialog } from '@/components/admin/users/GrantHoursDialog'
 import { ExtendValidityDialog } from '@/components/admin/users/ExtendValidityDialog'
 import type { AdminPurchase, ComplimentaryHoursBody, OrgUser } from '@/types'
 
+// A customer may have no name (the API allows null); blank clears it.
 const schema = z.object({
-  name: z.string().min(1, 'Nome obrigatório'),
+  name: z.string(),
   email: z.string().email('Email inválido'),
 })
 type FormValues = z.infer<typeof schema>
@@ -136,7 +137,7 @@ function UserDetail({ userId }: { userId: string }) {
         form={form}
         successMessage="Conta guardada."
         onCancel={() => router.push('/admin/users')}
-        onSubmit={(values) => adminApi.updateUser(userId, { name: values.name, email: values.email }, api)}
+        onSubmit={(values) => adminApi.updateUser(userId, { name: values.name.trim() || null, email: values.email }, api)}
         onSaved={() => invalidate(userId)}
         extra={!isSelf && (
           <Button type="button" variant={suspended ? 'outline' : 'destructive'} size="sm" onClick={() => suspend.mutate(!suspended)} disabled={suspend.isPending}>

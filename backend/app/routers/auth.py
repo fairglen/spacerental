@@ -255,11 +255,13 @@ async def request_password_reset(
     user = await _user_by_email(db, body.email)
     if user is not None and user.disabled_at is None:
         raw = await password_reset.issue(db, user, now=clock.utcnow())
-        email.enqueue_email(
-            background_tasks,
-            email_gateway,
-            email.password_reset_email(to=user.email, link=password_reset.reset_link(raw)),
-        )
+        # None: suspended under the lock meanwhile — the same neutral answer.
+        if raw is not None:
+            email.enqueue_email(
+                background_tasks,
+                email_gateway,
+                email.password_reset_email(to=user.email, link=password_reset.reset_link(raw)),
+            )
     return {"detail": RESET_REQUESTED}
 
 

@@ -381,3 +381,41 @@ class TestEmailHook:
         development = FastAPI()
         assert test_hooks.mount(development, enabled=True, email_mode="stub", app_env="development")
         assert any(getattr(r, "path", "") == "/__test__/emails" for r in development.routes)
+
+
+class TestReviewRoundThree:
+    async def test_changing_the_login_email_kills_the_open_reset_link(
+        self, client, emails, db_session, test_user, test_member, admin_headers, test_org
+    ):
+        """Review on #65: a link already in the old mailbox must not reset the
+        account after the address moved on."""
+        await client.post(REQUEST, json={"email": test_user.email})
+        link = _link(emails.sent[-1])
+        assert len(await _tokens(db_session, test_user.id)) == 1
+        moved = await client.put(
+            f"{API}/admin/users/{test_user.id}",
+            params={"org_id": str(test_org.id)},
+            json={"email": "moved@test.com"},
+            headers=admin_headers,
+        )
+        assert moved.status_code == 200, moved.text
+        assert await _tokens(db_session, test_user.id) == []
+        resp = await client.post(CONFIRM, json={"token": _token(link), "password": "nova-pass-123"})
+        assert resp.status_code == 400
+
+    async def test_issue_sees_a_suspension_made_while_it_waited(
+        self, db_session, session_factory, test_user
+    ):
+        """`lock_user` re-reads the row: a `User` loaded before the lock is
+        not trusted for the address or the standing (review on #65)."""
+        from app import password_reset
+
+        stale = await _fresh(db_session, test_user.id)
+        async with session_factory() as other:
+            row = (await other.execute(select(User).where(User.id == test_user.id))).scalar_one()
+            row.disabled_at = datetime.now(tz=UTC)
+            await other.commit()
+        raw = await password_reset.issue(db_session, stale, now=datetime.now(tz=UTC))
+        assert raw is None
+        assert stale.disabled_at is not None
+        assert await _tokens(db_session, test_user.id) == []

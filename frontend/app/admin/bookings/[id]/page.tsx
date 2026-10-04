@@ -23,11 +23,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { moveOutcome } from '@/components/admin/calendar/BookingSheet'
 import { formatBookingCost, formatCurrency, formatHours, isUnpaidHold, packSplitLine, STATUS_LABELS } from '@/lib/utils'
 import { PAYMENT_LABELS, hardDeleteAllowed } from '@/lib/admin/bookingLabels'
+import { utcToWall, wallToUtc } from '@/lib/spaceClock'
 import type { AdminBookingPatch, Booking } from '@/types'
 
-const toLocalDate = (iso: string) => format(parseISO(iso), 'yyyy-MM-dd')
+// The form speaks the room's space clock (R01), not the operator's browser
+// zone: an operator abroad would otherwise move a booking to the wrong
+// instant (review on #65). `DEFAULT_TZ` only until the spaces have loaded.
+const DEFAULT_TZ = 'Europe/Lisbon'
 const toLocalTime = (iso: string) => format(parseISO(iso), 'HH:mm')
-const fromLocal = (date: string, time: string) => new Date(`${date}T${time}:00`).toISOString()
 
 /** One booking (G06): Cliente, Quando/Onde, Pagamento, Acesso, Notas, DangerZone, Histórico. */
 export default function AdminBookingPage() {
@@ -59,6 +62,8 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   })
   const { data: spaces } = useQuery({ queryKey: ['admin', 'spaces', currentOrgId], queryFn: () => adminApi.getSpaces(api), enabled })
   const rooms = (spaces ?? []).flatMap((s) => (s.rooms ?? []).filter((r) => r.is_active))
+  const zoneOfRoom = (roomId: string | undefined) =>
+    (spaces ?? []).find((s) => (s.rooms ?? []).some((r) => r.id === roomId))?.timezone ?? DEFAULT_TZ
 
   const [moving, setMoving] = useState(false)
   const [move, setMove] = useState({ room_id: '', date: '', start: '', end: '' })
@@ -71,10 +76,13 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   useEffect(() => {
     if (!data) return
     const b = data.booking
-    setMove({ room_id: b.room_id, date: toLocalDate(b.start_time), start: toLocalTime(b.start_time), end: toLocalTime(b.end_time) })
+    const zone = zoneOfRoom(b.room_id)
+    const start = utcToWall(b.start_time, zone)
+    setMove({ room_id: b.room_id, date: start.date, start: start.time, end: utcToWall(b.end_time, zone).time })
     setNotes({ notes: b.notes ?? '', admin_note: b.admin_note ?? '' })
     setPrice(b.total_amount.toFixed(2))
-  }, [data])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, spaces])
 
   const done = async (message: string) => { toast({ title: message, variant: 'success' }); await invalidate(bookingId) }
   const fail = (err: unknown) => toast({ title: adminBookingErrorMessage(err), variant: 'error' })
@@ -83,7 +91,8 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   })
   const reschedule = useMutation({
     mutationFn: () => {
-      const body: AdminBookingPatch = { start_time: fromLocal(move.date, move.start), end_time: fromLocal(move.date, move.end) }
+      const zone = zoneOfRoom(move.room_id)
+      const body: AdminBookingPatch = { start_time: wallToUtc(move.date, move.start, zone), end_time: wallToUtc(move.date, move.end, zone) }
       if (data && move.room_id !== data.booking.room_id) body.room_id = move.room_id
       return adminApi.updateBookingDetails(bookingId, body, api)
     },
@@ -267,7 +276,8 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
         confirmLabel="Sim, cancelar"
         destructive
         onConfirm={async (reason) => {
-          await patch.mutateAsync({ status: 'cancelled', admin_note: [b.admin_note, `Cancelada pelo espaço: ${reason}`].filter(Boolean).join('\n') })
+          // `reason` goes to the trail's own field as well as the note.
+          await patch.mutateAsync({ status: 'cancelled', reason, admin_note: [b.admin_note, `Cancelada pelo espaço: ${reason}`].filter(Boolean).join('\n') })
           await done('Reserva cancelada.')
         }}
         onClose={() => setCancelOpen(false)}
