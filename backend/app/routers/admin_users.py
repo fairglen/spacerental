@@ -22,6 +22,7 @@ from app.auth import hash_password, require_admin
 from app.booking_validity import expire_user_holds
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.models.audit import AdminAction
 from app.models.booking import Booking
 from app.models.organization import MemberRole, Organization, OrganizationMember
 from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
@@ -189,6 +190,7 @@ async def admin_create_user(
     member.user = user
     if not body.password:
         raw = await password_reset.issue(db, user, now=clock.utcnow(), created_by_admin_id=admin.id)
+        assert raw is not None  # just created, cannot be suspended
         email.enqueue_email(
             background_tasks,
             email_gateway,
@@ -218,6 +220,10 @@ async def admin_update_user(
     requests; an explicit null reactivates. Not your own account."""
     member = await _membership(db, user_id, org_id)
     user = member.user
+    # Under the user's row lock, re-read (review on #65): a suspension
+    # bumps `token_version` and must not overwrite a concurrent password
+    # change's bump, and the email check below must see the current row.
+    await password_reset.lock_user(db, user.id)
     changes = body.model_dump(exclude_unset=True)
     if "disabled_at" in changes and user.id == admin.id:
         raise HTTPException(
@@ -248,6 +254,10 @@ async def admin_update_user(
             user.token_version += 1
         elif was_disabled and not now_disabled:
             action = "reactivate"
+    if "email" in changes and changes["email"].lower() != user.email.lower():
+        # A reset link already in the old mailbox must not reset the account
+        # after the address moved on (review on #65).
+        await password_reset.invalidate_open(db, user.id)
     for field, value in changes.items():
         setattr(user, field, value)
     try:
@@ -456,7 +466,16 @@ async def _refuse_other_memberships(db: AsyncSession, member: OrganizationMember
 
 
 async def _references(db: AsyncSession, user_id: uuid.UUID) -> dict[str, int]:
+    # Authored audit rows count too (review on #65): deleting the actor would
+    # null `actor_id` and turn their actions into "Sistema". Anonymisation
+    # keeps the row, so the trail keeps its "who".
     return {
+        "admin_actions": await db.scalar(
+            select(func.count())
+            .select_from(AdminAction)
+            .where(AdminAction.actor_user_id == user_id)
+        )
+        or 0,
         "bookings": await db.scalar(
             select(func.count()).select_from(Booking).where(Booking.user_id == user_id)
         )
@@ -536,6 +555,10 @@ async def admin_delete_user(
     deletion.require_confirm(confirm, user.id, user.email)
     await _refuse_non_owner_on_owner(db, admin, member)
     await _refuse_self_and_last_owner(db, admin, member)
+    # Locked: a membership, booking, purchase or help request being inserted
+    # for this account waits on its row (KEY SHARE), so none can cross the
+    # sweeps below and be cascaded away.
+    await password_reset.lock_user(db, user.id)
     await _refuse_other_memberships(db, member)
     references = await _references(db, user.id)
     if any(references.values()):
@@ -587,6 +610,9 @@ async def admin_send_password_reset(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The account is disabled")
     now = clock.utcnow()
     raw = await password_reset.issue(db, user, now=now, created_by_admin_id=admin.id)
+    if raw is None:
+        # Suspended under the lock, by a concurrent request.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The account is disabled")
     email.enqueue_email(
         background_tasks,
         email_gateway,
@@ -977,10 +1003,13 @@ async def admin_delete_purchase(
     purchase still has a payable Checkout Session: it is expired at the
     provider first, and one that already completed keeps the row (409) so
     the webhook can still activate it."""
+    # Locked: a redemption drawing on this purchase waits on its row, so no
+    # debit can cross the guard below and be cascaded away.
     purchase = await db.scalar(
         select(UserPackagePurchase)
         .options(selectinload(UserPackagePurchase.package))
         .where(UserPackagePurchase.id == purchase_id, UserPackagePurchase.org_id == org_id)
+        .with_for_update(of=UserPackagePurchase)
     )
     if purchase is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")

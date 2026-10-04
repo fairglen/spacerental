@@ -8,7 +8,7 @@ import { adminApi } from '@/lib/api'
 // organisation must still go back to page one, or the operator would look at
 // a page that does not exist there.
 const org = vi.hoisted(() => ({ id: 'large-org' }))
-const nav = vi.hoisted(() => ({ params: new URLSearchParams('page=3'), replace: vi.fn() }))
+const nav = vi.hoisted(() => ({ params: new URLSearchParams('page=3&room_id=room-of-large-org'), replace: vi.fn() }))
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { accessToken: 'jwt' } }) }))
 vi.mock('@/contexts/OrgContext', () => ({ useOrg: () => ({ currentOrgId: org.id }) }))
 vi.mock('@/lib/hooks/useApi', () => ({ useApi: () => ({ orgId: org.id }) }))
@@ -34,7 +34,8 @@ describe('admin bookings organization changes', () => {
     vi.mocked(adminApi.getBookings).mockClear()
     org.id = 'small-org'
     rerender(view())
-    // The page is reset through the URL, which the harness echoes back.
+    // The page AND the old tenant's room filter are reset through the URL,
+    // which the harness echoes back (review on #65).
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/admin/bookings', { scroll: false }))
     nav.params = new URLSearchParams()
     rerender(view())

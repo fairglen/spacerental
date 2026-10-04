@@ -295,6 +295,10 @@ reports those hours with `reason: "beyond_window"` (and `"past"`, `"booked"`,
 calendar disables › once the next day/week lies past it, with the hint
 "Reservas abertas até <data>". Operators have no horizon: the admin calendar
 and `POST /admin/bookings` / `PUT /admin/bookings/{id}` work at any date.
+The operator's move and block forms show and take the room's space clock
+(`Space.timezone`, R01; `frontend/lib/spaceClock.ts`), not the browser's,
+and a new space starts on the organisation's timezone from `/admin/settings`
+with its own override.
 Compose hands the same value to the frontend as
 `NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS`; outside Compose set both.
 

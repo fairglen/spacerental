@@ -363,9 +363,15 @@ the proof they were here.
 Deleting a money-bearing or history-bearing row is never a plain DELETE.
 Every hard delete below, the membership removal and anonymisation take
 `confirm=<entity name or short id>` — the short id is the first 8 hex
-characters of the uuid — and answer 422 without it or with a mismatch. A
-refused delete is a 409 whose `detail` is `{ message, blockers }`. Each
-successful one writes one audit row with the whole entity in `before`.
+characters of the uuid, compared case-insensitively (the panel shows a
+support reference as `3F9A12BC`) — and answer 422 without it or with a
+mismatch. A refused delete is a 409 whose `detail` is `{ message, blockers
+}`. Each successful one writes one audit row with the whole entity in
+`before`. The guard and the delete run under the row's lock (the space's
+rooms, the room, the package, the purchase, the user): a booking, purchase,
+debit or membership being inserted meanwhile waits on that row instead of
+slipping past the count into the cascade. A room's or space's photo files
+are removed after the transaction committed, never before.
 
 | Entity | Everyday delete | Hard `DELETE` allowed when | Otherwise |
 |---|---|---|---|
@@ -373,7 +379,7 @@ successful one writes one audit row with the whole entity in `before`.
 | Room | `PUT is_active=false` (A07's future-bookings 409 stays) | zero bookings and zero blocks ever (cancelled and expired count) | 409, `blockers: { bookings, blocks }` |
 | Availability rule | — | always (`DELETE /admin/rooms/:id/availability/:rule_id`, no confirm: recreated in one click) | — |
 | Booking | cancel (`PUT status=cancelled`) | `expired`; or `cancelled` with `total_amount` 0 and no debit rows; or an operator's `manual` booking with `reason=` (422 without one) | 409 "cancel it instead" |
-| User | `POST /admin/users/:id/anonymise` (below) | nothing references the account: no booking, purchase or help request anywhere; not yourself; not the last owner; no membership in another organisation | 409 with the counts or the rule |
+| User | `POST /admin/users/:id/anonymise` (below) | nothing references the account: no booking, purchase or help request anywhere and no audit action authored by it (deleting an actor would turn their actions into "Sistema"); not yourself; not the last owner; no membership in another organisation | 409 with the counts or the rule |
 | Membership | — | `DELETE /admin/users/:id/membership`: not yourself, not the last owner | 409 |
 | Package | `PUT is_active=false` | zero purchases ever | 409, `blockers: { purchases }` |
 | Purchase | `PUT /admin/purchases/:id` `{ status: "cancelled", reason }` | `amount_paid` 0 and no debit rows | 409, `blockers: { amount_paid, debits }` |
@@ -563,7 +569,8 @@ Query (G04): `q` matches the customer's name or email (case-insensitive) or
 the booking's short id prefix; `payment_method`; `include_cancelled`
 (default true; false hides `cancelled` rows); `sort` = `start_time` |
 `-start_time` (default) | `created_at` | `-created_at`; plus `room_id`,
-`status`, `from`, `to`, `page`, `page_size` as before.
+`status`, `from`, `to` (timezone-aware instants; a naive value is 422, as
+on the audit and purchase filters), `page`, `page_size` as before.
 All bookings for org.
 Query: `?status=&room_id=&from=&to=`
 
@@ -670,6 +677,11 @@ Body: `{ name?, email? (409 when taken), disabled_at? }` → `{ user: OrgUser }`
 An instant in `disabled_at` suspends the account (signed out everywhere at
 once; login and reset requests refused); an explicit `null` reactivates.
 409 for your own account. Audited as `suspend` / `reactivate` / `update`.
+Changing the login email deletes the account's open password-reset links
+(a link already in the old mailbox must not reset the account after the
+address moved on), and the edit runs under the user's row lock so a
+suspension's `token_version` bump never overwrites a concurrent password
+change's. `name` may be set to null (a customer without a name).
 
 ### GET /admin/users
 Query (G04): `role` (owner|admin|member), `disabled` (true|false), `sort` =

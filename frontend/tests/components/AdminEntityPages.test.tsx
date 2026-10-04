@@ -6,6 +6,7 @@ import { AxiosError, AxiosHeaders } from 'axios'
 import { adminApi } from '@/lib/api'
 import { ToastProvider } from '@/components/ui/toast'
 import AdminRoomPage from '@/app/admin/rooms/[id]/page'
+import AdminSpacePage from '@/app/admin/spaces/[id]/page'
 import AdminRoomsListPage from '@/app/admin/rooms/page'
 import AdminBookingPage from '@/app/admin/bookings/[id]/page'
 import AdminUserPage from '@/app/admin/users/[id]/page'
@@ -32,7 +33,7 @@ vi.mock('next/navigation', () => ({
   useParams: () => nav.params,
 }))
 vi.mock('@/lib/api', () => ({
-  adminApi: {
+  adminApi: { updateSpace: vi.fn(),
     getRoom: vi.fn(), getSpace: vi.fn(), getSpaces: vi.fn(), updateRoom: vi.fn(), duplicateRoom: vi.fn(), setAvailability: vi.fn(),
     copyAvailabilityToAllDays: vi.fn(), createBlock: vi.fn(), deleteBlock: vi.fn(), deleteRoom: vi.fn(), getHistory: vi.fn(),
     getBooking: vi.fn(), updateBookingDetails: vi.fn(), markBookingPaid: vi.fn(), deleteBooking: vi.fn(),
@@ -399,5 +400,79 @@ describe('Definições', () => {
     expect(await within(second.container).findByText(/Só o proprietário/)).toBeInTheDocument()
     await waitFor(() => expect(within(second.container).getByLabelText('Nome')).toBeDisabled())
     expect(within(second.container).getByRole('button', { name: 'Guardar' })).toBeDisabled()
+  })
+})
+
+// Review on #65: blank clears a stored value; forms speak the space's clock.
+describe('Review on #65 — clearing fields and the space clock', () => {
+  it('a blank room description is sent as null, not omitted', async () => {
+    nav.params = { id: 'r-1' }
+    vi.mocked(adminApi.getRoom).mockResolvedValue({ room: { ...room, description: 'Antiga' }, space, rules: [], blocks: [], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    vi.mocked(adminApi.updateRoom).mockResolvedValue({ ...room, description: null })
+    const user = userEvent.setup()
+    renderPage(<AdminRoomPage />)
+    await screen.findByRole('heading', { level: 1, name: /Sala A/ })
+    await user.clear(screen.getByLabelText('Descrição'))
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(adminApi.updateRoom).toHaveBeenCalledWith('r-1', expect.objectContaining({ description: null }), expect.anything()))
+  })
+
+  it('a blank space description, address or city is sent as null', async () => {
+    nav.params = { id: 's-1' }
+    vi.mocked(adminApi.getSpace).mockResolvedValue({ space: { ...space, description: 'Velha', address: 'Rua', city: 'Lisboa', rooms: [] }, photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    vi.mocked(adminApi.updateSpace).mockResolvedValue(space)
+    const user = userEvent.setup()
+    renderPage(<AdminSpacePage />)
+    await screen.findByRole('heading', { level: 1, name: /Espaço Calmo/ })
+    await user.clear(screen.getByLabelText('Descrição'))
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(adminApi.updateSpace).toHaveBeenCalledWith('s-1', expect.objectContaining({ description: null, address: 'Rua', city: 'Lisboa' }), expect.anything()))
+  })
+
+  it('a customer without a name can still be saved; a blank name is null', async () => {
+    nav.params = { id: 'u-1' }
+    vi.mocked(adminApi.getUser).mockResolvedValue({ user: { ...orgUser, name: null }, bookings: [], purchases: [], balance: { hours_available: 0, hours_expiring_next: null }, support_requests: [] })
+    vi.mocked(adminApi.updateUser).mockResolvedValue({ ...orgUser, name: null, email: 'nova@x.pt' })
+    const user = userEvent.setup()
+    renderPage(<AdminUserPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await user.clear(screen.getByLabelText('Email'))
+    await user.type(screen.getByLabelText('Email'), 'nova@x.pt')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(adminApi.updateUser).toHaveBeenCalledWith('u-1', { name: null, email: 'nova@x.pt' }, expect.anything()))
+  })
+
+  it('the move form shows and sends the room\'s space clock, not the browser\'s', async () => {
+    nav.params = { id: booking.id }
+    const tokyo = { ...space, id: 's-jp', timezone: 'Asia/Tokyo' }
+    const roomJp = { ...room, id: 'r-jp', space_id: 's-jp', name: 'Sala Tóquio' }
+    vi.mocked(adminApi.getSpaces).mockResolvedValue([{ ...tokyo, rooms: [roomJp] }])
+    // 09:00Z is 18:00 in Tokyo.
+    vi.mocked(adminApi.getBooking).mockResolvedValue({ booking: { ...booking, room_id: 'r-jp', room: roomJp, start_time: '2030-03-04T09:00:00Z', end_time: '2030-03-04T11:00:00Z', stripe_checkout_session_id: null }, history: [] })
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({ booking, hours: undefined })
+    const user = userEvent.setup()
+    renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Alterar horário' }))
+    await waitFor(() => expect(screen.getByLabelText('Início')).toHaveValue('18:00'))
+    expect(screen.getByLabelText('Fim')).toHaveValue('20:00')
+    await user.clear(screen.getByLabelText('Fim'))
+    await user.type(screen.getByLabelText('Fim'), '21:00')
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(booking.id, { start_time: '2030-03-04T09:00:00.000Z', end_time: '2030-03-04T12:00:00.000Z' }, expect.anything()))
+  })
+
+  it('a block typed on the room page is the space\'s wall clock', async () => {
+    nav.params = { id: 'r-1' }
+    vi.mocked(adminApi.getRoom).mockResolvedValue({ room, space: { ...space, timezone: 'Asia/Tokyo' }, rules: [], blocks: [], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    vi.mocked(adminApi.createBlock).mockResolvedValue({ id: 'k', org_id: 'org-1', room_id: 'r-1', start_time: '2030-03-04T00:00:00Z', end_time: '2030-03-04T01:00:00Z', reason: 'Obras', created_by: null, created_at: '' })
+    const user = userEvent.setup()
+    renderPage(<AdminRoomPage />)
+    await screen.findByRole('heading', { level: 1, name: /Sala A/ })
+    await user.type(screen.getByLabelText('Início'), '2030-03-04T09:00')
+    await user.type(screen.getByLabelText('Fim'), '2030-03-04T10:00')
+    await user.type(screen.getByLabelText('Motivo'), 'Obras')
+    await user.click(screen.getByRole('button', { name: 'Bloquear' }))
+    await waitFor(() => expect(adminApi.createBlock).toHaveBeenCalledWith('r-1', { start_time: '2030-03-04T00:00:00.000Z', end_time: '2030-03-04T01:00:00.000Z', reason: 'Obras' }, expect.anything()))
   })
 })

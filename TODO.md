@@ -142,6 +142,20 @@ opened as [PR #65](https://github.com/fairglen/spacerental/pull/65)
 `feat/customer-credit-pack-upsell-notifications`), the last three on
 2026-10-01; each retargets to `main` as the one below it merges. The owner
 reviews and merges; the loop never does.
+Review rounds on #65 (Copilot, 2026-10-01 → fixed 2026-10-01/05, also
+cherry-picked onto #67): stale NextAuth sessions end on the first 401 in the
+signed-in areas and the dashboard layout checks the token server-side
+(public pages keep B14); only an owner may change, suspend, re-password,
+remove or anonymise an owner; the last-owner count runs under the
+organisation's row lock; the four guarded hard deletes and the user's
+sweeps hold their row lock so concurrent inserts cannot cross the guard;
+photo files go after the commit; an email change kills open reset links
+and user edits lock/refresh the row; an operator who authored audit rows
+cannot be hard-deleted (anonymise); `from`/`to` on the bookings list are
+aware instants; `confirm` is case-insensitive; the move/block forms speak
+the space clock; blank description/address/city/name clear (null); the
+cancel reason reaches the trail; an org switch clears the list filters;
+a new space defaults to the organisation's timezone.
 
 States used below:
 

@@ -36,20 +36,35 @@ async def invalidate_open(db: AsyncSession, user_id: uuid.UUID) -> None:
     )
 
 
-async def _lock_user(db: AsyncSession, user_id: uuid.UUID) -> None:
-    """Every path that changes a user's tokens or password takes the user's
-    row lock first (user → tokens), so two concurrent requests cannot both
-    delete the old token and both insert a replacement — one live link per
-    user — and issue/consume/set_password never wait on each other in a
-    cycle."""
-    await db.execute(select(User.id).where(User.id == user_id).with_for_update())
+async def lock_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
+    """Every path that changes a user's tokens, password, email or standing
+    takes the user's row lock first (user → tokens), so two concurrent
+    requests cannot both delete the old token and both insert a replacement
+    — one live link per user — and issue/consume/set_password never wait on
+    each other in a cycle. The whole row is re-read under the lock
+    (`populate_existing`), so a `User` the caller loaded before waiting
+    reflects what the other transaction did: a changed address, a
+    suspension, a bumped `token_version` (review on #65)."""
+    return await db.scalar(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+_lock_user = lock_user
 
 
 async def issue(
     db: AsyncSession, user: User, *, now: datetime, created_by_admin_id: uuid.UUID | None = None
-) -> str:
-    """A fresh raw token for `user`, its hash stored; the older unused ones are gone."""
+) -> str | None:
+    """A fresh raw token for `user`, its hash stored; the older unused ones
+    are gone. None when the account turns out to be suspended under the
+    lock — the link would go to someone who cannot use it."""
     await _lock_user(db, user.id)
+    if user.disabled_at is not None:
+        return None
     await invalidate_open(db, user.id)
     raw = secrets.token_urlsafe(32)
     db.add(
