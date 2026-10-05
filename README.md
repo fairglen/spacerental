@@ -186,6 +186,12 @@ inspect the diff before deciding whether a migration or metadata repair is neede
 - Admin booking pagination and PT/EN marketing/layout translation are present.
   Booking and admin copy remain Portuguese. Further pagination/i18n are deferred.
 
+**Rate limiting is per backend process.** The limiter (`backend/app/ratelimit.py`)
+keeps its sliding windows in memory, so its budgets are correct for one
+replica: with two or more backend processes each counts on its own and the
+effective limit multiplies. Move the counters to a shared store (Redis or the
+database) before scaling the API out; until then run one replica (Q55).
+
 ## Room and space photos
 
 Operators upload photos from the admin (rooms and spaces); customers see them in

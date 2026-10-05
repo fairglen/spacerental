@@ -382,6 +382,14 @@ The authoritative priorities and task acceptance criteria are in `roadmap.md`
 and `TODO.md`. Roadmap delivery resumed on 2026-09-10; C01 is active, with later outcome gates
 unchanged. Record and prioritize new discoveries in TODO.md before implementation.
 
+**Where history lives:** `TODO.md` holds the execution boundary, the delivery
+contract and the open/queued/blocked tasks only. Every task that is DONE or
+DEFERRED is moved, verbatim with its evidence, to
+`docs/backlog-archive/<yyyy-mm>.md` (one file per month of completion); the
+"Archived tasks (index)" section at the end of `TODO.md` lists every archived
+ID with a link. Look there for how something was built and proven before
+changing it, and move a task there yourself when it reaches DONE.
+
 - **Enrollment:** customer signup joins only the configured organization as a
   member. Explicit operator signup creates a new organization; existing users
   may explicitly enroll without changing previous memberships or roles.
