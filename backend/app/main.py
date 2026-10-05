@@ -2,9 +2,11 @@ import mimetypes
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 
+from app.cache_headers import CacheControlMiddleware
 from app.config import settings
 from app.media import LocalMediaStorage, get_media_storage
 from app.ratelimit import RateLimitMiddleware, limiter
@@ -45,9 +47,19 @@ app.add_middleware(
     limiter=limiter,
 )
 
+# P2.1: JSON above a kilobyte is gzipped for a client that accepts it — a
+# dashboard of a few dozen bookings is a fifth of its size on the wire;
+# anything smaller, a 204 or a photo (already WebP) is left alone.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 # Outside the rate limiter: a refused request still gets an id on its
 # response, and every audit row written during a request carries it (G01).
 app.add_middleware(RequestIdMiddleware)
+
+# P2.1: every response says what a cache may do with it (app/cache_headers.py);
+# before this nothing did, and a shared cache had to guess about JSON that
+# carries a customer's bookings.
+app.add_middleware(CacheControlMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

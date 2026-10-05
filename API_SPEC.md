@@ -13,6 +13,21 @@ JWT is HS256, signed with the backend `SECRET_KEY`, issued by `POST /auth/login`
 
 ---
 
+## Caching and compression (P2.1)
+
+A JSON body above 1 KiB is gzipped for a client that sends `Accept-Encoding:
+gzip` (`Vary: Accept-Encoding`); smaller bodies and photos are not. Every
+response carries `Cache-Control`, by class (`backend/app/cache_headers.py`):
+
+| Response | `Cache-Control` |
+|---|---|
+| `/media/**` (photo names are content-addressed) | `public, max-age=31536000, immutable` |
+| anonymous `GET /spaces`, `GET /spaces/:id`, `GET /packages` | `public, max-age=60, stale-while-revalidate=300` |
+| `GET /rooms/:id/availability` | `no-cache` (keep a copy, revalidate it) |
+| everything else — any request with `Authorization`, writes, errors, `/health` | `no-store` |
+
+---
+
 ## Request bounds
 
 Every request field is bounded, and input outside a bound is answered with

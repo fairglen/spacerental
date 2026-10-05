@@ -2274,7 +2274,28 @@ the revalidation hook after each mutation class.
 
 ### P2.1 — Compression and cache headers
 
-**Priority: P1. State: QUEUED (Part 2).** **Metric:** bytes on the wire for
+**Priority: P1. State: DONE 2026-10-05** on `perf/api-caching-and-payloads`.
+`GZipMiddleware(minimum_size=1024)` on the API; `app/cache_headers.py`, one
+middleware setting `Cache-Control` on every response that has none —
+`/media/**` immutable for a year (names are content-addressed), the
+anonymous catalog (`/spaces`, `/spaces/{id}`, `/packages`) `public,
+max-age=60, stale-while-revalidate=300`, availability `no-cache`, and
+`no-store` for anything with `Authorization`, any write, any error and
+`/health`; the Next app serves `/brand/**` immutable (`lib/cacheHeaders.js`,
+copied into the runner image). API_SPEC.md has the table. **Measured:**
+`GET /bookings/me` (50 rows) **117 KB → 4.3 KB on the wire**, the admin
+list (100 rows) 253 KB → 10 KB, availability 1.5 KB → 0.2 KB (`pytest -m
+perf`, `wire_bytes`); harness totals on the wire: dashboard 456 → 366 KB,
+admin calendar 664 → 552 KB, room page 1,265 → 1,040 KB. Tests:
+`test_cache_headers.py` (7: every class, a photo immutable and a missing one
+not, gzip above a kilobyte with `Vary`, plain below it and for a client that
+refuses it), Vitest `cacheHeaders.test.ts`, Playwright `cache-headers.spec.ts`
+(2); e2e 66/66. **DECISION:** availability is `no-cache` rather than the
+minute the catalog gets — it changes with every booking and a stale copy
+would only produce a 409 the customer did nothing to earn. **DECISION:**
+`/brand/**` is immutable as the owner asked although its names are not
+hashed: a changed brand asset must get a new name (the parity test is where
+that shows). **Metric:** bytes on the wire for
 `GET /bookings/me`, `GET /spaces/{id}` and `GET /admin/bookings` (P1.1); the
 repeat-view request count for media. **Target:** `GZipMiddleware(minimum_size=1024)`
 on the API (compressed responses for JSON above 1 KiB, small ones untouched);

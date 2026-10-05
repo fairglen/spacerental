@@ -52,6 +52,8 @@ async def test_my_bookings(client, big_org, sql_log, perf_results, db_session):
     metrics = {
         "rows": len(rows),
         "bytes": len(response.content),
+        # On the wire (P2.1: gzip when the client accepts it; httpx does by default).
+        "wire_bytes": response.num_bytes_downloaded,
         "bytes_per_row": len(response.content) // len(rows),
         "statements": len(sql_log),
         "writes": len(writes(sql_log)),
@@ -84,6 +86,8 @@ async def test_admin_bookings_list(
         "rows": len(rows),
         "total": body["total"],
         "bytes": len(response.content),
+        # On the wire (P2.1: gzip when the client accepts it; httpx does by default).
+        "wire_bytes": response.num_bytes_downloaded,
         "bytes_per_row": len(response.content) // len(rows),
         "statements": len(sql_log),
         "writes": len(writes(sql_log)),
@@ -114,6 +118,8 @@ async def test_availability(client, big_org, sql_log, perf_results):
     metrics = {
         "slots": len(slots),
         "bytes": len(response.content),
+        # On the wire (P2.1: gzip when the client accepts it; httpx does by default).
+        "wire_bytes": response.num_bytes_downloaded,
         "statements": len(sql_log),
         "writes": len(writes(sql_log)),
         "p50_ms": p50,
