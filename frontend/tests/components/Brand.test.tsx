@@ -18,7 +18,7 @@ describe('brand symbols and their uses', () => {
   it('the drawers ship only the sizes: BrandMark/BrandWordmark import brandBoxes, never the path module (the landing JS budget)', () => {
     for (const file of ['BrandMark.tsx', 'BrandWordmark.tsx']) {
       const source = readFileSync(join(ROOT, 'components', 'brand', file), 'utf8')
-      const imports = [...source.matchAll(/from '([^']+)'/g)].map((m) => m[1])
+      const imports = Array.from(source.matchAll(/from '([^']+)'/g), (m) => m[1])
       expect(imports, file).toContain('@/components/brand/brandBoxes.generated')
       expect(imports, file).not.toContain('@/components/brand/brandPaths.generated')
       expect(imports, file).not.toContain('@/components/brand/BrandSymbols') // its import graph carries the paths
