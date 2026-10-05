@@ -25,4 +25,5 @@ services:
     depends_on:
       test-db:
         condition: service_healthy
-    command: pytest -v
+    # One worker per CPU, each on its own database (tests/conftest.py, Q48).
+    command: pytest -n auto -v

@@ -1,0 +1,29 @@
+# Keeps the SHA-pinned actions and the two dependency trees current (Q45).
+# Every `uses:` in .github/workflows is pinned to a full commit, so the weekly
+# actions update is what moves them; npm and pip updates are grouped so one
+# PR a week carries the minor/patch bumps instead of one PR per package.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      pip-minor-and-patch:
+        update-types: ["minor", "patch"]

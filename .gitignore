@@ -34,6 +34,8 @@ htmlcov/
 # ── Test artifacts ─────────────────────────────────────────────
 playwright-report/
 test-results/
+blob-report/
+all-blob-reports/
 playwright/.cache/
 coverage/
 # Saved Playwright storageState (contains a live JWT) from global-setup.ts

@@ -1,17 +1,20 @@
-import { test, expect } from '@playwright/test'
-import { preferDayView, useDayView, waitOutPublicRateWindow } from './helpers/rooms'
+import type { Page } from '@playwright/test'
+import { test, expect, API_URL, SEEDED_ROOMS } from './fixtures'
+import { preferDayView, selectDayView } from './helpers/rooms'
 
-const API_URL = process.env.E2E_API_URL || 'http://localhost:8000/api/v1'
+/**
+ * The card whose title IS this room's name (the selected card's title also
+ * carries the "selected" badge), not a card whose name merely contains it.
+ */
+const roomCard = (page: Page, name: string) =>
+  page.getByTestId('room-card').filter({ has: page.getByRole('heading', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`) }) })
 
 // C11 on the seeded stack, which has exactly one public space: customers go
 // straight to rooms, and the location stays visible although the space layer
 // is hidden. Assertions are on behaviour (where links go, what opens), not on
-// marketing strings.
+// marketing strings. Read-only: the seeded rooms are addressed by name (other
+// specs add and remove rooms of their own while this runs).
 test.describe('single-space mode', () => {
-  // This file and week-view.spec.ts (which runs next) share the one window
-  // bought here; together they stay well under the budget.
-  test.beforeAll(waitOutPublicRateWindow)
-
   test.beforeEach(async ({ request }) => {
     const { spaces } = await (await request.get(`${API_URL}/spaces`)).json()
     test.skip(spaces.length !== 1, `single-space mode needs exactly one public space; this stack has ${spaces.length}`)
@@ -19,26 +22,36 @@ test.describe('single-space mode', () => {
 
   test('landing → room card → the calendar for that room is open', async ({ page, request }) => {
     const { spaces } = await (await request.get(`${API_URL}/spaces`)).json()
-    const { rooms } = await (await request.get(`${API_URL}/spaces/${spaces[0].id}`)).json()
-    const target = rooms[1] ?? rooms[0]
+    const { rooms } = (await (await request.get(`${API_URL}/spaces/${spaces[0].id}`)).json()) as { rooms: { id: string; name: string }[] }
 
     await page.goto('/')
-    const card = page.getByTestId('room-card').filter({ hasText: target.name })
-    await expect(card).toBeVisible({ timeout: 15000 })
-    // No "choose a space" step anywhere in the section.
-    await expect(page.locator('#salas a[href="/spaces"]')).toHaveCount(0)
+    // The landing previews the space's first rooms and, past that, links to
+    // the full rooms view. Other specs add and deactivate rooms of their own
+    // while this runs, so "the first card" could stand for a room that is
+    // gone by the time it is clicked. The seeded rooms are never deactivated
+    // and, created first, are what the preview shows: take one of those.
+    const seededHeading = page.getByRole('heading', { name: new RegExp(`^(${SEEDED_ROOMS.join('|')})(\\s|$)`) })
+    const card = page.getByTestId('room-card').filter({ has: seededHeading }).first()
+    await expect(card, 'a seeded room is previewed on the landing').toBeVisible({ timeout: 15000 })
+    const cardName = (await card.getByRole('heading').first().textContent())!.trim()
+    const target = rooms.find((r) => cardName.startsWith(r.name))
+    expect(target, `landing card "${cardName}" is one of the space's rooms`).toBeTruthy()
+    // No "choose a space" step anywhere in the section: no space-detail CTA
+    // and no link to the space itself (the "all rooms" link to /spaces is the
+    // rooms view in this mode, not a chooser).
+    await expect(page.locator('#salas').getByRole('button', { name: /Ver Salas e Reservar/i })).toHaveCount(0)
     await expect(page.locator(`#salas a[href="/spaces/${spaces[0].id}"]`)).toHaveCount(0)
 
     await card.getByRole('link').click()
-    await expect(page).toHaveURL(new RegExp(`/spaces/${spaces[0].id}\\?room=${target.id}$`))
+    await expect(page).toHaveURL(new RegExp(`/spaces/${spaces[0].id}\\?room=${target!.id}$`))
 
-    const heading = page.getByRole('heading', { name: `Disponibilidade — ${target.name}` })
+    const heading = page.getByRole('heading', { name: `Disponibilidade — ${target!.name}` })
     await expect(heading).toBeVisible({ timeout: 15000 })
     await expect(heading).toBeInViewport()
     await expect(page.locator('.rbc-calendar')).toBeVisible()
     // That room, and only that room, is marked as the one being booked.
     await expect(page.getByRole('button', { name: /Reservar Esta Sala/i, pressed: true })).toHaveCount(1)
-    await expect(page.getByTestId('room-card').filter({ hasText: target.name }).getByRole('button', { pressed: true })).toBeVisible()
+    await expect(roomCard(page, target!.name).getByRole('button', { pressed: true })).toBeVisible()
 
     // The back button returns to the landing page rather than looping.
     await page.goBack()
@@ -136,9 +149,10 @@ test.describe('single-space mode', () => {
     const page = await context.newPage()
     try {
       await page.goto('/spaces')
-      await page.getByRole('button', { name: /Reservar Esta Sala/i }).first().click()
+      // A seeded room, by its exact name: temporary rooms of other specs come and go.
+      await roomCard(page, 'Sala Calma').getByRole('button', { name: /Reservar Esta Sala/i }).click()
       await expect(page.locator('.rbc-calendar')).toBeVisible({ timeout: 15000 })
-      await useDayView(page)
+      await selectDayView(page)
       // Tomorrow: a whole day of slots, none of them already past.
       await page.getByRole('button', { name: '›' }).click()
       const rows = page.locator('.rbc-time-content .rbc-day-slot .rbc-timeslot-group')
