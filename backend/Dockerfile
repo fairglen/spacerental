@@ -14,7 +14,8 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 # The media volume (docker-compose.yml) takes this directory's ownership when
 # it is first created, so photo uploads work without root. A volume created by
-# an earlier, root-running image must be recreated once (`docker compose down -v`).
+# an earlier, root-running image is fixed once, in place, keeping the database:
+#   docker compose run --rm --user root backend chown -R app:app /var/lib/spacerental/media
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir -p /var/lib/spacerental/media && chown app:app /var/lib/spacerental/media
 COPY --from=builder /install /usr/local

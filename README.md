@@ -217,7 +217,12 @@ the backend at startup rather than quietly writing to local disk.
   with `SEED_PHOTOS_DIR`. Re-seeding replaces the seed's own photos (and the
   gradients an older seed generated) and leaves an operator's uploads alone.
 - Removing the volume (`docker compose down -v`) removes the photos with the
-  database, which keeps the two consistent.
+  database, which keeps the two consistent — it is for a disposable stack, not
+  a migration.
+- The backend image runs as a non-root user (Q53). A `media` volume created by
+  an earlier, root-running image makes uploads fail with `EACCES`; fix it once,
+  in place, without touching the database:
+  `docker compose run --rm --user root backend chown -R app:app /var/lib/spacerental/media`
 
 ## Third-party integrations (stub/live)
 
