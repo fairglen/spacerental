@@ -2064,6 +2064,171 @@ report-only policy, and the directives tightened in response. **Acceptance:**
 the policy enforces with zero violations on the full e2e run and a manual
 pass over the admin and dashboard pages. Not part of this assignment.
 
+## Performance (P-series, P1.1–P2.4) — owner assignment 2026-10-05
+
+Goal: make the app measurably faster, with every claim backed by a number
+from the harness in P1.1 taken before and after. Two stacked branches, two
+PRs, published by the loop and never merged by it: **Part 1**
+`perf/frontend-first-paint` (P1.1–P1.5), branched from the top of the open
+chain (#71's `refactor/admin-routers-headers-docker`, `b57f30c`) and
+targeting it, retargeting to `main` as the chain merges; **Part 2**
+`perf/api-caching-and-payloads` (P2.1–P2.4), branched from Part 1's head.
+Owner's baseline on `main` (DevTools, local stack): landing FCP ~560 ms with
+a 3-deep API waterfall whose last call lands at ~1.0 s, `/spaces/{id}`
+requested twice, ~770 KB of JavaScript; the week view issues 7 availability
+requests and the admin calendar 6; `GET /bookings/me` is 80 KB for 34 rows
+and issues an UPDATE; the API sends no compression; photos carry an ETag but
+no `Cache-Control`. Binding: everything in the Q-series header (tenant
+scoping, wrapped responses, Decimal money, formal register, `lib/api.ts`,
+Alembic, never on main, every change ships with tests, never weaken a test
+or a rate limit), plus: **orjson is the only new runtime dependency**
+(`@next/bundle-analyzer` is a dev dependency of the harness); no new
+endpoint without its `lib/api.ts` wrapper and shape test; decisions the
+owner did not give are taken the conservative way and tagged `DECISION:`.
+**DECISION:** the chain is still open, so Part 1 branches from #71's head
+rather than `main`; the PR body says so and the retarget order is
+#69 → #70 → #71 → Part 1 → Part 2.
+
+### P1.1 — Measurement harness (Playwright `perf`, pytest `perf`, bundle sizes)
+
+**Priority: P1. State: QUEUED.** **Metric:** the harness itself — it must
+exist before any optimisation so every later number has a "before".
+**Target:** (a) Playwright project `perf` (`frontend/tests/perf/vitals.spec.ts`,
+run with `--project perf` against the e2e stack, never part of the default
+run) reporting per page — `/`, `/spaces`, `/spaces/{id}`, `/dashboard`,
+`/admin/calendar` — TTFB, FCP, LCP, DOMContentLoaded, requests by type, JS
+and total bytes on the wire (encoded), the API waterfall (every call with
+its start offset and duration, depth, time of the last call), and writing
+`frontend/perf-results/<page>.json` plus one markdown table; budgets read
+from `frontend/perf-budget.json` when present (P2.4 fills it). (b) pytest
+marker `perf` (`backend/tests/perf/`, excluded from the default run by
+`-m "not perf"`) with a 10 000-booking fixture (one org, a few rooms, many
+customers, bulk-inserted), a per-request SQL statement counter (engine
+event) and `EXPLAIN (FORMAT JSON)` assertions on the key queries
+(`/bookings/me`, admin bookings list, availability). (c)
+`@next/bundle-analyzer` behind `ANALYZE=1 npm run build`. (d)
+`npm run perf:sizes` printing gzipped First Load JS per route from the build
+manifests (what the owner's "~770 KB" is compared against) and writing
+`frontend/perf-results/sizes.json`. **Acceptance:** runs on a laptop
+against `docker-compose.e2e.yml` with no credentials; the baseline for every
+later task is in the PR body, taken on `b57f30c`'s production build.
+
+### P1.2 — Landing page data on the server
+
+**Priority: P1. State: QUEUED.** **Metric:** landing LCP (desktop, local
+stack, cold cache, median of 5 from P1.1) and the client API waterfall on
+`/`. **Target:** LCP ≤ 2.5 s; **zero** client-side API calls before first
+paint for what the page shows (the space, its rooms, the packages) and
+`/spaces/{id}` requested **once** — the data is fetched on the server through
+`INTERNAL_API_URL` with `fetch(..., { next: { revalidate: 60 } })` and handed
+to React Query through `HydrationBoundary`, so `Pricing`/`SpaceCards` keep
+their hooks and tests; one composite read (`GET /spaces/{id}?include=packages`
+or `GET /spaces/{id}/landing`, wrapped, with its `lib/api.ts` wrapper and shape
+test) replaces the three-deep chain; `<link rel="preconnect">` to the API
+origin for what the browser still fetches. **Acceptance:** P1.1 before/after
+in the PR; the landing Vitest and e2e specs unchanged or extended, never
+weakened.
+
+### P1.3 — Bundle diet
+
+**Priority: P1. State: QUEUED.** **Metric:** JavaScript bytes on the wire
+for `/` (gzipped, from P1.1 and `perf:sizes`). **Target:** ≤ 300 KB gzipped
+on `/`; `react-big-calendar` (and its CSS) loaded with `next/dynamic` only
+where a calendar renders; `framer-motion` replaced by CSS transitions and
+removed from `package.json`; `date-fns` imported per submodule everywhere;
+`'use client'` audit — landing sections that only render copy become server
+components, with the interactive leaves (locale switcher, the hero's CTA
+state) as the client islands. **Acceptance:** `perf:sizes` before/after per
+route in the PR; the landing component tests still pass.
+
+### P1.4 — Fewer requests on the calendar pages
+
+**Priority: P1. State: QUEUED.** **Metric:** API requests per page view
+(P1.1) on `/spaces/{id}` week view and `/admin/calendar`. **Target:** week
+view 7 → **1** availability request through
+`GET /rooms/{id}/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` (inclusive, at
+most 14 days, 400 beyond; the single-`date` form stays); admin calendar
+6 → **≤ 2** through one composite endpoint for the day's bookings, blocks and
+rooms; `OrgContext` derived from the session when it already carries the
+organisation (no `/auth/memberships` round trip on every page); React Query
+`placeholderData: keepPreviousData` on navigation between days/weeks and
+`refetchOnWindowFocus: false` for the queries where a focus refetch is pure
+cost. **Acceptance:** integration tests for the range endpoint (happy path,
+14-day cap, tenant isolation) and the composite; the calendar component and
+e2e specs pass unchanged; P1.1 before/after request counts in the PR.
+
+### P1.5 — Photos and the static site
+
+**Priority: P2. State: QUEUED.** **Metric:** image bytes transferred on
+`/spaces/{id}` and the landing; Lighthouse performance score of
+`flowspace-site/`. **Target:** room and space photos rendered with
+`srcset`/`sizes` matched to the layout and `loading="lazy"` below the fold
+(the mosaic's first tile eager); `flowspace-site` self-hosts Inter (no
+Google Fonts round trip, `font-display: swap`), with Lighthouse before/after
+recorded in `.pr-evidence/p1/`. **Acceptance:** the photo component tests
+assert the attributes; the static site's existing checks pass.
+
+### P2.1 — Compression and cache headers
+
+**Priority: P1. State: QUEUED (Part 2).** **Metric:** bytes on the wire for
+`GET /bookings/me`, `GET /spaces/{id}` and `GET /admin/bookings` (P1.1); the
+repeat-view request count for media. **Target:** `GZipMiddleware(minimum_size=1024)`
+on the API (compressed responses for JSON above 1 KiB, small ones untouched);
+`Cache-Control` by class — `no-store` for authenticated JSON, `public,
+max-age=60, stale-while-revalidate=300` for the public catalog
+(`/spaces`, `/spaces/{id}`, availability), `public, max-age=31536000,
+immutable` for `/media/**` (names are content-addressed) and for the
+frontend's `/brand/**`; the security headers are unchanged. **Acceptance:**
+integration tests per class (a `Content-Encoding: gzip` response, an
+uncompressed small one, each `Cache-Control` value), and the e2e suite green.
+
+### P2.2 — Leaner payloads, the sweep off the read path
+
+**Priority: P1. State: QUEUED (Part 2).** **Metric:** bytes per row in
+`GET /bookings/me` (owner's baseline ≈ 2.4 KB/row: 80 KB for 34 rows);
+statements issued by that GET (P1.1 counter). **Target:** ≤ **600 B/row**
+uncompressed, with `RoomSummary` (`id`, `space_id`, `name`, `hourly_rate`,
+`photo`) in booking lists instead of the full `RoomOut`, the other list
+endpoints trimmed the same way (detail endpoints keep the full shapes);
+`expire_user_holds` leaves `GET /bookings/me` for a 60 s asyncio task started
+by the FastAPI lifespan (single-replica like the limiter; documented), so the
+GET issues **zero** writes — `expire_stale_holds` on booking creation stays,
+it is correctness. **Acceptance:** the perf fixture asserts the row size and
+the statement count; dashboard Vitest/e2e specs pass with the summary shape;
+`lib/api.ts` and `types/` updated with the shape test.
+
+### P2.3 — Server configuration: ORJSON, workers, pool, index, lean JWT lookup
+
+**Priority: P1. State: QUEUED (Part 2).** **Metric:** p50 of
+`GET /bookings/me` and `GET /admin/bookings` with 10 000 rows (P1.1 fixture,
+timed in-process); `EXPLAIN` on the admin list; statements per authenticated
+request. **Target:** `ORJSONResponse` as the default response class (orjson,
+the one new runtime dependency; Decimal and UUID encoded as today — asserted);
+the production image's CMD runs
+`uvicorn --workers ${WEB_CONCURRENCY:-2} --proxy-headers --timeout-keep-alive 15`
+(Compose dev keeps `--reload`); `pool_pre_ping=True` and the pool arithmetic
+documented in `database.py` and `.env.example`
+(`workers × (pool_size + max_overflow)` under Postgres `max_connections`);
+`ix_bookings_org_id_start_time` in `__table_args__` with its Alembic
+migration and an `EXPLAIN` test proving the admin list uses it;
+`get_current_user` loads only the columns the request needs (no relationship
+loads). **Acceptance:** migrations workflow green; the perf tests assert the
+plan and the statement count; the OpenAPI snapshot unchanged.
+
+### P2.4 — Performance in CI, budgets, README
+
+**Priority: P2. State: QUEUED (Part 2).** **Metric:** the budgets
+themselves. **Target:** `frontend/perf-budget.json` — landing LCP ≤ 2.5 s,
+landing JS ≤ 300 KB gzipped, requests per page (`/` ≤ 12, `/spaces/{id}`
+week view ≤ 10, `/admin/calendar` ≤ 8), `/bookings/me` ≤ 600 B/row,
+statements per request for the three key reads — asserted by the P1.1
+harness; CI jobs `perf-web` (the Playwright `perf` project against the e2e
+stack, after the e2e job) and `perf-api` (`pytest -m perf`), informational
+first (not in `required-checks`) and promoted once they are stable; a
+"Performance" section in README.md with how to measure locally.
+**Acceptance:** both jobs green on the PR; the budgets equal the numbers
+measured, not aspirations.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are
