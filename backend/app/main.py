@@ -1,7 +1,8 @@
 import mimetypes
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from app.config import settings
@@ -21,7 +22,7 @@ from app.routers import (
     test_hooks,
     webhooks,
 )
-from app.security_headers import SecurityHeadersMiddleware
+from app.security_headers import SECURITY_HEADERS, SecurityHeadersMiddleware
 
 # The app does not create or migrate the schema. `alembic upgrade head` runs in
 # backend/docker-entrypoint.sh before uvicorn starts, so the schema exists by
@@ -59,9 +60,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Outermost (Q52): every response — JSON, /media files, the stub Checkout
-# page, a 429, a preflight — carries the same static security headers.
+# Outermost of the user middleware (Q52): every response — JSON, /media
+# files, the stub Checkout page, a 429, a preflight — carries the same static
+# security headers. Starlette's own ServerErrorMiddleware still sits outside
+# it and writes the 500 for an unhandled exception, so that one response is
+# built here instead, with the headers and without internals.
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+@app.exception_handler(Exception)
+async def _unhandled(_request: Request, _exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        {"detail": "Internal Server Error"}, status_code=500, headers=SECURITY_HEADERS
+    )
+
 
 API_PREFIX = "/api/v1"
 

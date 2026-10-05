@@ -64,6 +64,30 @@ class TestEveryResponseCarriesTheHeaders:
         assert resp.headers["content-type"].startswith("image/webp")
         _assert_headers(resp)
 
+    async def test_an_unhandled_error(self, client):
+        """Starlette writes the 500 outside the middleware stack; the app's
+        own handler answers it with the headers and no internals."""
+        from app.database import get_db
+        from app.main import app
+        from httpx import ASGITransport, AsyncClient
+
+        async def broken_db():
+            raise RuntimeError("connection to 10.0.0.5 failed password=hunter2")
+            yield  # pragma: no cover
+
+        previous = app.dependency_overrides[get_db]
+        app.dependency_overrides[get_db] = broken_db
+        try:
+            transport = ASGITransport(app=app, raise_app_exceptions=False)
+            async with AsyncClient(transport=transport, base_url="http://test") as soft:
+                resp = await soft.get(f"{API}/spaces")
+        finally:
+            app.dependency_overrides[get_db] = previous
+        assert resp.status_code == 500
+        _assert_headers(resp)
+        for internal in ("hunter2", "10.0.0.5", "RuntimeError"):
+            assert internal not in resp.text
+
     @pytest.mark.parametrize("name", list(SECURITY_HEADERS))
     def test_the_set_is_the_documented_one(self, name):
         assert name in {

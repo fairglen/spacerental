@@ -2,12 +2,20 @@
 // policy is report-only: nothing is blocked, but everything a stricter policy
 // WOULD block lands here as one log line, so the policy can be tightened from
 // evidence (TODO.md Q56) — the e2e run's frontend logs are the first report.
-import { reportsIn, summarize } from '@/lib/cspReport'
+// Public and unauthenticated by nature, so bounded on every axis (review on
+// #71): content type, body size, reports per request, field length, rate.
+import { ReportRateLimiter, acceptsContentType, clientOf, readBounded, reportsIn, summarize } from '@/lib/cspReport'
+
+const limiter = new ReportRateLimiter()
 
 export async function POST(request: Request): Promise<Response> {
+  if (!acceptsContentType(request.headers.get('content-type'))) return new Response(null, { status: 415 })
+  if (!limiter.allow(clientOf(request))) return new Response(null, { status: 429 })
+  const text = await readBounded(request)
+  if (text === null) return new Response(null, { status: 413 })
   let body: unknown = null
   try {
-    body = await request.json()
+    body = JSON.parse(text)
   } catch {
     // Not JSON: nothing to record, but never an error back to a browser.
   }
