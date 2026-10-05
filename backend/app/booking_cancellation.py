@@ -64,9 +64,7 @@ async def apply_cancellation(
     # The money share comes back as hours in the bank (K01), in the same
     # transaction, never as a refund (O02 superseded).
     try:
-        credit = await cancellation_credit.create_credit(
-            db, booking, previous=previous, now=now
-        )
+        credit = await cancellation_credit.create_credit(db, booking, previous=previous, now=now)
     except cancellation_credit.CreditTooLargeError as exc:
         # Only an operator's price override can get here; the request fails
         # whole (the status change above rolls back with it).
