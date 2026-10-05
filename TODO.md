@@ -2420,6 +2420,19 @@ measured, not aspirations.
 Use these when the user is ready to start a delivery assignment. They are
 instructions to copy later, not a request to execute them during backlog editing.
 
+**DECISION (loop, P2.4, CI follow-up):** the web harness measures with
+`prefers-reduced-motion: reduce` emulated. Chromium stops reporting LCP at
+the first compositor-driven scroll, and the `?room=` pages scroll themselves
+smoothly to the calendar on mount; on the shared runner that scroll landed
+before the first paint's LCP entry was presented, so `space-day` had no LCP
+in any CI run (and `space-week`'s equalled its FCP). Under reduced motion the
+scroll is instant and programmatic, which LCP survives; the budgets and
+everything on the wire are unchanged, and the room pages' LCP now includes
+their photo (~250 ms locally). Residual, a product call: field LCP for
+`?room=` deep links is cut short the same way by the smooth auto-scroll.
+Alternative: scroll instantly on load. Reverse: drop `reducedMotion` from
+`measureOnce`.
+
 ### Existing-PR assignment
 
 > Read repository guidance, roadmap.md and TODO.md. Deliver the assigned Gate 0

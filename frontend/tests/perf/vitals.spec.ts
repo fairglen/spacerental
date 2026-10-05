@@ -73,6 +73,14 @@ async function measureOnce(browser: Browser, spec: PageSpec, url: string): Promi
   const context = await browser.newContext({
     viewport: spec.viewport ?? DESKTOP,
     storageState: spec.auth ? ADMIN_STORAGE_STATE : undefined,
+    // Chromium stops reporting LCP at the first compositor-driven scroll, and
+    // the `?room=` pages scroll themselves (smoothly) to the calendar on
+    // mount. On a slow runner that scroll lands before the first paint's LCP
+    // entry is presented and the page then has no LCP at all (CI: space-day
+    // null in every run, space-week == FCP). Under reduced motion the page
+    // scrolls instantly — a programmatic scroll, which LCP survives — so the
+    // metric is observable everywhere; nothing on the wire changes.
+    reducedMotion: 'reduce',
   })
   const page = await context.newPage()
   const cdp = await context.newCDPSession(page)
