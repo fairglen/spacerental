@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SpacePage from '@/app/spaces/[id]/page'
 import { spacesApi } from '@/lib/api'
@@ -20,8 +20,12 @@ vi.mock('@/components/booking/BookingCalendar', () => ({
   BookingCalendar: (props: CalendarProps) => { lastCalendar = props; return <div data-testid="calendar" data-room={props.room.id} data-initial={props.initialDate?.toISOString() ?? ''} data-reopen={props.reopen ? `${props.reopen.start.toISOString()}/${props.reopen.end.toISOString()}` : ''} /> },
 }))
 vi.mock('@/components/booking/BookingModal', () => ({
-  BookingModal: ({ room, start, end }: { room: { id: string } | null; start: Date | null; end: Date | null }) =>
-    room && start && end ? <div data-testid="modal" data-room={room.id} data-start={start.toISOString()} data-end={end.toISOString()} /> : null,
+  BookingModal: ({ room, start, end, awaitingPurchase, onClose }: { room: { id: string } | null; start: Date | null; end: Date | null; awaitingPurchase?: boolean; onClose: () => void }) =>
+    room && start && end ? (
+      <div data-testid="modal" data-room={room.id} data-start={start.toISOString()} data-end={end.toISOString()} data-awaiting={String(awaitingPurchase ?? false)}>
+        <button onClick={onClose}>fechar</button>
+      </div>
+    ) : null,
 }))
 vi.mock('@/lib/api', () => ({ spacesApi: { get: vi.fn() } }))
 
@@ -108,7 +112,24 @@ describe('space page ?room=&start=&end=&pagamento= after a pack purchase (K02)',
     const modal = await screen.findByTestId('modal')
     expect(modal).toHaveAttribute('data-room', 'r-b')
     expect(modal).toHaveAttribute('data-start', start)
+    // Nothing was bought: the modal has no pack to wait for.
+    expect(modal).toHaveAttribute('data-awaiting', 'false')
     await waitFor(() => expect(screen.getByTestId('calendar')).toHaveAttribute('data-reopen', ''))
+  })
+
+  it('after a successful purchase the reopened modal is told to wait for the pack, until it is closed (review on #69)', async () => {
+    search = `room=r-b&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&pagamento=sucesso`
+    renderPage()
+    await screen.findByRole('heading', { name: /Disponibilidade — Sala Brisa/ })
+    const { act } = await import('@testing-library/react')
+    act(() => { lastCalendar!.onSlotSelect(new Date(start), new Date(end)); lastCalendar!.onReopenDone?.() })
+    expect(await screen.findByTestId('modal')).toHaveAttribute('data-awaiting', 'true')
+
+    // Closed and reopened on another slot by hand: the wait is over.
+    fireEvent.click(screen.getByRole('button', { name: 'fechar' }))
+    await waitFor(() => expect(screen.queryByTestId('modal')).toBeNull())
+    act(() => { lastCalendar!.onSlotSelect(new Date('2030-08-13T09:00:00Z'), new Date('2030-08-13T10:00:00Z')) })
+    expect(await screen.findByTestId('modal')).toHaveAttribute('data-awaiting', 'false')
   })
 
   it.each([

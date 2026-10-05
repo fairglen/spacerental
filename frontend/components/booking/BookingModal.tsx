@@ -10,6 +10,7 @@ import { bookingsApi, recurrencesApi, packagesApi, createAuthenticatedApi } from
 import { formatCurrency, formatHours } from '@/lib/utils'
 import { paymentOptions, planPayment } from '@/lib/paymentSplit'
 import { slotReturnPath } from '@/lib/bookingDeepLink'
+import { PACK_SETTLE_POLL_MS, PACK_SETTLE_WAIT_MS } from '@/lib/packSettle'
 import { statusOf, conflictsOf, bookingErrorMessage } from '@/lib/httpError'
 import { signInHref } from '@/lib/navigation'
 import { expandWeeklyOccurrences } from '@/lib/recurrence'
@@ -27,6 +28,13 @@ interface BookingModalProps {
   start: Date | null
   end: Date | null
   onClose: () => void
+  /**
+   * K02: the customer is back from buying a pack for this slot (`pagamento=
+   * sucesso`). The purchase may still be `pending` — Stripe activates it from
+   * its webhook, which can land after the customer does — so the modal waits
+   * for the bank to show it before the booking can be confirmed.
+   */
+  awaitingPurchase?: boolean
 }
 
 type PaymentMethod = 'hourly' | 'package' | 'mixed'
@@ -35,7 +43,7 @@ type PaymentMethod = 'hourly' | 'package' | 'mixed'
 // means `package` or `mixed` follows from what the pack can cover.
 type PaymentChoice = 'pack' | 'hourly' | 'buy'
 
-export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
+export function BookingModal({ room, start, end, onClose, awaitingPurchase = false }: BookingModalProps) {
   const { data: session, status } = useSession()
   const pathname = usePathname()
   const queryClient = useQueryClient()
@@ -53,10 +61,18 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
     () => (repeatWeekly && start ? expandWeeklyOccurrences(start, untilDate) : []),
     [repeatWeekly, start, untilDate],
   )
-  const { data: purchases = [], isSuccess: purchasesLoaded } = useQuery({
+  // While a just-bought pack is awaited (K02) the bank is polled until it
+  // holds spendable hours or the wait runs out; "Verificar de novo" re-arms it.
+  const [settleTimedOut, setSettleTimedOut] = useState(false)
+  const [settleRound, setSettleRound] = useState(0)
+  const { data: purchases = [], isSuccess: purchasesLoaded, isError: purchasesFailed } = useQuery({
     queryKey: ['packages', 'me'],
     queryFn: () => packagesApi.listMine(createAuthenticatedApi(session?.accessToken)),
     enabled: status === 'authenticated',
+    refetchInterval: (query) => {
+      if (!awaitingPurchase || settleTimedOut || !room) return false
+      return planPayment(query.state.data ?? [], room.org_id, duration).kind === 'none' ? PACK_SETTLE_POLL_MS : false
+    },
   })
 
   // What the pack can do for this block (C13): pay for all of it, for part of
@@ -64,6 +80,23 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   // `lib/paymentSplit.ts`.
   const plan = room && !repeatWeekly ? planPayment(purchases, room.org_id, duration) : ({ kind: 'none' } as const)
   const canPayWithPackage = plan.kind === 'full'
+  // Until the awaited pack shows up, confirming would charge the block by the
+  // hour on top of the pack just paid for: the choice is withheld and the
+  // customer told the payment is being confirmed. Past the bound (or if the
+  // bank cannot be read) they are told that instead and get the choice back.
+  const packSettled = plan.kind !== 'none'
+  const waitingForPack = awaitingPurchase && !packSettled && !settleTimedOut && !purchasesFailed
+  const packUnconfirmed = awaitingPurchase && !packSettled && (settleTimedOut || purchasesFailed)
+  useEffect(() => {
+    if (!awaitingPurchase || packSettled) return
+    setSettleTimedOut(false)
+    const timer = setTimeout(() => setSettleTimedOut(true), PACK_SETTLE_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [awaitingPurchase, packSettled, settleRound])
+  const checkBankAgain = () => {
+    setSettleRound((round) => round + 1)
+    queryClient.invalidateQueries({ queryKey: ['packages', 'me'] })
+  }
   // K02: the choices on offer, in order; "buy" only while the bank falls short.
   const options = room && !repeatWeekly ? paymentOptions(plan, purchases.length > 0) : []
   const buying = options.includes('buy') && choice === 'buy'
@@ -354,7 +387,21 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
             )}
           </div>
           )}
-          {options.length > 1 && (
+          {waitingForPack && (
+            <p role="status" data-testid="pack-settling" className="text-sm text-muted-foreground">
+              A confirmar o pagamento do seu pack… As horas aparecem aqui assim que o pagamento for registado.
+            </p>
+          )}
+          {packUnconfirmed && (
+            <div role="alert" data-testid="pack-unconfirmed" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
+              <p>
+                Ainda não recebemos a confirmação do pagamento do seu pack. Pode verificar de novo daqui a instantes
+                ou pagar esta reserva agora — as horas do pack ficam na sua conta para a próxima.
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={checkBankAgain}>Verificar de novo</Button>
+            </div>
+          )}
+          {!waitingForPack && options.length > 1 && (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium text-foreground mb-1">Pagamento</legend>
               {options.map((option) => option === 'pack' ? (
@@ -481,7 +528,8 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
             onClick={() => mutation.mutate()}
             // While a pack purchase is in flight the booking must not be confirmed
             // too: the customer would leave with a pending purchase AND a hold.
-            disabled={mutation.isPending || purchase.isPending || isUnauthenticated || !canSubmit || buying}
+            // Nor while the bank is still being polled for the pack just bought.
+            disabled={mutation.isPending || purchase.isPending || isUnauthenticated || !canSubmit || buying || waitingForPack}
           >
             {mutation.isPending ? 'A confirmar...' : repeatWeekly ? 'Confirmar Série' : 'Confirmar Reserva'}
           </Button>

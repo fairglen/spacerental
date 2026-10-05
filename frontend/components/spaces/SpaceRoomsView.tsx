@@ -47,6 +47,11 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
   const searchParams = useSearchParams()
   const [reopen, setReopen] = useState<{ start: Date; end: Date } | null>(null)
   const [paymentNotice, setPaymentNotice] = useState<PaymentOutcome | null>(null)
+  // A paid-for pack the bank may not show yet (review on #69): the modal
+  // waits for it before the slot can be confirmed. Cleared when the modal
+  // closes; a slot opened meanwhile waits too, which is right — the pack was
+  // bought for it.
+  const [awaitingPurchase, setAwaitingPurchase] = useState(false)
   const requestedRoomId = searchParams.get('room')
   // Keyed on the query string, not the params object: one pass per URL. The
   // router rides in a ref so the effect does not depend on its identity.
@@ -59,6 +64,7 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
     const slot = parseSlotParams(params.get('start'), params.get('end'))
     if (!outcome && !slot) return
     if (outcome) setPaymentNotice(outcome)
+    if (outcome === 'sucesso' && slot) setAwaitingPurchase(true)
     if (slot) {
       setReopen((current) =>
         current && current.start.getTime() === slot.start.getTime() && current.end.getTime() === slot.end.getTime() ? current : slot,
@@ -175,7 +181,8 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
         room={selectedRoom}
         start={bookingStart}
         end={bookingEnd}
-        onClose={() => { setSelectedRoom(null); setBookingStart(null); setBookingEnd(null) }}
+        awaitingPurchase={awaitingPurchase}
+        onClose={() => { setSelectedRoom(null); setBookingStart(null); setBookingEnd(null); setAwaitingPurchase(false) }}
       />
     </>
   )

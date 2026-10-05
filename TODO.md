@@ -5088,6 +5088,19 @@ block).
 **DECISION (loop, K02):** `?start=&end=` must be whole hours, in order, at
 most a day apart; anything else is ignored like a bad `?room=` is (no
 error on a page that works without it).
+**DECISION (loop, K02, review on #69):** back with `pagamento=sucesso` the
+purchase may still be `pending` (Stripe activates it from its webhook, which
+can land after the customer does). The slot is reopened at once but the modal
+holds it in a processing state — "A confirmar o pagamento do seu pack…", no
+payment choice, confirm disabled — polling `/packages/me` every 2 s for up
+to 20 s (`lib/packSettle.ts`); the pack is preselected the moment it shows.
+Past the bound the modal says the pack is not confirmed yet, offers
+"Verificar de novo" and hands the choice back (paying by the hour is then
+an informed decision; the pack stays in the account). Alternative, as the
+reviewer put it: do not reopen the slot until the purchase is active —
+same guarantee, but the customer stares at the calendar instead of at the
+slot they came back for. The stub activates before redirecting, so the wait
+is covered by component tests, not e2e. Reverse: drop `awaitingPurchase`.
 
 ### K03 — Support request notifications, both directions
 
