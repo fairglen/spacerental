@@ -1902,7 +1902,18 @@ the owner's click.
 
 ### Q50 — Admin routers by entity, with an OpenAPI snapshot
 
-**Priority: P1. State: QUEUED (Part 2).** `backend/app/routers/admin.py`
+**Priority: P1. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`
+(Part 2 PR): `backend/app/routers/admin/` with `_common.py`, `dashboard.py`,
+`spaces.py`, `rooms.py`, `blocks.py`, `bookings.py`, `users.py`,
+`purchases.py`, `packages.py`, `organization.py`, `audit.py`, `support.py`,
+assembled by `__init__.py` under one `/admin` prefix; `admin.py` (1,782
+lines), `admin_users.py` (1,053), `admin_audit.py`, `room_blocks.py` and the
+admin half of `support.py` are gone. `tests/test_openapi_stable.py` pins the
+95 (method, path, operation id) rows against a committed snapshot taken
+before the move; the full OpenAPI schema (tags included) is byte-identical
+before and after (`.pr-evidence/p2/openapi-diff.txt`). Backend suite
+866 passed. DECISION: `blocks.py` is mounted from the package root, not
+inside `rooms.router` — a nested include would prepend the rooms tag. `backend/app/routers/admin.py`
 (1,743 lines) and `admin_users.py` (1,053) become the package
 `backend/app/routers/admin/`: `_common.py` (require_admin/owner, locked
 loaders, `_room_in_org`, error helpers), `dashboard.py`, `spaces.py`,
@@ -1917,7 +1928,8 @@ test, the full backend suite.
 
 ### Q51 — Frontend decomposition
 
-**Priority: P2. State: QUEUED (Part 2).** `BookingModal.tsx` → shell +
+**Priority: P2. State: QUEUED (Part 2)** — see the Part 2 PR body for what
+landed; anything not landed stays here as the next slice. `BookingModal.tsx` → shell +
 `PaymentPlan.tsx` (breakdown) + `PackUpsell.tsx` + `useBookingPlan.ts`; the
 admin `rooms/[id]` and `users/[id]` pages → section components under
 `components/admin/<entity>/`. **Acceptance:** no visual change; the existing
@@ -1927,7 +1939,16 @@ body.
 
 ### Q52 — Security headers (Next and API), CSP report-only
 
-**Priority: P1. State: QUEUED (Part 2).** **Scope:** `headers()` in
+**Priority: P1. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`:
+`frontend/lib/securityHeaders.js` (used by `next.config.js`), `/api/csp-report`
+(logs every violation, both report formats), `backend/app/security_headers.py`
+(outermost middleware; the media mount's own `nosniff` is now its). Tests at
+each level (backend integration, Vitest, Playwright `security-headers.spec`).
+**Observed report:** the full e2e run (62 tests, production build) under the
+report-only policy logged **zero** real violations (`.pr-evidence/p2/csp-report.txt`
+— only the spec's own synthetic report). The policy still carries
+`'unsafe-inline'` for scripts and styles (Next.js hydration) and `'unsafe-eval'`
+outside production; Q56 owns the flip. **Scope:** `headers()` in
 `next.config.js` for all routes — `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`
 for `/admin` and `/dashboard` plus `frame-ancestors 'none'`,
@@ -1944,7 +1965,12 @@ body.
 
 ### Q53 — Hardened container images (closes most of S26)
 
-**Priority: P2. State: QUEUED (Part 2).** **Scope:** both Dockerfiles pin
+**Priority: P2. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`:
+both Dockerfiles pinned by digest, multi-stage, non-root (`app`), with a
+`HEALTHCHECK`; `.dockerignore` for both; `Dockerfile.test` and the Compose
+Postgres images pinned. The e2e stack ran healthy as uid 999 (backend) and
+uid 100 (frontend) with the whole suite green. One-time step on an existing
+dev stack: recreate the root-owned media volume (`docker compose down -v`). **Scope:** both Dockerfiles pin
 their base image to a digest (tag in a comment), create and switch to a
 non-root user, declare a `HEALTHCHECK`, drop build tooling from the runtime
 stage (multi-stage), and get a `.dockerignore`; the frontend gets a
@@ -1956,7 +1982,17 @@ in the PR body.
 
 ### Q54 — Backlog hygiene: archive DONE/DEFERRED tasks
 
-**Priority: P2. State: QUEUED (Part 2).** **Scope:** every DONE/DEFERRED task
+**Priority: P2. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`:
+83 blocks moved verbatim to `docs/backlog-archive/2026-09.md` and
+`2026-10.md` (plus Gate 0, the Deferred-scope and Legacy-IDs tables, the
+boundary's assignment history and the W/H/V intros); the index at the end
+of this file links every one (88 links checked). TODO.md went from 5,631 to
+2,075 lines. **Residual:** the 1,200-line target is not met — what remains
+is open work (S-series ≈ 390 lines, C03/C04/R01 ≈ 420, K01–K03/B50 ≈ 265
+until #69 merges, this Q-series ≈ 350) and this task does not shorten open
+acceptance text. Levers: archive K01–K03/B50 when #69 lands; the owner's
+triage of the S-series TODO items; splitting C03/R01's done slices out as
+their own archived tasks (a judgement call left to the owner). **Scope:** every DONE/DEFERRED task
 block moves out of TODO.md into `docs/backlog-archive/<yyyy-mm>.md` (one
 file per month of completion, verbatim, with its evidence); TODO.md keeps
 the contract, the execution boundary, open/queued/blocked tasks and a
@@ -1967,7 +2003,12 @@ TODO.md`; a link check over the index.
 
 ### Q55 — Small fixes found during the audit
 
-**Priority: P2. State: QUEUED (Part 2).** `CORS allow_methods=["*"]` → the
+**Priority: P2. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`:
+CORS `allow_methods` is the explicit list (asserted on a preflight); the
+limiter is documented as single-replica in `config.py` and README; of the
+eleven `eslint-disable` lines found (the assignment estimated eight), one was
+dead and is removed, the other ten still fire (probed one by one) and stay;
+every `test.skip` is linked (Q43). `CORS allow_methods=["*"]` → the
 explicit list the frontend uses; the in-process rate limiter documented as
 single-replica only in README and `config.py`; the `eslint-disable` lines no
 longer needed (8 today) removed; every `test.skip` left from Q43 has a
