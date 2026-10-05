@@ -5300,7 +5300,26 @@ leave with a pending purchase and a hold at once.
 
 ### Q41 — Isolated, parallel Playwright specs
 
-**Priority: P1. State: QUEUED (Part 1).** **Scope:**
+**Priority: P1. State: IN PROGRESS** — implemented on
+`ci/fast-e2e-and-workflow-hygiene` (Part 1 PR, below). **Evidence:**
+`frontend/tests/e2e/fixtures.ts` (`createCustomer`, `loginAs`, `createRoom`
+/ `removeRoom`, `createBooking` + `payStubCheckout`, `adminBooking`,
+`buyPack`, `grantHours`, `createBlock`, `freshDay` + `at`, `seededRoom`,
+`contextAs`, and a `test` extended with `api`/`admin`/`room`/`customer`); all
+21 spec files moved onto it — every booking spec on a room of its own, every
+customer a fresh one, the seeded rooms read-only and by name; the wholesale
+side effects (cancelling other users' bookings, deleting all blocks,
+deactivating a seeded room, editing a seeded package) and the ten 60-second
+pacing sleeps are gone. `fullyParallel`, 4 workers in CI, 1 retry in CI,
+10 s expect / 60 s test timeouts, blob + github reporters in CI. Local, 4
+workers, against the e2e stack: the whole suite in **~30 s** (59 tests; the
+serial dev-server baseline was **10.7 min**); see the Part 1 PR body for the
+three timed runs. Two assertions changed shape, not meaning: single-space's
+"no choose-a-space step" now asserts the multi-space CTA is absent (the
+landing's "all rooms" link to `/spaces` is the rooms view in this mode and
+appears legitimately past six rooms), and photos' carousel test runs on the
+rooms view, which lists every room, instead of the landing's six-room
+preview. **Scope (as assigned):**
 `frontend/tests/e2e/fixtures.ts` with API-level helpers that give each test
 its own data — `createCustomer()` (register + enrol, unique email),
 `loginAs(user)` → storageState, `createBooking(...)`, `buyPack(...)` through
@@ -5320,7 +5339,14 @@ ordering. **Validation:** the three runs' wall times in the PR body;
 
 ### Q42 — e2e stack: production build and e2e-only rate limits
 
-**Priority: P1. State: QUEUED (Part 1).** **Scope:** `docker-compose.e2e.yml`
+**Priority: P1. State: IN PROGRESS** — implemented on
+`ci/fast-e2e-and-workflow-hygiene`. **Evidence:** `docker-compose.e2e.yml`
+(overlay: `frontend/Dockerfile` target `runner` — multi-stage, `npm ci`,
+non-root, `HEALTHCHECK`, `NEXT_PUBLIC_*` as build args; backend without
+`--reload`; `RECURRING_BOOKINGS_ENABLED=true`; the four rate-limit tiers at
+100 000 — labelled "e2e stack only" in the file and in README); the dev
+Compose file only gains `target: dev`. README documents the commands.
+`tests/test_ratelimit.py` untouched. **Scope (as assigned):** `docker-compose.e2e.yml`
 (an overlay on `docker-compose.yml`, used by CI and documented for the native
 path) in which the frontend runs a PRODUCTION build (`next build` + `next
 start`), the backend runs without `--reload`, and
@@ -5337,7 +5363,16 @@ unchanged and green.
 
 ### Q43 — Review the three `test.skip` occurrences
 
-**Priority: P2. State: QUEUED (Part 1).** `booking.spec.ts:536` (no open hour
+**Priority: P2. State: IN PROGRESS** — reviewed on
+`ci/fast-e2e-and-workflow-hygiene`; all three stay, each for a reason the
+fixtures cannot remove: (1) `booking.spec.ts` "24h window" — on a Sunday
+before 08:00 UTC no open hour starts within the next 24 h in any room (the
+rooms open 08–22), so there is nothing to book inside the window; (2)
+`photos.spec.ts` carousel test and (3) `single-space.spec.ts` (every test)
+— they describe single-space mode and skip when the stack has more than one
+public space; the seeded stack has one, so they run in CI, and the guard is
+what keeps them honest on a multi-space stack. No unexplained skip remains.
+`booking.spec.ts:536` (no open hour
 within 24 h on a Sunday before 08:00 UTC), `photos.spec.ts:12` and
 `single-space.spec.ts:17` (both: the stack must have exactly one public
 space). **Acceptance:** each is either re-enabled (because Q41's fixtures
@@ -5347,7 +5382,13 @@ output matches this record.
 
 ### Q44 — The e2e job itself under 6 minutes
 
-**Priority: P1. State: QUEUED (Part 1).** Baseline (GitHub runners, last
+**Priority: P1. State: IN PROGRESS** — implemented on
+`ci/fast-e2e-and-workflow-hygiene` (`.github/workflows/e2e.yml`, called by
+`checks.yml`): two shards × 4 workers, `docker buildx bake` with the Actions
+layer cache (`type=gha`, one scope per image), Chromium cached on the
+Playwright version, 60 s caps on the backend and frontend waits, seed via
+`compose exec`, blob reports merged by `merge-reports`, logs/traces on
+failure. The measured job times are in the Part 1 PR body. Baseline (GitHub runners, last
 green runs of #65/#67, 2026-10-05): job wall **14m13s–16m44s**; the `Run E2E`
 step alone 14m32s; `docker compose up --build` 1m02s; Playwright install 51 s.
 **Scope:** the e2e stack of Q42; Docker layer cache for both images
@@ -5366,7 +5407,14 @@ before/after table in the PR body (three CI runs).
 
 ### Q45 — Workflow hygiene: permissions, concurrency, timeouts, pins, Dependabot
 
-**Priority: P1. State: QUEUED (Part 1). Closes S24.** **Scope:** every
+**Priority: P1. State: IN PROGRESS** — implemented on
+`ci/fast-e2e-and-workflow-hygiene`: every workflow has `permissions:
+contents: read` at the top (Pages deploy keeps `pages`/`id-token` on its
+job; CodeQL `security-events: write` on its job), `concurrency` per
+workflow and ref with cancel-in-progress on PRs, `timeout-minutes` on
+every job, every `uses:` pinned to a full SHA with the version in a comment,
+`.github/dependabot.yml` (actions / npm / pip weekly, grouped). actionlint
+1.7.12 passes. **Closes S24 when merged.** **Scope:** every
 workflow declares `permissions: contents: read` at the top and grants more
 only in the job that needs it (deploy: `pages: write`, `id-token: write`;
 docs-sync: nothing more — it only reads); `concurrency: { group:
@@ -5381,7 +5429,11 @@ the action) output in the PR body.
 
 ### Q46 — Security scanning workflow
 
-**Priority: P2. State: QUEUED (Part 1).** **Scope:**
+**Priority: P2. State: IN PROGRESS** — `.github/workflows/security.yml` on
+`ci/fast-e2e-and-workflow-hygiene`: CodeQL (python, javascript-typescript)
+on push to main and weekly (Monday 05:23 UTC); `pip-audit` and `npm audit
+--audit-level=high` on PRs with `continue-on-error` until **2026-10-19**
+(the date is in the file; flip = delete two lines). **Scope:**
 `.github/workflows/security.yml`: CodeQL (`python`,
 `javascript-typescript`) on push to `main` and weekly; `pip-audit -r
 backend/requirements.txt` and `npm audit --audit-level=high` on pull
@@ -5393,7 +5445,13 @@ recorded here.
 
 ### Q47 — Lint job: formatting, ESLint and the type check
 
-**Priority: P2. State: QUEUED (Part 1).** **Scope:** the lint workflow adds
+**Priority: P2. State: IN PROGRESS** — `lint.yml` on
+`ci/fast-e2e-and-workflow-hygiene` runs `ruff check` + `ruff format
+--check` and, for the frontend, `npx eslint .` (new
+`frontend/.eslintrc.json`: `next/core-web-vitals`) + `npx tsc --noEmit`
+(moved from frontend-tests). Findings fixed: two unescaped quotes in the
+admin calendar legend, the e2e helper `useDayView` renamed `selectDayView`
+(the hooks rule read it as a hook); `ruff format` touched two files. **Scope:** the lint workflow adds
 `ruff format --check backend`, `npx eslint .` for the frontend (what `next
 build` lints, made explicit and fast) and `npx tsc --noEmit`, which moves
 here from frontend-tests so a type error fails in the cheapest job; the
@@ -5405,7 +5463,13 @@ workflow run.
 
 ### Q48 — Backend tests in parallel (`pytest-xdist`, one database per worker)
 
-**Priority: P1. State: QUEUED (Part 1).** Baseline: the CI `Run tests` step
+**Priority: P1. State: IN PROGRESS** — on `ci/fast-e2e-and-workflow-hygiene`:
+`pytest-xdist==3.6.1`, `conftest.py` derives `spacerental_test_<worker>`
+from `PYTEST_XDIST_WORKER` before importing the app and a session fixture
+creates/drops it (WITH FORCE) from the maintenance connection;
+`docker-compose.test.yml` and `backend-tests.yml` run `-n auto`. Local:
+**862 passed in 1:33** (`-n auto`, Docker test stack) vs **7:10** serial on
+the same machine. Baseline: the CI `Run tests` step
 takes **11m26s** (848–858 tests). **Scope:** `pytest-xdist` in
 `requirements-dev.txt`, `pytest -n auto`; `tests/conftest.py` gives each
 worker its own database `spacerental_test_<worker id>`, created and dropped
@@ -5416,7 +5480,15 @@ to make it pass. **Validation:** before/after times in the PR body.
 
 ### Q49 — One required check, CODEOWNERS and the README note (closes C08's note)
 
-**Priority: P1. State: QUEUED (Part 1).** **Scope:** `checks.yml` with one
+**Priority: P1. State: IN PROGRESS** — `.github/workflows/checks.yml` on
+`ci/fast-e2e-and-workflow-hygiene`: a `changes` job classifies the diff
+against the base (no third-party action), the area workflows are called as
+reusable workflows only where their paths changed, and `required-checks`
+passes when every one succeeded or was skipped. README "CI" says to require
+that one status. `.github/CODEOWNERS` names the owner for `.github/**`,
+`backend/app/auth*`, `backend/app/payments.py`, `backend/alembic/**`.
+DECISION: reusable workflows rather than a `workflow_run` aggregator — a
+path-filtered workflow that never runs produces no run to aggregate. **Scope:** `checks.yml` with one
 `required-checks` job that depends on every other workflow's result (via
 `workflow_run` or a reusable-workflow call) and passes when each is
 success OR skipped by its path filter — the single check to require in
