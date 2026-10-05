@@ -186,6 +186,12 @@ inspect the diff before deciding whether a migration or metadata repair is neede
 - Admin booking pagination and PT/EN marketing/layout translation are present.
   Booking and admin copy remain Portuguese. Further pagination/i18n are deferred.
 
+**Rate limiting is per backend process.** The limiter (`backend/app/ratelimit.py`)
+keeps its sliding windows in memory, so its budgets are correct for one
+replica: with two or more backend processes each counts on its own and the
+effective limit multiplies. Move the counters to a shared store (Redis or the
+database) before scaling the API out; until then run one replica (Q55).
+
 ## Room and space photos
 
 Operators upload photos from the admin (rooms and spaces); customers see them in
@@ -211,7 +217,12 @@ the backend at startup rather than quietly writing to local disk.
   with `SEED_PHOTOS_DIR`. Re-seeding replaces the seed's own photos (and the
   gradients an older seed generated) and leaves an operator's uploads alone.
 - Removing the volume (`docker compose down -v`) removes the photos with the
-  database, which keeps the two consistent.
+  database, which keeps the two consistent — it is for a disposable stack, not
+  a migration.
+- The backend image runs as a non-root user (Q53). A `media` volume created by
+  an earlier, root-running image makes uploads fail with `EACCES`; fix it once,
+  in place, without touching the database:
+  `docker compose run --rm --user root backend chown -R app:app /var/lib/spacerental/media`
 
 ## Third-party integrations (stub/live)
 
@@ -351,16 +362,24 @@ Run the isolated backend test stack via Docker (recommended):
 ```bash
 docker-compose -f docker-compose.test.yml up --abort-on-container-exit --build
 ```
-This spins up a throwaway Postgres and runs the full pytest suite against it.
+This spins up a throwaway Postgres and runs the full pytest suite against it,
+in parallel: `pytest -n auto` (pytest-xdist) starts one worker per CPU and
+`tests/conftest.py` gives each worker its own database
+(`spacerental_test_gw0`, `gw1`, …), created before its first test and dropped
+after its last, so the workers never truncate each other's tables. The
+PostgreSQL user must be allowed to `CREATE DATABASE` (the Compose and CI users
+own their cluster). A plain `pytest` run stays serial on the configured
+database.
 
 Or run locally (requires Postgres on `localhost:5432` with a `spacerental_test` DB):
 ```bash
 cd backend
 pip install -r requirements-dev.txt
-TEST_DATABASE_URL=postgresql+asyncpg://spacerental:spacerental@localhost:5432/spacerental_test pytest
+TEST_DATABASE_URL=postgresql+asyncpg://spacerental:spacerental@localhost:5432/spacerental_test pytest -n auto
 ```
 
-Backend tests run automatically on every push and PR via `.github/workflows/backend-tests.yml`.
+Backend tests run on every PR that touches `backend/**` via `checks.yml` →
+`.github/workflows/backend-tests.yml` (see "CI" below).
 
 ### Frontend unit tests (Vitest + Testing Library)
 ```bash
@@ -377,31 +396,107 @@ Covers `lib/api.ts` response-shape extraction, utility helpers, and key componen
 > with `docker compose up -d --build -V frontend`: its `node_modules` live in
 > an anonymous volume that a plain `--build` keeps, so the browser would still
 > be testing the old dependencies.
-Requires the full app stack running locally (`docker-compose up`) plus seeded data (`docker-compose exec backend python -m app.seed`).
+The suite runs against the **e2e stack** — the dev Compose file plus the
+`docker-compose.e2e.yml` overlay — not the dev server:
 ```bash
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T backend python -m app.seed
 cd frontend
 npx playwright install --with-deps chromium
-npm run test:e2e
+RECURRING_BOOKINGS_ENABLED=true npm run test:e2e
 ```
-The E2E suite exercises auth (sign-up, sign-in, password reset, protected routes), space browsing, and the admin dashboard. Set `E2E_BASE_URL` if your stack runs on a non-default URL, and `E2E_API_URL` (default `http://localhost:8000/api/v1`) when the backend does too — the specs call the API directly for setup and read the stub mailbox at `<API root>/__test__/emails`.
+The overlay is **for the test stack only**: the frontend is the production
+build (`frontend/Dockerfile` target `runner`, `next start`, so pages are not
+compiled on first visit mid-test), the backend runs without `--reload`, the
+weekly-series flag is on (as in CI; the Playwright process needs
+`RECURRING_BOOKINGS_ENABLED=true` too, which is why it is on the command), and
+the rate limits are raised to values a parallel suite cannot reach. The
+product defaults (10 auth requests and 120 public reads a minute, 5 help
+requests an hour) are unchanged in `app/config.py`, `docker-compose.yml` and
+`.env.example`, and `backend/tests/test_ratelimit.py` still proves them;
+against the plain dev stack the parallel suite would be throttled on the
+second worker.
 
-The suite assumes the seeded stack: **exactly one public space**, which is what
-puts the app in single-space mode (`single-space.spec.ts` skips itself
-otherwise). Every browser shares one backend rate-limit budget (120 public reads
-a minute), so a few spec files deliberately wait out a 60-second window at their
-boundary; the full run takes several minutes and those pauses are not hangs.
-The help form is throttled at 5 requests an hour per client and the suite sends
-four, so restart the backend (`docker compose restart backend`) before running
-it a second time within an hour, or the fifth request answers 429. Each request
-sends two emails (K03): one to `SUPPORT_INBOX_EMAIL` (default
+Every test owns its data (`tests/e2e/fixtures.ts`): a room of its own in the
+seeded space (the seeded rooms are read-only for the suite), a fresh customer,
+and a day shifted per worker, so files and tests run `fullyParallel` and the
+whole suite takes about a minute locally. Set `E2E_BASE_URL` if your stack
+runs on a non-default URL, and `E2E_API_URL` (default
+`http://localhost:8000/api/v1`) when the backend does too — the specs call
+the API directly for setup and read the stub mailbox at
+`<API root>/__test__/emails`. The suite still assumes **exactly one public
+space** (single-space mode; `single-space.spec.ts` and one `photos.spec.ts`
+test skip themselves otherwise, TODO.md Q43). Each help request sends two
+emails (K03): one to `SUPPORT_INBOX_EMAIL` (default
 `geral+support@flowspace.pt`, Reply-To the requester, with a link to the
 request in the admin inbox) and a copy to the requester (Reply-To the inbox);
 `help.spec.ts` reads both from the stub mailbox.
-CI runs this suite with `RECURRING_BOOKINGS_ENABLED=true` (the weekly-series
-spec only runs its full body then), so before opening a PR run it that way too:
-start the stack with that variable set and pass it to `npm run test:e2e`.
 On a laptop, keep it awake for the run (`caffeinate -i npm run test:e2e` on
 macOS): a machine that sleeps mid-run produces timeouts that look like failures.
+
+### Indexing policy (S2.1)
+
+The app is not meant to be found — flowspace.pt (`flowspace-site/`) is. Every
+route renders `<meta name="robots" content="noindex, follow">` (root
+metadata, `lib/seo.ts`); the landing adds `<link rel="canonical"
+href="https://flowspace.pt/">`; the private surface (`/dashboard`, `/admin`,
+`/sign-in`, `/reset-password/**`) says `noindex, nofollow` and also answers
+with an `X-Robots-Tag` header (`lib/robotsHeaders.js`, applied by
+`next.config.js`), which covers the redirects those routes give a crawler.
+`/robots.txt` allows crawling (a `Disallow: /` would hide the noindex and
+kill link previews) and names no sitemap. The Open Graph card stays, so a
+shared app link still unfurls. `tests/e2e/seo-policy.spec.ts` pins all of it.
+
+## Performance harness
+
+Three measurements, all local, none needing credentials (TODO.md P1.1). Every
+performance claim in the P-series is a before/after taken with these.
+```bash
+# Browser: per page TTFB, FCP, LCP, requests by type, bytes on the wire and the
+# API waterfall, median of 3 cold loads (PERF_RUNS). Needs the e2e stack above
+# (production build); writes frontend/perf-results/<page>.json and summary.md.
+cd frontend && npm run perf:web
+# Bundles: gzipped first-load JavaScript per route from the manifests of a build.
+npm run build && npm run perf:sizes          # frontend/perf-results/sizes.json
+npm run analyze                              # @next/bundle-analyzer treemaps in .next/analyze/
+# API: the three key reads on a 10 000-booking organisation — bytes per row,
+# statements per request (and how many write), the planner's choice, in-process
+# latency. Deselected from the default run; writes backend/perf-results/api.json.
+docker compose -f docker-compose.test.yml run --rm backend-tests pytest -m perf
+```
+The Playwright project is `perf` (`playwright.perf.config.ts`), separate from
+the e2e suite so neither runs the other; it honours `E2E_BASE_URL` and
+`E2E_API_URL` like the e2e specs.
+
+**Budgets** (P2.4) are the numbers measured, with a little headroom, never
+aspirations: `frontend/perf-budget.json` (per page: LCP, JavaScript before
+`load`, requests, API calls — asserted by `perf:web`) and `BUDGET` in
+`backend/tests/perf/test_read_paths.py` (bytes per row, statements and
+writes per request). When a change moves a number for a good reason, change
+the budget in the same PR and say why. CI runs both as the `perf-web` and
+`perf-api` jobs (`.github/workflows/perf.yml`, called by `checks.yml`);
+they are informational — not part of `required-checks` — until they have
+been stable for a while, and each uploads its measurements as an artifact
+(`perf-web`, `perf-api`). The before/after of every performance task is in
+TODO.md's P-series.
+
+**What the API does for caches** (P2.1): responses above 1 KiB are gzipped
+for a client that accepts it; every response carries a `Cache-Control` by
+class — photos immutable for a year, the anonymous catalog shareable for a
+minute, availability `no-cache`, everything authenticated `no-store` —
+see the table in API_SPEC.md.
+
+**Hold sweeper** (P2.2): a task started with the API flips lapsed unpaid
+holds to `expired` every `HOLD_SWEEP_INTERVAL_SECONDS` (default 60, 0 off),
+so the dashboard and balance reads write nothing. Single-replica by design,
+like the rate limiter.
+
+**Production server** (P2.3): the backend image's command is
+`uvicorn --workers ${WEB_CONCURRENCY:-1} --proxy-headers --timeout-keep-alive 15`
+with `ORJSONResponse` rendering the JSON and `pool_pre_ping` on the engine.
+`WEB_CONCURRENCY` defaults to 1 on purpose: the rate limiter and the hold
+sweeper live in each process, so more workers multiply the limits — see
+`.env.example` for the pool arithmetic before raising it.
 
 ### Pre-commit hooks
 The repo ships with a `.pre-commit-config.yaml` that runs trailing-whitespace fixes, YAML linting, ruff on `backend/`, and frontend `tsc --noEmit` on every commit. Backend pytest and frontend Vitest run on push.
@@ -413,7 +508,31 @@ pre-commit install -t pre-push  # installs the pre-push hook
 ```
 
 ### CI
-GitHub Actions (`.github/workflows/frontend-tests.yml` and `e2e.yml`) run unit tests on every frontend change and full E2E tests against a Dockerized stack on every PR. Failing E2E runs upload the Playwright HTML report as a build artifact.
+
+One workflow, `checks.yml`, runs on every pull request and on pushes to
+`main`. Its `changes` job classifies the diff and calls the real workflows as
+reusable workflows only where their area changed: `lint.yml` (Ruff check +
+format, ESLint, `tsc`), `backend-tests.yml` (`pytest -n auto`),
+`migrations.yml` (upgrade → check → downgrade → upgrade on an empty
+PostgreSQL), `frontend-tests.yml` (Vitest + `next build`), `e2e.yml` (two
+shards of the Playwright suite, 4 workers each, against the e2e stack built
+with `docker buildx bake` and the Actions layer cache; `merge-reports` joins
+the shards into one HTML report, uploaded on every run, with stack logs and
+traces on a failure) and `docs-sync.yml` (AGENTS.md = CLAUDE.md). It ends in
+**`required-checks`**, which passes when every area either succeeded or was
+skipped because its paths did not change — so a docs-only PR is never blocked
+by a status that will not be reported.
+
+**Branch protection:** require the single status check `required-checks`
+(Settings → Branches → the `main` rule → "Require status checks to pass" →
+add `required-checks`). Nothing else needs to be required; the per-area
+checks are its inputs. `security.yml` (CodeQL on `main` and weekly;
+`pip-audit` and `npm audit --audit-level=high` on PRs, reporting until
+2026-10-19) and the Pages deploy run on their own and are not required.
+Every `uses:` is pinned to a commit SHA, with the version in a trailing
+comment; `.github/dependabot.yml` keeps the pins and both dependency trees
+current weekly. `.github/CODEOWNERS` asks the owner to review workflow,
+auth, payment and migration changes.
 
 ### Experimental weekly series
 

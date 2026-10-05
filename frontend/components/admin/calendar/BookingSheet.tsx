@@ -74,7 +74,6 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
   // the status line that action just set.
   useEffect(() => {
     setMode('view'); setReason(''); setStatus(null); setError(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booking.id])
   useEffect(() => {
     setNote(booking.admin_note ?? '')

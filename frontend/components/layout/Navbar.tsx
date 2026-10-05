@@ -1,16 +1,10 @@
 'use client'
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { SpaceModeText } from '@/components/spaces/SpaceModeText'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { LogOut, User, Menu, X, LifeBuoy } from 'lucide-react'
 import { BrandLogo } from '@/components/layout/BrandLogo'
 import { useHelp } from '@/components/help/HelpProvider'
@@ -18,34 +12,15 @@ import { useOrg } from '@/contexts/OrgContext'
 import { useT } from '@/lib/i18n'
 import { LocaleSwitcher } from '@/components/layout/LocaleSwitcher'
 
-function OrgSwitcher({ className }: { className?: string }) {
-  const t = useT()
-  const { memberships, currentOrgId, setCurrentOrgId } = useOrg()
-  // A customer with one membership has nothing to switch between (B33b).
-  if (memberships.length < 2) return null
-
-  return (
-    <div className={className}>
-      <Select value={currentOrgId ?? undefined} onValueChange={setCurrentOrgId}>
-        <SelectTrigger aria-label={t('navbar.org_selector_label')} className="h-9 min-w-[12rem]">
-          <SelectValue placeholder={t('navbar.org_selector_placeholder')} />
-        </SelectTrigger>
-        <SelectContent>
-          {memberships.map((m) => (
-            <SelectItem key={m.org_id} value={m.org_id}>
-              {m.org_name || 'Organização'}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
+// Loaded only for a member of several organisations (P1.3): the select
+// primitive it needs is 16 KB gzipped no public page should carry.
+const OrgSwitcher = dynamic(() => import('@/components/layout/OrgSwitcher').then((m) => m.OrgSwitcher), { ssr: false })
 
 export function Navbar() {
   const t = useT()
   const { data: session, status } = useSession()
-  const { currentMembership } = useOrg()
+  const { currentMembership, memberships } = useOrg()
+  const canSwitchOrg = memberships.length >= 2
   const [mobileOpen, setMobileOpen] = useState(false)
   const { openHelp } = useHelp()
   const isSignedIn = status === 'authenticated'
@@ -90,7 +65,7 @@ export function Navbar() {
             </Button>
             {isSignedIn ? (
               <>
-                <OrgSwitcher />
+                {canSwitchOrg && <OrgSwitcher />}
                 <Link href="/dashboard/packages" className="text-sm text-muted-foreground hover:text-primary transition-colors">
                   {t('navbar.my_packages')}
                 </Link>
@@ -156,7 +131,7 @@ export function Navbar() {
             </Button>
             {isSignedIn ? (
               <>
-                <OrgSwitcher className="w-full" />
+                {canSwitchOrg && <OrgSwitcher className="w-full" />}
                 <Link
                   href="/dashboard/packages"
                   onClick={() => setMobileOpen(false)}

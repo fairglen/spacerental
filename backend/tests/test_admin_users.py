@@ -554,7 +554,13 @@ class TestTheLastOwnerUnderConcurrency:
                 headers=_headers(peer),
             ),
         )
-        assert sorted([first.status_code, second.status_code]) == [204, 409]
+        # Both refusals are right: 409 when the second count runs after the
+        # first commit (the last-owner guard), 403 when the first removal had
+        # already taken the second caller's membership away before its own
+        # request was authorised — which is what happens under load (pytest
+        # -n auto on a 4-vCPU runner). Either way one removal went through.
+        codes = sorted([first.status_code, second.status_code])
+        assert codes[0] == 204 and codes[1] in (403, 409), codes
         owners = await db_session.scalar(
             select(func.count())
             .select_from(OrganizationMember)

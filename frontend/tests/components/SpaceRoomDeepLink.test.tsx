@@ -53,7 +53,8 @@ describe('space page ?room= deep link', () => {
     search = 'room=r-b'
     renderPage()
     const heading = await screen.findByRole('heading', { name: /Disponibilidade — Sala Brisa/ })
-    expect(screen.getByTestId('calendar')).toHaveAttribute('data-room', 'r-b')
+    // The calendar's module loads on demand (P1.3): the heading is there first.
+    expect(await screen.findByTestId('calendar')).toHaveAttribute('data-room', 'r-b')
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
     await waitFor(() => expect(document.activeElement).toBe(heading))
     const pressed = screen.getAllByRole('button', { name: /Reservar Esta Sala/i }).map((b) => b.getAttribute('aria-pressed'))
@@ -93,7 +94,7 @@ describe('space page ?room=&start=&end=&pagamento= after a pack purchase (K02)',
     search = `room=r-b&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&pagamento=sucesso`
     renderPage()
     await screen.findByRole('heading', { name: /Disponibilidade — Sala Brisa/ })
-    const calendar = screen.getByTestId('calendar')
+    const calendar = await screen.findByTestId('calendar')
     expect(calendar).toHaveAttribute('data-initial', start)
     expect(calendar).toHaveAttribute('data-reopen', `${start}/${end}`)
     const notice = screen.getByRole('status')
@@ -141,7 +142,7 @@ describe('space page ?room=&start=&end=&pagamento= after a pack purchase (K02)',
     search = `room=r-b&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`
     renderPage()
     await screen.findByRole('heading', { name: /Disponibilidade — Sala Brisa/ })
-    expect(screen.getByTestId('calendar')).toHaveAttribute('data-reopen', '')
+    expect(await screen.findByTestId('calendar')).toHaveAttribute('data-reopen', '')
     expect(screen.queryByRole('status')).toBeNull()
     expect(replace).not.toHaveBeenCalled()
   })

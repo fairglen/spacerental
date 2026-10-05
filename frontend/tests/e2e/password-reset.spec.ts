@@ -1,19 +1,16 @@
-import { randomUUID } from 'node:crypto'
 import { test, expect } from '@playwright/test'
+import { API_URL, createCustomer } from './fixtures'
 
 // G03: forgot → the link from the stub mailbox → a new password → sign in.
 // The backend's /__test__/emails hook exists only with EMAIL_MODE=stub outside
-// production, which is exactly the stack this suite runs against.
-const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
+// production, which is exactly the stack this suite runs against. The forms
+// are what this spec is about, so they stay; only the account comes from the
+// API (fixtures.ts).
 const API_ROOT = API_URL.replace(/\/api\/v1\/?$/, '')
 
 test.describe('Password reset', () => {
   test('a customer who forgot the password gets a link, sets a new one and signs in', async ({ page, request }) => {
-    const email = `reset-${randomUUID().slice(0, 8)}@example.com`
-    const registered = await request.post(`${API_URL}/auth/register`, {
-      data: { email, password: 'antiga-123', name: 'Cliente Reset' },
-    })
-    expect(registered.status(), await registered.text()).toBe(201)
+    const { email } = await createCustomer(request, { tag: 'reset', password: 'antiga-123', name: 'Cliente Reset' })
 
     // A browser signed in with the OLD password, left open across the reset
     // (review on #65): the NextAuth cookie alone must not keep it in.

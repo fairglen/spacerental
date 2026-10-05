@@ -1,0 +1,26 @@
+{
+  "name": "FlowSpace · Gabinetes profissionais",
+  "short_name": "FlowSpace",
+  "start_url": "/",
+  "display": "browser",
+  "lang": "pt-PT",
+  "background_color": "#F9FAFB",
+  "theme_color": "#3D7A5E",
+  "icons": [
+    {
+      "src": "assets/img/brand/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "assets/img/brand/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/img/brand/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

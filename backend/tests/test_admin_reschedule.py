@@ -411,7 +411,7 @@ class TestNoFiveHundreds:
     ):  # fmt: skip
         """Belt and braces: if anything still trips a CHECK at flush, the
         operator gets a conflict naming it, never a server error."""
-        from app.routers import admin as admin_router
+        from app.routers.admin import bookings as admin_router
 
         booking = await _book(client, auth_headers, test_room, _monday(), hours=3)
 

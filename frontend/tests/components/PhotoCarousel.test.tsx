@@ -148,12 +148,17 @@ describe('PhotoCarousel — semantics and loading', () => {
     }
   })
 
-  it('uses thumbnails on a card and full images on the room page', () => {
+  it('uses thumbnails on a card and full images on the room page, offering both sizes with the slot each takes (P1.5)', () => {
     const { unmount } = render(<PhotoCarousel photos={photos(2)} label="Sala Calma" placeholder={placeholder} size="card" />)
-    expect(screen.getAllByRole('img')[0]).toHaveAttribute('src', 'http://api/media/1_thumb.webp')
+    const card = screen.getAllByRole('img')[0]
+    expect(card).toHaveAttribute('src', 'http://api/media/1_thumb.webp')
+    expect(card).toHaveAttribute('srcset', 'http://api/media/1_thumb.webp 480w, http://api/media/1.webp 1600w')
+    expect(card).toHaveAttribute('sizes', '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw')
     unmount()
     render(<PhotoCarousel photos={photos(2)} label="Sala Calma" placeholder={placeholder} size="page" />)
-    expect(screen.getAllByRole('img')[0]).toHaveAttribute('src', 'http://api/media/1.webp')
+    const page = screen.getAllByRole('img')[0]
+    expect(page).toHaveAttribute('src', 'http://api/media/1.webp')
+    expect(page).toHaveAttribute('sizes', '100vw')
   })
 
   it('gives its buttons a hit area of at least 44px', () => {

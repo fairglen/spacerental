@@ -34,10 +34,14 @@ htmlcov/
 # ── Test artifacts ─────────────────────────────────────────────
 playwright-report/
 test-results/
+blob-report/
+all-blob-reports/
 playwright/.cache/
 coverage/
 # Saved Playwright storageState (contains a live JWT) from global-setup.ts
 frontend/tests/e2e/.auth/
+# Measurements written by the performance harness (P1.1): perf:web, perf:sizes, pytest -m perf
+perf-results/
 
 # ── Logs ───────────────────────────────────────────────────────
 *.log
@@ -64,3 +68,6 @@ Thumbs.db
 
 # Uploaded photos when the backend runs without Docker (MEDIA_ROOT=./media)
 backend/media/
+
+# flowspace-site: verification tokens rendered into index.html by scripts/render-static.py (S1.6)
+flowspace-site/site.env.json

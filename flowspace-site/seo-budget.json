@@ -1,0 +1,8 @@
+{
+  "_comment": "S1.6 — Lighthouse thresholds the flowspace-site checks workflow asserts (mobile preset, local python http.server). Scores are 0–1; a category below its floor fails the job. Accessibility is reported, not gated, until the two baseline findings (color-contrast on muted text, the main landmark — the latter fixed here) are closed by the owner.",
+  "lighthouse": {
+    "seo": 0.95,
+    "best-practices": 0.9
+  },
+  "report_only": ["accessibility"]
+}

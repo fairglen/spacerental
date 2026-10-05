@@ -13,4 +13,6 @@ python-multipart==0.0.12
 # Image validation and processing for uploaded room/space photos (C14).
 pillow==11.3.0
 stripe==15.4.0
+# P2.3: the JSON renderer (ORJSONResponse) — the performance work's one new runtime dependency.
+orjson==3.12.0
 tzdata==2024.2

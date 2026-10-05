@@ -83,9 +83,20 @@ export type Booking = {
   // Door code for a confirmed booking; null until the lock gateway issues
   // one (or when it could not). Never present for pending/cancelled rows.
   access_code?: string | null
-  room?: Room
+  // P2.2: a list row carries a summary of its room (what the lists show); a
+  // single booking from the create/resume/detail routes carries the whole
+  // Room. Read what both have (`id`, `name`, `hourly_rate`).
+  room?: Room | RoomSummary
   user?: User
   created_at: string
+}
+
+// P2.2: the room as a booking row carries it — what a list shows.
+export type RoomSummary = {
+  id: string
+  space_id: string
+  name: string
+  hourly_rate: number
 }
 
 export type PaginatedBookings = {

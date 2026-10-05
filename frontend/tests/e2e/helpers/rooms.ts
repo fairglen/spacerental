@@ -1,5 +1,4 @@
-import { setTimeout as delay } from 'node:timers/promises'
-import { expect, test, type BrowserContext, type Page } from '@playwright/test'
+import { expect, type BrowserContext, type Page } from '@playwright/test'
 
 /**
  * Land on a space's rooms view, whichever way the stack is seeded (C11).
@@ -47,7 +46,7 @@ export async function preferDayView(target: BrowserContext | Page) {
  * day with "›" and address the grid's only column ask for "Dia" first — which
  * is also the customer's manual choice, so it sticks for the rest of the run.
  */
-export async function useDayView(page: Page) {
+export async function selectDayView(page: Page) {
   const toolbar = page.locator('.rbc-toolbar')
   await expect(toolbar).toBeVisible({ timeout: 15000 })
   const dayButton = toolbar.getByRole('button', { name: 'Dia', exact: true })
@@ -58,19 +57,4 @@ export async function useDayView(page: Page) {
     await dayButton.click()
   }
   await expect(page.locator('.rbc-time-content .rbc-day-slot')).toHaveCount(1)
-}
-
-/**
- * Wait out one public rate-limit window before a spec file starts.
- *
- * Compose sees every browser and API client as one peer, so the suites share
- * a single 120-reads-a-minute budget (TODO.md B18). The specs before these
- * spend most of it, and since C11 every full page load also reads the spaces
- * list once. The real limits stay as they are: a spec that adds traffic paces
- * itself at its file boundary, outside any assertion, exactly as auth.spec.ts
- * and packages.spec.ts already do. Call it from `test.beforeAll`.
- */
-export async function waitOutPublicRateWindow() {
-  test.setTimeout(75_000)
-  await delay(60_000)
 }

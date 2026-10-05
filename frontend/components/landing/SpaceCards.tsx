@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Building2 } from 'lucide-react'
 import { spacesApi } from '@/lib/api'
+import { queryKeys } from '@/lib/queryKeys'
 import { useSingleSpace } from '@/lib/hooks/useSingleSpace'
 import { RoomCard } from '@/components/spaces/RoomCard'
 import { WhereWeAre } from '@/components/spaces/WhereWeAre'
@@ -47,7 +48,7 @@ function SingleSpaceRooms({ space }: { space: Space }) {
   const t = useT()
   // Same key as the space page, so following a card finds the rooms cached.
   const { data, isPending, isError, refetch } = useQuery({
-    queryKey: ['space', space.id],
+    queryKey: queryKeys.space(space.id),
     queryFn: () => spacesApi.get(space.id),
   })
   const rooms = (data?.rooms ?? []).filter((r) => r.is_active)

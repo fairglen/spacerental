@@ -1,31 +1,55 @@
+import asyncio
 import mimetypes
+from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import Response
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse, ORJSONResponse
 from starlette.staticfiles import StaticFiles
-from starlette.types import Scope
 
+from app.cache_headers import CacheControlMiddleware
 from app.config import settings
+from app.database import async_session_factory
+from app.holds import run_hold_sweeper
 from app.media import LocalMediaStorage, get_media_storage
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.request_id import RequestIdMiddleware
 from app.routers import (
     admin,
-    admin_audit,
-    admin_users,
     auth,
     bookings,
     checkout_stub,
     media,
+    openapi_public,
     packages,
     recurrences,
-    room_blocks,
     spaces,
     support,
     test_hooks,
     webhooks,
 )
+from app.security_headers import SECURITY_HEADERS, SecurityHeadersMiddleware
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # P2.2: lapsed unpaid holds are reconciled on a timer (app/holds.py), so
+    # the reads only read. One replica is enough; 0 turns it off.
+    sweeper = None
+    if settings.HOLD_SWEEP_INTERVAL_SECONDS > 0:
+        sweeper = asyncio.create_task(
+            run_hold_sweeper(async_session_factory, settings.HOLD_SWEEP_INTERVAL_SECONDS),
+            name="hold-sweeper",
+        )
+    try:
+        yield
+    finally:
+        if sweeper is not None:
+            sweeper.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweeper
+
 
 # The app does not create or migrate the schema. `alembic upgrade head` runs in
 # backend/docker-entrypoint.sh before uvicorn starts, so the schema exists by
@@ -35,6 +59,11 @@ app = FastAPI(
     title="SpaceRental API",
     version="1.0.0",
     description="Production-ready backend for the SpaceRental platform",
+    lifespan=lifespan,
+    # P2.3: orjson renders the JSON the routes return (after FastAPI's
+    # jsonable_encoder, so Decimal money is still a two-decimal string and
+    # instants keep their offset — tests/test_json_encoding.py pins it).
+    default_response_class=ORJSONResponse,
 )
 
 # Registered before CORS so CORS ends up the OUTER layer: 429 responses still
@@ -48,17 +77,45 @@ app.add_middleware(
     limiter=limiter,
 )
 
+# P2.1: JSON above a kilobyte is gzipped for a client that accepts it — a
+# dashboard of a few dozen bookings is a fifth of its size on the wire;
+# anything smaller, a 204 or a photo (already WebP) is left alone.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 # Outside the rate limiter: a refused request still gets an id on its
 # response, and every audit row written during a request carries it (G01).
 app.add_middleware(RequestIdMiddleware)
+
+# P2.1: every response says what a cache may do with it (app/cache_headers.py);
+# before this nothing did, and a shared cache had to guess about JSON that
+# carries a customer's bookings.
+app.add_middleware(CacheControlMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
+    # The methods the API actually serves (Q55): a wildcard would also
+    # pre-approve PATCH, HEAD and anything a future route forgets to think
+    # about. OPTIONS is the preflight itself.
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Outermost of the user middleware (Q52): every response — JSON, /media
+# files, the stub Checkout page, a 429, a preflight — carries the same static
+# security headers. Starlette's own ServerErrorMiddleware still sits outside
+# it and writes the 500 for an unhandled exception, so that one response is
+# built here instead, with the headers and without internals.
+app.add_middleware(SecurityHeadersMiddleware)
+
+
+@app.exception_handler(Exception)
+async def _unhandled(_request: Request, _exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        {"detail": "Internal Server Error"}, status_code=500, headers=SECURITY_HEADERS
+    )
+
 
 API_PREFIX = "/api/v1"
 
@@ -67,18 +124,16 @@ app.include_router(spaces.router, prefix=API_PREFIX)
 app.include_router(bookings.router, prefix=API_PREFIX)
 app.include_router(recurrences.router, prefix=API_PREFIX)
 app.include_router(packages.router, prefix=API_PREFIX)
+# Every /admin route: one package, one router (Q50).
 app.include_router(admin.router, prefix=API_PREFIX)
 app.include_router(media.router, prefix=API_PREFIX)
 app.include_router(support.router, prefix=API_PREFIX)
-app.include_router(support.admin_router, prefix=API_PREFIX)
-app.include_router(room_blocks.router, prefix=API_PREFIX)
-app.include_router(admin_users.router, prefix=API_PREFIX)
-app.include_router(admin_users.purchases_router, prefix=API_PREFIX)
-app.include_router(admin_audit.router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
 # No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
 # see app/routers/checkout_stub.py.
 app.include_router(checkout_stub.router)
+# S1.5: the public, read-only OpenAPI card for agents (no prefix: /openapi-public.json).
+app.include_router(openapi_public.router)
 # Local-only (G03): the stub mailbox for browser tests; never in production.
 test_hooks.mount(
     app,
@@ -89,26 +144,17 @@ test_hooks.mount(
 
 
 # python:3.12-slim ships no /etc/mime.types and its built-in table has no WebP,
-# so the photos were served as text/plain — which, with `nosniff` below, a
-# browser refuses to render as an image.
+# so the photos were served as text/plain — which, with the `nosniff` every
+# response now carries (app.security_headers), a browser refuses to render as
+# an image.
 mimetypes.add_type("image/webp", ".webp")
 
-
-class _MediaFiles(StaticFiles):
-    """Read-only photo files. Everything here was re-encoded by `app.media`."""
-
-    async def get_response(self, path: str, scope: Scope) -> Response:
-        response = await super().get_response(path, scope)
-        # Defence in depth: served as exactly what we encoded, never sniffed.
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
-
-
-# Local storage only: the API itself serves what it stored (C14). With object
-# storage, MEDIA_BASE_URL points at the bucket and nothing is mounted here.
+# Local storage only: the API itself serves what it stored (C14), read-only
+# and re-encoded by `app.media`. With object storage, MEDIA_BASE_URL points at
+# the bucket and nothing is mounted here.
 _storage = get_media_storage()
 if isinstance(_storage, LocalMediaStorage):
-    app.mount("/media", _MediaFiles(directory=_storage.root), name="media")
+    app.mount("/media", StaticFiles(directory=_storage.root), name="media")
 
 
 @app.get("/health", tags=["health"])

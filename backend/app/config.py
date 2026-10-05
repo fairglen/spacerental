@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     CANCELLATION_CREDIT_VALIDITY_DAYS: int = Field(default=365, gt=0)
 
     # ── Rate limiting ────────────────────────────────────────────────────
+    # The limiter keeps its sliding windows in process memory (app/ratelimit.py):
+    # it is a per-replica budget, correct for ONE backend process. Behind two or
+    # more replicas each has its own counters, so the effective limit is
+    # multiplied by the replica count — move the counters to a shared store
+    # before scaling out (Q55).
     RATE_LIMIT_ENABLED: bool = True
     # Auth tier: credential endpoints. Strict, because each accepted request
     # costs an Argon2 hash (m=64MB) and is the surface for credential stuffing.
@@ -125,6 +130,10 @@ class Settings(BaseSettings):
     SEAM_API_KEY: str | None = None
     SEAM_DEVICE_ID_MAP: str | None = None
     SEAM_TIMEOUT_SECONDS: float = 10.0
+
+    # P2.2: how often the lifespan task reconciles lapsed unpaid holds
+    # (app/holds.py); 0 disables it (the reads still reconcile their own).
+    HOLD_SWEEP_INTERVAL_SECONDS: int = 60
 
     @property
     def cors_origins_list(self) -> list[str]:

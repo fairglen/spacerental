@@ -48,7 +48,7 @@ test('there is no "O espaço" section and every nav anchor resolves', async ({ p
   await expect(page.locator('#espaco')).toHaveCount(0);
   await expect(page.locator('a[href="#espaco"]')).toHaveCount(0);
   const desktop = await page.locator('.nav-links a').allTextContents();
-  expect(desktop.map((t) => t.trim())).toEqual(['Salas', 'Como funciona', 'Preços', 'Onde estamos']);
+  expect(desktop.map((t) => t.trim())).toEqual(['Salas', 'Como funciona', 'Preços', 'FAQ', 'Onde estamos']);
   await expect(page.locator('.nav-actions a.btn')).toHaveText('Reservar sala');
   const anchors = await page.locator('.nav-links a, .nav-mobile a, .site-footer a[href^="#"]').evaluateAll((links) =>
     links.map((a) => a.getAttribute('href')!),
@@ -82,7 +82,8 @@ test('at 1280px the grids have the app\'s columns inside an 80rem container', as
   // The room card: photos, then name and price on one line, then the tags.
   const card = page.locator('.room-card').first();
   const order = await card.evaluate((el) => Array.from(el.children).map((c) => c.className));
-  expect(order).toEqual(['room-gallery', 'room-head', 'tag-list']);
+  // S1.4 adds the facts line between the name/price and the tags.
+  expect(order).toEqual(['room-gallery', 'room-head', 'room-facts', 'tag-list']);
 });
 
 test('at 390px everything stacks in one column and nothing scrolls sideways', async ({ page }) => {
@@ -711,4 +712,80 @@ test('at 390px the lockup fits well under 60% of the header', async ({ page }) =
   const box = (await page.locator('.site-nav .wordmark .brand-lockup').boundingBox())!;
   expect(box.width).toBeLessThan(390 * 0.6);
   expect(box.height).toBe(28);
+});
+
+// S1.1/S1.4: what a crawler or a visitor without JavaScript gets — the raw
+// HTML, not the DOM the scripts build.
+test('the raw HTML carries the title, one h1, three room photos with alt text, the FAQ and the address', async ({ page }) => {
+  const html = await (await page.request.get('/')).text();
+  expect(html).toMatch(/<title>Salas para terapia e consultas à hora em Queluz · FlowSpace<\/title>/);
+  expect(html.match(/<h1>/g)).toHaveLength(1);
+  const photos = html.match(/<img [^>]*src="assets\/img\/room-photos\/[^"]+"[^>]*alt="[^"]+"[^>]*>/g) ?? [];
+  expect(photos.length).toBeGreaterThanOrEqual(3);
+  expect(photos[0]).toContain('loading="eager"');
+  expect(photos[1]).toContain('loading="lazy"');
+  expect(html).toContain('<details class="faq-item"');
+  expect(html).toContain('Posso cancelar uma reserva?');
+  expect(html).toContain('Rua 12 de Julho de 1997 5, Loja 1');
+  expect(html).toContain('<link rel="canonical" href="https://flowspace.pt/" />');
+  expect(html).toContain('<meta name="robots" content="index, follow, max-image-preview:large" />');
+  expect(html).toContain('<script type="application/ld+json">');
+});
+
+test('the static first photo gives way to the carousel, so no photo is shown twice', async ({ page }) => {
+  await page.goto('/');
+  const gallery = page.locator('.room-card').first().locator('.room-gallery');
+  await expect(gallery.getByRole('tablist')).toBeVisible();
+  // Only the carousel's slides remain — the HTML's <img> was removed by the script.
+  await expect(gallery.locator(':scope > img')).toHaveCount(0);
+  await expect(gallery.locator('.room-gallery-slide img')).toHaveCount(4);
+});
+
+test('the FAQ section sits between prices and the location, opens natively and is linked from nav and footer', async ({ page }) => {
+  await page.goto('/');
+  const faq = page.locator('#faq');
+  await expect(faq.getByRole('heading', { level: 2 })).toHaveText('Perguntas frequentes');
+  const sections = await page.locator('main > section').evaluateAll((els) => els.map((el) => el.id));
+  expect(sections.indexOf('faq')).toBe(sections.indexOf('precos') + 1);
+  expect(sections.indexOf('localizacao')).toBe(sections.indexOf('faq') + 1);
+  const items = faq.locator('details.faq-item');
+  const count = await items.count();
+  expect(count).toBeGreaterThanOrEqual(8);
+  expect(count).toBeLessThanOrEqual(10);
+  const first = items.first();
+  await expect(first).not.toHaveAttribute('open', '');
+  await first.locator('summary').click();
+  await expect(first).toHaveAttribute('open', '');
+  await expect(first.locator('p')).toBeVisible();
+  await expect(page.locator('.nav-links a[href="#faq"]')).toHaveText('FAQ');
+  await expect(page.locator('.site-footer a[href="#faq"]')).toHaveText('Perguntas frequentes');
+});
+
+test('the skip link is the first focusable element and lands on main', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('Tab');
+  const skip = page.locator('a.skip-link');
+  await expect(skip).toBeFocused();
+  await expect(skip).toHaveText('Saltar para o conteúdo');
+  await expect(skip).toBeInViewport();
+  await expect(page.locator('main#main')).toHaveCount(1);
+  await expect(page.locator('nav.site-nav')).toHaveAttribute('aria-label', 'Principal');
+});
+
+test('the JSON-LD parses and quotes the prices and hours the page shows', async ({ page }) => {
+  await page.goto('/');
+  const graph = await page.locator('script[type="application/ld+json"]').evaluate((el) => JSON.parse(el.textContent!));
+  const business = graph['@graph'].find((n: { '@type': string }) => n['@type'] === 'LocalBusiness');
+  expect(business.openingHoursSpecification[0]).toMatchObject({ opens: '08:00', closes: '22:00' });
+  const prices = business.makesOffer.filter((o: { priceSpecification?: unknown }) => o.priceSpecification).map((o: { priceSpecification: { price: number } }) => o.priceSpecification.price);
+  const shown = (await page.locator('.room-card .room-price').allInnerTexts()).map((t) => Number(t.replace(/€.*$/s, '')));
+  expect(prices).toEqual(shown);
+  const faq = graph['@graph'].find((n: { '@type': string }) => n['@type'] === 'FAQPage');
+  expect(faq.mainEntity.map((q: { name: string }) => q.name)).toEqual(await page.locator('#faq summary').allInnerTexts());
+});
+
+test('the privacy page is canonical to itself and not indexed', async ({ page }) => {
+  const html = await (await page.request.get('/privacidade.html')).text();
+  expect(html).toContain('<link rel="canonical" href="https://flowspace.pt/privacidade.html" />');
+  expect(html).toContain('<meta name="robots" content="noindex, follow" />');
 });

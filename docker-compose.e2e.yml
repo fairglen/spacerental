@@ -1,0 +1,57 @@
+# e2e stack only (Q42) — an overlay on docker-compose.yml for the browser suite:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T backend python -m app.seed
+#   cd frontend && RECURRING_BOOKINGS_ENABLED=true npx playwright test
+#
+# What it changes, and why:
+# - The frontend is the PRODUCTION build (`frontend/Dockerfile` target
+#   `runner`, `next start`), not the dev server: the suite exercises the bundle
+#   customers get, and pages are not compiled on first visit in the middle of
+#   a test. The backend runs without `--reload`. Neither mounts sources.
+# - The rate limits are raised to values a 4-worker suite cannot reach. The
+#   limiter sees every browser and API client of the suite as ONE peer (no
+#   proxy, no X-Forwarded-For), so the product defaults (10 auth requests and
+#   120 public reads a minute, 5 help requests an hour) would throttle a
+#   parallel run on the second worker. The defaults in app/config.py,
+#   docker-compose.yml and .env.example are untouched, and
+#   backend/tests/test_ratelimit.py still proves them. THIS FILE IS FOR THE
+#   TEST STACK ONLY — never for a deployment.
+# - The weekly-series flag is on, as in CI, so booking.spec.ts walks the series
+#   test (the Playwright process needs RECURRING_BOOKINGS_ENABLED=true too).
+services:
+  backend:
+    image: spacerental-backend:e2e
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      RECURRING_BOOKINGS_ENABLED: "true"
+      # e2e stack only — not a product default (see the header).
+      RATE_LIMIT_AUTH_MAX_REQUESTS: "100000"
+      RATE_LIMIT_PUBLIC_MAX_REQUESTS: "100000"
+      RATE_LIMIT_UPLOAD_MAX_REQUESTS: "100000"
+      RATE_LIMIT_SUPPORT_MAX_REQUESTS: "100000"
+    # The image carries the code; only the seed photos and the media volume
+    # stay mounted.
+    volumes: !override
+      - ./flowspace-site/assets/img/room-photos:/app/seed-photos:ro
+      - media:/var/lib/spacerental/media
+
+  frontend:
+    image: spacerental-frontend:e2e
+    build:
+      context: ./frontend
+      target: runner
+      args:
+        # Inlined into the bundle at build time (see frontend/Dockerfile).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+        NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: "true"
+        NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS: ${BOOKING_MAX_ADVANCE_DAYS:-30}
+        NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}
+        # K01: the dialog's "válidas até" must match the backend's validity.
+        NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS: ${CANCELLATION_CREDIT_VALIDITY_DAYS:-365}
+        NEXT_PUBLIC_MEDIA_ORIGIN: ${NEXT_PUBLIC_MEDIA_ORIGIN:-}
+        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-e2e}
+    environment:
+      NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: "true"
+    command: ["npm", "run", "start"]
+    volumes: !override []

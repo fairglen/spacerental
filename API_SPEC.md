@@ -13,6 +13,21 @@ JWT is HS256, signed with the backend `SECRET_KEY`, issued by `POST /auth/login`
 
 ---
 
+## Caching and compression (P2.1)
+
+A JSON body above 1 KiB is gzipped for a client that sends `Accept-Encoding:
+gzip` (`Vary: Accept-Encoding`); smaller bodies and photos are not. Every
+response carries `Cache-Control`, by class (`backend/app/cache_headers.py`):
+
+| Response | `Cache-Control` |
+|---|---|
+| `/media/**` (photo names are content-addressed) | `public, max-age=31536000, immutable` |
+| anonymous `GET /spaces`, `GET /spaces/:id`, `GET /packages` | `public, max-age=60, stale-while-revalidate=300` |
+| `GET /rooms/:id/availability` | `no-cache` (keep a copy, revalidate it) |
+| everything else — any request with `Authorization`, writes, errors, `/health` | `no-store` |
+
+---
+
 ## Request bounds
 
 Every request field is bounded, and input outside a bound is answered with
@@ -73,19 +88,26 @@ List all active spaces (public). Each space carries its location: `address`,
 Response: `{ spaces: Space[] }`
 
 ### GET /spaces/:id
-Response: `{ space, rooms, contact: { email, phone } }` — `contact` is the
-organisation's public contact when the owner set one (G04), else nulls, and
-the customer-facing block keeps its default then.
+Query: `?include=packages` (optional; any other value is 422) adds
+`packages: Package[]` — the organisation's active packs, exactly what
+`GET /packages?org_id=` answers — so the landing page reads everything it
+shows in one request (P1.2; the server renders it before the browser asks).
+Response: `{ space, rooms, contact: { email, phone }, packages? }` — `contact`
+is the organisation's public contact when the owner set one (G04), else
+nulls, and the customer-facing block keeps its default then.
 Each room carries `availability_rules: [{ day_of_week, open_time, close_time }]`
 (V06): its active opening windows, weekday 0 = Monday, times in UTC like every
 rule (R01). "Onde estamos" derives the space's hours from their union. The
 list endpoint (`GET /spaces`) does not load rooms.
-Space detail with rooms.
-Response: `{ space: Space, rooms: Room[] }`
 
 ### GET /rooms/:id/availability
-Query: `?date=YYYY-MM-DD` — the SPACE's local date (R01).
+Query: `?date=YYYY-MM-DD` — the SPACE's local date (R01) — or, since P1.4,
+`?from=YYYY-MM-DD&to=YYYY-MM-DD` (both inclusive, at most 14 days; `to` must
+not precede `from`; `date` together with `from`/`to`, or neither form, is 400)
+for every day of the range in one request — what the week view asks. A day
+past the booking window is 400 in either form.
 Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool, reason }] }`
+in time order; a closed day contributes no slots.
 
 Opening hours are the space's wall clock (`Space.timezone`, Europe/Lisbon for
 the pilot): a room open "08:00–22:00" is open 08:00–22:00 on the door all
@@ -180,7 +202,16 @@ Response: `User`
 
 ### GET /bookings/me
 My bookings list.
-Response: `{ bookings: Booking[] }`
+Response: `{ bookings: Booking[] }` — **list rows** (P2.2): `room` is a
+summary `{ id, space_id, name, hourly_rate }`, the null optionals `notes`,
+`hold_expires_at`, `recurrence_rule_id`, `user` (and `admin_note` on the
+operator lists) are omitted rather than sent as `null`, `updated_at` is not
+sent, and `access_code` is always present (`null` = no code). A single booking
+(`POST /bookings`, `/checkout`, the admin detail) carries the whole `Room`
+and every field. Lapsed unpaid holds are reconciled by a sweeper every
+`HOLD_SWEEP_INTERVAL_SECONDS` (default 60); this read still flips the
+caller's own lapsed holds if the sweeper has not yet, and writes nothing
+otherwise.
 
 ### POST /bookings
 Create a booking. `payment_method` selects how it is paid for and therefore
@@ -569,6 +600,14 @@ One booking for its page (G04): `{ booking: AdminBookingDetail, history:
 customer, room, `payment_method`, `total_amount`, `package_debits` per
 purchase, `access_code`, `notes`, `admin_note` and `hold_expires_at`.
 
+### GET /admin/calendar
+Query: `org_id`, `from`, `to` (timezone-aware instants, `to` after `from`, at
+most 14 days apart), optional `space_id`. The operator calendar's one read
+(P1.4): every booking of the organisation's rooms (or of that space's) in any
+status, and every block, that overlaps `[from, to)`, each in time order.
+Response: `{ bookings: AdminBooking[], blocks: RoomBlock[] }` — the booking
+shape of `GET /admin/bookings`. Admin/owner of the org only (403).
+
 ### GET /admin/bookings
 Query (G04): `q` matches the customer's name or email (case-insensitive) or
 the booking's short id prefix; `payment_method`; `include_cancelled`
@@ -576,7 +615,10 @@ the booking's short id prefix; `payment_method`; `include_cancelled`
 `-start_time` (default) | `created_at` | `-created_at`; plus `room_id`,
 `status`, `from`, `to` (timezone-aware instants; a naive value is 422, as
 on the audit and purchase filters), `page`, `page_size` as before.
-All bookings for org.
+All bookings for org. Rows are the list shape of `GET /bookings/me` (P2.2:
+`room` summary, null optionals omitted, no `updated_at`) plus `admin_note`
+when set and `package_debits`; so are the rows of `GET /admin/calendar` and
+of a customer's bookings on `GET /admin/users/:id`.
 Query: `?status=&room_id=&from=&to=`
 
 ### POST /admin/bookings

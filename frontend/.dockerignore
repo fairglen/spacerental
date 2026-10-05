@@ -1,3 +1,11 @@
 node_modules
 .next
-.env.local
+.env
+.env.*
+# Browser tests and their output never belong in the image.
+tests/e2e/.auth
+playwright-report
+test-results
+blob-report
+all-blob-reports
+coverage
