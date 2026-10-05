@@ -529,3 +529,21 @@ describe('Review on #65 — round 4', () => {
     await waitFor(() => expect(screen.getByLabelText('Fuso horário *')).toHaveValue('Asia/Tokyo'))
   })
 })
+
+// Review on #65, round 6: a pending checkout carries the price but nothing was paid.
+describe('Review on #65 — round 6', () => {
+  it('a pending purchase can be hard-deleted; a paid one cannot', async () => {
+    nav.params = { id: 'p-1' }
+    const base = { id: 'p-1', user_id: 'u-1', package_id: 'k', org_id: 'org-1', hours_total: 10, hours_used: 0, hours_remaining: 10, amount_paid: 100, purchased_at: '2030-01-01T00:00:00Z', expires_at: '2031-01-01T00:00:00Z', package: { id: 'k', org_id: 'org-1', name: 'Pack 10', hours: 10, price: 100, validity_days: 365, is_active: true }, admin_note: null }
+    const user = { id: 'u-1', name: 'Ana', email: 'ana@x.pt' }
+    vi.mocked(adminApi.getPurchase).mockResolvedValue({ purchase: { ...base, status: 'pending' }, user, debits: [] })
+    const { unmount } = renderPage(<AdminPurchasePage />)
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByTestId('danger-disabled')).toBeNull()
+    unmount()
+    vi.mocked(adminApi.getPurchase).mockResolvedValue({ purchase: { ...base, status: 'active' }, user, debits: [] })
+    renderPage(<AdminPurchasePage />)
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.getByTestId('danger-disabled')).toHaveTextContent('cancele-a')
+  })
+})

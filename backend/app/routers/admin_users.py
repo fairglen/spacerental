@@ -513,6 +513,10 @@ async def admin_anonymise_user(
     deletion.require_confirm(body.confirm, user.id, user.email)
     await _refuse_non_owner_on_owner(db, admin, member)
     await _refuse_self_and_last_owner(db, admin, member)
+    # Locked and re-read like every other global-account mutation: an
+    # enrolment into another organisation waits on the row instead of
+    # landing after the sweep on an account about to be anonymised.
+    await password_reset.lock_user(db, user.id)
     await _refuse_other_memberships(db, member)
     before = audit.snapshot(user)
     short = deletion.short_id(user.id)
@@ -1019,7 +1023,11 @@ async def admin_delete_purchase(
         .select_from(BookingPackageDebit)
         .where(BookingPackageDebit.purchase_id == purchase.id)
     )
-    if purchase.amount_paid != 0 or debits:
+    # A `pending` row carries the package's price from creation but nothing
+    # was paid yet (review on #65): it is unpaid. Money that did arrive —
+    # `active`/`cancelled` with an amount — makes the purchase history.
+    paid = purchase.status is not PurchaseStatus.pending and purchase.amount_paid != 0
+    if paid or debits:
         raise deletion.blocked(
             "The purchase was paid for or has been drawn on; cancel it instead",
             {"amount_paid": f"{purchase.amount_paid:.2f}", "debits": debits or 0},

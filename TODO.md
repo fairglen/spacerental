@@ -163,6 +163,11 @@ the organisation query by tenant; `POST /admin/spaces` stores the
 `timezone` it is given (it used to drop it).
 Round 5 (2026-10-05): a removed photo's files go after the commit (background
 task) and an upload whose audit write fails takes its files back.
+Round 6 (2026-10-05): anonymisation takes the user lock before its
+membership sweep; a `pending` purchase counts as unpaid for the hard delete
+(it carries the price from creation), so a real abandoned checkout can be
+removed after its session is closed — the UI guard and the test use the
+real shape.
 
 States used below:
 
