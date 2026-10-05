@@ -495,7 +495,8 @@ describe('Review on #65 — round 4', () => {
     const user = userEvent.setup()
     renderPage(<AdminRoomPage />)
     await screen.findByRole('heading', { level: 1, name: /Sala A/ })
-    expect(screen.getByLabelText('Segunda-feira abre')).toHaveValue('09:00')
+    // The editor fills in once the rules have landed, a tick after the heading.
+    expect(await screen.findByLabelText('Segunda-feira abre')).toHaveValue('09:00')
     expect(screen.getByLabelText('Segunda-feira abre (2)')).toHaveValue('14:00')
     await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
     await waitFor(() => expect(adminApi.setAvailability).toHaveBeenCalledWith('r-1', [
@@ -505,7 +506,7 @@ describe('Review on #65 — round 4', () => {
     await user.click(screen.getByRole('button', { name: 'Remover período 2 de Segunda-feira' }))
     expect(screen.queryByLabelText('Segunda-feira abre (2)')).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Adicionar período a Segunda-feira' }))
-    expect(screen.getByLabelText('Segunda-feira abre (2)')).toHaveValue('12:00')
+    expect(await screen.findByLabelText('Segunda-feira abre (2)')).toHaveValue('12:00')
   })
 
   it('the booking summary and the block list read on the space clock, like the forms', async () => {
