@@ -22,11 +22,12 @@ pytestmark = pytest.mark.perf
 # B/row with 4 statements of which one UPDATE, the admin list 2 530 B/row
 # with 7 statements over a Seq Scan, availability 5 statements. After P2.2
 # (room summary, null optionals and updated_at out of list rows, the
-# read-first expiry): 587 and 771 B/row, no write on a read. P2.3 lowers the
-# statements (the JWT lookup) and changes the admin list's plan (the index).
+# read-first expiry): 587 and 771 B/row, no write on a read. After P2.3
+# (the room and the customer joined into the list query, the (org_id,
+# start_time) index): 3 and 5 statements, the admin list an index scan.
 BUDGET = {
-    "bookings_me": {"bytes_per_row": 587, "statements": 4, "writes": 0},
-    "admin_bookings": {"bytes_per_row": 771, "statements": 7},
+    "bookings_me": {"bytes_per_row": 587, "statements": 3, "writes": 0},
+    "admin_bookings": {"bytes_per_row": 771, "statements": 5},
     "availability": {"statements": 5},
 }
 
@@ -102,6 +103,9 @@ async def test_admin_bookings_list(
     }
     perf_results["admin_bookings"] = metrics
     print("\nGET /admin/bookings", metrics)
+    # P2.3: the (org_id, start_time) index serves the filter and the order —
+    # an index scan that stops at the page, not a sort of the organisation.
+    assert any("ix_bookings_org_id_start_time" in node for node in metrics["plan"]), metrics["plan"]
     budget = BUDGET["admin_bookings"]
     assert metrics["bytes_per_row"] <= budget["bytes_per_row"]
     assert metrics["statements"] <= budget["statements"]

@@ -13,7 +13,7 @@ from pydantic import AwareDatetime
 from sqlalchemy import String, and_, func, or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import audit, cancellation_credit, clock, deletion, email, package_hours
 from app.auth import require_admin
@@ -125,7 +125,8 @@ async def admin_list_bookings(
     total = total_result.scalar_one()
 
     result = await db.execute(
-        query.options(selectinload(Booking.room), selectinload(Booking.user), _WITH_DEBITS)
+        # P2.3: room and customer joined (many-to-one), the debits still per list.
+        query.options(joinedload(Booking.room), joinedload(Booking.user), _WITH_DEBITS)
         .where(and_(*filters))
         .order_by(order, Booking.id.desc())
         .offset((page - 1) * page_size)

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse
 from starlette.staticfiles import StaticFiles
 
 from app.cache_headers import CacheControlMiddleware
@@ -59,6 +59,10 @@ app = FastAPI(
     version="1.0.0",
     description="Production-ready backend for the SpaceRental platform",
     lifespan=lifespan,
+    # P2.3: orjson renders the JSON the routes return (after FastAPI's
+    # jsonable_encoder, so Decimal money is still a two-decimal string and
+    # instants keep their offset — tests/test_json_encoding.py pins it).
+    default_response_class=ORJSONResponse,
 )
 
 # Registered before CORS so CORS ends up the OUTER layer: 429 responses still

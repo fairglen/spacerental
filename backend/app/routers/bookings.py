@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import clock, email, package_hours
 from app.auth import get_current_user
@@ -76,9 +76,11 @@ async def my_bookings(
     # blocks anything (C03), and a lapsed mixed hold's pack hours are back on
     # the pack (C13).
     await expire_user_holds(db, user.id, clock.utcnow())
+    # P2.3: the room comes with the rows in one JOIN (a many-to-one, four
+    # columns in the summary) instead of a second query.
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room))
+        .options(joinedload(Booking.room))
         .where(Booking.user_id == user.id)
         .order_by(Booking.start_time.desc())
     )

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import AwareDatetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload
 
 from app.auth import require_admin
 from app.database import get_db
@@ -59,7 +59,7 @@ async def admin_calendar(
 
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room), selectinload(Booking.user), _WITH_DEBITS)
+        .options(joinedload(Booking.room), joinedload(Booking.user), _WITH_DEBITS)
         .where(
             Booking.org_id == org_id,
             Booking.room_id.in_(room_ids),

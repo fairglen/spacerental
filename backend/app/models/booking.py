@@ -63,6 +63,9 @@ class Booking(Base):
         Index("ix_bookings_room_id_start_time", "room_id", "start_time"),
         Index("ix_bookings_user_id", "user_id"),
         Index("ix_bookings_org_id_status", "org_id", "status"),
+        # P2.3: the operator lists and the calendar read one organisation's
+        # bookings in start-time order (migration 0017).
+        Index("ix_bookings_org_id_start_time", "org_id", "start_time"),
         Index("ix_bookings_recurrence_rule_id", "recurrence_rule_id"),
         CheckConstraint(
             "package_hours_used >= 0 AND package_hours_used <= duration_hours",

@@ -2350,7 +2350,31 @@ the statement count; dashboard Vitest/e2e specs pass with the summary shape;
 
 ### P2.3 — Server configuration: ORJSON, workers, pool, index, lean JWT lookup
 
-**Priority: P1. State: QUEUED (Part 2).** **Metric:** p50 of
+**Priority: P1. State: DONE 2026-10-05** on `perf/api-caching-and-payloads`.
+`ORJSONResponse` is the app's default response class (orjson 3.12.0, the
+one new runtime dependency; the wire format is pinned by
+`test_json_encoding.py`: money a two-decimal string, ids strings, instants
+as before — `Z` on the rows, `+00:00` on the slots — the stub checkout page
+still HTML, errors still JSON); `pool_pre_ping=True` and the pool arithmetic
+in `database.py` and `.env.example`; `ix_bookings_org_id_start_time` in
+`Booking.__table_args__` with migration `0017` (upgrade → `alembic check`
+clean → downgrade → upgrade on a fresh database); the list routes join the
+room (and, for the operator, the customer) into the one query instead of a
+second query per list; the production image's command is
+`uvicorn --workers ${WEB_CONCURRENCY:-1} --proxy-headers
+--timeout-keep-alive 15`. **Measured (`pytest -m perf`):** `GET /bookings/me`
+statements **4 → 3**; `GET /admin/bookings` statements **7 → 5**, plan
+**Limit → Sort → Seq Scan → Limit → Incremental Sort → Index Scan using
+ix_bookings_org_id_start_time**, p50 52 → 48 ms in-process on 10 000 rows.
+**DECISION:** `WEB_CONCURRENCY` defaults to **1**, not the 2 the assignment
+named: the rate limiter and the hold sweeper live in each process, so a
+second worker would silently double every rate limit — "never weaken a rate
+limit" wins; the knob and the arithmetic are documented for the day the
+limiter is shared. **DECISION:** the JWT lookup stays one `SELECT` of the
+user row (eight columns, relationships never loaded); `load_only` would turn
+a later touch of a deferred column into a lazy load that an async session
+cannot run — the statement count the assignment cared about came down by
+joining the lists' rooms instead. **Metric:** p50 of
 `GET /bookings/me` and `GET /admin/bookings` with 10 000 rows (P1.1 fixture,
 timed in-process); `EXPLAIN` on the admin list; statements per authenticated
 request. **Target:** `ORJSONResponse` as the default response class (orjson,
@@ -2368,7 +2392,18 @@ plan and the statement count; the OpenAPI snapshot unchanged.
 
 ### P2.4 — Performance in CI, budgets, README
 
-**Priority: P2. State: QUEUED (Part 2).** **Metric:** the budgets
+**Priority: P2. State: DONE 2026-10-05** on `perf/api-caching-and-payloads`.
+`frontend/perf-budget.json` — per page LCP (the owner's 2.5 s ceiling),
+JavaScript before `load`, requests and API calls, each the number measured
+after P1–P2.2 with ~5 % of headroom — asserted by the Playwright `perf`
+project; the backend `BUDGET` pinned to the measured bytes per row,
+statements and writes. `.github/workflows/perf.yml` (`perf-api`: `pytest -m
+perf` on a service Postgres; `perf-web`: the e2e stack from the e2e job's
+layer cache, `npm run perf:web`, then `perf:sizes` on the image's build),
+called by `checks.yml` whenever backend or frontend files change, both
+uploading their measurements as artifacts; **not** in `required-checks`
+(informational until stable). README: budgets, the CI jobs, the cache
+classes, the sweeper, the production server. **Metric:** the budgets
 themselves. **Target:** `frontend/perf-budget.json` — landing LCP ≤ 2.5 s,
 landing JS ≤ 300 KB gzipped, requests per page (`/` ≤ 12, `/spaces/{id}`
 week view ≤ 10, `/admin/calendar` ≤ 8), `/bookings/me` ≤ 600 B/row,
