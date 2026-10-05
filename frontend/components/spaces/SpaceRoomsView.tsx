@@ -1,12 +1,15 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
+import { queryKeys } from '@/lib/queryKeys'
+import { availabilityQueryKey, availabilitySpan } from '@/lib/availabilitySpan'
+import { useCalendarView } from '@/lib/hooks/useCalendarView'
 import { RoomCard } from '@/components/spaces/RoomCard'
 import { WhereWeAre } from '@/components/spaces/WhereWeAre'
 import { PhotoMosaic } from '@/components/spaces/PhotoMosaic'
-import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { BookingModal } from '@/components/booking/BookingModal'
 import { ContactNote } from '@/components/booking/ContactNote'
 import { PaymentNotice, paymentOutcomeOf, type PaymentOutcome } from '@/components/booking/PaymentNotice'
@@ -14,6 +17,19 @@ import { parseSlotParams } from '@/lib/bookingDeepLink'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Room } from '@/types'
+
+// The calendar and what it drags in (react-big-calendar, lodash, react-overlays,
+// its date-fns localizer — ~62 KB gzipped) load only once a room is picked
+// (P1.3); the rooms page paints without them. Client only: the view it opens
+// on is chosen from the viewport (useCalendarView).
+const BookingCalendar = dynamic(() => import('@/components/booking/BookingCalendar').then((m) => m.BookingCalendar), {
+  ssr: false,
+  loading: () => (
+    <p role="status" className="mb-3 text-sm text-muted-foreground bg-background rounded-lg px-3 py-2">
+      A carregar o calendário…
+    </p>
+  ),
+})
 
 export function SpaceRoomsSkeleton() {
   return (
@@ -75,9 +91,30 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
   }, [query, pathname])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['space', spaceId],
+    queryKey: queryKeys.space(spaceId),
     queryFn: () => spacesApi.get(spaceId),
   })
+
+  // The calendar's chunk is fetched right after the rooms paint (P1.4), so a
+  // deep-linked room, or the first click, finds it already there instead of
+  // paying for it after the first paint.
+  useEffect(() => {
+    void import('@/components/booking/BookingCalendar')
+  }, [])
+  // And its first availability request goes out the moment a room is picked,
+  // under the key the calendar reads, so it does not wait for the module.
+  const queryClient = useQueryClient()
+  const [calendarView] = useCalendarView()
+  useEffect(() => {
+    if (!calendarRoom) return
+    const span = availabilitySpan(reopen?.start ?? new Date(), calendarView)
+    if (!span) return
+    const roomId = calendarRoom.id
+    void queryClient.prefetchQuery({
+      queryKey: availabilityQueryKey(roomId, span),
+      queryFn: () => spacesApi.getAvailabilityRange(roomId, span.from, span.to),
+    })
+  }, [calendarRoom, calendarView, queryClient, reopen])
 
   const handleBook = (room: Room) => setCalendarRoom(room)
 

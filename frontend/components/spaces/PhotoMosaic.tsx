@@ -72,6 +72,12 @@ export function PhotoMosaic({ photos, label, placeholder, className }: PhotoMosa
             {/* eslint-disable-next-line @next/next/no-img-element -- operator photos on the API's origin; width/height reserve the space */}
             <img
               src={photo.url}
+              // P1.5: the two sizes the API keeps, and how much of the viewport
+              // the tile takes (the big one is the left half, the small ones a
+              // quarter) — a 1x screen takes the 480px thumbnail for a small
+              // tile instead of the 1600px original.
+              srcSet={`${photo.thumb_url} 480w, ${photo.url} 1600w`}
+              sizes={i === 0 ? '50vw' : '25vw'}
               alt={`${label} — fotografia ${i + 1} de ${count}`}
               width={photo.width ?? 1600}
               height={photo.height ?? 1200}

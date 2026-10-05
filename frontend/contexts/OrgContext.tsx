@@ -45,10 +45,16 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     }))
   }, [session?.memberships])
 
+  // P1.4: the session already carries the membership (org and role); the
+  // API is asked only when something the session does not have is needed —
+  // the organisations' names, for the switcher a member of several sees —
+  // or when the session carries none at all (just enrolled, before a new
+  // sign-in). One membership, the customer's case, costs no request.
+  const needsFetch = isAuthed && sessionMemberships.length !== 1
   const { data: fetched, isLoading } = useQuery({
     queryKey: ['auth', 'memberships', session?.user?.id],
     queryFn: () => authApi.getMemberships(api),
-    enabled: isAuthed,
+    enabled: needsFetch,
     staleTime: 5 * 60 * 1000,
   })
 

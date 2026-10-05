@@ -137,6 +137,8 @@ services:
       # Browsers reach this frontend directly, so nothing vouches for
       # X-Forwarded-For (see .env.example).
       CSP_REPORT_TRUSTED_PROXIES: ${CSP_REPORT_TRUSTED_PROXIES:-0}
+      # The landing's server-side data (P1.2): fresh on every request by default.
+      LANDING_CACHE_SECONDS: ${LANDING_CACHE_SECONDS:-0}
     depends_on:
       - backend
     volumes:

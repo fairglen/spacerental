@@ -168,6 +168,11 @@ export function PhotoCarousel({
             {/* eslint-disable-next-line @next/next/no-img-element -- operator photos on the API's origin; width/height reserve the space, so nothing shifts */}
             <img
               src={size === 'card' ? photo.thumb_url : photo.url}
+              // P1.5: a card is a third of a wide screen, half of a tablet,
+              // the full width of a phone; the browser picks the 480px
+              // thumbnail or the 1600px original from that and its pixel ratio.
+              srcSet={`${photo.thumb_url} 480w, ${photo.url} 1600w`}
+              sizes={size === 'card' ? '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw' : '100vw'}
               alt={`${label} — fotografia ${i + 1} de ${count}`}
               width={photo.width ?? 1600}
               height={photo.height ?? 1200}

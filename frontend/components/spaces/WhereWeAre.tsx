@@ -1,5 +1,5 @@
 'use client'
-import { useLayoutEffect, useRef, useState, type ElementType } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ElementType } from 'react'
 import { Clock, Mail, MapPin, Navigation, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
@@ -43,6 +43,21 @@ export function WhereWeAre({ space, rooms = [], contact, headingAs: Heading = 'h
   useLayoutEffect(() => {
     const el = frame.current
     if (el && el.clientWidth > 0 && el.clientHeight > 0) setAspect(el.clientWidth / el.clientHeight)
+  }, [])
+  // The embed still appears on its own, with no click (L04) — but only once
+  // the page's own load event has fired (P1.3): its script alone is ~290 KB,
+  // more than the whole app, and `loading="lazy"` did not keep it off the
+  // first paint on a desktop viewport, where the frame is within Chrome's
+  // lazy-load distance. The frame keeps its size meanwhile, so nothing moves.
+  const [pageLoaded, setPageLoaded] = useState(false)
+  useEffect(() => {
+    if (document.readyState === 'complete') {
+      setPageLoaded(true)
+      return
+    }
+    const onLoad = () => setPageLoaded(true)
+    window.addEventListener('load', onLoad, { once: true })
+    return () => window.removeEventListener('load', onLoad)
   }, [])
 
   const lines = addressLines(space)
@@ -120,13 +135,15 @@ export function WhereWeAre({ space, rooms = [], contact, headingAs: Heading = 'h
             data-testid="map-frame"
             className="flex w-full aspect-[16/10] min-h-[240px] overflow-hidden rounded-xl border border-border bg-accent/40 md:aspect-auto md:h-full md:min-h-[280px]"
           >
-            <iframe
-              title={name ? t('location.map_title', { name }) : t('location.map_title_generic')}
-              src={mapEmbedUrl(space.latitude, space.longitude, aspect)}
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              className="w-full flex-1 border-0"
-            />
+            {pageLoaded && (
+              <iframe
+                title={name ? t('location.map_title', { name }) : t('location.map_title_generic')}
+                src={mapEmbedUrl(space.latitude, space.longitude, aspect)}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                className="w-full flex-1 border-0"
+              />
+            )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             <a

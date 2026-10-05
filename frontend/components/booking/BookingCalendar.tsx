@@ -1,12 +1,13 @@
 'use client'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Calendar, dateFnsLocalizer, type Event, type SlotInfo, type ToolbarProps } from 'react-big-calendar'
-import { format, parse, startOfWeek, getDay, parseISO, addDays } from 'date-fns'
+import { format, parse, startOfWeek, getDay, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { useQueries } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
 import { CALENDAR_VIEWS, useCalendarView, type CalendarView } from '@/lib/hooks/useCalendarView'
 import { bookingWindowEnd, datesWithinWindow, isBeyondWindow, nextPeriodIsBeyondWindow } from '@/lib/bookingWindow'
+import { availabilityQueryKey, availabilitySpan, datesForView } from '@/lib/availabilitySpan'
 import type { Room, AvailabilitySlot } from '@/types'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
@@ -23,14 +24,6 @@ interface BookingCalendarProps {
    *  Reported once through `onReopenDone`. */
   reopen?: { start: Date; end: Date } | null
   onReopenDone?: () => void
-}
-
-function getDatesForView(date: Date, view: CalendarView): string[] {
-  if (view === 'week') {
-    const weekStart = startOfWeek(date, { weekStartsOn: 1 })
-    return Array.from({ length: 7 }, (_, i) => format(addDays(weekStart, i), 'yyyy-MM-dd'))
-  }
-  return [format(date, 'yyyy-MM-dd')]
 }
 
 type Resolution =
@@ -195,24 +188,30 @@ export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReo
 
   // The last week usually straddles the horizon; the API refuses dates past
   // it (400), which is not a failed load. Those days simply have no slots.
-  const datesToFetch = datesWithinWindow(getDatesForView(selectedDate, view))
-
-  const slotQueries = useQueries({
-    queries: datesToFetch.map((dateStr) => ({
-      queryKey: ['availability', room.id, dateStr],
-      queryFn: () => spacesApi.getAvailability(room.id, dateStr),
-    })),
+  const datesToFetch = datesWithinWindow(datesForView(selectedDate, view))
+  // One request for the whole view (P1.4): the week used to be seven. The
+  // previous view's slots stay on the grid while the next ones load; the
+  // rooms view prefetches the first one under the same key.
+  const span = availabilitySpan(selectedDate, view)
+  const slotsQuery = useQuery({
+    queryKey: availabilityQueryKey(room.id, span),
+    queryFn: () => spacesApi.getAvailabilityRange(room.id, span!.from, span!.to),
+    enabled: span !== null,
+    placeholderData: keepPreviousData,
   })
 
-  const allSlots: AvailabilitySlot[] = slotQueries.flatMap((q) => q.data ?? [])
+  // Memoised so the selection callbacks below keep their identity between
+  // renders; nothing is shown for a view entirely past the window.
+  const hasSpan = span !== null
+  const allSlots: AvailabilitySlot[] = useMemo(() => (hasSpan ? (slotsQuery.data ?? []) : []), [hasSpan, slotsQuery.data])
 
   // Three states a blank grid used to hide (B26): still fetching, the fetch
   // failed, or the day simply has no opening hours. The grid stays mounted
   // underneath so the customer can still navigate away from a closed day.
-  const isLoadingSlots = slotQueries.some((q) => q.isLoading)
-  const failedQueries = slotQueries.filter((q) => q.isError)
-  const isClosed = !isLoadingSlots && failedQueries.length === 0 && allSlots.length === 0
-  const retryFailed = () => failedQueries.forEach((q) => q.refetch())
+  const isLoadingSlots = span !== null && slotsQuery.isFetching && (slotsQuery.data === undefined || slotsQuery.isPlaceholderData)
+  const failed = span !== null && slotsQuery.isError
+  const isClosed = !isLoadingSlots && !failed && allSlots.length === 0
+  const retryFailed = () => { void slotsQuery.refetch() }
   // Keep the last known window while the next day's slots load, so the grid
   // does not snap to the fallback and back on every navigation.
   const lastRange = useRef(visibleRange([]))
@@ -252,7 +251,7 @@ export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReo
   // day has loaded — or, if someone took it meanwhile, the usual notice.
   const reopenDay = reopen ? format(reopen.start, 'yyyy-MM-dd') : null
   const reopenLoaded = reopenDay !== null && datesToFetch.includes(reopenDay)
-    && slotQueries[datesToFetch.indexOf(reopenDay)]?.data !== undefined
+    && slotsQuery.data !== undefined && !slotsQuery.isPlaceholderData
   useEffect(() => {
     if (!reopen || !reopenLoaded) return
     if (!settle(reopen.start, reopen.end)) {
@@ -299,7 +298,7 @@ export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReo
           A carregar disponibilidade…
         </p>
       )}
-      {failedQueries.length > 0 && (
+      {failed && (
         <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
           <span>Não foi possível carregar a disponibilidade desta sala.</span>
           <button type="button" onClick={retryFailed} className="font-medium underline">

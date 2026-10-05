@@ -57,7 +57,9 @@ WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 RUN addgroup -S app && adduser -S app -G app
 COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
+# Owned by the runtime user: the landing's server-side data (P1.2) lives in
+# Next's Data Cache under .next/cache, which `next start` writes at runtime.
+COPY --from=builder --chown=app:app /app/.next ./.next
 COPY --from=builder /app/public ./public
 # next.config.js runs again under `next start`, with what it requires (Q52).
 COPY package.json next.config.js ./
