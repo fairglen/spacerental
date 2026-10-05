@@ -1,0 +1,111 @@
+name: Checks
+
+# The one workflow a pull request triggers (Q49). It decides which areas the
+# change touches, calls the real workflows as reusable workflows, and ends in
+# `required-checks`: the single status to require in branch protection. A
+# workflow skipped because its paths did not change counts as a pass there,
+# so a docs-only PR is not blocked waiting for a status that will never be
+# reported (the C08 / T4 note). Push to `main` runs everything.
+#
+# Branch protection → Require status checks → add "required-checks". Nothing
+# else needs to be required; see README "CI".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.classify.outputs.backend }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+      e2e: ${{ steps.classify.outputs.e2e }}
+      docs: ${{ steps.classify.outputs.docs }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The diff against the base needs the merge base.
+          fetch-depth: 0
+      - id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            git fetch --no-tags --quiet origin "$BASE"
+            files="$(git diff --name-only "origin/$BASE...HEAD")"
+          else
+            # A push to main: no filter, every area runs.
+            files="backend/ frontend/ AGENTS.md"
+          fi
+          echo "Changed:"; printf '  %s\n' $files
+
+          matches() { printf '%s\n' "$files" | grep -Eq "$1" && echo true || echo false; }
+          # A workflow or Compose change can break any area: run them all.
+          infra='^(\.github/|docker-compose|\.env\.example$)'
+          # .pre-commit-config.yaml pins the same Ruff as lint.yml: a hook bump must run it.
+          backend="$(matches "^(backend/|ruff\.toml$|\.pre-commit-config\.yaml$)|$infra")"
+          frontend="$(matches "^frontend/|$infra")"
+          docs="$(matches '^(AGENTS|CLAUDE)\.md$|^\.github/')"
+          e2e=false; { [ "$backend" = true ] || [ "$frontend" = true ]; } && e2e=true
+          {
+            echo "backend=$backend"; echo "frontend=$frontend"; echo "e2e=$e2e"; echo "docs=$docs"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/lint.yml
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/backend-tests.yml
+
+  migrations:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/migrations.yml
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/frontend-tests.yml
+
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    uses: ./.github/workflows/e2e.yml
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    uses: ./.github/workflows/docs-sync.yml
+
+  required-checks:
+    name: required-checks
+    needs: [changes, lint, backend, migrations, frontend, e2e, docs]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every area either passed or was skipped by its path filter
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e '[.[] | .result] | all(. == "success" or . == "skipped")' > /dev/null \
+            || { echo "::error::A required workflow failed or was cancelled."; exit 1; }

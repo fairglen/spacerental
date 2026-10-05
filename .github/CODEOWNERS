@@ -1,0 +1,7 @@
+# Review ownership (Q49): the owner is asked on anything that changes how CI
+# runs, how people authenticate, how money moves, or the schema's history.
+/.github/                  @fairglen
+/backend/app/auth.py       @fairglen
+/backend/app/auth*         @fairglen
+/backend/app/payments.py   @fairglen
+/backend/alembic/          @fairglen

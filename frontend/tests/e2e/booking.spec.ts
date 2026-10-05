@@ -1,7 +1,22 @@
-import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
+import { request as playwrightRequest, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { format } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { openSpaceRooms, preferDayView, useDayView } from './helpers/rooms'
+import { openSpaceRooms, preferDayView, selectDayView } from './helpers/rooms'
+import {
+  API_URL,
+  adminSession,
+  auth,
+  createCustomer,
+  createRoom,
+  expect,
+  freshDay,
+  loginAs,
+  removeRoom,
+  test,
+  type Admin,
+  type Customer,
+  type Room,
+} from './fixtures'
 
 /**
  * Booking flows people actually perform (TODO.md B1, B2, B4, B5).
@@ -13,8 +28,10 @@ import { openSpaceRooms, preferDayView, useDayView } from './helpers/rooms'
  * interception needed (CLAUDE.md §10.3).
  */
 
-const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
-const CREDENTIALS = { email: 'admin@demo.com', password: 'admin123' }
+// Three rooms of this file's own stand in for the seeded trio (Q41): the
+// specs' names below are keys into `rooms`, created in beforeAll.
+const ROOM_KEYS = ['Sala Calma', 'Sala Brisa', 'Sala Névoa'] as const
+type RoomKey = (typeof ROOM_KEYS)[number]
 
 // The calendar's first visible hour follows the returned slots (B34), so
 // rows are located by their gutter label rather than by a fixed offset.
@@ -38,28 +55,17 @@ function apiUrl(path: string): string {
   return `${API_URL}${path}`
 }
 
-async function login(api: APIRequestContext): Promise<string> {
-  const res = await api.post(apiUrl('/auth/login'), { data: CREDENTIALS })
-  expect(res.ok(), `login failed: ${res.status()}`).toBeTruthy()
-  return (await res.json()).access_token
-}
-
-function auth(token: string) {
-  return { Authorization: `Bearer ${token}` }
-}
-
 async function myBookings(api: APIRequestContext, token: string): Promise<ApiBooking[]> {
   const res = await api.get(apiUrl('/bookings/me'), { headers: auth(token) })
   expect(res.ok()).toBeTruthy()
   return (await res.json()).bookings
 }
 
-async function roomIdByName(api: APIRequestContext, name: string): Promise<string> {
-  const spaces = await (await api.get(apiUrl('/spaces'))).json()
-  const detail = await (await api.get(apiUrl(`/spaces/${spaces.spaces[0].id}`))).json()
-  const room = detail.rooms.find((r: { name: string }) => r.name === name)
-  expect(room, `room ${name} is not seeded`).toBeTruthy()
-  return room.id
+/** This file's own room behind a seeded name (see ROOM_KEYS). */
+function roomOf(key: RoomKey): Room {
+  const room = rooms[key]
+  expect(room, `room ${key} was not created in beforeAll`).toBeTruthy()
+  return room
 }
 
 async function createBookingViaApi(
@@ -86,19 +92,15 @@ async function cancelViaApi(api: APIRequestContext, token: string, id: string) {
 // ── Date helpers ──────────────────────────────────────────────────────────
 
 /**
- * Days from today to the next bookable date at least `minDaysAhead` out.
- * Seeded availability rules cover Monday–Saturday, and cancelling requires more
- * than 24h notice, so every test books at least three days ahead.
+ * Days from today to this test's own date at least `minDaysAhead` out
+ * (`freshDay` shifts each worker to a day of its own). The rooms are this
+ * file's, open every day, and cancelling needs more than 24h notice, so
+ * every test books at least three days ahead.
  */
 function bookableDayOffset(minDaysAhead: number): number {
-  const day = new Date()
-  day.setUTCDate(day.getUTCDate() + minDaysAhead)
-  let offset = minDaysAhead
-  while (day.getUTCDay() === 0) {
-    day.setUTCDate(day.getUTCDate() + 1)
-    offset += 1
-  }
-  return offset
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+  return Math.round((freshDay(minDaysAhead).getTime() - today.getTime()) / 86_400_000)
 }
 
 function utcHour(dayOffset: number, hour: number): Date {
@@ -109,21 +111,12 @@ function utcHour(dayOffset: number, hour: number): Date {
 
 // ── UI helpers ────────────────────────────────────────────────────────────
 
-async function signIn(page: Page) {
-  await page.goto('/sign-in')
-  await page.getByLabel(/Email/i).fill(CREDENTIALS.email)
-  await page.getByLabel('Password').fill(CREDENTIALS.password)
-  await page.getByRole('button', { name: /Entrar/i }).click()
-  await page.waitForURL('**/dashboard', { timeout: 30000 })
-}
-
 /**
- * Open the availability calendar of a room by name: the same click a customer
- * makes, on that room's own card. Trying each card in turn until the heading
- * matched mounted up to three calendars, and every mount is a public read
- * against the budget all specs share (TODO.md B18, B48).
+ * Open the availability calendar of one of this file's rooms: the same click
+ * a customer makes, on that room's own card.
  */
-async function openRoomCalendar(page: Page, roomName: string) {
+async function openRoomCalendar(page: Page, key: RoomKey) {
+  const roomName = roomOf(key).name
   await openSpaceRooms(page)
 
   const card = page.getByTestId('room-card').filter({ hasText: roomName })
@@ -131,7 +124,7 @@ async function openRoomCalendar(page: Page, roomName: string) {
   await card.getByRole('button', { name: /Reservar Esta Sala/i }).click()
   await expect(page.getByRole('heading', { name: `Disponibilidade — ${roomName}` })).toBeVisible({ timeout: 10000 })
   // These flows step day by day; the week view has its own spec.
-  await useDayView(page)
+  await selectDayView(page)
 }
 
 /** Step the day view forward `offset` days from today. */
@@ -173,10 +166,10 @@ function dashboardLabel(start: Date, end: Date): string {
 }
 
 /** A dashboard booking card, identified by its room and exact date+time line. */
-function bookingCard(page: Page, roomName: string, start: Date, end: Date) {
+function bookingCard(page: Page, key: RoomKey, start: Date, end: Date) {
   return page
     .locator('div.rounded-xl')
-    .filter({ hasText: roomName })
+    .filter({ hasText: roomOf(key).name })
     .filter({ hasText: dashboardLabel(start, end) })
 }
 
@@ -242,10 +235,9 @@ async function chooseHourly(page: Page) {
  * belongs to.
  */
 async function confirmAndPay(page: Page, api: APIRequestContext, token: string): Promise<ApiBooking> {
-  // packages.spec.ts buys packs for this same demo account, so depending on
-  // run order the modal may default to spending prepaid hours. These tests are
-  // about the Stripe leg, so pick hourly explicitly rather than depending on
-  // whichever spec ran first.
+  // The customer is this file's own and has no pack, so the hourly option is
+  // what the modal preselects; picked explicitly all the same — these tests
+  // are about the Stripe leg.
   await chooseHourly(page)
   await page.getByRole('button', { name: /Confirmar Reserva/i }).click()
   await page.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
@@ -272,46 +264,43 @@ async function confirmAndPay(page: Page, api: APIRequestContext, token: string):
 
 const created: string[] = []
 let api: APIRequestContext
+let admin: Admin
+let customer: Customer
 let token: string
 let page: Page
+let context: BrowserContext
+const rooms = {} as Record<RoomKey, Room>
 
+// One customer, one signed-in page and three rooms for the whole file: the
+// tests build on each other's state (a lunch gap, a cancelled hour), so they
+// stay serial — but everything they touch is theirs.
 test.describe.configure({ mode: 'serial' })
 
 test.describe('Reservas — fluxos reais', () => {
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
     api = await playwrightRequest.newContext()
-    token = await login(api)
-
-    // Leftovers from an interrupted run would occupy the hours these tests
-    // book, so clear anything of ours on the days they use.
-    const testDays = [bookableDayOffset(3), bookableDayOffset(4)].map((offset) =>
-      utcHour(offset, 0).toISOString().slice(0, 10),
-    )
-    for (const booking of await myBookings(api, token)) {
-      if (!testDays.includes(booking.start_time.slice(0, 10))) continue
-      if (booking.status === 'expired' || booking.status === 'paid_unfulfilled') {
-        // Holds no slot and the member API refuses to cancel it (C03); clear
-        // it as the operator so dashboard card locators stay unique.
-        await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
-          headers: auth(token), params: { org_id: booking.org_id }, data: { status: 'cancelled' },
-        })
-      } else if (booking.status !== 'cancelled') {
-        await cancelViaApi(api, token, booking.id)
-      }
+    admin = await adminSession(api)
+    // Named without the seeded names: other specs find the seeded cards by text.
+    for (let i = 0; i < ROOM_KEYS.length; i++) {
+      rooms[ROOM_KEYS[i]] = await createRoom(api, admin, { name: `E2E booking ${'ABC'[i]} ${Date.now().toString(36)}` })
     }
+    customer = await createCustomer(api, { tag: 'booking' })
+    token = customer.token
 
-    const context = await browser.newContext({ timezoneId: 'UTC' })
+    context = await browser.newContext({ timezoneId: 'UTC', storageState: await loginAs(customer) })
     await preferDayView(context)
     page = await context.newPage()
-    await signIn(page)
   })
 
   test.afterAll(async () => {
     if (api && token) {
       for (const id of created) await cancelViaApi(api, token, id)
     }
+    if (api && admin) {
+      for (const key of ROOM_KEYS) if (rooms[key]) await removeRoom(api, admin, rooms[key].id)
+    }
+    if (context) await context.close()
     if (api) await api.dispose()
-    if (page) await page.context().close()
   })
 
   test('browse rooms page', async () => {
@@ -383,7 +372,7 @@ test.describe('Reservas — fluxos reais', () => {
 
   test('a slot taken between opening the modal and confirming surfaces the specific conflict message (B1)', async () => {
     const offset = bookableDayOffset(3)
-    const roomId = await roomIdByName(api, 'Sala Névoa')
+    const roomId = roomOf('Sala Névoa').id
 
     await openRoomCalendar(page, 'Sala Névoa')
     await goToDay(page, offset)
@@ -458,7 +447,7 @@ test.describe('Reservas — fluxos reais', () => {
 
   test('booked hours read as Ocupado for another visitor and are not selectable (B5)', async ({ browser }) => {
     const offset = bookableDayOffset(3)
-    const roomId = await roomIdByName(api, 'Sala Névoa')
+    const roomId = roomOf('Sala Névoa').id
     await createBookingViaApi(api, token, roomId, utcHour(offset, 9), utcHour(offset, 11))
 
     const visitorContext = await browser.newContext({ timezoneId: 'UTC' })
@@ -491,7 +480,7 @@ test.describe('Reservas — fluxos reais', () => {
 
   test('cancelling a booking frees its hours on the calendar (B5)', async () => {
     const offset = bookableDayOffset(4)
-    const roomId = await roomIdByName(api, 'Sala Névoa')
+    const roomId = roomOf('Sala Névoa').id
     await createBookingViaApi(api, token, roomId, utcHour(offset, 15), utcHour(offset, 17))
 
     await openRoomCalendar(page, 'Sala Névoa')
@@ -522,7 +511,7 @@ test.describe('Reservas — fluxos reais', () => {
   test('a booking inside the 24h window cannot be cancelled and says why (C07)', async () => {
     // First open hour that starts less than 24h from now, today or tomorrow.
     // Only Sunday 00:00-08:00 UTC has none (Monday 08:00 is >24h away).
-    const roomId = await roomIdByName(api, 'Sala Calma')
+    const roomId = roomOf('Sala Calma').id
     const now = Date.now()
     let start: Date | null = null
     for (const dayOffset of [0, 1]) {
@@ -556,23 +545,21 @@ test.describe('Reservas — fluxos reais', () => {
     } finally {
       // The member API refuses this cancellation by design; clear it as the
       // operator so reruns do not accumulate near-term bookings.
-      const admin = await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
-        headers: auth(token),
+      const cleared = await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
+        headers: auth(admin.token),
         params: { org_id: booking.org_id },
-        data: { status: 'cancelled' },
+        data: { status: 'cancelled', credit_hours: false, reason: 'e2e cleanup' },
       })
-      expect(admin.ok(), await admin.text()).toBeTruthy()
+      expect(cleared.ok(), await cleared.text()).toBeTruthy()
     }
   })
 
   test('an abandoned checkout can be paid later from the dashboard (C03)', async () => {
-    // Sala Calma 17:00 on day+4: no other test books it on any offset, even
-    // when a skipped Sunday makes offsets 3 and 4 the same Monday. The hold
-    // is created through the authenticated API rather than the calendar UI
-    // (covered by the tests above) to keep the public rate-limit budget for
-    // the specs that run after this one.
+    // 17:00 on day+4 in this file's "Sala Calma": no other test here books
+    // it. The hold is created through the authenticated API rather than the
+    // calendar UI, which the tests above already drive.
     const offset = bookableDayOffset(4)
-    const roomId = await roomIdByName(api, 'Sala Calma')
+    const roomId = roomOf('Sala Calma').id
     const res = await api.post(apiUrl('/bookings'), {
       headers: auth(token),
       data: { room_id: roomId, start_time: utcHour(offset, 17).toISOString(), end_time: utcHour(offset, 18).toISOString() },
@@ -604,7 +591,7 @@ test.describe('Reservas — fluxos reais', () => {
 
   test('cancelling on the checkout page frees the slot immediately (C03)', async () => {
     const offset = bookableDayOffset(4)
-    const roomId = await roomIdByName(api, 'Sala Calma')
+    const roomId = roomOf('Sala Calma').id
     const res = await api.post(apiUrl('/bookings'), {
       headers: auth(token),
       data: { room_id: roomId, start_time: utcHour(offset, 18).toISOString(), end_time: utcHour(offset, 19).toISOString() },
@@ -629,21 +616,16 @@ test.describe('Reservas — fluxos reais', () => {
 
     // An expired hold holds nothing, so the member API refuses to cancel it;
     // clear it as the operator so reruns do not accumulate cards.
-    const admin = await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
-      headers: auth(token), params: { org_id: booking.org_id }, data: { status: 'cancelled' },
+    const cleared = await api.put(apiUrl(`/admin/bookings/${booking.id}`), {
+      headers: auth(admin.token), params: { org_id: booking.org_id }, data: { status: 'cancelled', credit_hours: false, reason: 'e2e cleanup' },
     })
-    expect(admin.ok(), await admin.text()).toBeTruthy()
+    expect(cleared.ok(), await cleared.text()).toBeTruthy()
   })
 
   test('weekly series: preview, pending acknowledgement, isolated cancellation and conflict', async () => {
     const offset = bookableDayOffset(5)
     const first = utcHour(offset, 17)
     const second = new Date(first.getTime() + 7 * 86400000)
-    for (const booking of await myBookings(api, token)) {
-      if ([first.toISOString().slice(0, 10), second.toISOString().slice(0, 10)].includes(booking.start_time.slice(0, 10)) && booking.status !== 'cancelled') {
-        await cancelViaApi(api, token, booking.id)
-      }
-    }
     await openRoomCalendar(page, 'Sala Névoa')
     await goToDay(page, offset)
     await dragHours(page, 17, 18)

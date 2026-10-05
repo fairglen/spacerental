@@ -13,9 +13,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 # IMPORTANT: set test DB URL BEFORE importing app
-TEST_DATABASE_URL = os.getenv(
+_CONFIGURED_TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://spacerental:spacerental@localhost:5432/spacerental_test",
+)
+# One database per xdist worker (Q48): `pytest -n auto` starts workers gw0,
+# gw1, … that would otherwise drop and recreate the same tables under each
+# other. `worker_database` below creates and drops it; a plain `pytest` run
+# keeps the configured name and touches nothing.
+_WORKER = os.environ.get("PYTEST_XDIST_WORKER")
+TEST_DATABASE_URL = (
+    f"{_CONFIGURED_TEST_DATABASE_URL}_{_WORKER}" if _WORKER else _CONFIGURED_TEST_DATABASE_URL
 )
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["SECRET_KEY"] = "test-secret-key-32-chars-min-test-test"
@@ -85,6 +93,40 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def worker_database():
+    """This xdist worker's own database: created before its first test,
+    dropped after its last. The configured URL's database (the one a serial
+    run uses) is the maintenance connection's neighbour, so the worker needs
+    nothing but the same credentials (a Compose/CI PostgreSQL user owns the
+    cluster)."""
+    if not _WORKER:
+        yield
+        return
+
+    import asyncpg
+
+    base, name = TEST_DATABASE_URL.rsplit("/", 1)
+    maintenance = base.replace("postgresql+asyncpg://", "postgresql://") + "/postgres"
+
+    async def run(sql: str) -> None:
+        conn = await asyncpg.connect(maintenance)
+        try:
+            await conn.execute(sql)
+        finally:
+            await conn.close()
+
+    # Its own loop: the session `event_loop` fixture above belongs to the tests.
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(run(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        loop.run_until_complete(run(f'CREATE DATABASE "{name}"'))
+        yield
+        loop.run_until_complete(run(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+    finally:
+        loop.close()
 
 
 @pytest.fixture(autouse=True)

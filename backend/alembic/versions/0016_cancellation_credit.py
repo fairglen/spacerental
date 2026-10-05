@@ -34,8 +34,11 @@ def upgrade() -> None:
         sa.Column(
             "source",
             sa.Enum(
-                "purchase", "complimentary", "cancellation_credit",
-                name="purchase_source", create_type=False,
+                "purchase",
+                "complimentary",
+                "cancellation_credit",
+                name="purchase_source",
+                create_type=False,
             ),
             server_default="purchase",
             nullable=False,

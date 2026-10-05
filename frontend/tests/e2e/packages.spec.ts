@@ -1,9 +1,24 @@
 import { createHmac } from 'node:crypto'
-import { setTimeout as delay } from 'node:timers/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { decode, encode } from 'next-auth/jwt'
-import { test, expect, request as playwrightRequest, type APIRequestContext, type Browser, type Page } from '@playwright/test'
-import { waitOutPublicRateWindow } from './helpers/rooms'
+import { request as playwrightRequest, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test'
+import {
+  API_URL,
+  adminSession,
+  at,
+  auth,
+  createCustomer,
+  createRoom,
+  expect,
+  freshDay,
+  loginAs,
+  packageByHours,
+  removeRoom,
+  test,
+  type Admin,
+  type Customer,
+  type Room,
+} from './fixtures'
 
 /**
  * Package purchase flows (TODO.md B12): buying a package from the landing
@@ -16,16 +31,11 @@ import { waitOutPublicRateWindow } from './helpers/rooms'
  * spendable) — walked as a real page, no route interception needed
  * (CLAUDE.md §10.3).
  *
- * Serial + one shared sign-in, same as booking.spec.ts — the backend's
- * auth-tier rate limit (10 requests/60s, backend/app/config.py) is shared
- * across every spec file in a run, so each test re-logging in via both the
- * API and the UI adds up fast across the whole suite.
+ * Serial + one shared signed-in page, same as booking.spec.ts: the tests
+ * build on the packs the one before bought. The buyer is a customer of this
+ * file's own (Q41), so the balance it reads is only what it bought here.
  */
 
-const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
-const CREDENTIALS = { email: 'admin@demo.com', password: 'admin123' }
-
-type ApiPackage = { id: string; org_id: string; name: string; hours: number }
 type ApiPurchase = {
   id: string
   package_id: string
@@ -37,31 +47,6 @@ type ApiPurchase = {
 
 function apiUrl(path: string): string {
   return `${API_URL}${path}`
-}
-
-async function login(api: APIRequestContext): Promise<string> {
-  const res = await api.post(apiUrl('/auth/login'), { data: CREDENTIALS })
-  expect(res.ok(), `login failed: ${res.status()}`).toBeTruthy()
-  return (await res.json()).access_token
-}
-
-function auth(token: string) {
-  return { Authorization: `Bearer ${token}` }
-}
-
-async function seededOrgId(api: APIRequestContext): Promise<string> {
-  const res = await api.get(apiUrl('/spaces'))
-  const body = await res.json()
-  expect(body.spaces.length, 'no seeded spaces to derive an org from').toBeGreaterThan(0)
-  return body.spaces[0].org_id
-}
-
-async function packageByHours(api: APIRequestContext, orgId: string, hours: number): Promise<ApiPackage> {
-  const res = await api.get(apiUrl('/packages'), { params: { org_id: orgId } })
-  const body = await res.json()
-  const pkg = body.packages.find((p: ApiPackage) => p.hours === hours)
-  expect(pkg, `no seeded package with ${hours}h`).toBeTruthy()
-  return pkg
 }
 
 async function myPurchases(api: APIRequestContext, token: string): Promise<ApiPurchase[]> {
@@ -79,14 +64,6 @@ function decodeCheckoutUrl(url: string): { sessionId: string; purchaseId: string
   return { sessionId, purchaseId }
 }
 
-async function signIn(page: Page) {
-  await page.goto('/sign-in')
-  await page.getByLabel(/Email/i).fill(CREDENTIALS.email)
-  await page.getByLabel('Password').fill(CREDENTIALS.password)
-  await page.getByRole('button', { name: /Entrar/i }).click()
-  await page.waitForURL('**/dashboard', { timeout: 30000 })
-}
-
 /** Click "Pagar" on the stub Checkout page the browser is currently on. */
 async function payOnStubCheckoutPage(page: Page) {
   await page.getByRole('button', { name: /^Pagar$/ }).click()
@@ -97,31 +74,34 @@ test.describe.configure({ mode: 'serial' })
 
 test.describe('Comprar pacotes — fluxos reais (B12)', () => {
   let api: APIRequestContext
+  let admin: Admin
+  let customer: Customer
+  let room: Room
   let token: string
   let page: Page
+  let context: BrowserContext
 
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
-    // booking.spec.ts, which runs just before, spends most of the shared
-    // public budget, and since C11 every full page load reads the spaces list
-    // once. Measured on 2026-09-19: exactly 120 public reads in the 60 s
-    // before this file's first page load, so the pricing section's own
-    // GET /spaces was the 121st and came back 429 (no pack buttons).
-    await waitOutPublicRateWindow()
     api = await playwrightRequest.newContext()
-    token = await login(api)
+    admin = await adminSession(api)
+    // The redemption at the end of the visitor test books in a room of this
+    // file's own.
+    room = await createRoom(api, admin, { name: `E2E packages ${Date.now().toString(36)}` })
+    customer = await createCustomer(api, { tag: 'packages' })
+    token = customer.token
 
-    const context = await browser.newContext()
+    context = await browser.newContext({ storageState: await loginAs(customer) })
     page = await context.newPage()
-    await signIn(page)
   })
 
   test.afterAll(async () => {
+    if (api && admin && room) await removeRoom(api, admin, room.id)
+    if (context) await context.close()
     if (api) await api.dispose()
-    if (page) await page.context().close()
   })
 
   test('an existing member buys a package from the landing page and sees the right hours_remaining (B12)', async () => {
-    const orgId = await seededOrgId(api)
+    const orgId = customer.orgId
     const pkg10h = await packageByHours(api, orgId, 10)
 
     await page.goto('/#precos')
@@ -147,7 +127,7 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
   })
 
   test('a member buys straight from the dashboard "Comprar mais horas" section (B12)', async () => {
-    const orgId = await seededOrgId(api)
+    const orgId = customer.orgId
     const pkg20h = await packageByHours(api, orgId, 20)
 
     await page.goto('/dashboard/packages')
@@ -204,9 +184,9 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
     await page.context().addCookies([{ ...cookie!, value: expiredCookie }])
     const sessionResponse = await page.request.get('/api/auth/session')
     const activeSession = await sessionResponse.json()
-    expect(activeSession.user.email).toBe(CREDENTIALS.email)
+    expect(activeSession.user.email).toBe(customer.email)
     expect(activeSession.accessToken).toBe(expired)
-    const orgId = await seededOrgId(api)
+    const orgId = customer.orgId
     const pkg = await packageByHours(api, orgId, 20)
     const before = await myPurchases(api, token)
     await page.goto('/#precos')
@@ -217,8 +197,8 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
     expect(await myPurchases(api, token)).toHaveLength(before.length)
     await page.getByRole('link', { name: 'Entrar e continuar a compra' }).click()
     await expect(page).toHaveURL(new RegExp(`/sign-in\\?packageId=${pkg.id}`))
-    await page.getByLabel('Email').fill(CREDENTIALS.email)
-    await page.getByLabel('Password').fill(CREDENTIALS.password)
+    await page.getByLabel('Email').fill(customer.email)
+    await page.getByLabel('Password').fill(customer.password)
     await page.getByRole('button', { name: /^Entrar$/ }).click()
     await page.waitForURL(new RegExp(`/dashboard/packages\\?packageId=${pkg.id}`))
     const targetCard = page.locator('div.rounded-xl').filter({ hasText: `${pkg.hours}h ·` })
@@ -232,16 +212,11 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
   })
 
   test('a signed-out visitor\'s chosen package survives sign-up and lands them on a highlighted card (B12)', async ({ browser }) => {
-    // The public limiter is intentionally shared by all browser contexts in
-    // Compose. Earlier package and booking tests use the same peer address;
-    // allow the real window to expire before this isolated visitor journey.
-    test.setTimeout(120_000)
-    await delay(60_000)
-    const orgId = await seededOrgId(api)
+    const orgId = customer.orgId
     const pkg10h = await packageByHours(api, orgId, 10)
 
     // A fresh, signed-out context — the shared `page` above is signed in as
-    // admin@demo.com and must stay that way for the tests after this one.
+    // this file's customer and must stay that way for the tests around it.
     const visitorContext = await browser.newContext()
     const visitor = await visitorContext.newPage()
     try {
@@ -284,25 +259,14 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
       expect(active[0].status).toBe('active')
       expect(Number(active[0].hours_remaining)).toBe(10)
 
-      const spaces = await (await visitor.request.get(`${API_URL}/spaces`)).json()
-      const detail = await (await visitor.request.get(`${API_URL}/spaces/${spaces.spaces[0].id}`)).json()
-      const room = detail.rooms[0]
-      const date = new Date()
-      date.setUTCDate(date.getUTCDate() + 3)
-      while (date.getUTCDay() === 0) date.setUTCDate(date.getUTCDate() + 1)
-      const availability = await (await visitor.request.get(`${API_URL}/rooms/${room.id}/availability`, {
-        params: { date: date.toISOString().slice(0, 10) },
-      })).json()
-      const first = availability.slots.find((slot: { available: boolean; start: string; end: string }, i: number) =>
-        slot.available && availability.slots[i + 1]?.available && slot.end === availability.slots[i + 1].start,
-      )
-      expect(first, 'an available two-hour block is required for package redemption').toBeTruthy()
+      // Two hours in this file's own room, three days out: free by construction.
+      const day = freshDay(3)
       const bookingResponse = await visitor.request.post(`${API_URL}/bookings`, {
         headers: { Authorization: `Bearer ${session.accessToken}` },
         data: {
           room_id: room.id,
-          start_time: first.start,
-          end_time: availability.slots[availability.slots.indexOf(first) + 1].end,
+          start_time: at(day, 10).toISOString(),
+          end_time: at(day, 12).toISOString(),
           payment_method: 'package',
         },
       })

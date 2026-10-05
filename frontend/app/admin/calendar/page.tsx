@@ -284,7 +284,7 @@ function OrgCalendar() {
         <span><span className="mr-1 inline-block h-3 w-3 rounded-sm align-middle" style={{ backgroundColor: STATUS_BG.pending }} /> ⏳ pendente / a aguardar pagamento</span>
         <span><span className="mr-1 inline-block h-3 w-3 rounded-sm align-middle" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #9CA3AF 0 3px, #D1D5DB 3px 6px)' }} /> ⛔ bloqueio</span>
         <span>pack · pack+ · local = como foi paga</span>
-        {!wide && <span>Arrastar para mover está disponível em ecrãs largos; aqui use "Alterar horário" na reserva.</span>}
+        {!wide && <span>Arrastar para mover está disponível em ecrãs largos; aqui use &quot;Alterar horário&quot; na reserva.</span>}
       </div>
 
       <div className="mt-2 flex gap-2">

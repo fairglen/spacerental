@@ -1,58 +1,149 @@
 name: E2E Tests
 
+# Called by checks.yml (Q44). The suite runs in two shards, each against its
+# own copy of the e2e stack (docker-compose.e2e.yml: production frontend
+# build, raised rate limits — e2e stack only), with 4 Playwright workers per
+# shard. Images are built with `docker buildx bake` so the dependency layers
+# come from the GitHub Actions cache; the Chromium download is cached on the
+# Playwright version. `merge-reports` stitches the two blob reports into one
+# HTML report.
+
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  # Both the backend/frontend (via the overlay) and the Playwright process read
+  # it: booking.spec.ts walks the weekly-series test only when it is on.
+  RECURRING_BOOKINGS_ENABLED: 'true'
 
 jobs:
   e2e:
+    name: e2e (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    env:
-      RECURRING_BOOKINGS_ENABLED: 'true'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Create .env
         run: cp .env.example .env
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: 'frontend/package-lock.json'
-      # npm ci must run before docker compose: the compose file bind-mounts
-      # ./frontend, and Docker would otherwise create node_modules root-owned.
-      - name: Install Playwright
+      - name: Install the test runner
         working-directory: frontend
+        run: npm ci
+      - name: Playwright version
+        id: playwright
+        working-directory: frontend
+        run: echo "version=$(node -e "console.log(require('@playwright/test/package.json').version)")" >> "$GITHUB_OUTPUT"
+      - name: Cache the browser
+        id: browser-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Install the browser's system packages
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        working-directory: frontend
+        run: npx playwright install-deps chromium
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build the stack images (layer cache in Actions)
+        uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6.10.0
+        with:
+          source: .
+          files: |
+            docker-compose.yml
+            docker-compose.e2e.yml
+          load: true
+          set: |
+            backend.cache-from=type=gha,scope=e2e-backend
+            backend.cache-to=type=gha,scope=e2e-backend,mode=max
+            frontend.cache-from=type=gha,scope=e2e-frontend
+            frontend.cache-to=type=gha,scope=e2e-frontend,mode=max
+      - name: Start the e2e stack
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --no-build
+      - name: Wait for the backend and the frontend (60 s cap each)
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
-      - name: Start stack
-        run: docker compose up -d --build
-      - name: Wait for backend
-        run: |
-          for i in {1..30}; do
-            if curl -sf http://localhost:8000/health; then exit 0; fi
-            sleep 2
-          done
-          echo "Backend did not become healthy" >&2
-          exit 1
+          set -euo pipefail
+          wait_for() {
+            for _ in $(seq 1 30); do
+              if curl -sf "$1" > /dev/null; then echo "$2 is up"; return 0; fi
+              sleep 2
+            done
+            echo "::error::$2 did not come up within 60 s" >&2
+            return 1
+          }
+          wait_for http://localhost:8000/health backend
+          wait_for http://localhost:3000/api/auth/providers frontend
       - name: Seed
-        run: docker compose exec -T backend python -m app.seed
-      - name: Run E2E
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T backend python -m app.seed
+
+      - name: Run the suite (shard ${{ matrix.shard }} of 2)
         working-directory: frontend
         env:
           E2E_BASE_URL: http://localhost:3000
-        run: npm run test:e2e
+          E2E_API_URL: http://localhost:8000/api/v1
+        run: npx playwright test --shard=${{ matrix.shard }}/2
+
       - name: Capture stack diagnostics
         if: failure()
-        run: docker compose logs --no-color > stack.log
-      - name: Upload report
-        if: failure()
-        uses: actions/upload-artifact@v4
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs --no-color > stack.log
+      - name: Upload the blob report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-report
+          name: blob-report-${{ matrix.shard }}
+          path: frontend/blob-report/
+          retention-days: 7
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-diagnostics-${{ matrix.shard }}
           path: |
-            frontend/playwright-report/
             frontend/test-results/
             stack.log
+          retention-days: 7
+
+  merge-reports:
+    name: merge-reports
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+      - working-directory: frontend
+        run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: blob-report-*
+          path: frontend/all-blob-reports
+          merge-multiple: true
+      - name: One HTML report from both shards
+        working-directory: frontend
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14

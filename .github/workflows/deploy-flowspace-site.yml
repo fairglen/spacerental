@@ -2,9 +2,9 @@ name: Deploy flowspace-site
 
 # NOTE: path-filtered to flowspace-site/** so this workflow only runs for
 # changes to the standalone FlowSpace marketing site, not the FlowSpace app
-# in frontend/ or backend/. See TODO.md F01 and frontend-tests.yml's note
-# on path-filter/required-check interaction (TODO.md T4) if this is ever made
-# a required status check.
+# in frontend/ or backend/. See TODO.md F01. It is not part of checks.yml's
+# `required-checks` (a deploy is not a check); the Pages permissions below are
+# granted to this workflow only (Q45).
 
 on:
   push:
@@ -30,11 +30,12 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Refuse to publish a site whose contact form is dead on arrival.
       #
@@ -131,13 +132,13 @@ jobs:
       # Without it a first-time Pages setup can fail at deploy-pages before
       # anything is published.
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: ${{ env.PUBLISH_DIR }}
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

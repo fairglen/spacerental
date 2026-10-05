@@ -1,33 +1,26 @@
 name: Lint
 
-# Path-filtered like the backend-tests, frontend-tests and migrations
-# workflows: `ruff check backend` only has an opinion about backend Python, so
-# an unfiltered run made unrelated branches (e.g. a static-site-only change)
-# inherit and report main's lint state as their own failure. `ruff.toml` lives
-# at the repository root, so it has to be listed alongside `backend/**` or a
-# config change would skip its own check; `.pre-commit-config.yaml` pins the
-# same Ruff version as this file, so a hook bump must run this check too.
+# Called by checks.yml when backend or frontend files change (Q47/Q49). Two
+# jobs, both cheap: Ruff (check + format) for the backend, and ESLint plus
+# the TypeScript type check for the frontend — the type check lives here
+# rather than in frontend-tests so a type error fails in the cheapest job.
+# `ruff.toml` lives at the repository root; `.pre-commit-config.yaml` pins
+# the same Ruff version as this file, so a hook bump must run this check too.
+
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'backend/**'
-      - 'ruff.toml'
-      - '.pre-commit-config.yaml'
-      - '.github/workflows/lint.yml'
-  pull_request:
-    paths:
-      - 'backend/**'
-      - 'ruff.toml'
-      - '.pre-commit-config.yaml'
-      - '.github/workflows/lint.yml'
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
 
 jobs:
   python:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       # Pinned deliberately: an unpinned `pip install ruff` picked up 0.16.1,
@@ -35,3 +28,22 @@ jobs:
       # intentionally, together with ruff.toml and .pre-commit-config.yaml.
       - run: pip install ruff==0.16.5
       - run: ruff check backend
+      - run: ruff format --check backend
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+      - run: npm ci
+      # What `next build` lints, made explicit (and run on the tests too).
+      - run: npx eslint . --ext .ts,.tsx,.js,.mjs
+      - run: npx tsc --noEmit

@@ -1,11 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { setTimeout as delay } from 'node:timers/promises'
-import { test, expect } from '@playwright/test'
-import { openSpaceRooms, preferDayView, useDayView } from './helpers/rooms'
+import { test, expect, API_URL, at, freshDay } from './fixtures'
+import { preferDayView, selectDayView } from './helpers/rooms'
 import pt from '../../lib/i18n/pt.json'
 
 test.use({ timezoneId: 'UTC' })
-const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
 
 /** Resolves once the element's position has been stable for two reads. */
 async function settled(locator: import('@playwright/test').Locator) {
@@ -19,25 +17,19 @@ async function settled(locator: import('@playwright/test').Locator) {
     .toBe(true)
 }
 
+/** How many '›' presses take the day view from today to `day`. */
+function daysFromToday(day: Date): number {
+  const now = new Date()
+  return Math.round((day.getTime() - Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) / 86_400_000)
+}
+
 test.describe('Authentication', () => {
-  let walkedCustomerJourney = false
-
-  test.afterAll(async () => {
-    if (!walkedCustomerJourney) return
-    // Compose sees all browser customers as one peer. Give the added full
-    // journey its own default public-rate window before the next suite, so
-    // machine-speed traffic does not exhaust another customer's budget.
-    test.setTimeout(65_000)
-    await delay(60_000)
-  })
-
   test('landing page loads', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { level: 1 })).toContainText(pt.hero.headline_start)
   })
 
-  test('fresh customer signs up, selects multiple hours, pays and sees confirmation', async ({ page }) => {
-    walkedCustomerJourney = true
+  test('fresh customer signs up, selects multiple hours, pays and sees confirmation', async ({ page, room }) => {
     const email = `test-${randomUUID()}@example.com`
     await page.goto('/sign-up')
     await page.getByLabel('Nome').fill('Test User')
@@ -61,38 +53,17 @@ test.describe('Authentication', () => {
       headers, params: { org_id: memberships[0].org_id },
     })
     expect(denied.status()).toBe(403)
-    await preferDayView(page)
-    await openSpaceRooms(page)
-    // With one public space the rooms view lives at /spaces itself (C11), so
-    // the space is identified through the API rather than read off the URL.
-    const { spaces } = await (await page.request.get(`${API_URL}/spaces`)).json()
-    const spaceId = /\/spaces\/[^/]+$/.test(new URL(page.url()).pathname)
-      ? new URL(page.url()).pathname.split('/').pop()
-      : spaces[0].id
-    const detail = await (await page.request.get(`${API_URL}/spaces/${spaceId}`)).json()
-    expect(detail.space.org_id).toBe(memberships[0].org_id)
-    const room = detail.rooms[0]
-    await page.getByRole('button', { name: /Reservar Esta Sala/i }).first().click()
-    await expect(page.getByRole('heading', { name: /^Disponibilidade — / })).toBeVisible()
-    await useDayView(page)
+    // The signup landed in the organisation that owns the seeded space.
+    expect(room.org_id).toBe(memberships[0].org_id)
 
-    // Each run picks free future inventory and cancels only its own reservation.
-    let offset = 7
-    let startHour = 0
-    for (let attempt = 0; attempt < 7; attempt++, offset++) {
-      const day = new Date()
-      day.setUTCDate(day.getUTCDate() + offset)
-      const availability = await (await page.request.get(`${API_URL}/rooms/${room.id}/availability`, {
-        params: { date: day.toISOString().slice(0, 10) },
-      })).json()
-      const slots: { start: string; end: string; available: boolean }[] = availability.slots
-      const first = slots.find((slot, index) => slot.available && slots[index + 1]?.available
-        && slot.end === slots[index + 1].start && new Date(slot.start).getUTCHours() >= 9
-        && new Date(slot.start).getUTCHours() <= 15)
-      if (first) { startHour = new Date(first.start).getUTCHours(); break }
-    }
-    expect(startHour, 'two consecutive free hours within the next week').toBeGreaterThan(0)
-    for (let i = 0; i < offset; i++) await page.getByRole('button', { name: '›' }).click()
+    // The test's own room, a week out: two free hours by construction.
+    const day = freshDay(7)
+    const startHour = 10
+    await preferDayView(page)
+    await page.goto(`/spaces/${room.space_id}?room=${room.id}`)
+    await expect(page.getByRole('heading', { name: `Disponibilidade — ${room.name}` })).toBeVisible({ timeout: 15000 })
+    await selectDayView(page)
+    for (let i = 0; i < daysFromToday(day); i++) await page.getByRole('button', { name: '›' }).click()
     // Rows are located by their gutter label: the grid's first hour follows
     // the returned slots (B34), not a fixed 08:00.
     const slot = async (hour: number) => {
@@ -135,6 +106,7 @@ test.describe('Authentication', () => {
     const pending = await (await page.request.get(`${API_URL}/bookings/me`, { headers })).json()
     expect(pending.bookings).toHaveLength(1)
     const booking = pending.bookings[0]
+    expect(new Date(booking.start_time).getTime()).toBe(at(day, startHour).getTime())
     try {
       expect(Number(booking.duration_hours)).toBe(2)
       expect(booking.status).toBe('pending')

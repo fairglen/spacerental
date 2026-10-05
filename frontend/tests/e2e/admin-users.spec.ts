@@ -1,7 +1,5 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, API_URL, auth } from './fixtures'
 import { ADMIN_STORAGE_STATE } from './global-setup'
-
-const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
 
 /**
  * A05 as an operator: find a customer by email in /admin/users, open their
@@ -11,27 +9,22 @@ const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
  */
 test.use({ storageState: ADMIN_STORAGE_STATE, viewport: { width: 1400, height: 1000 } })
 
-test('users: search, open a customer, grant hours, and the customer can spend them', async ({ page, request }) => {
-  const stamp = Date.now()
-  const email = `e2e-users-${stamp}@example.com`
-  const password = 'Password123!'
-  const registered = await request.post(`${API_URL}/auth/register`, { data: { email, password, name: `Cliente Horas ${stamp}` } })
-  expect(registered.ok(), await registered.text()).toBeTruthy()
-  const customerToken = (await registered.json()).access_token
+test('users: search, open a customer, grant hours, and the customer can spend them', async ({ page, api, customer }) => {
+  const query = customer.email.split('@')[0]
 
   // G06: the list is "Clientes" on the kit — search in the toolbar, a row opens the page.
   await page.goto('/admin/users')
   await expect(page.getByRole('heading', { name: 'Clientes' })).toBeVisible()
-  await page.getByLabel('Pesquisar').fill(`e2e-users-${stamp}`)
+  await page.getByLabel('Pesquisar').fill(query)
   // The search lands in the URL after a debounce; wait for it like a person
   // watching the list settle would, rather than clicking the unfiltered row.
-  await expect(page).toHaveURL(new RegExp(`q=e2e-users-${stamp}`))
-  const row = page.getByRole('row').filter({ hasText: email })
+  await expect(page).toHaveURL(new RegExp(`q=${query}`))
+  const row = page.getByRole('row').filter({ hasText: customer.email })
   await expect(row).toBeVisible({ timeout: 10000 })
   await expect(row).toContainText('Cliente')
-  await row.getByText(email).click()
+  await row.getByText(customer.email).click()
 
-  await expect(page.getByRole('heading', { name: new RegExp(`Cliente Horas ${stamp}`) })).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('heading', { name: customer.name })).toBeVisible({ timeout: 10000 })
   await expect(page.getByText('Sem packs.')).toBeVisible()
   await page.getByRole('button', { name: 'Atribuir horas' }).click()
   const dialog = page.getByRole('dialog')
@@ -46,7 +39,7 @@ test('users: search, open a customer, grant hours, and the customer can spend th
   await expect(packs).toContainText('Compensação por avaria do ar condicionado')
 
   // The customer sees the hours as an active pack, spendable like any other.
-  const mine = await request.get(`${API_URL}/packages/me`, { headers: { Authorization: `Bearer ${customerToken}` } })
+  const mine = await api.get(`${API_URL}/packages/me`, { headers: auth(customer.token) })
   const purchases = (await mine.json()).purchases
   expect(purchases).toHaveLength(1)
   expect(purchases[0]).toMatchObject({ status: 'active', hours_remaining: '3.00', amount_paid: '0.00' })
@@ -63,7 +56,7 @@ test('users: search, open a customer, grant hours, and the customer can spend th
   await extend.getByRole('button', { name: 'Prolongar' }).click()
   await expect(extend).toBeHidden({ timeout: 10000 })
   await expect(packs).toContainText('Esteve de baixa')
-  const after = (await (await request.get(`${API_URL}/packages/me`, { headers: { Authorization: `Bearer ${customerToken}` } })).json()).purchases[0]
+  const after = (await (await api.get(`${API_URL}/packages/me`, { headers: auth(customer.token) })).json()).purchases[0]
   expect(new Date(after.expires_at).getTime()).toBeGreaterThan(new Date(before).getTime() + 300 * 24 * 3600 * 1000)
 
   // The role buttons: a member can be made admin, with a confirm step.
