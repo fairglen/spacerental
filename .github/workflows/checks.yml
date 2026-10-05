@@ -94,6 +94,13 @@ jobs:
     if: needs.changes.outputs.docs == 'true'
     uses: ./.github/workflows/docs-sync.yml
 
+  # P2.4: informational — not in required-checks until the budgets have been
+  # stable for a while. A red perf job shows on the PR without blocking it.
+  perf:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/perf.yml
+
   required-checks:
     name: required-checks
     needs: [changes, lint, backend, migrations, frontend, e2e, docs]

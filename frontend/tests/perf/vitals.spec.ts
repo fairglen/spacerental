@@ -47,7 +47,7 @@ type PageSpec = {
   /** Something the page does after load whose requests count too (a click that fans out). */
   after?: (page: Page) => Promise<void>
 }
-type Budget = Partial<Record<'lcp_ms' | 'js_kb' | 'requests' | 'api_calls', number>>
+type Budget = Partial<Record<'lcp_ms' | 'js_kb' | 'js_before_load_kb' | 'requests' | 'api_calls', number>>
 
 const kb = (bytes: number) => Math.round(bytes / 102.4) / 10
 const median = (values: number[]) => {
@@ -227,6 +227,7 @@ for (const spec of PAGES) {
     const budget = budgetFor(spec.slug)
     if (budget.lcp_ms !== undefined) expect.soft(m.lcp_ms ?? Infinity, `${spec.slug} LCP`).toBeLessThanOrEqual(budget.lcp_ms)
     if (budget.js_kb !== undefined) expect.soft(m.js_kb, `${spec.slug} JS on the wire`).toBeLessThanOrEqual(budget.js_kb)
+    if (budget.js_before_load_kb !== undefined) expect.soft(m.js_before_load_kb, `${spec.slug} JS before load`).toBeLessThanOrEqual(budget.js_before_load_kb)
     if (budget.requests !== undefined) expect.soft(m.requests, `${spec.slug} requests`).toBeLessThanOrEqual(budget.requests)
     if (budget.api_calls !== undefined) expect.soft(m.api_calls.length, `${spec.slug} API calls`).toBeLessThanOrEqual(budget.api_calls)
   })
