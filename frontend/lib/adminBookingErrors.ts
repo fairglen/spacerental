@@ -8,6 +8,12 @@ export function adminBookingErrorMessage(error: unknown): string {
     case 409:
       if (detail.includes('another block') || detail.includes('bloque')) return 'Já existe um bloqueio nesse horário.'
       if (detail.includes('hold this time')) return 'Há reservas nesse horário. Mova-as ou cancele-as primeiro.'
+      // K01: the credited hours went into another booking; no reinstating.
+      if (detail.includes('already used')) return 'O crédito já foi usado; crie uma nova reserva.'
+      // K01: the credit would not fit the ledger (999,99 h) — the amount is the cause.
+      if (detail.includes('exceeds what the hour bank')) {
+        return 'O crédito ultrapassa o máximo do banco de horas (999,99 h). Corrija primeiro o valor da reserva, ou cancele sem creditar as horas, com um motivo.'
+      }
       // H03: a refused write named by its constraint, never a server error.
       if (detail.includes('violates a constraint')) {
         return detail.includes('package_hours')

@@ -80,8 +80,18 @@ async def _walk(
     org_id: uuid.UUID,
     hours: Decimal,
     now: datetime,
+    not_for_booking: uuid.UUID | None = None,
 ) -> list[Draw]:
     """Debit up to `hours` across the bank, soonest-expiring purchase first.
+
+    `not_for_booking` protects the cancellation credit a booking created
+    (K01): the booking being reinstated must not pay its pack share with the
+    hours its own cancellation put in the bank — those are reversed right
+    after, and a draw from them would read as "spent" (review on #69). The
+    credit stays IN the ordered walk and is locked in its turn like every
+    other row, so the ledger's one lock order holds (a concurrent redemption
+    locking the credit and then a later pack cannot meet this walk coming the
+    other way); it is simply not drawn from.
 
     Candidate ids are read unlocked, then each candidate is re-read under
     `FOR UPDATE` and re-validated *under that lock*. That second check is the
@@ -114,6 +124,9 @@ async def _walk(
             break
         purchase = await _lock(db, purchase_id)
         if purchase is None or not is_spendable(purchase, now):
+            continue
+        # Locked in order, never drawn: this booking's own credit (see above).
+        if not_for_booking is not None and purchase.source_booking_id == not_for_booking:
             continue
         taken = min(purchase.hours_remaining, needed)
         purchase.hours_remaining -= taken
@@ -158,6 +171,7 @@ async def redeem_hours(
     org_id: uuid.UUID,
     hours: Decimal,
     now: datetime,
+    not_for_booking: uuid.UUID | None = None,
 ) -> list[Draw] | None:
     """Debit the whole of `hours` from the bank, or nothing at all.
 
@@ -165,7 +179,9 @@ async def redeem_hours(
     draw is put back before returning None, so a refused `package` booking
     leaves the balances exactly as they were.
     """
-    draws = await _walk(db, user_id=user_id, org_id=org_id, hours=hours, now=now)
+    draws = await _walk(
+        db, user_id=user_id, org_id=org_id, hours=hours, now=now, not_for_booking=not_for_booking
+    )
     if sum((taken for _, taken in draws), Decimal(0)) < hours:
         await _undo(db, draws)
         return None
@@ -264,6 +280,8 @@ async def redebit_booking(db: AsyncSession, booking: Booking, *, now: datetime) 
         org_id=booking.org_id,
         hours=booking.package_hours_used,
         now=now,
+        # Never from this booking's own cancellation credit (K01).
+        not_for_booking=booking.id,
     )
     if draws is None:
         return False

@@ -29,6 +29,15 @@ class PurchaseStatus(StrEnum):
     cancelled = "cancelled"
 
 
+class PurchaseSource(StrEnum):
+    """Where a purchase row came from (K01)."""
+
+    purchase = "purchase"
+    complimentary = "complimentary"
+    # The paid hours of a cancelled booking, back in the customer's bank.
+    cancellation_credit = "cancellation_credit"
+
+
 class Package(Base):
     __tablename__ = "packages"
 
@@ -69,6 +78,10 @@ class Package(Base):
 
 class UserPackagePurchase(Base):
     __tablename__ = "user_package_purchases"
+    __table_args__ = (
+        # One credit per booking, ever (K01).
+        UniqueConstraint("source_booking_id", name="uq_user_package_purchases_source_booking_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -78,8 +91,29 @@ class UserPackagePurchase(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    package_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False
+    # NULL for a cancellation credit (K01): hours that belong to no package.
+    package_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("packages.id", ondelete="CASCADE"), nullable=True
+    )
+    source: Mapped[PurchaseSource] = mapped_column(
+        SAEnum(PurchaseSource, name="purchase_source"),
+        nullable=False,
+        default=PurchaseSource.purchase,
+        server_default="purchase",
+    )
+    # The cancelled booking a credit stands for; SET NULL keeps the hours if
+    # that booking is ever hard-deleted.
+    source_booking_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "bookings.id",
+            ondelete="SET NULL",
+            name="fk_user_package_purchases_source_booking_id",
+            # Closes a cycle with bookings.package_purchase_id: created and
+            # dropped as a separate ALTER so metadata sorts cleanly.
+            use_alter=True,
+        ),
+        nullable=True,
     )
     org_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
@@ -115,7 +149,9 @@ class UserPackagePurchase(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="package_purchases", lazy="noload")  # noqa: F821
-    package: Mapped["Package"] = relationship("Package", back_populates="purchases", lazy="noload")
+    package: Mapped["Package | None"] = relationship(
+        "Package", back_populates="purchases", lazy="noload"
+    )
 
 
 class BookingPackageDebit(Base):

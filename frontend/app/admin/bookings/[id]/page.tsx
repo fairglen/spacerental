@@ -23,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { moveOutcome } from '@/components/admin/calendar/BookingSheet'
 import { formatBookingCost, formatCurrency, formatHours, isUnpaidHold, packSplitLine, STATUS_LABELS } from '@/lib/utils'
 import { PAYMENT_LABELS, hardDeleteAllowed } from '@/lib/admin/bookingLabels'
+import { creditHoursFor } from '@/lib/cancellationCredit'
 import { utcToWall, wallToUtc } from '@/lib/spaceClock'
 import type { AdminBookingPatch, Booking } from '@/types'
 
@@ -69,6 +70,7 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   const [priceOpen, setPriceOpen] = useState(false)
   const [price, setPrice] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [creditHours, setCreditHours] = useState(true)
   const [payOpen, setPayOpen] = useState(false)
   const [notes, setNotes] = useState({ notes: '', admin_note: '' })
   const [copied, setCopied] = useState(false)
@@ -117,6 +119,9 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   const canCancel = ['pending', 'confirmed'].includes(b.status)
   const canMarkPaid = isUnpaidHold(b) || b.status === 'expired'
   const deletable = hardDeleteAllowed(b)
+  // K01: a paid booking's cancellation credits its hours unless unticked.
+  const creditable = creditHoursFor(b)
+  const credit = b.cancellation_credit ?? null
   // Read-only times on the same clock the form uses (review on #65).
   const wall = utcToWall(b.start_time, zoneOfRoom(b.room_id))
   const wallEnd = utcToWall(b.end_time, zoneOfRoom(b.room_id))
@@ -194,6 +199,17 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
                 <dd><ul className="list-disc pl-5">{b.package_debits!.map((d) => <li key={d.purchase_id}><Link href={`/admin/purchases/${d.purchase_id}`} className="underline underline-offset-2">{packSplitLine(d)}</Link></li>)}</ul></dd>
               </div>
             )}
+            {credit && (
+              <div>
+                <dt className="inline text-muted-foreground">Crédito criado: </dt>
+                <dd className="inline">
+                  <Link href={`/admin/purchases/${credit.id}`} className="underline underline-offset-2" data-testid="booking-credit">
+                    {formatHours(credit.hours_total)}
+                  </Link>
+                  {credit.status === 'cancelled' ? ' (revertido)' : ` · ${formatHours(credit.hours_remaining)} por usar`}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="inline text-muted-foreground">Stripe: </dt>
               <dd className="inline">
@@ -235,8 +251,8 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
         entityLabel="reserva"
         name={short}
         shortId={short}
-        keeps="Cancelar devolve as horas de pack ao cliente e avisa-o por email; nada é devolvido em dinheiro aqui. Eliminar só é possível para uma reserva que nunca movimentou dinheiro nem horas."
-        soft={canCancel ? { active: true, onToggle: async () => { setCancelOpen(true) }, activeLabel: 'Cancelar reserva', buttonLabel: 'Cancelar reserva', hint: 'Pede um motivo; o cliente recebe um email.' } : undefined}
+        keeps="Cancelar devolve as horas de pack ao cliente e credita-lhe as horas pagas no banco de horas; avisa-o por email. Nada é devolvido em dinheiro. Eliminar só é possível para uma reserva que nunca movimentou dinheiro nem horas."
+        soft={canCancel ? { active: true, onToggle: async () => { setCreditHours(true); setCancelOpen(true) }, activeLabel: 'Cancelar reserva', buttonLabel: 'Cancelar reserva', hint: 'Pede um motivo; o cliente recebe um email.' } : undefined}
         hard={{
           onDelete: async (confirm) => {
             await adminApi.deleteBooking(bookingId, confirm, b.payment_method === 'manual' ? 'Eliminada pelo espaço' : undefined, api)
@@ -274,16 +290,29 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
       <ReasonDialog
         open={cancelOpen}
         title="Cancelar esta reserva"
-        description="O cliente recebe um email. As horas de pack voltam ao saldo dele; nada é devolvido em dinheiro aqui."
+        description={creditable !== null
+          ? 'O cliente recebe um email. As horas de pack voltam ao saldo dele; as horas pagas ficam no banco de horas dele. Nada é devolvido em dinheiro.'
+          : 'O cliente recebe um email. As horas de pack voltam ao saldo dele; nada é devolvido em dinheiro aqui.'}
         confirmLabel="Sim, cancelar"
         destructive
         onConfirm={async (reason) => {
-          // `reason` goes to the trail's own field as well as the note.
-          await patch.mutateAsync({ status: 'cancelled', reason, admin_note: [b.admin_note, `Cancelada pelo espaço: ${reason}`].filter(Boolean).join('\n') })
-          await done('Reserva cancelada.')
+          const body: AdminBookingPatch = { status: 'cancelled', reason, admin_note: [b.admin_note, `Cancelada pelo espaço: ${reason}`].filter(Boolean).join('\n') }
+          if (creditable !== null && !creditHours) body.credit_hours = false
+          const result = await patch.mutateAsync(body)
+          await done(result.credit ? `Reserva cancelada. ${formatHours(result.credit.hours)} creditadas ao cliente.` : 'Reserva cancelada.')
         }}
         onClose={() => setCancelOpen(false)}
-      />
+      >
+        {creditable !== null && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" checked={creditHours} onChange={(e) => setCreditHours(e.target.checked)} />
+            <span>
+              Creditar as horas ao cliente ({formatHours(creditable)})
+              <span className="block text-xs text-muted-foreground">Sem crédito, o motivo fica no histórico e o cliente não recebe nada.</span>
+            </span>
+          </label>
+        )}
+      </ReasonDialog>
       <ReasonDialog
         open={payOpen}
         title="Marcar como paga"

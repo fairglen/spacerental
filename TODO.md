@@ -133,9 +133,15 @@ become four PRs the loop opens and never merges: `feat/admin-crud-backend`
 (B50). Recorded as the G/K/B series near the end of this file, with the
 owner's decisions and the CRUD matrix the admin parts start from. Part A1
 opened as [PR #65](https://github.com/fairglen/spacerental/pull/65)
-(G01–G04, base `main`) on 2026-09-30, and Part A2 as
+(G01–G04, base `main`) on 2026-09-30, Part A2 as
 [PR #66](https://github.com/fairglen/spacerental/pull/66) (G05–G06, base
-`feat/admin-crud-backend`) on 2026-10-01; the owner reviews and merges.
+`feat/admin-crud-backend`), Part C as
+[PR #67](https://github.com/fairglen/spacerental/pull/67) (K01–K03, base
+`feat/admin-crud-ui`) and Part L as
+[PR #68](https://github.com/fairglen/spacerental/pull/68) (B50, base
+`feat/customer-credit-pack-upsell-notifications`), the last three on
+2026-10-01; each retargets to `main` as the one below it merges. The owner
+reviews and merges; the loop never does.
 Review rounds on #65 (Copilot, 2026-10-01 → fixed 2026-10-01/05, also
 cherry-picked onto #67): stale NextAuth sessions end on the first 401 in the
 signed-in areas and the dashboard layout checks the token server-side
@@ -165,6 +171,24 @@ real shape.
 Round 7 (2026-10-05): a customer booking whose second flush loses the slot
 race closes the Checkout Session it had just created before answering 409,
 so a vanished booking cannot be paid for.
+
+**Stack repair, CI speed and code quality (2026-10-05, after #65 and #67
+merged):** by explicit owner assignment, delivered unattended in three
+sequential parts the loop publishes and never merges. Part 0 repairs the
+stacked PRs: when the loop started, #65–#68 were all merged (#65 and #67 at
+08:52 UTC that day), so C+L (K01–K03, B50) sat on `feat/admin-crud-ui` @
+`cea4d08` with no PR; they are rebased onto `main` as
+`feat/customer-credit-and-brand` (Q40). Part 1
+`ci/fast-e2e-and-workflow-hygiene` (Q41–Q49): isolated, parallel Playwright
+specs, a production-build e2e stack with an e2e-only rate-limit
+configuration, a sharded and cached e2e job, workflow hygiene, security
+scanning, `pytest-xdist`, one required check. Part 2
+`refactor/admin-routers-headers-docker` (Q50–Q56): admin routers by entity
+with an OpenAPI snapshot, frontend decomposition, security headers, hardened
+images, backlog archive, small fixes. Recorded as the Q-series near the end
+of this file; links C08, O05, S24, S26. Decisions the owner did not give are
+taken the conservative way, recorded under the task and tagged `DECISION:`
+in the commit body.
 
 States used below:
 
@@ -2333,6 +2357,12 @@ worker/startup commands in README.
 
 ### O02 — Consistent cancellations and refunds
 
+**Note (2026-10-01, K01):** cancellation refunds are superseded by the hour
+credit — a cancelled paid booking's money share goes to the customer's hour
+bank (`source = cancellation_credit`), never back as money. What remains of
+O02 is cash refunds outside cancellation (goodwill, disputes), the durable
+refund ledger and the provider round trip; still deferred.
+
 **Depends on:** O01. **Scope:** payment/refund persistence, gateway operations,
 webhooks, user/admin views and all booking/package/series cancellation paths.
 
@@ -2392,6 +2422,19 @@ failed revoke retained/retried, wrong-user/org code access denial, and local
 stub customer-code → cancel → revoke walkthrough including series changes.
 
 ### O05 — Tenant-scoped audit history
+
+**State: DONE for the minimal mandatory scope (G01, 2026-10-01, PR #65; the
+admin browsing page in PR #66).** `admin_actions` (migration 0013) records
+actor, organisation, action, entity, before/after snapshot, reason and
+request id in the same transaction as every admin mutation route (the
+scenario table in `tests/test_audit.py` enforces one row per route; a
+rollback leaves none); system actors are distinguished; passwords, tokens
+and access codes are never snapshotted; `GET /admin/audit` and the seven
+`/history` routes are admin-only, tenant-scoped, newest-first, paged;
+`/admin/audit` browses it. What this entry still names beyond that —
+series changes, refund operations, role changes as first-class audited
+transitions, and the O04 dependency — stays open and is not blocked on
+anything here.
 
 **Depends on:** O04. **Scope:** `AuditLog` model/migration, transition call sites,
 admin endpoint/API wrapper and `frontend/app/admin/audit/page.tsx`.
@@ -3345,7 +3388,12 @@ is W01 below; the deploy workflow publishes it on the merge to main.
 ### B49 — The flowspace-site smoke suite is stale since the real Apps Script URL landed
 
 **Priority: P2. State: IN PROGRESS** on `feat/flowspace-brand-copy` (found as
-the W-series baseline, 2026-09-22). **Evidence:** `0fc2c10` — the rewrite matches
+the W-series baseline, 2026-09-22). **Evidence (B50, 2026-10-01, Part L):** the
+static site's header and footer carry the new lockup, the brand favicons
+replace `assets/img/favicon.svg`, `og:image`/`theme-color` are set, the
+deploy allowlist (`assets/**`) ships `assets/img/brand/`, and the standalone
+smoke suite (35) asserts the header logo, its size and colour, the footer
+lockup and every `<link rel="icon">`. **Evidence:** `0fc2c10` — the rewrite matches
 `const APPS_SCRIPT_URL = '…';` whatever it holds; the placeholder test serves the
 placeholder explicitly; a new test pins that a script without the constant still
 throws. 22 passed on the committed file (3/21 before). `flowspace-site/tests/smoke.spec.ts`
@@ -4893,7 +4941,7 @@ with the placeholder, old JWT rejected; a non-owner cannot save settings.
 
 ### K01 — Cancellation credit: paid hours go to the hour bank
 
-**Priority: P1. State: QUEUED (Part C).** Today cancelling a money-paid
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** Today cancelling a money-paid
 booking just loses the money. **Scope:** `UserPackagePurchase` gains
 `source` (`purchase | complimentary | cancellation_credit`; backfill:
 `amount_paid` 0 and no Stripe session → complimentary, else purchase) and
@@ -4933,9 +4981,52 @@ audited reason; reinstate whole → credit cancelled; reinstate after spend →
 tests for the dialog copy and bank labels. Playwright: pay → cancel → the
 bank shows the hours → rebook with them, no checkout.
 
+**Delivered (2026-10-01):** migration `0016_cancellation_credit` (enum
+`purchase_source`, backfill, `source_booking_id` UNIQUE FK SET NULL,
+`package_id` nullable); `app/cancellation_credit.py` (`create_credit`,
+`reverse_credit`, `CreditSpentError`) wired into `booking_cancellation.
+apply_cancellation` (customer and series cancels) and the admin status
+change; `BookingStatusUpdate.credit_hours` (default true, reason required
+when false); `GET /admin/bookings/{id}.cancellation_credit`; the email
+line; `CANCELLATION_CREDIT_VALIDITY_DAYS` in config/Compose/`.env.example`
+mirrored as `NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS`
+(`lib/cancellationCredit.ts`); customer dialog line + "Precisa de outra
+solução? Fale connosco"; bank card and `/dashboard/packages` label
+"Crédito — cancelamento de <d MMM>"; admin cancel dialog checkbox
+"Creditar as horas ao cliente (<N>h)", success toast with the hours, booking
+detail "Crédito criado: <N>h" linking the purchase, purchases list/detail
+"Origem". Evidence: `backend/tests/test_cancellation_credit.py` (16, real
+PG, pinned clock) covering every validation bullet above; `tests/
+test_mixed_payment.py`'s lapsed-hold test cancels with `credit_hours:
+false` so its 8h hold still lapses (the credit would otherwise cover it —
+by design); migration round trip 0016 up → check → base → up → check on a
+throwaway PG 16; Vitest `DashboardPage` +7, `AdminEntityPages` +2 (+1
+reworked), `api.test` +1, `adminBookingErrors` +1; Playwright
+`tests/e2e/cancellation-credit.spec.ts` (pay → cancel → bank → rebook, no
+checkout).
+
+**DECISION (loop, K01):** `package_id` is nullable — a credit belongs to no
+pack — rather than a hidden system package "Crédito". Alternatives: a hidden
+inactive package per org (keeps NOT NULL, but every package list/count and
+the hour-bank maths would have to special-case it). Reverse: add the system
+package in a migration, backfill credit rows to it, restore NOT NULL.
+**DECISION (loop, K01):** a booking cancelled → reinstated → cancelled again
+reactivates its one credit row (fresh expiry, unspent by construction)
+instead of refusing a second credit, so the customer is never short the
+hours they paid for; the UNIQUE `source_booking_id` still holds. Reverse:
+return None in `create_credit` when a row exists in any state.
+**DECISION (loop, K01):** the "Precisa de outra solução? Fale connosco"
+line keeps the `payment` help category and stays muted below the buttons,
+exactly where the old "Questões sobre o valor pago?" was.
+**DECISION (loop, K01):** `is_creditable` treats an operator-confirmed
+booking as paid (status `confirmed`/`completed`, method hourly/mixed/manual,
+amount > 0): the operator asserted the payment when confirming. The
+alternative — only Stripe-paid rows — would leave cash/MB WAY customers
+without their hours.
+
 ### K02 — Offer a new pack when the bank cannot cover the booking
 
-**Priority: P1. State: QUEUED (Part C).** **Scope:** backend `POST
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** **Scope:** backend `POST
 /packages/{id}/purchase` accepts optional `return_to` (a relative path:
 starts with "/", no scheme/host/"//", ≤ 512 chars; else 422); when present
 the checkout success URL is `<FRONTEND_URL><return_to>` + `pagamento=
@@ -4960,9 +5051,60 @@ pack preselected → confirm with no second checkout; and the taken-meanwhile
 case (booked via the API as another user during the detour → notice, no
 modal).
 
+**Delivered (2026-10-01):** `PackagePurchaseBody.return_to` with
+`validate_return_to` (422 for anything but a relative path);
+`PaymentGateway.create_checkout_session(success_url=, cancel_url=)` on both
+implementations, the stub page redirecting to the session's own URLs;
+`packagesApi.purchase(…, returnTo)`; `lib/bookingDeepLink.ts`
+(`parseSlotParams`, `slotReturnPath`); `components/booking/PaymentNotice.tsx`
+(the dashboard's notice, now shared, with a `booking` context);
+`BookingCalendar` `initialDate`/`reopen`/`onReopenDone` (free → modal, taken
+→ the existing "já está reservada" notice, gone → "já não está
+disponível"); `SpaceRoomsView` reads `?start=&end=&pagamento=` once and
+strips them (keeping `?room=`); `paymentOptions()` in `lib/paymentSplit.ts`
+gives the order; `BookingModal` lists "Comprar um pack" with the inline
+packs (name, hours, price, "válido N dias"), the "O horário não fica
+reservado…" line, "Comprar" → purchase with `return_to` → Checkout, and
+disables "Confirmar Reserva" while buying. Evidence: backend
+`tests/test_packages.py::TestReturnTo` (3 + 8 rejections); Vitest
+`BookingModal` +5 (+6 reworked for the new empty-bank options),
+`BookingCalendar` +3, `SpaceRoomDeepLink` +6, `bookingDeepLink` +14,
+`PaymentNotice` +3, `api.test` +1; Playwright `tests/e2e/pack-upsell.spec.ts`
+(empty bank → buy → back on the slot with the pack preselected → confirmed,
+no second checkout; taken meanwhile → notice, no modal, the pack in the
+bank all the same).
+
+**DECISION (loop, K02):** with an empty bank the hourly option stays
+preselected even when "Comprar um pack" is listed first (the order changes,
+the default — confirm → Checkout — keeps today's behaviour). Alternative:
+preselect the pack for a first-time customer. Reverse: default `choice` to
+`'buy'` when `options[0] === 'buy'`.
+**DECISION (loop, K02):** "bought a pack before" = any row in `/packages/me`
+(active, spent, expired, cancelled, or a cancellation credit). Alternative:
+only `source = purchase` rows.
+**DECISION (loop, K02):** the packs on sale are fetched only once the bank
+is known to fall short (no request for a customer whose hours cover the
+block).
+**DECISION (loop, K02):** `?start=&end=` must be whole hours, in order, at
+most a day apart; anything else is ignored like a bad `?room=` is (no
+error on a page that works without it).
+**DECISION (loop, K02, review on #69):** back with `pagamento=sucesso` the
+purchase may still be `pending` (Stripe activates it from its webhook, which
+can land after the customer does). The slot is reopened at once but the modal
+holds it in a processing state — "A confirmar o pagamento do seu pack…", no
+payment choice, confirm disabled — polling `/packages/me` every 2 s for up
+to 20 s (`lib/packSettle.ts`); the pack is preselected the moment it shows.
+Past the bound the modal says the pack is not confirmed yet, offers
+"Verificar de novo" and hands the choice back (paying by the hour is then
+an informed decision; the pack stays in the account). Alternative, as the
+reviewer put it: do not reopen the slot until the purchase is active —
+same guarantee, but the customer stares at the calendar instead of at the
+slot they came back for. The stub activates before redirecting, so the wait
+is covered by component tests, not e2e. Reverse: drop `awaitingPurchase`.
+
 ### K03 — Support request notifications, both directions
 
-**Priority: P1. State: QUEUED (Part C).** **Scope:** config
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** **Scope:** config
 `SUPPORT_INBOX_EMAIL` default `geral+support@flowspace.pt` (the
 notification destination; `SUPPORT_EMAIL` was only that target, so it is
 renamed — Compose, `.env.example`, README); the customer-facing contact
@@ -4980,9 +5122,29 @@ right recipients/subjects/Reply-To; `<script>` in the message arrives
 escaped in both; the honeypot sends nothing; component test for the copy;
 Playwright: submit → the hook shows both.
 
+**Delivered (2026-10-01):** `SUPPORT_INBOX_EMAIL` (config, Compose,
+`.env.example`, README, API_SPEC) replaces `SUPPORT_EMAIL`; `email.
+support_request_received_email` (subject "[FlowSpace] Recebemos o seu
+pedido #<ref>", category, booking date/hours when linked, the message
+escaped, "Respondemos por email para <address>", Reply-To the inbox); the
+inbox template gains "Abrir no painel" → `/admin/support/<id>`; both sent
+through `enqueue_email` after the row exists; the dialog's success line
+"Enviámos uma cópia para <email>; respondemos por email para o mesmo
+endereço."; `GET /__test__/emails` also lists `reply_to`. Evidence:
+`tests/test_support.py` (two emails with the right recipients/subjects/
+Reply-To, the escaped `<script>`-style payload in both, the booking line,
+the honeypot still sends nothing, a mail failure still keeps the request);
+`test_password_reset.py` hook shape; Vitest `HelpDialog` +1 (+1 reworked);
+Playwright `help.spec.ts` reads both emails from the stub mailbox.
+
+**DECISION (loop, K03):** the requester copy names a linked booking by its
+Lisbon date and hours only (no room name, which would need a second query
+on a public, throttled endpoint). Alternative: load the room for the
+summary.
+
 ### B50 — New logo on both sites (brand set `flowspace-site/assets/img/brand/`)
 
-**Priority: P2. State: QUEUED (Part L).** The cleaned brand set (16 files:
+**Priority: P2. State: DONE (Part L, 2026-10-01, PR #68).** The cleaned brand set (16 files:
 `logo-full.svg`, `logo-mark.svg`, `wordmark.svg`, `spiral-mark.svg`,
 `favicon.svg`, favicon-16/32/48/192/512.png, `apple-touch-icon.png`,
 `logo-email.png`, `logo-email-white-bg.png`, `logo-full-white.png`,
@@ -5010,6 +5172,343 @@ Navbar/Footer (img with alt "FlowSpace", link to "/"), the checksum parity
 test, static smoke asserts the header logo and the favicon links;
 screenshots of both headers (light) and both footers (dark) at 1280 px and
 390 px, and the favicon in a tab.
+
+**Delivered (2026-10-01):** the 16 files committed plus `logo-horizontal.svg`
+(built from `logo-mark.svg` + `wordmark.svg`: wordmark cap height = half
+the mark height, baseline on the mark's floor, gap 0.35× the mark height,
+viewBox 3058×749, `id="lockup"`, `currentColor`); `frontend/public/brand/`
+= a byte-for-byte copy guarded by `tests/lib/brandParity.test.ts`;
+`components/layout/BrandLogo.tsx` (`<svg><use href="/brand/
+logo-horizontal.svg#lockup">`, explicit width/height from the viewBox,
+`role="img"` `aria-label="FlowSpace"`) in the Navbar (28 px, `text-primary`,
+link to "/"), the Footer (24 px, white), the admin sidebar (24 px) and the
+four auth pages (32 px); Building2 + text wordmark removed everywhere
+(`brand.name` stays for `<title>`, aria-labels and the copyright line);
+`app/layout.tsx` icons (svg/32/16/apple), `openGraph.images` =
+`/brand/og-image.png` 1200×630, `manifest` → `public/manifest.webmanifest`
+(192/512, theme #3D7A5E), `viewport.themeColor`, `metadataBase` from
+`NEXTAUTH_URL`; every HTML email opens with `<FRONTEND_URL>/brand/
+logo-email.png` (200 px, alt FlowSpace; `_branded()` in `app/email.py`).
+Static site: the lockup in the header (`.wordmark`, 114×28, primary) and
+footer (98×24, white) of `index.html`, the header of `privacidade.html`;
+`assets/img/favicon.svg` removed in favour of `assets/img/brand/`
+(svg/32/16 `<link rel="icon">`s, apple-touch-icon, `theme-color`,
+`og:*` with the absolute `https://flowspace.pt/assets/img/brand/
+og-image.png`). No layout shift: explicit width/height everywhere, the
+header stays 64 px; at 390 px the lockup is 114 px (< 30 % of the header),
+so the mark-only fallback is not needed. Evidence: Vitest `brandParity`
+2, `Navbar` +1, `Footer` reworked (631 total); backend `test_email` +1
+(header on every template) and `test_support` escaping test adjusted;
+static smoke +2 (35 total); screenshots in `.pr-evidence/l/` (both headers
+at 1280/390, both footers at 1280/390, sign-in, admin sidebar, favicon
+sizes).
+
+**DECISION (loop, B50):** the lockup is referenced through `<use>` rather
+than an `<img>`: an `<img>` cannot take the CSS colour, and inlining 42 KB
+of path data twice per page or shipping a white duplicate were the
+alternatives. `<use>` with a same-origin file works in every current
+browser. Reverse: swap `BrandLogo` for `<img src="/brand/logo-horizontal.
+svg">` plus a white copy for the footer.
+**DECISION (loop, B50):** the wordmark in the lockup is scaled so its cap
+height is half the mark's height (ratio 4.08:1), which reads at 28 px;
+alternative: the owner's `logo-full.svg` proportions (wordmark narrower
+than the mark). Reverse: rebuild with `s = 0.45 * mark_height / cap`.
+**DECISION (loop, B50):** `metadataBase` = `NEXTAUTH_URL` when set (every
+Compose/deploy sets it), else Next's own fallback; Next 14 ignores it in
+`next dev` anyway.
+
+## Stack repair, CI speed and code quality (Q-series, Q40–Q56) — owner assignment 2026-10-05
+
+One assignment in THREE sequential parts, each published as its own PR by
+the loop and never merged by it. **Part 0** (Q40) repairs the stacked PRs
+#65 → #68 so each PR shows only its own work; **Part 1**
+`ci/fast-e2e-and-workflow-hygiene` (Q41–Q49), branched from Part 0's head,
+takes the e2e job under 6 minutes on GitHub runners and hardens every
+workflow; **Part 2** `refactor/admin-routers-headers-docker` (Q50–Q56),
+branched from Part 1's head, is behaviour-preserving: routers by entity,
+component decomposition, security headers, hardened images, backlog hygiene.
+Links: C08 (its "required check behaviour for path-filtered workflows" note
+is closed by Q49; its artifact/diagnostics acceptance is kept by Q44), O05
+(G01's `admin_audit` router moves into the admin package in Q50 with its
+tests), S24 (Q45 closes it), S26 (Q53 closes most of it), B18/B48 (the
+public request budget the parallel suite must not exhaust: Q42 raises the
+limits for the e2e stack only, the limiter tests stay). Binding: tenant
+scoping, wrapped responses, Decimal money, formal register, `lib/api.ts`,
+Alembic for every schema change, never work on main, every change ships
+with tests, **never weaken, skip or delete a test or a rate limit to get
+green** (an e2e-only configuration is allowed by the owner and must be
+labelled as such). Decisions the owner did not give are taken the
+conservative way, recorded under the task and tagged `DECISION:` in the
+commit body; three failed attempts on an item → blocked and recorded.
+
+### Q40 — Part 0: repair the PR stack (#65 → #68)
+
+**Priority: P1. State: IN PROGRESS** on `feat/customer-credit-and-brand`.
+**Found:** the assignment describes #65–#68 as open and mis-stacked; when
+the loop started (2026-10-05 09:00 UTC) all four were MERGED — #66 into
+`feat/admin-crud-backend` (squash `7f49c8d`, 2026-10-01), #68 into
+`feat/customer-credit-pack-upsell-notifications` (`3f9e689`, 2026-10-01),
+#65 into `main` (`3b668d0`, 2026-10-05 08:52) and #67 into
+`feat/admin-crud-ui` (`cea4d08`, 2026-10-05 08:52). `main` therefore holds
+A1+A2 (G01–G06 and the seven review rounds), while C+L (K01–K03, B50) sit on
+`feat/admin-crud-ui` with no open PR. **DECISION:** the one C+L squash is
+rebased onto `main` (`git rebase --onto origin/main dda5b70`; three
+conflicts — TODO.md, `admin/bookings/[id]/page.tsx`,
+`AdminEntityPages.test.tsx` — resolved to the C side, which already carried
+main's fixes) on a fresh branch `feat/customer-credit-and-brand` and opened
+as ONE PR to `main`; the resulting tree is byte-identical to `cea4d08`
+(`git diff cea4d08 HEAD` is empty) and its diff against `main` touches 116
+files, every one in #67 ∪ #68's file set (the 28 files of those PRs that are
+absent are the review fixes already on `main`). Alternative rejected:
+force-pushing the rebased result to `feat/admin-crud-ui` and opening the PR
+from there — the branch name no longer describes its content and the owner
+merged into it. The chain is now `main ← Part 0 ← Part 1 ← Part 2`.
+**Acceptance:** the PR's diff is C+L only; backend, Vitest, build, static
+smoke and Playwright are green on the branch; no unanswered review thread.
+**Validation:** the file-set comparison above, the full local suites and CI.
+Opened as [PR #69](https://github.com/fairglen/spacerental/pull/69) on
+2026-10-05; local suites on `31dde69`: pytest 860, Vitest 649, build, static
+smoke 35 + 44, Playwright 59/59. Review round 1 (Copilot, 2026-10-05), all
+three valid and fixed in one commit: a cancellation credit above 999.99 h
+(only an operator's price override can produce one; the ledger is
+`Numeric(5, 2)`) is a handled 409 on both cancel paths instead of a numeric
+overflow turned 500; complimentary grants are stored with `source =
+complimentary` (they defaulted to `purchase`, so "Origem" called them a
+sale); the booking modal forgets a "Comprar um pack" choice when the slot
+changes (it reopened the pack list, or fell through to paying again once
+the bank covered the new block).
+Round 2 (2026-10-05): `reverse_credit` refuses a reinstatement whenever any
+of the credit was spent, even after an operator cancelled the credit's
+purchase row (`PUT /admin/purchases`) — the cancelled status used to read as
+"already reversed" and let the booking come back while its hour was in
+another booking.
+Round 3 (2026-10-05): reinstating a `mixed` booking re-debits its pack
+share before the credit is reversed, and the soonest-expiring walk could
+draw it from the booking's own cancellation credit (a pack that outlives
+the credit), which then read as spent; the re-debit walk now leaves that
+credit out (`not_for_booking`), so the pack pays and the credit is reversed.
+Round 4 (2026-10-05): the credit stays in the lock-ordered bank walk (locked
+in its turn, never drawn) so the ledger's one lock order holds; and `PUT
+/admin/purchases/:id` refuses to reactivate a cancellation credit whose
+booking is no longer cancelled (the customer would hold both).
+Round 5 (2026-10-05, from the review summary rather than threads): the
+oversized-credit 409 has its own Portuguese line on the customer's cancel
+dialog and on the operator's error mapper (a retry cannot fix it; the
+amount must change), and the booking modal keeps its radios and "Confirmar
+Reserva" disabled while a pack purchase is in flight, so a customer cannot
+leave with a pending purchase and a hold at once.
+
+### Q41 — Isolated, parallel Playwright specs
+
+**Priority: P1. State: QUEUED (Part 1).** **Scope:**
+`frontend/tests/e2e/fixtures.ts` with API-level helpers that give each test
+its own data — `createCustomer()` (register + enrol, unique email),
+`loginAs(user)` → storageState, `createBooking(...)`, `buyPack(...)` through
+the stub checkout, `createBlock(...)`, `freshDay(offset)` so no two tests
+contend for one slot; UI-driven setup in existing specs replaced by them
+while the UI steps under test stay; admin specs that mutate shared seed rows
+(rooms, packages, the seeded booking) create their own room/package through
+the admin API first; nothing asserts on another spec's side effects.
+`playwright.config.ts`: `fullyParallel: true`, `workers: CI ? 4 : undefined`,
+`retries: CI ? 1 : 0`, trace on first retry, `expect.timeout` 10 s, test
+`timeout` 60 s, `blob` reporter in CI (for Q44's shards), `html` locally.
+The B18/B48 pacing sleeps (`waitOutPublicRateWindow`) become unnecessary
+under Q42's e2e stack and go. **Acceptance:** the whole suite passes three
+times in a row locally with 4 workers, zero flakes, every spec independent of
+ordering. **Validation:** the three runs' wall times in the PR body;
+`npx playwright test --workers 4` green; no test removed or weakened.
+
+### Q42 — e2e stack: production build and e2e-only rate limits
+
+**Priority: P1. State: QUEUED (Part 1).** **Scope:** `docker-compose.e2e.yml`
+(an overlay on `docker-compose.yml`, used by CI and documented for the native
+path) in which the frontend runs a PRODUCTION build (`next build` + `next
+start`), the backend runs without `--reload`, and
+`RATE_LIMIT_AUTH_MAX_REQUESTS` / `RATE_LIMIT_PUBLIC_MAX_REQUESTS` (and the
+support/upload tiers the specs hit) are set to values a 4-worker suite cannot
+reach — **labelled "e2e stack only"** in the file and in README. The limiter
+unit/integration tests are untouched and still prove the real defaults; no
+browser spec asserts a 429 today, so none needs a dedicated stack.
+**Acceptance:** `docker compose -f docker-compose.yml -f docker-compose.e2e.yml
+up -d --build` brings up the stack a fresh clone can run the suite against;
+the dev stack (`docker compose up`) is unchanged. **Validation:** the suite
+under Q41 passes against it locally and in CI; `tests/test_ratelimit*.py`
+unchanged and green.
+
+### Q43 — Review the three `test.skip` occurrences
+
+**Priority: P2. State: QUEUED (Part 1).** `booking.spec.ts:536` (no open hour
+within 24 h on a Sunday before 08:00 UTC), `photos.spec.ts:12` and
+`single-space.spec.ts:17` (both: the stack must have exactly one public
+space). **Acceptance:** each is either re-enabled (because Q41's fixtures
+remove the condition) or kept with its reason recorded here as its own
+line; no unexplained skip remains. **Validation:** `grep -n 'test.skip'`
+output matches this record.
+
+### Q44 — The e2e job itself under 6 minutes
+
+**Priority: P1. State: QUEUED (Part 1).** Baseline (GitHub runners, last
+green runs of #65/#67, 2026-10-05): job wall **14m13s–16m44s**; the `Run E2E`
+step alone 14m32s; `docker compose up --build` 1m02s; Playwright install 51 s.
+**Scope:** the e2e stack of Q42; Docker layer cache for both images
+(`docker/setup-buildx-action` + `docker/bake-action` or `compose build`
+with `cache-from/cache-to: type=gha`); `actions/cache` for
+`~/.cache/ms-playwright` keyed on the Playwright version in
+`package-lock.json`; `strategy.matrix.shard: [1, 2]` with
+`--shard=${{ matrix.shard }}/2`, `fail-fast: false`, and a `merge-reports`
+job that uploads one HTML report; a path filter that skips e2e when only
+`docs/**`, `*.md` or `flowspace-site/**` change (Q49 keeps the required
+check satisfied); the backend wait uses `/health` with a hard 60 s cap;
+seeding via `docker compose exec`; stack logs uploaded on failure (as
+today). **Acceptance:** the e2e job (each shard) finishes under 6 minutes
+wall on this PR with the full suite; no test removed. **Validation:** the
+before/after table in the PR body (three CI runs).
+
+### Q45 — Workflow hygiene: permissions, concurrency, timeouts, pins, Dependabot
+
+**Priority: P1. State: QUEUED (Part 1). Closes S24.** **Scope:** every
+workflow declares `permissions: contents: read` at the top and grants more
+only in the job that needs it (deploy: `pages: write`, `id-token: write`;
+docs-sync: nothing more — it only reads); `concurrency: { group:
+${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: ${{
+github.event_name == 'pull_request' }} }`; `timeout-minutes` on every job
+(lint 10, unit 15, migrations 15, e2e 30, deploy 10); every `uses:` pinned
+to a full commit SHA with the version in a trailing comment;
+`.github/dependabot.yml` (github-actions weekly; npm weekly grouped
+minor/patch; pip weekly grouped). **Acceptance:** `actionlint` passes; every
+workflow runs green on the PR. **Validation:** `npx -y @rhysd/actionlint` (or
+the action) output in the PR body.
+
+### Q46 — Security scanning workflow
+
+**Priority: P2. State: QUEUED (Part 1).** **Scope:**
+`.github/workflows/security.yml`: CodeQL (`python`,
+`javascript-typescript`) on push to `main` and weekly; `pip-audit -r
+backend/requirements.txt` and `npm audit --audit-level=high` on pull
+requests — both REPORTING, not blocking, for the first two weeks, with the
+date to flip them to blocking in a comment in the file. **Acceptance:** the
+workflow runs green on the PR and its findings are visible in the run log
+and the Security tab. **Validation:** the run on this PR; the flip date
+recorded here.
+
+### Q47 — Lint job: formatting, ESLint and the type check
+
+**Priority: P2. State: QUEUED (Part 1).** **Scope:** the lint workflow adds
+`ruff format --check backend`, `npx eslint .` for the frontend (what `next
+build` lints, made explicit and fast) and `npx tsc --noEmit`, which moves
+here from frontend-tests so a type error fails in the cheapest job; the
+lint path filter widens to the frontend accordingly. If `ruff format` would
+reformat untouched files, the formatting commit is separate and
+mechanical. **Acceptance:** lint green on the PR; a deliberate type error
+on a scratch branch fails lint, not frontend-tests. **Validation:** the
+workflow run.
+
+### Q48 — Backend tests in parallel (`pytest-xdist`, one database per worker)
+
+**Priority: P1. State: QUEUED (Part 1).** Baseline: the CI `Run tests` step
+takes **11m26s** (848–858 tests). **Scope:** `pytest-xdist` in
+`requirements-dev.txt`, `pytest -n auto`; `tests/conftest.py` gives each
+worker its own database `spacerental_test_<worker id>`, created and dropped
+by a session-scoped fixture (the single-process run keeps the plain name);
+`docker-compose.test.yml` and the loop's helpers keep working. **Acceptance:**
+the whole suite passes with `-n auto` locally and in CI; no test changed
+to make it pass. **Validation:** before/after times in the PR body.
+
+### Q49 — One required check, CODEOWNERS and the README note (closes C08's note)
+
+**Priority: P1. State: QUEUED (Part 1).** **Scope:** `checks.yml` with one
+`required-checks` job that depends on every other workflow's result (via
+`workflow_run` or a reusable-workflow call) and passes when each is
+success OR skipped by its path filter — the single check to require in
+branch protection; README documents how to set it as required (the
+frontend-tests/deploy "required check" comments and T4 point here).
+`CODEOWNERS` naming the owner for `.github/**`, `backend/app/auth*`,
+`backend/app/payments.py`, `backend/alembic/**`. **Acceptance:** on this PR
+`required-checks` is green while a path-filtered workflow is skipped.
+**Validation:** the check list in the PR body; branch protection itself is
+the owner's click.
+
+### Q50 — Admin routers by entity, with an OpenAPI snapshot
+
+**Priority: P1. State: QUEUED (Part 2).** `backend/app/routers/admin.py`
+(1,743 lines) and `admin_users.py` (1,053) become the package
+`backend/app/routers/admin/`: `_common.py` (require_admin/owner, locked
+loaders, `_room_in_org`, error helpers), `dashboard.py`, `spaces.py`,
+`rooms.py` (incl. availability and blocks mounting), `bookings.py`,
+`users.py`, `packages.py`, `purchases.py`, `support.py`, `audit.py`,
+`organization.py`; one `router = APIRouter(prefix="/admin")` assembled in
+`__init__.py` with the SAME paths and operation ids. **Acceptance:** the
+OpenAPI schema before and after differs only in operation tags;
+`tests/test_openapi_stable.py` asserts the path+method set against a
+committed snapshot. **Validation:** the schema diff in the PR body, the new
+test, the full backend suite.
+
+### Q51 — Frontend decomposition
+
+**Priority: P2. State: QUEUED (Part 2).** `BookingModal.tsx` → shell +
+`PaymentPlan.tsx` (breakdown) + `PackUpsell.tsx` + `useBookingPlan.ts`; the
+admin `rooms/[id]` and `users/[id]` pages → section components under
+`components/admin/<entity>/`. **Acceptance:** no visual change; the existing
+component tests pass with import moves only; Playwright proves the
+journeys. **Validation:** Vitest, Playwright, the file-size table in the PR
+body.
+
+### Q52 — Security headers (Next and API), CSP report-only
+
+**Priority: P1. State: QUEUED (Part 2).** **Scope:** `headers()` in
+`next.config.js` for all routes — `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`
+for `/admin` and `/dashboard` plus `frame-ancestors 'none'`,
+`Permissions-Policy: camera=(), microphone=(), geolocation=()`, HSTS only
+when `NODE_ENV=production` behind TLS (documented), and a
+`Content-Security-Policy-Report-Only` allowing self, the API origin, the
+media origin, openstreetmap.org frames and fonts; every violation seen
+during the e2e run is recorded and the policy tightened; NOT enforcing in
+this PR (the flip is Q56). Backend: the same static headers on `/media` and
+API responses via one middleware. **Acceptance:** header tests at the right
+level (Next: a request-level test; backend: integration); e2e green with
+the report-only policy. **Validation:** the CSP report summary in the PR
+body.
+
+### Q53 — Hardened container images (closes most of S26)
+
+**Priority: P2. State: QUEUED (Part 2).** **Scope:** both Dockerfiles pin
+their base image to a digest (tag in a comment), create and switch to a
+non-root user, declare a `HEALTHCHECK`, drop build tooling from the runtime
+stage (multi-stage), and get a `.dockerignore`; the frontend gets a
+production image used by the e2e stack (if Q42 did not add it). The Compose
+dev flow is unchanged. **Acceptance:** `docker compose up -d --build` on a
+fresh clone still works in one step; the e2e stack uses the production
+image. **Validation:** the e2e run in CI; `docker inspect` user/healthcheck
+in the PR body.
+
+### Q54 — Backlog hygiene: archive DONE/DEFERRED tasks
+
+**Priority: P2. State: QUEUED (Part 2).** **Scope:** every DONE/DEFERRED task
+block moves out of TODO.md into `docs/backlog-archive/<yyyy-mm>.md` (one
+file per month of completion, verbatim, with its evidence); TODO.md keeps
+the contract, the execution boundary, open/queued/blocked tasks and a
+one-line index of archived IDs with links; CLAUDE.md (and its AGENTS.md
+copy) say where history lives. **Acceptance:** TODO.md ends under 1,200
+lines; every archived ID resolves from the index. **Validation:** `wc -l
+TODO.md`; a link check over the index.
+
+### Q55 — Small fixes found during the audit
+
+**Priority: P2. State: QUEUED (Part 2).** `CORS allow_methods=["*"]` → the
+explicit list the frontend uses; the in-process rate limiter documented as
+single-replica only in README and `config.py`; the `eslint-disable` lines no
+longer needed (8 today) removed; every `test.skip` left from Q43 has a
+linked task. **Acceptance:** behaviour unchanged, suites green.
+**Validation:** backend CORS test, `npx eslint .`, the grep in Q43.
+
+### Q56 — Flip the Content-Security-Policy from report-only to enforcing
+
+**Priority: P3. State: QUEUED (after Part 2).** Recorded by Q52 with the
+observed report: the violations seen during the e2e run under the
+report-only policy, and the directives tightened in response. **Acceptance:**
+the policy enforces with zero violations on the full e2e run and a manual
+pass over the admin and dashboard pages. Not part of this assignment.
 
 ## Deferred scope
 

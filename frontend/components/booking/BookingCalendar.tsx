@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Calendar, dateFnsLocalizer, type Event, type SlotInfo, type ToolbarProps } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay, parseISO, addDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -16,6 +16,13 @@ const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales
 interface BookingCalendarProps {
   room: Room
   onSlotSelect: (start: Date, end: Date) => void
+  /** The day to open on (K02: the slot the customer left to buy a pack). */
+  initialDate?: Date
+  /** A range to select again once its day's availability is known (K02):
+   *  free → `onSlotSelect`; taken meanwhile → the "já está reservada" notice.
+   *  Reported once through `onReopenDone`. */
+  reopen?: { start: Date; end: Date } | null
+  onReopenDone?: () => void
 }
 
 function getDatesForView(date: Date, view: CalendarView): string[] {
@@ -180,8 +187,8 @@ export function BookingToolbar({ date, view, onNavigate, onView, label }: Toolba
 
 const CALENDAR_COMPONENTS = { toolbar: BookingToolbar }
 
-export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
-  const [selectedDate, setSelectedDate] = useState(new Date())
+export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReopenDone }: BookingCalendarProps) {
+  const [selectedDate, setSelectedDate] = useState(initialDate ?? new Date())
   // Hourly booking on a day or a week: there is no month view (C12).
   const [view, setView] = useCalendarView()
   const [selectionError, setSelectionError] = useState<string | null>(null)
@@ -222,20 +229,43 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       end: parseISO(s.end),
     }))
 
-  const handleSelectSlot = useCallback(
-    ({ start, end }: SlotInfo) => {
+  const settle = useCallback(
+    (start: Date, end: Date): boolean => {
       const resolution = resolveSelection(allSlots, start, end, new Date())
       if (resolution.kind === 'range') {
         setSelectionError(null)
         onSlotSelect(resolution.start, resolution.end)
-        return
+        return true
       }
       if (resolution.kind === 'taken') {
         setSelectionError(
           `A hora ${format(resolution.from, 'HH:mm', { locale: pt })}–${format(resolution.to, 'HH:mm', { locale: pt })} já está reservada. Escolha um intervalo livre.`,
         )
-        return
+        return true
       }
+      return false
+    },
+    [allSlots, onSlotSelect],
+  )
+
+  // K02: back from buying a pack, the slot is selected again as soon as its
+  // day has loaded — or, if someone took it meanwhile, the usual notice.
+  const reopenDay = reopen ? format(reopen.start, 'yyyy-MM-dd') : null
+  const reopenLoaded = reopenDay !== null && datesToFetch.includes(reopenDay)
+    && slotQueries[datesToFetch.indexOf(reopenDay)]?.data !== undefined
+  useEffect(() => {
+    if (!reopen || !reopenLoaded) return
+    if (!settle(reopen.start, reopen.end)) {
+      setSelectionError('Esse horário já não está disponível. Escolha um intervalo livre.')
+    }
+    onReopenDone?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reopen, reopenLoaded])
+
+  const handleSelectSlot = useCallback(
+    ({ start, end }: SlotInfo) => {
+      if (settle(start, end)) return
+      const resolution = resolveSelection(allSlots, start, end, new Date())
       if (resolution.kind === 'past') {
         setSelectionError('Essa hora já passou. Escolha um horário a partir de agora.')
         return
@@ -254,7 +284,7 @@ export function BookingCalendar({ room, onSlotSelect }: BookingCalendarProps) {
       // hours outside every open window).
       setSelectionError('Esse período está fora do horário de funcionamento. Escolha uma hora a verde.')
     },
-    [allSlots, onSlotSelect]
+    [allSlots, settle]
   )
 
   return (

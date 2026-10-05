@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # untouched). The frontend mirrors it as NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS
     # for the calendar's hint; the API stays authoritative.
     BOOKING_MAX_ADVANCE_DAYS: int = Field(default=30, gt=0)
+    # How long the hours credited for a cancelled paid booking stay in the
+    # customer's bank (K01). The frontend mirrors it as
+    # NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS for the cancel dialog.
+    CANCELLATION_CREDIT_VALIDITY_DAYS: int = Field(default=365, gt=0)
 
     # ── Rate limiting ────────────────────────────────────────────────────
     RATE_LIMIT_ENABLED: bool = True
@@ -106,7 +110,10 @@ class Settings(BaseSettings):
     EMAIL_FROM_ADDRESS: str = "FlowSpace <no-reply@flowspace.pt>"
     # Where help-form requests are sent (C17). The public contact address, the
     # same one the frontend shows (frontend/lib/contact.ts, C09).
-    SUPPORT_EMAIL: str = "geral@flowspace.pt"
+    # Where help-form requests are delivered (K03; renamed from SUPPORT_EMAIL,
+    # which was only ever this destination). The address the site shows the
+    # public stays geral@flowspace.pt (frontend/lib/contact.ts).
+    SUPPORT_INBOX_EMAIL: str = "geral+support@flowspace.pt"
     # Base URL used to build links inside outgoing emails (e.g. "cancel this
     # booking"). This is handed to the user's mail client, so localhost is
     # correct here — unlike backend-to-backend calls (CLAUDE.md §6.3).

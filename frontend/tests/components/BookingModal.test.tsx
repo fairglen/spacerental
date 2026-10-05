@@ -18,9 +18,13 @@ vi.mock('next-auth/react', () => ({
 vi.mock('@/lib/api', () => ({
   bookingsApi: { create: vi.fn() },
   recurrencesApi: { create: vi.fn() },
-  packagesApi: { listMine: vi.fn() },
+  packagesApi: { listMine: vi.fn(), list: vi.fn(), purchase: vi.fn() },
   createAuthenticatedApi: vi.fn(() => ({})),
 }))
+
+// The post-Checkout wait (K02 review) polls fast and gives up fast here;
+// production values live in `lib/packSettle.ts`.
+vi.mock('@/lib/packSettle', () => ({ PACK_SETTLE_POLL_MS: 30, PACK_SETTLE_WAIT_MS: 300 }))
 
 const room: Room = {
   id: 'room-1',
@@ -77,7 +81,7 @@ function purchase(hours: number, overrides: Partial<UserPackagePurchase> = {}): 
     hours_used: 10 - hours,
     hours_remaining: hours, amount_paid: 100,
     status: 'active',
-    purchased_at: new Date('2026-01-01T00:00:00Z').toISOString(),
+    source: 'purchase' as const, source_booking_id: null, purchased_at: new Date('2026-01-01T00:00:00Z').toISOString(),
     expires_at: new Date('2027-01-01T00:00:00Z').toISOString(),
     ...overrides,
   }
@@ -89,6 +93,7 @@ beforeEach(() => {
   // Default: no packages, so the hourly path is what renders unless a test
   // says otherwise.
   vi.mocked(packagesApi.listMine).mockResolvedValue([])
+  vi.mocked(packagesApi.list).mockResolvedValue([])
   // jsdom refuses real navigation; the component only needs location.assign.
   vi.stubGlobal('location', { ...window.location, assign, href: 'http://localhost:3000/spaces/space-1' })
 })
@@ -151,11 +156,12 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
     payment_method: 'package',
   }
 
-  it('offers no payment choice when the user has no usable hours', async () => {
+  it('offers no pack-hours choice when the user has no usable hours (K02 lists buying one instead)', async () => {
     renderModal()
 
     await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
-    expect(screen.queryByRole('radio', { name: /pack/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Usar/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Comprar um pack' })).toBeInTheDocument()
   })
 
   it('offers the pack once the user has enough hours for the whole block', async () => {
@@ -184,7 +190,7 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
     renderModal()
 
     await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
-    expect(screen.queryByRole('radio', { name: /pack/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Usar/ })).not.toBeInTheDocument()
   })
 
   it('hides the pack once it has expired', async () => {
@@ -194,7 +200,7 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
     renderModal()
 
     await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
-    expect(screen.queryByRole('radio', { name: /pack/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Usar/ })).not.toBeInTheDocument()
   })
 
   it("hides the pack when it belongs to another org", async () => {
@@ -202,7 +208,7 @@ describe('BookingModal package redemption (Epic 2.4)', () => {
     renderModal()
 
     await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
-    expect(screen.queryByRole('radio', { name: /pack/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Usar/ })).not.toBeInTheDocument()
   })
 
   it('books with payment_method package and shows a success state instead of closing (B29)', async () => {
@@ -528,7 +534,7 @@ describe('BookingModal price breakdown (C13)', () => {
     await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
     expect(screen.queryByRole('group', { name: /resumo do pagamento/i })).toBeNull()
     expect(screen.getByText('Total')).toBeVisible()
-    expect(screen.getByText(/33,00\s€/)).toBeVisible()
+    expect(screen.getByText('Total').nextElementSibling).toHaveTextContent(/33,00\s€/)
   })
 
   it('a server that finds the pack can cover everything after all still ends on the success state', async () => {
@@ -544,5 +550,213 @@ describe('BookingModal price breakdown (C13)', () => {
     await user.click(screen.getByRole('button', { name: 'Confirmar Reserva' }))
     expect(await screen.findByRole('heading', { name: 'Reserva confirmada' })).toBeVisible()
     expect(assign).not.toHaveBeenCalled()
+  })
+})
+
+// K02: when the bank cannot cover the block, the modal offers a pack to buy
+// — in the order the owner set — and comes back to this very slot.
+describe('BookingModal — "Comprar um pack" (K02)', () => {
+  const packs = [
+    { id: 'pkg-10', org_id: 'org-1', name: 'Pack 10h', hours: 10, price: 100, validity_days: 180, is_active: true },
+    { id: 'pkg-20', org_id: 'org-1', name: 'Pack 20h', hours: 20, price: 180, validity_days: 365, is_active: true },
+  ]
+  const radioLabels = () => screen.getAllByRole('radio').map((r) => r.closest('label')!.textContent!.replace(/\u00a0/g, ' ').trim())
+
+  it('an empty bank that never bought a pack sees the pack first, then the hourly price, with hourly preselected', async () => {
+    renderModal()
+    await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
+    expect(radioLabels()).toEqual(['Comprar um pack', 'Pagar 33,00 € agora'])
+    expect(screen.getByRole('radio', { name: /Pagar 33,00/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeEnabled()
+  })
+
+  it('an empty bank that bought before sees the hourly price first, then the pack', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(0, { status: 'cancelled' })])
+    renderModal()
+    await waitFor(() => expect(packagesApi.listMine).toHaveBeenCalled())
+    await waitFor(() => expect(radioLabels()).toEqual(['Pagar 33,00 € agora', 'Comprar um pack']))
+  })
+
+  it('a partial bank keeps today\'s order and adds the pack last; a full one offers no pack to buy', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
+    const { unmount } = renderModal()
+    await screen.findByRole('radio', { name: /Usar as horas do pack e pagar o resto/ })
+    expect(radioLabels()).toEqual(['Usar as horas do pack e pagar o resto', 'Pagar tudo agora', 'Comprar um pack'])
+    unmount()
+    vi.mocked(packagesApi.list).mockClear()
+
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(5)])
+    renderModal()
+    await screen.findByRole('radio', { name: /5h disponíveis/ })
+    expect(screen.queryByRole('radio', { name: 'Comprar um pack' })).toBeNull()
+    expect(packagesApi.list).not.toHaveBeenCalled()
+  })
+
+  it('choosing the pack lists the packs on sale, says the slot is not held, and "Comprar" leaves for Checkout with return_to = this slot', async () => {
+    vi.mocked(packagesApi.list).mockResolvedValue(packs)
+    vi.mocked(packagesApi.purchase).mockResolvedValue({ purchase: purchase(10), checkout_url: 'http://localhost:8000/checkout/stub/cs_stub_x' })
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(await screen.findByRole('radio', { name: 'Comprar um pack' }))
+    const list = await screen.findByTestId('buy-pack')
+    expect(list).toHaveTextContent('Pack 10h')
+    expect(list).toHaveTextContent(/10h · 100,00\s€ · válido 180 dias/)
+    expect(list).toHaveTextContent('Pack 20h')
+    expect(list).toHaveTextContent('O horário não fica reservado enquanto compra o pack')
+    // The booking itself cannot be confirmed while buying.
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeDisabled()
+
+    await user.click(screen.getAllByRole('button', { name: 'Comprar' })[1])
+    await waitFor(() => expect(packagesApi.purchase).toHaveBeenCalledWith(
+      'pkg-20', 'org-1', expect.anything(),
+      // `usePathname` is '/' in the test setup; the slot rides in the query.
+      `/?room=${room.id}&start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`,
+    ))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('http://localhost:8000/checkout/stub/cs_stub_x'))
+    expect(bookingsApi.create).not.toHaveBeenCalled()
+  })
+
+  it('a new slot forgets a "Comprar um pack" choice: the list closes and the default is derived again (review on #69)', async () => {
+    vi.mocked(packagesApi.list).mockResolvedValue(packs)
+    // 2h in the bank: a 3h block offers the pack-plus-money split and the
+    // pack to buy; a 2h block is fully covered and offers no pack to buy.
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <BookingModal room={room} start={start} end={end} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await user.click(await screen.findByRole('radio', { name: 'Comprar um pack' }))
+    await screen.findByTestId('buy-pack')
+
+    // The customer closes and picks a shorter slot the bank covers whole.
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <BookingModal room={room} start={start} end={new Date('2026-08-10T11:00:00Z')} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.queryByTestId('buy-pack')).toBeNull())
+    expect(screen.queryByRole('radio', { name: 'Comprar um pack' })).toBeNull()
+    // Without the reset the stale `buy` fell through to "pay now" — a second
+    // charge for hours the pack already covers.
+    expect(screen.getByRole('radio', { name: /Usar horas do pack/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeEnabled()
+
+    // And a longer slot again: the list stays closed until asked for.
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <BookingModal room={room} start={new Date('2026-08-11T09:00:00Z')} end={new Date('2026-08-11T12:00:00Z')} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await screen.findByRole('radio', { name: 'Comprar um pack' })
+    expect(screen.queryByTestId('buy-pack')).toBeNull()
+    expect(screen.getByRole('radio', { name: /Usar as horas do pack e pagar o resto/ })).toBeChecked()
+  })
+
+  it('while a pack purchase is in flight nothing else can be confirmed (review on #69)', async () => {
+    vi.mocked(packagesApi.list).mockResolvedValue(packs)
+    // Never settles: Checkout has not answered yet.
+    vi.mocked(packagesApi.purchase).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(await screen.findByRole('radio', { name: 'Comprar um pack' }))
+    await user.click((await screen.findAllByRole('button', { name: 'Comprar' }))[0])
+    await screen.findByRole('button', { name: 'A processar...' })
+    // Switching back to paying now must not re-arm the booking's confirm.
+    const payNow = screen.getByRole('radio', { name: /Pagar 33,00/ })
+    expect(payNow).toBeDisabled()
+    await user.click(payNow)
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeDisabled()
+    expect(bookingsApi.create).not.toHaveBeenCalled()
+  })
+
+  it('a failed purchase start says so and keeps the modal', async () => {
+    vi.mocked(packagesApi.list).mockResolvedValue(packs)
+    vi.mocked(packagesApi.purchase).mockRejectedValue(new Error('boom'))
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(await screen.findByRole('radio', { name: 'Comprar um pack' }))
+    await user.click((await screen.findAllByRole('button', { name: 'Comprar' }))[0])
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível iniciar a compra')
+    expect(assign).not.toHaveBeenCalled()
+  })
+})
+
+// K02 review on #69: back from Checkout with `pagamento=sucesso` the purchase
+// may still be `pending` — Stripe activates it from its webhook, which can
+// land after the customer does. Until the bank shows it the modal must not
+// let the block be paid by the hour on top of the pack.
+describe('BookingModal — waiting for a pack just bought (K02)', () => {
+  function renderAwaiting(awaitingPurchase = true) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <BookingModal room={room} start={start} end={end} onClose={vi.fn()} awaitingPurchase={awaitingPurchase} />
+      </QueryClientProvider>,
+    )
+  }
+
+  it('polls the bank, withholds the choice and the confirm button, then preselects the pack once it is active', async () => {
+    // The webhook lands between the second and the third read of the bank.
+    vi.mocked(packagesApi.listMine)
+      .mockResolvedValueOnce([purchase(10, { status: 'pending' })])
+      .mockResolvedValueOnce([purchase(10, { status: 'pending' })])
+      .mockResolvedValue([purchase(10)])
+    renderAwaiting()
+    const settling = await screen.findByTestId('pack-settling')
+    expect(settling).toHaveAttribute('role', 'status')
+    expect(settling).toHaveTextContent('A confirmar o pagamento do seu pack')
+    expect(screen.queryAllByRole('radio')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeDisabled()
+
+    const packRadio = await screen.findByRole('radio', { name: /Usar horas do pack \(10h disponíveis\)/ })
+    expect(packRadio).toBeChecked()
+    expect(screen.queryByTestId('pack-settling')).toBeNull()
+    expect(screen.queryByTestId('pack-unconfirmed')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeEnabled()
+    expect(vi.mocked(packagesApi.listMine).mock.calls.length).toBeGreaterThanOrEqual(3)
+    // Settled: no more polling.
+    const calls = vi.mocked(packagesApi.listMine).mock.calls.length
+    await new Promise((r) => setTimeout(r, 120))
+    expect(packagesApi.listMine).toHaveBeenCalledTimes(calls)
+  })
+
+  it('past the bound it says the pack is not confirmed yet, hands the choice back, and "Verificar de novo" polls again', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(10, { status: 'pending' })])
+    const user = userEvent.setup()
+    renderAwaiting()
+    await screen.findByTestId('pack-settling')
+    const notice = await screen.findByTestId('pack-unconfirmed', {}, { timeout: 2000 })
+    expect(notice).toHaveAttribute('role', 'alert')
+    expect(notice).toHaveTextContent('Ainda não recebemos a confirmação do pagamento do seu pack')
+    expect(screen.queryByTestId('pack-settling')).toBeNull()
+    // The customer may pay by the hour after all — their call, now an informed one.
+    expect(screen.getByRole('radio', { name: /Pagar 33,00/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeEnabled()
+    const calls = vi.mocked(packagesApi.listMine).mock.calls.length
+    await new Promise((r) => setTimeout(r, 120))
+    expect(packagesApi.listMine).toHaveBeenCalledTimes(calls)
+
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(10)])
+    await user.click(screen.getByRole('button', { name: 'Verificar de novo' }))
+    expect(await screen.findByRole('radio', { name: /Usar horas do pack/ })).toBeChecked()
+    expect(screen.queryByTestId('pack-unconfirmed')).toBeNull()
+  })
+
+  it('a bank that already holds the pack never shows the wait; without the flag an empty bank is read once', async () => {
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(10)])
+    const { unmount } = renderAwaiting()
+    expect(await screen.findByRole('radio', { name: /Usar horas do pack/ })).toBeChecked()
+    expect(screen.queryByTestId('pack-settling')).toBeNull()
+    unmount()
+
+    vi.mocked(packagesApi.listMine).mockReset().mockResolvedValue([])
+    renderAwaiting(false)
+    await screen.findByRole('radio', { name: 'Comprar um pack' })
+    await new Promise((r) => setTimeout(r, 120))
+    expect(packagesApi.listMine).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('pack-settling')).toBeNull()
   })
 })

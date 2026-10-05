@@ -65,6 +65,11 @@ export function cancellationErrorMessage(error: unknown): string {
   if (status === 401) return 'A sua sessão expirou. Entre de novo para cancelar a reserva.'
   if (status === 403) return 'Esta reserva não é sua, por isso não a pode cancelar.'
   if (status === 404) return 'Reserva não encontrada. Pode já ter sido removida.'
+  // K01: only an operator's price override can make the credit too large for
+  // the hour bank; retrying changes nothing, a person has to fix the amount.
+  if (status === 409 && detail.includes('exceeds what the hour bank')) {
+    return 'O crédito desta reserva excede o que o banco de horas suporta. Fale connosco pela Ajuda para corrigirmos o valor da reserva antes de a cancelar.'
+  }
   if (status === 429) return 'Demasiadas tentativas. Aguarde um momento e tente de novo.'
   if (status === undefined) return 'Sem ligação ao servidor. Verifique a internet e tente novamente.'
   return 'Não foi possível cancelar a reserva. Tente novamente daqui a pouco.'

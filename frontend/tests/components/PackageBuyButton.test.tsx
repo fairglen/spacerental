@@ -37,7 +37,7 @@ const pendingPurchase: UserPackagePurchase = {
   hours_used: 0,
   hours_remaining: 10, amount_paid: 100,
   status: 'pending',
-  purchased_at: new Date().toISOString(),
+  source: 'purchase' as const, source_booking_id: null, purchased_at: new Date().toISOString(),
   expires_at: new Date().toISOString(),
 }
 

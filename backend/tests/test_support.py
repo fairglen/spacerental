@@ -80,12 +80,24 @@ class TestSignedOutVisitor:
     async def test_a_person_is_emailed_and_can_just_hit_reply(self, client, emails):
         resp = await client.post(URL, json=_body(category="payment"))
         reference = resp.json()["request"]["reference"]
-        [message] = emails.sent
-        assert message.to == settings.SUPPORT_EMAIL == "geral@flowspace.pt"
+        request_id = resp.json()["request"]["id"]
+        [message, copy] = emails.sent
+        assert message.to == settings.SUPPORT_INBOX_EMAIL == "geral+support@flowspace.pt"
         assert message.reply_to == "visitante@example.com"
         assert message.subject == f"[Ajuda] Pagamento — #{reference}"
         assert MESSAGE in message.text_body
         assert "http://localhost:3000/spaces" in message.text_body
+        # K03: straight to the request in the admin inbox.
+        assert f"http://localhost:3000/admin/support/{request_id}" in message.text_body
+        assert f'href="http://localhost:3000/admin/support/{request_id}"' in message.html_body
+        # K03: the requester's own copy, answerable to the inbox.
+        assert copy.to == "visitante@example.com"
+        assert copy.reply_to == settings.SUPPORT_INBOX_EMAIL
+        assert copy.subject == f"[FlowSpace] Recebemos o seu pedido #{reference}"
+        assert "Assunto: Pagamento" in copy.text_body
+        assert MESSAGE in copy.text_body
+        assert "Respondemos por email para visitante@example.com" in copy.text_body
+        assert "Reserva:" not in copy.text_body
 
     async def test_the_message_is_never_echoed_back_and_is_escaped_in_the_email(
         self, client, emails
@@ -94,9 +106,11 @@ class TestSignedOutVisitor:
         resp = await client.post(URL, json=_body(message=hostile))
         assert resp.status_code == 201, resp.text
         assert "onerror" not in resp.text
-        [message] = emails.sent
-        assert "<img" not in message.html_body
-        assert "&lt;img src=x onerror=alert(1)&gt;" in message.html_body
+        [message, copy] = emails.sent
+        for mail in (message, copy):
+            # The logo header (B50) is the one <img> allowed; the payload is text.
+            assert "<img src=x onerror=alert(1)>" not in mail.html_body
+            assert "&lt;img src=x onerror=alert(1)&gt;" in mail.html_body
 
     async def test_an_email_address_is_required_when_signed_out(self, client, emails, db_session):
         body = _body()
@@ -161,6 +175,11 @@ class TestSignedInCustomer:
         row = (await db_session.execute(select(SupportRequest))).scalar_one()
         assert (row.booking_id, row.org_id) == (booking.id, test_org.id)
         assert str(booking.id) in emails.sent[0].text_body
+        # K03: the requester's copy names the booking by its date and hours.
+        copy = emails.sent[1]
+        assert copy.to == test_user.email
+        assert "Reserva: " in copy.text_body
+        assert " às " in copy.text_body
 
     async def test_someone_elses_booking_is_refused_like_one_that_does_not_exist(
         self, client, emails, db_session, auth_headers, test_org, test_room, admin_user
@@ -357,7 +376,7 @@ class TestOperatorInbox:
         )
         assert listed.json()["total"] == 0
         # Still emailed, so a person sees it.
-        assert len(emails.sent) == 1
+        assert len(emails.sent) == 2
 
     async def test_a_member_cannot_read_the_inbox(
         self, client, auth_headers, test_member, test_org

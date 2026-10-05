@@ -11,7 +11,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import audit, clock, deletion, email, package_hours
+from app import audit, cancellation_credit, clock, deletion, email, package_hours
 from app.auth import require_admin, require_owner
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
@@ -52,6 +52,7 @@ from app.schemas.booking import (
     AdminBookingDetailOut,
     AdminBookingOut,
     BookingStatusUpdate,
+    CancellationCreditOut,
     MarkPaidBody,
 )
 from app.schemas.organization import OrganizationSettingsOut, OrganizationSettingsUpdate
@@ -897,8 +898,12 @@ async def admin_get_booking(
         .scalars()
         .all()
     )
+    out = AdminBookingDetailOut.model_validate(booking)
+    credit = await cancellation_credit.existing_credit(db, booking.id)
+    if credit is not None:
+        out.cancellation_credit = CancellationCreditOut.model_validate(credit)
     return {
-        "booking": AdminBookingDetailOut.model_validate(booking),
+        "booking": out,
         "history": [AdminActionOut.model_validate(a) for a in history],
     }
 
@@ -1133,6 +1138,25 @@ async def admin_update_booking(
             detail=("The package no longer has enough hours to reinstate this booking"),
         )
 
+    # K01: a cancelled booking's paid hours live in the bank. Reinstating it
+    # takes them back — unless the customer already spent some, in which case
+    # the reinstatement is refused and a new booking is the way.
+    if previous_status is BookingStatus.cancelled and new_status in (
+        BookingStatus.confirmed,
+        BookingStatus.completed,
+        BookingStatus.pending,
+    ):
+        try:
+            await cancellation_credit.reverse_credit(db, booking.id)
+        except cancellation_credit.CreditSpentError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "The hours credited for this cancellation were already used; "
+                    "make a new booking instead"
+                ),
+            ) from None
+
     booking.status = new_status
     # Keep the hold marker consistent with the new status (C03): a one-off
     # revived as `pending` is an unpaid hold again and needs a fresh deadline
@@ -1193,6 +1217,29 @@ async def admin_update_booking(
             lock_gateway=lock_gateway,
         )
     elif new_status != previous_status and new_status is BookingStatus.cancelled:
+        # The paid hours go to the customer's bank (K01) unless the operator
+        # unticked it, with a reason the trail keeps.
+        credit = None
+        if body.credit_hours:
+            try:
+                credit = await cancellation_credit.create_credit(
+                    db, booking, previous=previous_status, now=now
+                )
+            except cancellation_credit.CreditTooLargeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"The credit ({exc.hours} h) exceeds what the hour bank can hold "
+                        f"({cancellation_credit.MAX_LEDGER_HOURS} h); lower the booking's "
+                        "amount first, or cancel with credit_hours: false and a reason"
+                    ),
+                ) from None
+        if credit is not None:
+            response["credit"] = {
+                "id": str(credit.id),
+                "hours": f"{credit.hours_total:.2f}",
+                "expires_at": credit.expires_at.isoformat(),
+            }
         email.enqueue_email(
             background_tasks,
             email_gateway,
@@ -1202,6 +1249,8 @@ async def admin_update_booking(
                 room_name=booking.room.name,
                 start_time=booking.start_time,
                 end_time=booking.end_time,
+                credit_hours=credit.hours_total if credit is not None else None,
+                credit_expires_at=credit.expires_at if credit is not None else None,
             ),
         )
         await try_revoke_access_code(lock_gateway, booking_id=booking.id)

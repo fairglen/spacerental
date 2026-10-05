@@ -7,14 +7,16 @@ import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, isPast } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { Calendar, Clock, Building2, KeyRound, X, Package } from 'lucide-react'
+import { Calendar, Clock, Building2, KeyRound, Package } from 'lucide-react'
 import type { Booking } from '@/types'
 import { bookingsApi, packagesApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
 import { formatBookingCost, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS, isUnpaidHold } from '@/lib/utils'
 import { cancellationErrorMessage, bookingErrorMessage } from '@/lib/httpError'
+import { creditExpiry, creditHoursFor, purchaseLabel } from '@/lib/cancellationCredit'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
+import { PaymentNotice, paymentOutcomeOf, type PaymentOutcome } from '@/components/booking/PaymentNotice'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -36,10 +38,10 @@ export default function DashboardPage() {
   // parameter so a reload does not repeat the notice (B25).
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [paymentNotice, setPaymentNotice] = useState<'sucesso' | 'cancelado' | null>(null)
+  const [paymentNotice, setPaymentNotice] = useState<PaymentOutcome | null>(null)
   useEffect(() => {
-    const outcome = searchParams.get('pagamento')
-    if (outcome === 'sucesso' || outcome === 'cancelado') {
+    const outcome = paymentOutcomeOf(searchParams.get('pagamento'))
+    if (outcome) {
       setPaymentNotice(outcome)
       router.replace('/dashboard', { scroll: false })
     }
@@ -85,6 +87,8 @@ export default function DashboardPage() {
   // Money went out for it (hourly/mixed, past the unpaid hold): the one case
   // where "what about what I paid?" is a real question — for a person (C18).
   const paidMoney = !!cancelling && cancelling.payment_method !== 'package' && !isUnpaidHold(cancelling)
+  // K01: what those euros become — hours in the bank, computed the backend's way.
+  const creditHours = cancelling ? creditHoursFor(cancelling) : null
 
   // "Pagar agora" / "Tentar pagar de novo" (C03): resume or retry the hold's
   // Checkout on the same booking row, then leave for the payment page.
@@ -110,41 +114,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
-          {paymentNotice && (
-            <div
-              role="status"
-              className={
-                paymentNotice === 'sucesso'
-                  ? 'mb-6 flex items-start justify-between gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900'
-                  : 'mb-6 flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900'
-              }
-            >
-              <p>
-                {paymentNotice === 'sucesso' ? (
-                  <>
-                    <span className="font-semibold">Pagamento concluído.</span> Obrigado! Uma reserva aparece
-                    abaixo como confirmada assim que o pagamento for processado (normalmente de imediato); um pack
-                    fica disponível em{' '}
-                    <Link href="/dashboard/packages" className="font-medium underline">Os meus packs</Link>.
-                  </>
-                ) : (
-                  <>
-                    <span className="font-semibold">Pagamento não concluído.</span> Não foi cobrado nada.
-                    Se era uma reserva, o seu estado atual aparece abaixo; se era um pack, pode voltar a comprá-lo em{' '}
-                    <Link href="/dashboard/packages" className="font-medium underline">Os meus packs</Link>.
-                  </>
-                )}
-              </p>
-              <button
-                type="button"
-                onClick={() => setPaymentNotice(null)}
-                aria-label="Fechar aviso"
-                className="shrink-0 rounded p-1 hover:bg-black/5"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+          {paymentNotice && <PaymentNotice outcome={paymentNotice} onClose={() => setPaymentNotice(null)} />}
           <section aria-label="Os seus packs" className="mb-8 rounded-xl border border-border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -168,7 +138,7 @@ export default function DashboardPage() {
               <ul className="mt-2 divide-y divide-border text-sm">
                 {activePacks.map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
-                    <span className="font-medium text-foreground">{p.package?.name ?? 'Pack'}</span>
+                    <span className="font-medium text-foreground">{purchaseLabel(p)}</span>
                     <span className="text-muted-foreground">
                       <span className="font-semibold text-primary">{formatHours(p.hours_remaining)}</span> restantes ·
                       expira {format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}
@@ -330,6 +300,13 @@ export default function DashboardPage() {
               pagas com um pack voltam ao seu saldo.
             </DialogDescription>
           </DialogHeader>
+          {creditHours !== null && (
+            // The paid hours are not refunded: they stay spendable in the bank (K01).
+            <p className="text-sm text-foreground rounded-lg bg-accent px-3 py-2">
+              Ao cancelar, as {formatHours(creditHours)} pagas ficam no seu banco de horas
+              (válidas até {format(creditExpiry(), 'd MMM yyyy', { locale: pt })}).
+            </p>
+          )}
           {cancelMutation.isError && (
             <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
               {cancellationErrorMessage(cancelMutation.error)}
@@ -348,9 +325,9 @@ export default function DashboardPage() {
             </Button>
           </DialogFooter>
           {paidMoney && (
-            // Says nothing about whether money comes back: a person answers that.
+            // Money never comes back by itself; a person can find another way.
             <p className="text-xs text-muted-foreground">
-              Questões sobre o valor pago?{' '}
+              Precisa de outra solução?{' '}
               <button
                 type="button"
                 onClick={() => { closeCancelDialog(); openHelp({ category: 'payment', bookingId: cancelling.id }) }}

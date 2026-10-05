@@ -84,7 +84,9 @@ describe('HelpDialog — signed out', () => {
     expect(body.context.viewport).toMatch(/^\d+x\d+$/)
 
     expect(await within(dialog()).findByText(/#3F9A12BC/)).toBeVisible()
-    expect(within(dialog()).getByText(/Respondemos por email/)).toBeVisible()
+    // K03: the requester gets a copy at the address they gave.
+    expect(within(dialog()).getByRole('status')).toHaveTextContent('Enviámos uma cópia para visitante@example.com')
+    expect(within(dialog()).getByText(/respondemos por email/)).toBeVisible()
     expect(within(dialog()).queryByLabelText(/Mensagem/)).toBeNull()
   })
 
@@ -134,6 +136,14 @@ describe('HelpDialog — signed in', () => {
     expect(email).toHaveAttribute('readonly')
     await user.click(within(dialog()).getByText(/O que enviamos/))
     expect(within(dialog()).getByText(/O que enviamos/).closest('details')).toHaveTextContent(/utilizador/i)
+  })
+
+  it('says the copy went to the account email (K03)', async () => {
+    const user = userEvent.setup()
+    renderDialog()
+    await user.type(within(dialog()).getByLabelText(/Mensagem/), MESSAGE)
+    await user.click(within(dialog()).getByRole('button', { name: /^Enviar$/ }))
+    expect(await within(dialog()).findByRole('status')).toHaveTextContent('Enviámos uma cópia para ana@example.com')
   })
 
   it('offers the upcoming bookings, not past ones, and sends the chosen id', async () => {

@@ -64,3 +64,18 @@ export function planPayment(
     packsUsed,
   }
 }
+
+/**
+ * K02 — the payment choices the modal lists, in order. `buy` is offered
+ * whenever the bank cannot cover the block on its own. A customer with an
+ * empty bank who never bought a pack sees the pack first: a pack is the
+ * better deal, and for them the hourly price is the only other thing on
+ * the page. Everyone else keeps today's order and gets the pack last.
+ */
+export type PaymentOption = 'pack' | 'hourly' | 'buy'
+
+export function paymentOptions(plan: PaymentPlan, everBought: boolean): PaymentOption[] {
+  if (plan.kind === 'full') return ['pack', 'hourly']
+  if (plan.kind === 'partial') return ['pack', 'hourly', 'buy']
+  return everBought ? ['hourly', 'buy'] : ['buy', 'hourly']
+}

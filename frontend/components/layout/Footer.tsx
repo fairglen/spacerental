@@ -1,7 +1,8 @@
 'use client'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
-import { Building2, MapPin, Mail } from 'lucide-react'
+import { MapPin, Mail } from 'lucide-react'
+import { BrandLogo } from '@/components/layout/BrandLogo'
 import { useT } from '@/lib/i18n'
 import { useHelp } from '@/components/help/HelpProvider'
 import { CONTACT_EMAIL, contactMailto } from '@/lib/contact'
@@ -22,10 +23,9 @@ export function Footer() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
-            <div className="flex items-center gap-2 mb-4">
-              <Building2 className="h-5 w-5 text-primary-light" />
-              <span className="text-lg font-bold">{t('brand.name')}</span>
-            </div>
+            <Link href="/" className="inline-flex items-center mb-4 text-white" aria-label={t('brand.name')}>
+              <BrandLogo height={24} />
+            </Link>
             <p className="text-sm text-gray-400 max-w-xs">
               {t('footer.tagline')}
             </p>
