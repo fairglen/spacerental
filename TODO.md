@@ -2234,7 +2234,23 @@ e2e specs pass unchanged; P1.1 before/after request counts in the PR.
 
 ### P1.5 — Photos and the static site
 
-**Priority: P2. State: QUEUED.** **Metric:** image bytes transferred on
+**Priority: P2. State: DONE 2026-10-05** on `perf/frontend-first-paint`.
+`PhotoMosaic` and `PhotoCarousel` images carry `srcset` with the two sizes
+the API keeps (480 px thumbnail, 1600 px original) and `sizes` matched to the
+slot (big tile 50vw, small tiles 25vw; a card a third / a half / the full
+width; the gallery 100vw); `loading` was already eager for the first and lazy
+for the rest. `flowspace-site` serves Inter from `assets/fonts/` — Google's
+own variable-font slices for Latin and Latin-extended (OFL, licence file
+alongside), `@font-face` in `site.css`, the Latin file preloaded — and the
+Google Fonts stylesheet and both preconnects are gone from `index.html` and
+`privacidade.html`. **Measured:** room page images **106 → 64 KB** on the
+week view and **106 → 48 KB** on a phone (media requests 16 → 13 / 12); the
+landing unchanged (its cards already used thumbnails). Lighthouse on the
+static site (mobile, simulated, `.pr-evidence/p1/lighthouse-site-*.json`):
+**0.67 → 0.99**, FCP 3.9 → 1.4 s, LCP 4.1 → 2.0 s, CLS 0.209 → 0 (the shift
+was the hero re-flowing when Google's font arrived; the preloaded file is
+there before the first paint); the site's own 35 Playwright + 44 Node tests
+pass. The photo component tests assert `srcset` and `sizes`. **Metric:** image bytes transferred on
 `/spaces/{id}` and the landing; Lighthouse performance score of
 `flowspace-site/`. **Target:** room and space photos rendered with
 `srcset`/`sizes` matched to the layout and `loading="lazy"` below the fold
