@@ -86,8 +86,13 @@ rule (R01). "Onde estamos" derives the space's hours from their union. The
 list endpoint (`GET /spaces`) does not load rooms.
 
 ### GET /rooms/:id/availability
-Query: `?date=YYYY-MM-DD` — the SPACE's local date (R01).
+Query: `?date=YYYY-MM-DD` — the SPACE's local date (R01) — or, since P1.4,
+`?from=YYYY-MM-DD&to=YYYY-MM-DD` (both inclusive, at most 14 days; `to` must
+not precede `from`; `date` together with `from`/`to`, or neither form, is 400)
+for every day of the range in one request — what the week view asks. A day
+past the booking window is 400 in either form.
 Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool, reason }] }`
+in time order; a closed day contributes no slots.
 
 Opening hours are the space's wall clock (`Space.timezone`, Europe/Lisbon for
 the pilot): a room open "08:00–22:00" is open 08:00–22:00 on the door all
@@ -570,6 +575,14 @@ One booking for its page (G04): `{ booking: AdminBookingDetail, history:
 `stripe_checkout_session_id` — never in a customer response — with the
 customer, room, `payment_method`, `total_amount`, `package_debits` per
 purchase, `access_code`, `notes`, `admin_note` and `hold_expires_at`.
+
+### GET /admin/calendar
+Query: `org_id`, `from`, `to` (timezone-aware instants, `to` after `from`, at
+most 14 days apart), optional `space_id`. The operator calendar's one read
+(P1.4): every booking of the organisation's rooms (or of that space's) in any
+status, and every block, that overlaps `[from, to)`, each in time order.
+Response: `{ bookings: AdminBooking[], blocks: RoomBlock[] }` — the booking
+shape of `GET /admin/bookings`. Admin/owner of the org only (403).
 
 ### GET /admin/bookings
 Query (G04): `q` matches the customer's name or email (case-insensitive) or

@@ -188,6 +188,12 @@ export const spacesApi = {
   getAvailability: (roomId: string, date: string, api = apiClient) =>
     api.get<{ slots: AvailabilitySlot[] }>(`/rooms/${roomId}/availability`, { params: { date } })
       .then(r => r.data.slots),
+
+  // P1.4: every slot of `from`..`to` (inclusive, at most 14 days) in one
+  // request — the week view used to make seven.
+  getAvailabilityRange: (roomId: string, from: string, to: string, api = apiClient) =>
+    api.get<{ slots: AvailabilitySlot[] }>(`/rooms/${roomId}/availability`, { params: { from, to } })
+      .then(r => r.data.slots),
 }
 
 // ─── User (auth required) ────────────────────────────────────────────────
@@ -367,6 +373,13 @@ export const adminApi = {
 
   markBookingPaid: (id: string, reason: string, api: Api) =>
     api.post<{ booking: Booking }>(`/admin/bookings/${id}/mark-paid`, { reason }).then(r => normBooking(r.data.booking)),
+
+  // P1.4: the calendar's one read — every booking and block of the org's
+  // rooms (or one space's) overlapping [from, to), at most 14 days.
+  getCalendar: (params: { from: string; to: string; space_id?: string }, api: Api): Promise<{ bookings: Booking[]; blocks: RoomBlock[] }> =>
+    api.get<{ bookings: Booking[]; blocks: RoomBlock[] }>('/admin/calendar', {
+      params: { ...(api.defaults.params || {}), ...params },
+    }).then(r => ({ bookings: r.data.bookings.map(normBooking), blocks: r.data.blocks })),
 
   // ── Blocked time (A02) ────────────────────────────────────────────────
   getBlocks: (roomId: string, params: { from?: string; to?: string }, api: Api) =>

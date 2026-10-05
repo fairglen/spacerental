@@ -83,20 +83,58 @@ async def get_space(
     return payload
 
 
+# The longest range one availability request may cover (P1.4): two weeks,
+# so the calendar's week view is one request and a client still cannot pull
+# months in one go.
+MAX_AVAILABILITY_DAYS = 14
+
+
 @router.get("/rooms/{room_id}/availability")
 @rate_limit(PUBLIC_TIER)
 async def get_room_availability(
     room_id: uuid.UUID,
-    date: date = Query(..., description="Date in YYYY-MM-DD format"),
+    date: date | None = Query(None, description="One day, YYYY-MM-DD — the space's local date."),
+    from_date: date | None = Query(
+        None,
+        alias="from",
+        description="First day of a range, inclusive; with `to`, at most 14 days (P1.4).",
+    ),
+    to_date: date | None = Query(None, alias="to", description="Last day of the range, inclusive."),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate 1-hour availability slots for a room on a given date.
-    Returns array of {start, end, available, reason}.
+    Generate 1-hour availability slots for a room on a given date, or on every
+    day of `from`..`to` (P1.4: the week view used to make seven requests).
+    Returns array of {start, end, available, reason}, in time order.
 
-    `date` is the SPACE's local date (R01): the slots are the wall-clock hours
-    the room is open that day, returned as UTC instants.
+    The dates are the SPACE's local dates (R01): the slots are the wall-clock
+    hours the room is open those days, returned as UTC instants.
     """
+    if date is not None:
+        if from_date is not None or to_date is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="use either date or from/to, not both",
+            )
+        days = [date]
+    else:
+        if from_date is None or to_date is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="date, or both from and to, is required",
+            )
+        if to_date < from_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="to must not precede from"
+            )
+        span = (to_date - from_date).days + 1
+        if span > MAX_AVAILABILITY_DAYS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"a range covers at most {MAX_AVAILABILITY_DAYS} days",
+            )
+        days = [from_date + timedelta(days=i) for i in range(span)]
+
     result = await db.execute(
         select(Room)
         .options(selectinload(Room.space))
@@ -116,33 +154,31 @@ async def get_room_availability(
     # per day for months; the last day inside it is served with each slot past
     # the exact instant marked `beyond_window`.
     window_end = booking_window_end(now)
-    if date > window_end.astimezone(zone).date():
+    if days[-1] > window_end.astimezone(zone).date():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="date is beyond the booking window",
         )
 
-    # 0=Monday, 6=Sunday in Python's weekday()
-    day_of_week = date.weekday()
-
+    # 0=Monday, 6=Sunday in Python's weekday(); one read for every weekday asked.
     result = await db.execute(
         select(AvailabilityRule).where(
             AvailabilityRule.room_id == room_id,
-            AvailabilityRule.day_of_week == day_of_week,
+            AvailabilityRule.day_of_week.in_({d.weekday() for d in days}),
             AvailabilityRule.is_active == True,  # noqa: E712
         )
     )
-    rules = result.scalars().all()
-
-    if not rules:
-        # No availability rule for this day — room is closed
-        return {"slots": []}
+    rules_by_weekday: dict[int, list[AvailabilityRule]] = {}
+    for rule in result.scalars().all():
+        rules_by_weekday.setdefault(rule.day_of_week, []).append(rule)
 
     # One slot per wall-clock hour of each open window (several windows per
-    # day are fine, e.g. morning + evening), as UTC instants.
+    # day are fine, e.g. morning + evening), as UTC instants. A day without a
+    # rule is closed and contributes nothing.
     hourly: set[tuple[datetime, datetime]] = set()
-    for rule in rules:
-        hourly.update(local_hourly_slots(date, rule.open_time, rule.close_time, zone))
+    for day in days:
+        for rule in rules_by_weekday.get(day.weekday(), []):
+            hourly.update(local_hourly_slots(day, rule.open_time, rule.close_time, zone))
     slot_starts = sorted(s[0] for s in hourly)
 
     if not slot_starts:
@@ -151,7 +187,7 @@ async def get_room_availability(
     day_start = slot_starts[0]
     day_end = max(s[1] for s in hourly)
 
-    # Bookings holding a slot on this date; an expired unpaid hold is free (C03).
+    # Bookings holding a slot on these days; an expired unpaid hold is free (C03).
     result = await db.execute(
         select(Booking).where(
             and_(

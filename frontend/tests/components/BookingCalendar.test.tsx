@@ -48,7 +48,7 @@ vi.mock('react-big-calendar', () => ({
 }))
 
 vi.mock('@/lib/api', () => ({
-  spacesApi: { getAvailability: vi.fn() },
+  spacesApi: { getAvailabilityRange: vi.fn() },
 }))
 
 const room: Room = {
@@ -70,13 +70,20 @@ function slot(start: string, end: string, available = true, reason: Availability
   return { start, end, available, reason: available ? null : reason }
 }
 
+/** The days a range request (P1.4) covers, as the per-day form used to ask them. */
+function daysOf(from: string, to: string): string[] {
+  const days: string[] = []
+  for (let d = parseISO(from); format(d, 'yyyy-MM-dd') <= to; d = addDays(d, 1)) days.push(format(d, 'yyyy-MM-dd'))
+  return days
+}
+
 const AVAILABLE_STYLE = '#f0faf5'
 const BUSY_STYLE = '#f3f4f6'
 const PAST_STYLE = '#fafafa'
 
 async function renderCalendar(slots: AvailabilitySlot[]) {
   const onSlotSelect = vi.fn()
-  vi.mocked(spacesApi.getAvailability).mockResolvedValue(slots)
+  vi.mocked(spacesApi.getAvailabilityRange).mockResolvedValue(slots)
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
@@ -281,26 +288,26 @@ describe('BookingCalendar visible states (B26)', () => {
   }
 
   it('says it is loading while availability is in flight', async () => {
-    vi.mocked(spacesApi.getAvailability).mockReturnValue(new Promise(() => {}))
+    vi.mocked(spacesApi.getAvailabilityRange).mockReturnValue(new Promise(() => {}))
     renderRaw()
     expect(await screen.findByRole('status')).toHaveTextContent(/a carregar/i)
   })
 
   it('shows an error with a retry that refetches', async () => {
-    vi.mocked(spacesApi.getAvailability).mockRejectedValueOnce(new Error('boom'))
+    vi.mocked(spacesApi.getAvailabilityRange).mockRejectedValueOnce(new Error('boom'))
     renderRaw()
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/não foi possível/i)
-    vi.mocked(spacesApi.getAvailability).mockResolvedValue([
+    vi.mocked(spacesApi.getAvailabilityRange).mockResolvedValue([
       slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z'),
     ])
     fireEvent.click(screen.getByRole('button', { name: /tentar novamente/i }))
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
-    expect(spacesApi.getAvailability).toHaveBeenCalledTimes(2)
+    expect(spacesApi.getAvailabilityRange).toHaveBeenCalledTimes(2)
   })
 
   it('labels a day with no opening hours as closed', async () => {
-    vi.mocked(spacesApi.getAvailability).mockResolvedValue([])
+    vi.mocked(spacesApi.getAvailabilityRange).mockResolvedValue([])
     renderRaw()
     expect(await screen.findByText(/fechado neste dia/i)).toBeVisible()
     expect(screen.queryByText(/a carregar/i)).toBeNull()
@@ -360,7 +367,7 @@ describe('BookingCalendar visible range follows the slots (B34)', () => {
     expect(first.max!.getHours() === 23 && first.max!.getMinutes() >= 59).toBe(true)
 
     calendar = null
-    vi.mocked(spacesApi.getAvailability).mockResolvedValue([])
+    vi.mocked(spacesApi.getAvailabilityRange).mockResolvedValue([])
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={queryClient}>
@@ -402,12 +409,13 @@ describe('BookingCalendar views: hourly booking on a day or a week (C12)', () =>
     expect(calendar!.view).toBe(expected)
   })
 
-  /** Like the API: each date has its own slots. Only the first date asked for has any here. */
+  /** Like the API: each range has its own slots. Only the first range asked for has any here. */
   function serveOnce(slots: AvailabilitySlot[]) {
-    let servedFor: string | null = null
-    vi.mocked(spacesApi.getAvailability).mockImplementation(async (_roomId, date) => {
-      servedFor ??= date
-      return date === servedFor ? slots : []
+    let served = false
+    vi.mocked(spacesApi.getAvailabilityRange).mockImplementation(async () => {
+      if (served) return []
+      served = true
+      return slots
     })
   }
 
@@ -428,7 +436,7 @@ describe('BookingCalendar views: hourly booking on a day or a week (C12)', () =>
   }
 
   const askedDates = () =>
-    Array.from(new Set(vi.mocked(spacesApi.getAvailability).mock.calls.map(([, date]) => date))).sort()
+    Array.from(new Set(vi.mocked(spacesApi.getAvailabilityRange).mock.calls.flatMap(([, from, to]) => daysOf(from, to)))).sort()
 
   it('asks for a single day on the day view', async () => {
     await renderServingOnce(monday)
@@ -509,7 +517,7 @@ describe('BookingCalendar views: hourly booking on a day or a week (C12)', () =>
 
   it('names a closed week as a week', async () => {
     setViewportWidth(1440)
-    vi.mocked(spacesApi.getAvailability).mockResolvedValue([])
+    vi.mocked(spacesApi.getAvailabilityRange).mockResolvedValue([])
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={queryClient}>
@@ -553,12 +561,13 @@ describe('BookingCalendar booking window (H01)', () => {
   it('asks for no day past the window in the week that straddles it, and shows no load error', async () => {
     setViewportWidth(1280) // the week view
     await renderCalendar([slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z')])
-    vi.mocked(spacesApi.getAvailability).mockClear()
+    vi.mocked(spacesApi.getAvailabilityRange).mockClear()
     // Navigate to the week holding the last open day.
     const lastDay = bookingWindowLastDay()
     act(() => calendar!.onNavigate(lastDay))
-    await waitFor(() => expect(spacesApi.getAvailability).toHaveBeenCalled())
-    const asked = vi.mocked(spacesApi.getAvailability).mock.calls.map(([, d]) => d)
+    await waitFor(() => expect(spacesApi.getAvailabilityRange).toHaveBeenCalled())
+    // One range request now (P1.4); the days it covers are what used to be asked one by one.
+    const asked = vi.mocked(spacesApi.getAvailabilityRange).mock.calls.flatMap(([, from, to]) => daysOf(from, to))
     const last = format(lastDay, 'yyyy-MM-dd')
     expect(asked.length).toBeGreaterThan(0)
     expect(asked.every((d) => d <= last)).toBe(true)
@@ -616,7 +625,7 @@ describe('BookingCalendar reopen after a pack purchase (K02)', () => {
   function renderReopen(slots: AvailabilitySlot[]) {
     const onSlotSelect = vi.fn()
     const onReopenDone = vi.fn()
-    vi.mocked(spacesApi.getAvailability).mockResolvedValue(slots)
+    vi.mocked(spacesApi.getAvailabilityRange).mockResolvedValue(slots)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={queryClient}>
@@ -637,7 +646,7 @@ describe('BookingCalendar reopen after a pack purchase (K02)', () => {
     await waitFor(() => expect(onSlotSelect).toHaveBeenCalledWith(parseISO(S), parseISO(E)))
     const dayKey = format(parseISO(S), 'yyyy-MM-dd')
     expect(format(calendar!.date, 'yyyy-MM-dd')).toBe(dayKey)
-    expect(vi.mocked(spacesApi.getAvailability).mock.calls.some(([, d]) => d === dayKey)).toBe(true)
+    expect(vi.mocked(spacesApi.getAvailabilityRange).mock.calls.some(([, from, to]) => from <= dayKey && dayKey <= to)).toBe(true)
     expect(onReopenDone).toHaveBeenCalledTimes(1)
     expect(onSlotSelect).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('alert')).toBeNull()

@@ -46,6 +46,11 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/admin/calendar",
+    "operation_id": "admin_calendar_api_v1_admin_calendar_get"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/admin/dashboard",
     "operation_id": "dashboard_api_v1_admin_dashboard_get"
   },

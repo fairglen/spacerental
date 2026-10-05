@@ -2195,7 +2195,30 @@ route in the PR; the landing component tests still pass.
 
 ### P1.4 — Fewer requests on the calendar pages
 
-**Priority: P1. State: QUEUED.** **Metric:** API requests per page view
+**Priority: P1. State: DONE 2026-10-05** on `perf/frontend-first-paint`.
+`GET /rooms/{id}/availability?from&to` (inclusive, ≤ 14 days, 400 beyond,
+backwards or mixed with `date`; the `date` form unchanged; one rules read
+for the weekdays asked, one bookings and one blocks read for the whole
+range) — `BookingCalendar` makes one request per view
+(`lib/availabilitySpan.ts`, `placeholderData: keepPreviousData`) and
+`SpaceRoomsView` prefetches it under the same key the moment a room is
+picked, so it no longer waits for the calendar's on-demand module;
+`GET /admin/calendar?org_id&from&to[&space_id]` (`routers/admin/calendar.py`,
+≤ 14 days) answers the operator calendar's bookings and blocks in one read,
+the page filters by room and status as before; `OrgContext` asks
+`/auth/memberships` only when the session has not exactly one membership
+(names are needed for the switcher only); `refetchOnWindowFocus: false` is
+the React Query default (the operator calendar keeps its own `true`).
+**Measured (harness):** week view **9 → 3 API calls** (7 availability
+requests → 1; last call ends at 203 ms, was 282 ms on the baseline and 472
+ms after P1.3 alone), admin calendar **6 → 2** (preflights 6 → 2), dashboard
+4 → 3; e2e 64/64, Vitest 688. Tests: `test_spaces.py` (+3: a range equals
+the days asked one by one, a booking and a block mark their slots across
+days, the bounds), `test_admin_calendar.py` (5: both rooms and every status,
+nothing from another org, space filter, outside the range, member 403,
+bounds), OpenAPI snapshot refreshed on purpose for the one new operation;
+Vitest `api.test.ts` (+2), `OrgContextSingle.test.tsx`, the 41 calendar
+tests on the range mock. **Metric:** API requests per page view
 (P1.1) on `/spaces/{id}` week view and `/admin/calendar`. **Target:** week
 view 7 → **1** availability request through
 `GET /rooms/{id}/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` (inclusive, at

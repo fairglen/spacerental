@@ -255,3 +255,86 @@ class TestGetSpaceIncludePackages:
     async def test_unknown_include_is_refused(self, client, test_space):
         resp = await client.get(f"/api/v1/spaces/{test_space.id}", params={"include": "bookings"})
         assert resp.status_code == 422
+
+
+class TestAvailabilityRange:
+    """P1.4: `?from&to` answers several days in one request; `?date` is unchanged."""
+
+    @staticmethod
+    def _days(offset: int, count: int) -> list[str]:
+        first = (datetime.now(UTC) + timedelta(days=offset)).date()
+        return [(first + timedelta(days=i)).isoformat() for i in range(count)]
+
+    async def test_a_range_equals_the_days_asked_one_by_one(self, client, test_room):
+        days = self._days(1, 3)
+        ranged = await client.get(
+            f"/api/v1/rooms/{test_room.id}/availability", params={"from": days[0], "to": days[-1]}
+        )
+        assert ranged.status_code == 200
+        one_by_one = []
+        for day in days:
+            resp = await client.get(
+                f"/api/v1/rooms/{test_room.id}/availability", params={"date": day}
+            )
+            assert resp.status_code == 200
+            one_by_one.extend(resp.json()["slots"])
+        assert ranged.json()["slots"] == one_by_one
+        assert len(one_by_one) > 0
+        starts = [s["start"] for s in ranged.json()["slots"]]
+        assert starts == sorted(starts)
+
+    async def test_a_booking_and_a_block_mark_their_slots_across_the_range(
+        self, client, db_session, test_org, test_room, test_user, admin_user
+    ):
+        from app.models.room_block import RoomBlock
+
+        days = self._days(1, 2)
+        first = datetime.fromisoformat(days[0]).replace(tzinfo=UTC)
+        second = datetime.fromisoformat(days[1]).replace(tzinfo=UTC)
+        db_session.add_all(
+            [
+                Booking(
+                    org_id=test_org.id,
+                    room_id=test_room.id,
+                    user_id=test_user.id,
+                    start_time=first.replace(hour=10),
+                    end_time=first.replace(hour=11),
+                    duration_hours=Decimal("1.00"),
+                    total_amount=Decimal("11.00"),
+                    status=BookingStatus.confirmed,
+                    payment_method=PaymentMethod.manual,
+                ),
+                RoomBlock(
+                    org_id=test_org.id,
+                    room_id=test_room.id,
+                    start_time=second.replace(hour=15),
+                    end_time=second.replace(hour=16),
+                    reason="Limpeza",
+                    created_by=admin_user.id,
+                ),
+            ]
+        )
+        await db_session.commit()
+        resp = await client.get(
+            f"/api/v1/rooms/{test_room.id}/availability", params={"from": days[0], "to": days[1]}
+        )
+        assert resp.status_code == 200
+        taken = {s["start"]: s["reason"] for s in resp.json()["slots"] if not s["available"]}
+        assert taken.get(first.replace(hour=10).isoformat()) == "booked"
+        assert taken.get(second.replace(hour=15).isoformat()) == "blocked"
+        # Nothing else on those two open days is taken.
+        assert len(taken) == 2
+
+    async def test_the_range_is_bounded_and_well_formed(self, client, test_room):
+        url = f"/api/v1/rooms/{test_room.id}/availability"
+        days = self._days(1, 15)
+        assert (await client.get(url, params={"from": days[0], "to": days[14]})).status_code == 400
+        assert (await client.get(url, params={"from": days[0], "to": days[13]})).status_code == 200
+        assert (await client.get(url, params={"from": days[1], "to": days[0]})).status_code == 400
+        assert (await client.get(url, params={"from": days[0]})).status_code == 400
+        assert (await client.get(url)).status_code == 400
+        both = {"date": days[0], "from": days[0], "to": days[1]}
+        assert (await client.get(url, params=both)).status_code == 400
+        # Past the booking window, like the single day.
+        far = self._days(60, 2)
+        assert (await client.get(url, params={"from": far[0], "to": far[1]})).status_code == 400
