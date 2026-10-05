@@ -2415,11 +2415,6 @@ first (not in `required-checks`) and promoted once they are stable; a
 **Acceptance:** both jobs green on the PR; the budgets equal the numbers
 measured, not aspirations.
 
-## Reusable agent assignments
-
-Use these when the user is ready to start a delivery assignment. They are
-instructions to copy later, not a request to execute them during backlog editing.
-
 **DECISION (loop, P2.4, CI follow-up):** the web harness measures with
 `prefers-reduced-motion: reduce` emulated. Chromium stops reporting LCP at
 the first compositor-driven scroll, and the `?room=` pages scroll themselves
@@ -2432,6 +2427,177 @@ their photo (~250 ms locally). Residual, a product call: field LCP for
 `?room=` deep links is cut short the same way by the smooth auto-scroll.
 Alternative: scroll instantly on load. Reverse: drop `reducedMotion` from
 `measureOnce`.
+
+## Discoverability (S1/S2 series) — owner assignment 2026-10-05
+
+Goal: make flowspace.pt findable and quotable — by search engines and by AI
+assistants/agents — and stop the app and the site competing for the same
+queries. Mostly static-site and metadata work; no visual redesign. Two
+branches, two PRs, published by the loop and never merged by it: **S1**
+`seo/static-site-discoverability` (S1.1–S1.6), branched from the top of the
+open chain — `chore/land-stack-70-73` (`9f40508`: the four squash commits of
+#70–#73 cherry-picked onto `main` `d67efc6`, which had only received #69; see
+PROGRESS.md) — and targeting it, retargeting to `main` when it merges; **S2**
+`seo/app-noindex-canonical` (S2.1), branched from S1's head. The IDs here
+(S1.1…, S2.1, S3) are the assignment's and are distinct from the security
+hardening S01–S27 above.
+
+Decisions already taken by the owner (recorded, not re-opened):
+- flowspace.pt (static) is the ONLY indexable surface. The app is
+  `noindex, follow` everywhere; its landing canonicalises to
+  https://flowspace.pt/.
+- Portuguese only is indexed. No hreflang (no real EN pages exist).
+- AI crawlers are ALLOWED in robots.txt; we want to be found and cited.
+- No reviews, ratings or `aggregateRating` in structured data until real
+  ones exist. No new marketing pages in this branch.
+- The hero copy stays exactly as it is (owner's text). Title/description
+  and new sections may be written for search intent.
+
+Canonical facts (single source — `flowspace-site/assets/data/business.json`;
+every rendered place agrees with it and a test asserts it): name "FlowSpace ·
+Gabinetes profissionais"; Rua 12 de Julho de 1997 5, Loja 1, 2745-841 Queluz
+(Massamã, Sintra), Portugal, lat 38.755723 / lng -9.279799; every day
+08:00–22:00; geral@flowspace.pt, no phone; prices and packs as published on
+the site (the 12€/11€ mismatch with the app's seed stays open — W06/W07);
+booking URL = the app's public URL from `FRONTEND_URL`/site config; audience
+"profissionais de saúde e bem-estar"; area served Queluz, Massamã, Sintra,
+Lisboa (Área Metropolitana).
+
+Baseline (2026-10-05, `9f40508`, Lighthouse 12 desktop preset on
+`python3 -m http.server 8080`): SEO **1.00**, Best Practices **1.00**,
+Accessibility **0.96** (`color-contrast`, `landmark-one-main`). No
+structured data, no robots.txt, no sitemap, no llms.txt, no canonical;
+`og:*` present (B50). Saved as `.pr-evidence/seo/baseline.json`.
+
+### S0 — Owner actions (outside the repo)
+
+**Priority: P1. State: QUEUED — owner.** Nothing here can be done from the
+repository; each needs the business's accounts.
+- Create/claim the **Google Business Profile** with exactly this NAP: name
+  "FlowSpace · Gabinetes profissionais"; address "Rua 12 de Julho de 1997 5,
+  Loja 1, 2745-841 Queluz"; no phone; website https://flowspace.pt/; hours
+  every day 08:00–22:00; email geral@flowspace.pt; category "Coworking
+  space" (secondary as Google offers them).
+- **Bing Places** with the same NAP.
+- **Google Search Console**: add the property `https://flowspace.pt/`, take
+  the HTML-tag token, put it in `flowspace-site/site.env.json`
+  (`SEARCH_CONSOLE_TOKEN`), run `python3 flowspace-site/scripts/render-static.py`,
+  commit the regenerated `index.html` (S1.6); then submit
+  `https://flowspace.pt/sitemap.xml`.
+- **Bing Webmaster Tools**: the same flow with `BING_TOKEN` (`msvalidate.01`).
+- Choose the social profiles for `sameAs` (none today → omitted from the
+  JSON-LD); add them to `business.json` → `sameAs` when they exist.
+- Set the app's public URL in `business.json` → `booking.url` once the app is
+  deployed (until then the booking entry point is the site's contact form —
+  see the S1.1 decision).
+
+### S1.1 — Facts file and progressive enhancement
+
+**Priority: P1. State: QUEUED.** `assets/data/business.json` holds the
+canonical facts (name, address parts, geo, hours, email, prices, packs, rooms
+with capacity/equipment/price, booking URL, logo and OG image paths).
+Everything that renders facts reads from it: for a no-build site that means
+`scripts/render-static.py` (stdlib only) regenerates the generated blocks of
+`index.html`, `robots.txt`, `sitemap.xml`, `llms.txt` and `llms-full.txt`
+between `<!-- generated:<name> -->` fences, and a test runs the script and
+fails if the committed files differ (facts can never drift). Room photos: the
+first photo of each room is a real `<img>` in the HTML (src, width, height,
+alt "Sala Calma — gabinete com poltronas", lazy except the first) and
+`room-gallery.js` enhances it into the carousel. **Acceptance:** drift test
+green; a raw-HTML test finds ≥ 3 `<img>` with alt; smoke suite green; README
+documents the generator.
+
+### S1.2 — Head, titles and sharing
+
+**Priority: P1. State: QUEUED.** `<title>` ≤ 60 chars with intent + place +
+brand; description ≤ 155 chars (audience, à hora, Queluz/Massamã, sem
+contratos, reserva online); H1 unchanged; canonical on both pages,
+`noindex` on `privacidade.html`; Open Graph + Twitter card complete
+(`og:locale pt_PT`, absolute 1200×630 image with width/height/alt);
+`<meta name="robots" content="index, follow, max-image-preview:large">`;
+favicons/apple-touch/manifest links verified to resolve. **Acceptance:** a
+no-JS test checks each tag and its length; linkinator resolves every head
+link.
+
+### S1.3 — Structured data (JSON-LD, one generated `<script>`)
+
+**Priority: P1. State: QUEUED.** One `@graph`: `Organization`,
+`LocalBusiness` (address, geo, hasMap, openingHoursSpecification Mo–Su
+08:00–22:00, email, priceRange "€€", areaServed, amenityFeature from the room
+tags, makesOffer — "Sala à hora" per room in EUR/HUR and one Offer per pack —
+potentialAction ReserveAction → the booking URL), `FAQPage` (S1.4 text,
+verbatim), `BreadcrumbList`, `WebSite` (inLanguage pt-PT). No ratings.
+**Acceptance:** a stdlib Python test parses the block, checks required
+properties and that prices/hours/address equal `business.json`; a dev-only
+validator (`structured-data-testing-tool`, in `tests/`) output attached to
+the PR.
+
+### S1.4 — Content for search intent
+
+**Priority: P1. State: QUEUED.** Room cards get a facts line ("Até N pessoas
+· tags · preço/hora", no prose); a "Perguntas frequentes" section (`#faq`,
+after Preços, before Onde estamos) with 8–10 `<details>/<summary>` Q&As in
+formal Portuguese, 1–3 sentences each (for whom; how to book; "à hora" and
+the 1-hour minimum; packs and validity; cancellation — até 24h antes, with
+the credit to the hour bank since K01 is on `main`; access — only what is
+true today; what is included; recurring needs — fale connosco, 4+ h/semana;
+how to get there — transport specifics only as verifiable from OpenStreetMap;
+invoices only if true). Semantic markup: one `<h1>`, `<section>`+`<h2>`,
+`<address>`, `<time>`, `<nav aria-label>`, skip link, `<main>`; nav and
+footer gain "FAQ". Design unchanged. **Acceptance:** FAQ text present in
+raw HTML and equal to the JSON-LD `FAQPage`; smoke suite green (nav anchors
+include `#faq`).
+
+### S1.5 — Crawl files and the AI-facing card
+
+**Priority: P1. State: QUEUED.** `robots.txt` (allow all, explicit allows for
+GPTBot, ChatGPT-User, ClaudeBot, Claude-Web, PerplexityBot, Google-Extended,
+Applebot-Extended, CCBot; disallow only `/tests/`; Sitemap line),
+`sitemap.xml` (`/`, `/privacidade.html`, lastmod from git, image entries for
+the room photos), `llms.txt` and `llms-full.txt` (generated from
+`business.json` + the FAQ source), `.well-known/security.txt` (Contact
+mailto:geral@flowspace.pt, Expires one year out); the deploy workflow's
+`OPTIONAL_PATHS` gains `llms.txt llms-full.txt .well-known`. Backend:
+`GET /openapi-public.json` — only the unauthenticated read endpoints (spaces,
+space detail, availability, packages) with one-line descriptions and
+local-date semantics for availability, `Cache-Control: public, max-age=3600`;
+linked from llms.txt as "Machine-readable availability". **Acceptance:**
+robots/sitemap/llms parse; a backend test pins the public operation set and
+the header; the workflow's allowlist publishes the new files.
+
+### S1.6 — Verification and measurement hooks
+
+**Priority: P1. State: QUEUED.** Verification tokens rendered into the HTML
+by the generator from `flowspace-site/site.env.json` (gitignored;
+`site.env.example.json` committed; `SEARCH_CONSOLE_TOKEN`, `BING_TOKEN`) —
+no JS injection. CI: a new `flowspace-site-checks.yml` (path-filtered) runs
+the node tests, the Python facts/JSON-LD tests, the Playwright smoke suite,
+Lighthouse (mobile preset; SEO ≥ 95, Best Practices ≥ 90 from
+`seo-budget.json`) and `linkinator` against a local server. **Acceptance:**
+the workflow is green on the PR; the README documents the owner flow.
+
+### S2.1 — The app stops competing
+
+**Priority: P1. State: QUEUED** (branch `seo/app-noindex-canonical` from S1).
+`frontend/app/robots.ts` allows crawling; root metadata `robots: { index:
+false, follow: true }`; `alternates.canonical: 'https://flowspace.pt/'` on
+the landing only; `metadataBase` from `FRONTEND_URL`; no `sitemap.ts`; OG
+tags stay; `/dashboard`, `/admin/**`, `/sign-in`, `/reset-password/**` add
+`nofollow` and `X-Robots-Tag: noindex` via `headers()`; `lang="pt-PT"`.
+**Acceptance:** route tests for the robots meta on landing vs admin;
+Playwright asserts the landing canonical.
+
+### S3 — MCP server for availability + booking
+
+**Priority: P3. State: DEFERRED.** An MCP server exposing availability
+(read) and booking (write, authenticated) for assistants, on top of the
+public OpenAPI card from S1.5. Not started; recorded so the public API card
+has a successor.
+
+## Reusable agent assignments
+
+Use these when the user is ready to start a delivery assignment. They are
+instructions to copy later, not a request to execute them during backlog editing.
 
 ### Existing-PR assignment
 
