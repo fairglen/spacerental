@@ -2615,7 +2615,7 @@ by the budget, not gated, until the contrast finding is the owner's decision.
 
 ### S2.1 — The app stops competing
 
-**Priority: P1. State: QUEUED** (branch `seo/app-noindex-canonical` from S1).
+**Priority: P1. State: DONE 2026-10-05** (branch `seo/app-noindex-canonical` from S1's head; the commit after `8541eb0`).
 `frontend/app/robots.ts` allows crawling; root metadata `robots: { index:
 false, follow: true }`; `alternates.canonical: 'https://flowspace.pt/'` on
 the landing only; `metadataBase` from `FRONTEND_URL`; no `sitemap.ts`; OG
@@ -2623,6 +2623,25 @@ tags stay; `/dashboard`, `/admin/**`, `/sign-in`, `/reset-password/**` add
 `nofollow` and `X-Robots-Tag: noindex` via `headers()`; `lang="pt-PT"`.
 **Acceptance:** route tests for the robots meta on landing vs admin;
 Playwright asserts the landing canonical.
+
+**Evidence (S2.1):** `lib/seo.ts` (`ROBOTS_APP`, `ROBOTS_PRIVATE`,
+`SITE_CANONICAL`, `metadataBaseFrom`), `lib/robotsHeaders.js` (X-Robots-Tag
+rules, copied into the runner image), `app/robots.ts`, root metadata
+`robots: { index: false, follow: true }` + `lang="pt-PT"`, the landing's
+`alternates.canonical`, `robots: ROBOTS_PRIVATE` on the dashboard, admin,
+sign-in and reset-password layouts. Vitest `tests/lib/robotsHeaders.test.ts`
+(3) + `tests/app/robotsMetadata.test.ts` (4); Playwright
+`tests/e2e/seo-policy.spec.ts` (4: landing meta/canonical/lang/OG, rooms
+page, sign-in + dashboard header on the redirect and signed in, robots.txt).
+**DECISION (loop, S2.1):** `metadataBase` reads `FRONTEND_URL` and falls back
+to `NEXTAUTH_URL` — the frontend container only receives the latter today
+and the two are the same address by construction; a bare build keeps Next's
+own localhost fallback (existing behaviour). Reverse: require `FRONTEND_URL`.
+**DECISION (loop, S2.1):** the X-Robots-Tag header covers exactly the four
+private roots named by the assignment (and their children); the landing,
+`/spaces/**` and `/sign-up` carry `noindex, follow` through metadata only,
+so shared links keep their previews. Reverse: add sources to
+`PRIVATE_SOURCES`.
 
 ### S3 — MCP server for availability + booking
 

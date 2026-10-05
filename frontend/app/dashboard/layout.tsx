@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
+import { ROBOTS_PRIVATE } from '@/lib/seo'
 import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { authOptions, backendAcceptsToken } from '@/lib/auth'
 
-export const metadata: Metadata = { title: 'As minhas reservas' }
+export const metadata: Metadata = { title: 'As minhas reservas', robots: ROBOTS_PRIVATE }
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions)

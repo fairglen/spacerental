@@ -63,7 +63,7 @@ COPY --from=builder --chown=app:app /app/.next ./.next
 COPY --from=builder /app/public ./public
 # next.config.js runs again under `next start`, with what it requires (Q52).
 COPY package.json next.config.js ./
-COPY lib/securityHeaders.js lib/cacheHeaders.js ./lib/
+COPY lib/securityHeaders.js lib/cacheHeaders.js lib/robotsHeaders.js ./lib/
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
