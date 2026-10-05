@@ -1,0 +1,11 @@
+# Never into an image: secrets, caches, local media, the virtualenvs people keep here.
+.env
+.env.*
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+media/
+.venv/
+venv/

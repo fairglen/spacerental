@@ -1,11 +1,6 @@
-"""Reading the audit trail (G01): the org's whole trail, and one entity's history.
+"""The audit trail (G01, O05): the organisation's rows and each entity's history."""
 
-Both are operator-only and tenant-scoped through `org_id`; a history request
-first finds the entity INSIDE the caller's organisation and answers 404
-otherwise, exactly like every other admin route, so nothing about another
-tenant's rows can be learned here.
-"""
-
+import logging
 import uuid
 from typing import Literal
 
@@ -26,7 +21,9 @@ from app.models.support import SupportRequest
 from app.models.user import User
 from app.schemas.audit import AdminActionOut
 
-router = APIRouter(prefix="/admin", tags=["admin-audit"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["admin-audit"])
 
 EntityType = Literal[
     "space",

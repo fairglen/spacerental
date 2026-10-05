@@ -9,11 +9,17 @@ function appVersion() {
   }
 }
 
+const { securityHeaders } = require('./lib/securityHeaders')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: { NEXT_PUBLIC_APP_VERSION: appVersion() },
   images: {
     domains: ['images.unsplash.com', 'via.placeholder.com'],
+  },
+  // Q52: static security headers on every route, CSP in report-only mode.
+  async headers() {
+    return securityHeaders()
   },
 }
 module.exports = nextConfig
