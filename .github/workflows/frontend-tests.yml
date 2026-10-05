@@ -31,3 +31,6 @@ jobs:
       - run: npm run build
         env:
           NEXTAUTH_SECRET: ci-build-only-secret-not-for-deployment
+          # A production build refuses to guess its API origin (round 7);
+          # this build is never run, so any well-formed origin will do.
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
