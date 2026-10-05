@@ -36,7 +36,13 @@ from app.payments import (
     PaymentProviderError,
     get_payment_gateway,
 )
-from app.schemas.booking import BookingCheckoutOut, BookingCreate, BookingOut
+from app.schemas.booking import (
+    BookingCheckoutOut,
+    BookingCreate,
+    BookingListOut,
+    BookingOut,
+    list_row,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +84,9 @@ async def my_bookings(
     )
     bookings = result.scalars().all()
     attach_access_codes(lock_gateway, bookings)
-    return {"bookings": [BookingOut.model_validate(b) for b in bookings]}
+    # P2.2: list rows omit their null optionals (notes, hold deadline, series,
+    # code, user); the client types allow absence, and it is ~100 bytes a row.
+    return {"bookings": [list_row(BookingListOut.model_validate(b)) for b in bookings]}
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

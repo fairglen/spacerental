@@ -22,7 +22,7 @@ from app.models.booking import Booking
 from app.models.room_block import RoomBlock
 from app.models.space import Room
 from app.models.user import User
-from app.schemas.booking import AdminBookingOut
+from app.schemas.booking import AdminBookingListOut, list_row
 from app.schemas.room_block import RoomBlockOut
 
 from ._common import _WITH_DEBITS
@@ -88,6 +88,6 @@ async def admin_calendar(
         .all()
     )
     return {
-        "bookings": [AdminBookingOut.model_validate(b) for b in bookings],
+        "bookings": [list_row(AdminBookingListOut.model_validate(b)) for b in bookings],
         "blocks": [RoomBlockOut.model_validate(b) for b in blocks],
     }

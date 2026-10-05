@@ -131,6 +131,10 @@ class Settings(BaseSettings):
     SEAM_DEVICE_ID_MAP: str | None = None
     SEAM_TIMEOUT_SECONDS: float = 10.0
 
+    # P2.2: how often the lifespan task reconciles lapsed unpaid holds
+    # (app/holds.py); 0 disables it (the reads still reconcile their own).
+    HOLD_SWEEP_INTERVAL_SECONDS: int = 60
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]

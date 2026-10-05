@@ -18,14 +18,15 @@ from tests.perf.conftest import headers_for, plan_nodes, writes
 
 pytestmark = pytest.mark.perf
 
-# Measured on b57f30c, 2026-10-05 (the baseline: the numbers, not a wish) —
-# /bookings/me 2 340 B/row with 4 statements of which one UPDATE, the admin
-# list 2 530 B/row with 7 statements over a Seq Scan, availability 5
-# statements. Lowered by P2.2 (row size, the UPDATE on a GET) and P2.3 (the
-# index, the JWT lookup).
+# Measured, not wished. Baseline on b57f30c (2026-10-05): /bookings/me 2 340
+# B/row with 4 statements of which one UPDATE, the admin list 2 530 B/row
+# with 7 statements over a Seq Scan, availability 5 statements. After P2.2
+# (room summary, null optionals and updated_at out of list rows, the
+# read-first expiry): 587 and 771 B/row, no write on a read. P2.3 lowers the
+# statements (the JWT lookup) and changes the admin list's plan (the index).
 BUDGET = {
-    "bookings_me": {"bytes_per_row": 2_340, "statements": 4, "writes": 1},
-    "admin_bookings": {"bytes_per_row": 2_530, "statements": 7},
+    "bookings_me": {"bytes_per_row": 587, "statements": 4, "writes": 0},
+    "admin_bookings": {"bytes_per_row": 771, "statements": 7},
     "availability": {"statements": 5},
 }
 

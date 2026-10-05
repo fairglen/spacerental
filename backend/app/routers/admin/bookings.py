@@ -51,10 +51,12 @@ from app.schemas.audit import AdminActionOut
 from app.schemas.booking import (
     AdminBookingCreate,
     AdminBookingDetailOut,
+    AdminBookingListOut,
     AdminBookingOut,
     BookingStatusUpdate,
     CancellationCreditOut,
     MarkPaidBody,
+    list_row,
 )
 
 from ._common import _WITH_DEBITS, _locked_booking, _room_in_org
@@ -132,7 +134,7 @@ async def admin_list_bookings(
     bookings = result.scalars().all()
     attach_access_codes(lock_gateway, bookings)
     return {
-        "bookings": [AdminBookingOut.model_validate(b) for b in bookings],
+        "bookings": [list_row(AdminBookingListOut.model_validate(b)) for b in bookings],
         "total": total,
         "page": page,
         "page_size": page_size,

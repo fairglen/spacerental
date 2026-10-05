@@ -137,6 +137,21 @@ class RoomOut(BaseModel):
         return [r for r in rules if getattr(r, "is_active", True)]
 
 
+class RoomSummary(BaseModel):
+    """What a booking row carries about its room (P2.2): the name and the
+    price — what every list shows — instead of the whole `RoomOut` with four
+    photos and seven opening windows per row (≈2.3 KB each). No photo: no
+    list renders one, and a cover with two URLs was 290 bytes a row. The
+    single-booking routes keep `RoomOut`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    space_id: uuid.UUID
+    name: str
+    hourly_rate: Decimal
+
+
 class RoomCreate(BaseModel):
     name: Name
     description: Description | None = None

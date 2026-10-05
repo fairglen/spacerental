@@ -1,4 +1,6 @@
+import asyncio
 import mimetypes
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +10,8 @@ from starlette.staticfiles import StaticFiles
 
 from app.cache_headers import CacheControlMiddleware
 from app.config import settings
+from app.database import async_session_factory
+from app.holds import run_hold_sweeper
 from app.media import LocalMediaStorage, get_media_storage
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.request_id import RequestIdMiddleware
@@ -26,6 +30,26 @@ from app.routers import (
 )
 from app.security_headers import SECURITY_HEADERS, SecurityHeadersMiddleware
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # P2.2: lapsed unpaid holds are reconciled on a timer (app/holds.py), so
+    # the reads only read. One replica is enough; 0 turns it off.
+    sweeper = None
+    if settings.HOLD_SWEEP_INTERVAL_SECONDS > 0:
+        sweeper = asyncio.create_task(
+            run_hold_sweeper(async_session_factory, settings.HOLD_SWEEP_INTERVAL_SECONDS),
+            name="hold-sweeper",
+        )
+    try:
+        yield
+    finally:
+        if sweeper is not None:
+            sweeper.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweeper
+
+
 # The app does not create or migrate the schema. `alembic upgrade head` runs in
 # backend/docker-entrypoint.sh before uvicorn starts, so the schema exists by
 # the time the first request arrives. Bootstrapping it from startup as well
@@ -34,6 +58,7 @@ app = FastAPI(
     title="SpaceRental API",
     version="1.0.0",
     description="Production-ready backend for the SpaceRental platform",
+    lifespan=lifespan,
 )
 
 # Registered before CORS so CORS ends up the OUTER layer: 429 responses still

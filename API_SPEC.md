@@ -202,7 +202,16 @@ Response: `User`
 
 ### GET /bookings/me
 My bookings list.
-Response: `{ bookings: Booking[] }`
+Response: `{ bookings: Booking[] }` — **list rows** (P2.2): `room` is a
+summary `{ id, space_id, name, hourly_rate }`, the null optionals `notes`,
+`hold_expires_at`, `recurrence_rule_id`, `user` (and `admin_note` on the
+operator lists) are omitted rather than sent as `null`, `updated_at` is not
+sent, and `access_code` is always present (`null` = no code). A single booking
+(`POST /bookings`, `/checkout`, the admin detail) carries the whole `Room`
+and every field. Lapsed unpaid holds are reconciled by a sweeper every
+`HOLD_SWEEP_INTERVAL_SECONDS` (default 60); this read still flips the
+caller's own lapsed holds if the sweeper has not yet, and writes nothing
+otherwise.
 
 ### POST /bookings
 Create a booking. `payment_method` selects how it is paid for and therefore
@@ -606,7 +615,10 @@ the booking's short id prefix; `payment_method`; `include_cancelled`
 `-start_time` (default) | `created_at` | `-created_at`; plus `room_id`,
 `status`, `from`, `to` (timezone-aware instants; a naive value is 422, as
 on the audit and purchase filters), `page`, `page_size` as before.
-All bookings for org.
+All bookings for org. Rows are the list shape of `GET /bookings/me` (P2.2:
+`room` summary, null optionals omitted, no `updated_at`) plus `admin_note`
+when set and `package_debits`; so are the rows of `GET /admin/calendar` and
+of a customer's bookings on `GET /admin/users/:id`.
 Query: `?status=&room_id=&from=&to=`
 
 ### POST /admin/bookings

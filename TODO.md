@@ -2309,7 +2309,33 @@ uncompressed small one, each `Cache-Control` value), and the e2e suite green.
 
 ### P2.2 — Leaner payloads, the sweep off the read path
 
-**Priority: P1. State: QUEUED (Part 2).** **Metric:** bytes per row in
+**Priority: P1. State: DONE 2026-10-05** on `perf/api-caching-and-payloads`.
+`RoomSummary` (`id`, `space_id`, `name`, `hourly_rate`) is what a booking
+row carries in every list (`GET /bookings/me`, `/admin/bookings`,
+`/admin/calendar`, a customer's bookings on `/admin/users/{id}`), through
+`BookingListOut` / `AdminBookingListOut`; list rows also omit their null
+optionals (`access_code` stays, its null means "no code") and `updated_at`
+(nothing reads it); the single-booking routes
+keep `BookingOut` with the full room. `app/holds.py`: a lifespan task
+(`HOLD_SWEEP_INTERVAL_SECONDS`, default 60, 0 off) reconciles every lapsed
+unpaid hold; `_expire_lapsed_holds` reads first and only writes when a hold
+really lapsed, so the reads write nothing in the steady state. API_SPEC.md
+documents both. **Measured (`pytest -m perf`):** `GET /bookings/me`
+**2,340 → 587 B/row**, writes **1 → 0**, 2.3 KB on the wire for 50 rows;
+`GET /admin/bookings` 2,530 → 771 B/row. Tests: `test_booking_lists.py`
+(4: the summary and the omitted fields on every list, a set optional kept, a
+single booking whole), `test_hold_sweep.py` (5: one sweep flips exactly the
+lapsed holds and the second finds nothing, the loop runs on its interval and
+stops when cancelled, a failed sweep does not stop it, a read with nothing
+lapsed writes nothing, a read still reconciles a hold the sweeper has not
+reached); the 333 tests around bookings, holds, packs and the admin pass
+unchanged. **DECISION:** the read-time reconciliation stays, made write-free
+in the common case (a SELECT first), rather than removed: the C03/C13 suites
+pin that a lapsed hold is `expired` the moment it is read, and a customer
+who reads within the sweeper's minute should not see a stale hold.
+**DECISION:** no `photo` in the summary although the assignment listed one —
+no list renders a cover and it was 290 bytes a row; the detail routes carry
+the photos. **Metric:** bytes per row in
 `GET /bookings/me` (owner's baseline ≈ 2.4 KB/row: 80 KB for 34 rows);
 statements issued by that GET (P1.1 counter). **Target:** ≤ **600 B/row**
 uncompressed, with `RoomSummary` (`id`, `space_id`, `name`, `hourly_rate`,
