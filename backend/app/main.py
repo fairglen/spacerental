@@ -2,9 +2,7 @@ import mimetypes
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
-from starlette.types import Scope
 
 from app.config import settings
 from app.media import LocalMediaStorage, get_media_storage
@@ -23,6 +21,7 @@ from app.routers import (
     test_hooks,
     webhooks,
 )
+from app.security_headers import SecurityHeadersMiddleware
 
 # The app does not create or migrate the schema. `alembic upgrade head` runs in
 # backend/docker-entrypoint.sh before uvicorn starts, so the schema exists by
@@ -53,9 +52,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
+    # The methods the API actually serves (Q55): a wildcard would also
+    # pre-approve PATCH, HEAD and anything a future route forgets to think
+    # about. OPTIONS is the preflight itself.
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Outermost (Q52): every response — JSON, /media files, the stub Checkout
+# page, a 429, a preflight — carries the same static security headers.
+app.add_middleware(SecurityHeadersMiddleware)
 
 API_PREFIX = "/api/v1"
 
@@ -82,26 +88,17 @@ test_hooks.mount(
 
 
 # python:3.12-slim ships no /etc/mime.types and its built-in table has no WebP,
-# so the photos were served as text/plain — which, with `nosniff` below, a
-# browser refuses to render as an image.
+# so the photos were served as text/plain — which, with the `nosniff` every
+# response now carries (app.security_headers), a browser refuses to render as
+# an image.
 mimetypes.add_type("image/webp", ".webp")
 
-
-class _MediaFiles(StaticFiles):
-    """Read-only photo files. Everything here was re-encoded by `app.media`."""
-
-    async def get_response(self, path: str, scope: Scope) -> Response:
-        response = await super().get_response(path, scope)
-        # Defence in depth: served as exactly what we encoded, never sniffed.
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
-
-
-# Local storage only: the API itself serves what it stored (C14). With object
-# storage, MEDIA_BASE_URL points at the bucket and nothing is mounted here.
+# Local storage only: the API itself serves what it stored (C14), read-only
+# and re-encoded by `app.media`. With object storage, MEDIA_BASE_URL points at
+# the bucket and nothing is mounted here.
 _storage = get_media_storage()
 if isinstance(_storage, LocalMediaStorage):
-    app.mount("/media", _MediaFiles(directory=_storage.root), name="media")
+    app.mount("/media", StaticFiles(directory=_storage.root), name="media")
 
 
 @app.get("/health", tags=["health"])
