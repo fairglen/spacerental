@@ -12,15 +12,12 @@ from app.ratelimit import RateLimitMiddleware, limiter
 from app.request_id import RequestIdMiddleware
 from app.routers import (
     admin,
-    admin_audit,
-    admin_users,
     auth,
     bookings,
     checkout_stub,
     media,
     packages,
     recurrences,
-    room_blocks,
     spaces,
     support,
     test_hooks,
@@ -67,14 +64,10 @@ app.include_router(spaces.router, prefix=API_PREFIX)
 app.include_router(bookings.router, prefix=API_PREFIX)
 app.include_router(recurrences.router, prefix=API_PREFIX)
 app.include_router(packages.router, prefix=API_PREFIX)
+# Every /admin route: one package, one router (Q50).
 app.include_router(admin.router, prefix=API_PREFIX)
 app.include_router(media.router, prefix=API_PREFIX)
 app.include_router(support.router, prefix=API_PREFIX)
-app.include_router(support.admin_router, prefix=API_PREFIX)
-app.include_router(room_blocks.router, prefix=API_PREFIX)
-app.include_router(admin_users.router, prefix=API_PREFIX)
-app.include_router(admin_users.purchases_router, prefix=API_PREFIX)
-app.include_router(admin_audit.router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
 # No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
 # see app/routers/checkout_stub.py.
