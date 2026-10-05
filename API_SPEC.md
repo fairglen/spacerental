@@ -73,19 +73,26 @@ List all active spaces (public). Each space carries its location: `address`,
 Response: `{ spaces: Space[] }`
 
 ### GET /spaces/:id
-Response: `{ space, rooms, contact: { email, phone } }` — `contact` is the
-organisation's public contact when the owner set one (G04), else nulls, and
-the customer-facing block keeps its default then.
+Query: `?include=packages` (optional; any other value is 422) adds
+`packages: Package[]` — the organisation's active packs, exactly what
+`GET /packages?org_id=` answers — so the landing page reads everything it
+shows in one request (P1.2; the server renders it before the browser asks).
+Response: `{ space, rooms, contact: { email, phone }, packages? }` — `contact`
+is the organisation's public contact when the owner set one (G04), else
+nulls, and the customer-facing block keeps its default then.
 Each room carries `availability_rules: [{ day_of_week, open_time, close_time }]`
 (V06): its active opening windows, weekday 0 = Monday, times in UTC like every
 rule (R01). "Onde estamos" derives the space's hours from their union. The
 list endpoint (`GET /spaces`) does not load rooms.
-Space detail with rooms.
-Response: `{ space: Space, rooms: Room[] }`
 
 ### GET /rooms/:id/availability
-Query: `?date=YYYY-MM-DD` — the SPACE's local date (R01).
+Query: `?date=YYYY-MM-DD` — the SPACE's local date (R01) — or, since P1.4,
+`?from=YYYY-MM-DD&to=YYYY-MM-DD` (both inclusive, at most 14 days; `to` must
+not precede `from`; `date` together with `from`/`to`, or neither form, is 400)
+for every day of the range in one request — what the week view asks. A day
+past the booking window is 400 in either form.
 Response: `{ slots: [{ start: ISO8601, end: ISO8601, available: bool, reason }] }`
+in time order; a closed day contributes no slots.
 
 Opening hours are the space's wall clock (`Space.timezone`, Europe/Lisbon for
 the pilot): a room open "08:00–22:00" is open 08:00–22:00 on the door all
@@ -568,6 +575,14 @@ One booking for its page (G04): `{ booking: AdminBookingDetail, history:
 `stripe_checkout_session_id` — never in a customer response — with the
 customer, room, `payment_method`, `total_amount`, `package_debits` per
 purchase, `access_code`, `notes`, `admin_note` and `hold_expires_at`.
+
+### GET /admin/calendar
+Query: `org_id`, `from`, `to` (timezone-aware instants, `to` after `from`, at
+most 14 days apart), optional `space_id`. The operator calendar's one read
+(P1.4): every booking of the organisation's rooms (or of that space's) in any
+status, and every block, that overlaps `[from, to)`, each in time order.
+Response: `{ bookings: AdminBooking[], blocks: RoomBlock[] }` — the booking
+shape of `GET /admin/bookings`. Admin/owner of the org only (403).
 
 ### GET /admin/bookings
 Query (G04): `q` matches the customer's name or email (case-insensitive) or

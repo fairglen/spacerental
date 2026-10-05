@@ -22,4 +22,10 @@ const nextConfig = {
     return securityHeaders()
   },
 }
-module.exports = nextConfig
+
+// P1.1: `ANALYZE=1 npm run build` writes the bundle treemaps to .next/analyze/.
+// Required lazily so a production build never loads the dev dependency.
+const withBundleAnalyzer =
+  process.env.ANALYZE === '1' ? require('@next/bundle-analyzer')({ enabled: true, openAnalyzer: false }) : (config) => config
+
+module.exports = withBundleAnalyzer(nextConfig)

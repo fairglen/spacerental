@@ -73,7 +73,8 @@ describe('contact note on the booking page', () => {
 
     const help = await screen.findByTestId('calendar-help')
     const note = screen.getByRole('note')
-    const calendar = screen.getByTestId('calendar')
+    // The calendar's module loads on demand (P1.3): the note is there first.
+    const calendar = await screen.findByTestId('calendar')
     expect(help.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(note.compareDocumentPosition(calendar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expectContactLink(note, room.name)

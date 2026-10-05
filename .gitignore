@@ -40,6 +40,8 @@ playwright/.cache/
 coverage/
 # Saved Playwright storageState (contains a live JWT) from global-setup.ts
 frontend/tests/e2e/.auth/
+# Measurements written by the performance harness (P1.1): perf:web, perf:sizes, pytest -m perf
+perf-results/
 
 # ── Logs ───────────────────────────────────────────────────────
 *.log

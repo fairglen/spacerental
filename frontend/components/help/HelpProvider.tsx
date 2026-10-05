@@ -1,7 +1,12 @@
 'use client'
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import { HelpDialog } from '@/components/help/HelpDialog'
+import dynamic from 'next/dynamic'
 import type { SupportCategory } from '@/types'
+
+// The dialog, its form and what they pull in (date-fns and its locales among
+// them) load the first time someone asks for help (P1.3) — every page used
+// to ship them for a dialog that starts closed.
+const HelpDialog = dynamic(() => import('@/components/help/HelpDialog').then((m) => m.HelpDialog), { ssr: false })
 
 export type HelpPreset = { category?: SupportCategory; bookingId?: string }
 
@@ -20,10 +25,14 @@ export function HelpProvider({ children }: { children: ReactNode }) {
   // A new key per opening: the dialog starts from its presets every time
   // instead of remembering a half-written message from the last one.
   const [key, setKey] = useState(0)
+  // Mounted from the first opening on, so closing keeps the loaded module
+  // and the next opening is immediate.
+  const [requested, setRequested] = useState(false)
 
   const openHelp = useCallback((next: HelpPreset = {}) => {
     setPreset(next)
     setKey((k) => k + 1)
+    setRequested(true)
     setOpen(true)
   }, [])
   const value = useMemo(() => ({ openHelp }), [openHelp])
@@ -31,7 +40,9 @@ export function HelpProvider({ children }: { children: ReactNode }) {
   return (
     <HelpContext.Provider value={value}>
       {children}
-      <HelpDialog key={key} open={open} onOpenChange={setOpen} initialCategory={preset.category} initialBookingId={preset.bookingId} />
+      {requested && (
+        <HelpDialog key={key} open={open} onOpenChange={setOpen} initialCategory={preset.category} initialBookingId={preset.bookingId} />
+      )}
     </HelpContext.Provider>
   )
 }

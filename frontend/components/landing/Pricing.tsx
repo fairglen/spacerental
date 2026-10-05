@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
 import { spacesApi, packagesApi } from '@/lib/api'
+import { queryKeys } from '@/lib/queryKeys'
 import { formatCurrency } from '@/lib/utils'
 import { useT } from '@/lib/i18n'
 import type { Package } from '@/types'
@@ -87,7 +88,7 @@ export function Pricing() {
   // serves one /spaces response to both instead of spending a second
   // public-tier request.
   const spaceQuery = useQuery({
-    queryKey: ['spaces'],
+    queryKey: queryKeys.spaces,
     queryFn: () => spacesApi.list(),
     staleTime: 5 * 60 * 1000,
   })
@@ -96,15 +97,20 @@ export function Pricing() {
   const spaceId = firstSpace?.id
 
   const packagesQuery = useQuery({
-    queryKey: ['pricing', 'packages', orgId],
+    queryKey: queryKeys.pricingPackages(orgId ?? ''),
     queryFn: () => packagesApi.list(orgId as string),
     enabled: !!orgId,
     staleTime: 5 * 60 * 1000,
   })
 
+  // The same key as the room cards above and the space page, read for its
+  // rooms: one /spaces/{id} per page load serves both blocks (P1.2 — with a
+  // key of its own this block used to request it a second time), and the
+  // server's hydrated answer lands here too.
   const roomsQuery = useQuery({
-    queryKey: ['pricing', 'rooms', spaceId],
-    queryFn: async () => (await spacesApi.get(spaceId as string)).rooms,
+    queryKey: queryKeys.space(spaceId ?? ''),
+    queryFn: () => spacesApi.get(spaceId as string),
+    select: (detail) => detail.rooms,
     enabled: !!spaceId,
     staleTime: 5 * 60 * 1000,
   })

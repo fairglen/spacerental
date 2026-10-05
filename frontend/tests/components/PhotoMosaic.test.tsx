@@ -62,6 +62,9 @@ describe('PhotoMosaic — layout by count', () => {
     expect(images[0]).toHaveAttribute('src', 'http://api/media/1.webp')
     expect(images[0].closest('[data-tile]')).toHaveAttribute('data-tile', 'big')
     expect(images.map((i) => i.getAttribute('loading'))).toEqual(['eager', 'lazy', 'lazy', 'lazy'])
+    // P1.5: both sizes offered, with the tile's share of the viewport.
+    expect(images[0]).toHaveAttribute('srcset', 'http://api/media/1_thumb.webp 480w, http://api/media/1.webp 1600w')
+    expect(images.map((i) => i.getAttribute('sizes'))).toEqual(['50vw', '25vw', '25vw', '25vw'])
     images.forEach((image, i) => {
       expect(image).toHaveAttribute('width')
       expect(image).toHaveAttribute('height')

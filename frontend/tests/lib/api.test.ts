@@ -18,6 +18,57 @@ describe('spacesApi.list', () => {
   })
 })
 
+describe('spacesApi.getWithPackages (P1.2)', () => {
+  it('asks for ?include=packages and unwraps space, rooms, contact and the packs with numbers at the boundary', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({
+        data: {
+          space: { id: 's-1', org_id: 'o-1', name: 'A', images: [], amenities: [], latitude: '38.700000', longitude: '-9.100000' },
+          rooms: [{ id: 'r-1', hourly_rate: '11.00', images: [], amenities: [], photos: [] }],
+          contact: { email: 'geral@x.pt', phone: null },
+          packages: [{ id: 'p-1', org_id: 'o-1', name: '10h', hours: 10, price: '99.00', validity_days: 180, is_active: true }],
+        },
+      }),
+    } as any
+    const result = await spacesApi.getWithPackages('s-1', mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/spaces/s-1', { params: { include: 'packages' } })
+    expect(result.space.latitude).toBe(38.7)
+    expect(result.rooms[0].hourly_rate).toBe(11)
+    expect(result.contact).toEqual({ email: 'geral@x.pt', phone: null })
+    expect(result.packages).toEqual([expect.objectContaining({ id: 'p-1', price: 99 })])
+  })
+
+  it('a response without packages yields an empty list, never undefined', async () => {
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { space: { id: 's-1', images: [], amenities: [] }, rooms: [] } }) } as any
+    expect((await spacesApi.getWithPackages('s-1', mockApi)).packages).toEqual([])
+  })
+})
+
+describe('range reads (P1.4)', () => {
+  it('spacesApi.getAvailabilityRange asks for from/to and unwraps the slots', async () => {
+    const slots = [{ start: '2030-08-12T09:00:00Z', end: '2030-08-12T10:00:00Z', available: true, reason: null }]
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { slots } }) } as any
+    expect(await spacesApi.getAvailabilityRange('r-1', '2030-08-12', '2030-08-18', mockApi)).toEqual(slots)
+    expect(mockApi.get).toHaveBeenCalledWith('/rooms/r-1/availability', { params: { from: '2030-08-12', to: '2030-08-18' } })
+  })
+
+  it('adminApi.getCalendar merges the org_id default, unwraps bookings and blocks and normalises the booking numbers', async () => {
+    const mockApi = {
+      defaults: { params: { org_id: 'org-1' } },
+      get: vi.fn().mockResolvedValue({
+        data: {
+          bookings: [{ id: 'b1', total_amount: '11.00', duration_hours: '1', status: 'confirmed', room: { id: 'r-1', hourly_rate: '11.00', images: [], amenities: [], photos: [] } }],
+          blocks: [{ id: 'k1', room_id: 'r-1', reason: 'Limpeza' }],
+        },
+      }),
+    } as any
+    const result = await adminApi.getCalendar({ from: '2030-08-12T00:00:00Z', to: '2030-08-13T00:00:00Z', space_id: 's-1' }, mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/calendar', { params: { org_id: 'org-1', from: '2030-08-12T00:00:00Z', to: '2030-08-13T00:00:00Z', space_id: 's-1' } })
+    expect(result.bookings[0].total_amount).toBe(11)
+    expect(result.blocks).toEqual([{ id: 'k1', room_id: 'r-1', reason: 'Limpeza' }])
+  })
+})
+
 describe('bookingsApi.listMine', () => {
   it('extracts bookings array from wrapped response', async () => {
     const mockApi = { get: vi.fn().mockResolvedValue({ data: { bookings: [{ id: '1' }] } }) } as any

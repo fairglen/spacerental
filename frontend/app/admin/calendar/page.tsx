@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, dateFnsLocalizer, type View } from 'react-big-calendar'
 import withDragAndDrop, { type EventInteractionArgs } from 'react-big-calendar/lib/addons/dragAndDrop'
 import { addDays, endOfDay, endOfWeek, format, getDay, parse, parseISO, startOfDay, startOfWeek } from 'date-fns'
@@ -94,19 +94,17 @@ function OrgCalendar() {
   const from = view === 'week' ? startOfWeek(date, { weekStartsOn: 1 }) : startOfDay(date)
   const to = view === 'week' ? endOfWeek(date, { weekStartsOn: 1 }) : endOfDay(date)
 
-  const bookingsQuery = useQuery({
-    queryKey: ['admin', 'calendar', 'bookings', space?.id, view, from.toISOString()],
-    queryFn: () => adminApi.getBookings({ from: from.toISOString(), to: to.toISOString(), page_size: 100 }, api),
+  // One read for the whole view (P1.4): the space's bookings and blocks that
+  // touch the range, every room — it used to be one request for the bookings
+  // plus one per visible room for the blocks. The operator's own tab switch
+  // still refetches: another operator may have moved something meanwhile.
+  // The previous range stays on the grid while the next one loads.
+  const calendarQuery = useQuery({
+    queryKey: ['admin', 'calendar', space?.id, from.toISOString(), to.toISOString()],
+    queryFn: () => adminApi.getCalendar({ from: from.toISOString(), to: to.toISOString(), space_id: space!.id }, api),
     enabled: !!session?.accessToken && !!space,
     refetchOnWindowFocus: true,
-  })
-  const blockQueries = useQueries({
-    queries: visibleRooms.map((r) => ({
-      queryKey: ['admin', 'calendar', 'blocks', r.id, from.toISOString()],
-      queryFn: () => adminApi.getBlocks(r.id, { from: from.toISOString(), to: to.toISOString() }, api),
-      enabled: !!session?.accessToken,
-      refetchOnWindowFocus: true,
-    })),
+    placeholderData: keepPreviousData,
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['admin', 'calendar'] })
@@ -115,19 +113,19 @@ function OrgCalendar() {
 
   const roomIds = new Set(visibleRooms.map((r) => r.id))
   const events: CalEvent[] = useMemo(() => {
-    const bookings = (bookingsQuery.data?.bookings ?? [])
+    const bookings = (calendarQuery.data?.bookings ?? [])
       .filter((b) => roomIds.has(b.room_id) && (showCancelled || !['cancelled', 'expired'].includes(b.status)))
       .map((b) => ({
         id: b.id,
         title: `${STATUS_MARK[b.status]} ${b.user?.name ?? b.user?.email ?? 'Cliente'}${PAY_TAG[b.payment_method] ? ` · ${PAY_TAG[b.payment_method]}` : ''}`,
         start: parseISO(b.start_time), end: parseISO(b.end_time), resourceId: b.room_id, kind: 'booking' as const, booking: b,
       }))
-    const blocks = blockQueries.flatMap((q) => q.data ?? []).map((k) => ({
+    const blocks = (calendarQuery.data?.blocks ?? []).filter((k) => roomIds.has(k.room_id)).map((k) => ({
       id: k.id, title: `⛔ ${k.reason}`, start: parseISO(k.start_time), end: parseISO(k.end_time), resourceId: k.room_id, kind: 'block' as const, block: k,
     }))
     return [...bookings, ...blocks]
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingsQuery.data, blockQueries.map((q) => q.data), showCancelled, view, weekRoom?.id, rooms.length])
+  }, [calendarQuery.data, showCancelled, view, weekRoom?.id, rooms.length])
 
   const [selected, setSelected] = useState<Booking | null>(null)
   const [proposal, setProposal] = useState<MoveProposal | null>(null)
@@ -178,8 +176,8 @@ function OrgCalendar() {
   if (spacesError) return <div className="p-8"><p role="alert" className="text-sm text-red-600">Não foi possível carregar os espaços. Recarregue a página.</p></div>
   if (!space) return <div className="p-8"><p className="text-sm text-muted-foreground">Ainda não há espaços ativos. Crie um em Espaços.</p></div>
 
-  const loading = bookingsQuery.isLoading || blockQueries.some((q) => q.isLoading)
-  const failed = bookingsQuery.isError || blockQueries.some((q) => q.isError)
+  const loading = calendarQuery.isLoading
+  const failed = calendarQuery.isError
 
   return (
     <div className="p-6">

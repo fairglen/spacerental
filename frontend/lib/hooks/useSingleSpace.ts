@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
+import { queryKeys } from '@/lib/queryKeys'
 import type { Space } from '@/types'
 
 export type SpaceMode = 'loading' | 'error' | 'empty' | 'single' | 'multi'
@@ -28,7 +29,7 @@ export type SingleSpaceState = {
 // cache already trusts it for during in-app navigation.
 const FRESH_MS = 60_000
 const STORAGE_KEY = 'espacohora.publicSpaces'
-const QUERY_KEY = ['spaces']
+const QUERY_KEY = queryKeys.spaces
 
 /**
  * The last answer, if this tab got one less than a minute ago.
