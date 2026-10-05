@@ -168,6 +168,9 @@ membership sweep; a `pending` purchase counts as unpaid for the hard delete
 (it carries the price from creation), so a real abandoned checkout can be
 removed after its session is closed — the UI guard and the test use the
 real shape.
+Round 7 (2026-10-05): a customer booking whose second flush loses the slot
+race closes the Checkout Session it had just created before answering 409,
+so a vanished booking cannot be paid for.
 
 States used below:
 
