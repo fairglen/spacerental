@@ -134,6 +134,9 @@ services:
       NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
       INTERNAL_API_URL: http://backend:8000/api/v1
+      # Browsers reach this frontend directly, so nothing vouches for
+      # X-Forwarded-For (see .env.example).
+      CSP_REPORT_TRUSTED_PROXIES: ${CSP_REPORT_TRUSTED_PROXIES:-0}
     depends_on:
       - backend
     volumes:

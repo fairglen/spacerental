@@ -1,11 +1,23 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { POST } from '@/app/api/csp-report/route'
-import { MAX_BODY_BYTES, MAX_REPORTS, ReportRateLimiter, sanitizeUrl, summarize } from '@/lib/cspReport'
+import { MAX_BODY_BYTES, MAX_REPORTS, RATE_LIMIT, ReportRateLimiter, SHARED_CLIENT, clientOf, sanitizeUrl, summarize, trustedProxyHops } from '@/lib/cspReport'
 
-const post = (body: unknown, contentType = 'application/csp-report', headers: Record<string, string> = {}) =>
-  POST(new Request('http://localhost:3000/api/csp-report', { method: 'POST', headers: { 'content-type': contentType, ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) }))
+const request = (body: unknown, contentType = 'application/csp-report', headers: Record<string, string> = {}) =>
+  new Request('http://localhost:3000/api/csp-report', { method: 'POST', headers: { 'content-type': contentType, ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) })
+const post = (body: unknown, contentType?: string, headers?: Record<string, string>) => POST(request(body, contentType, headers))
+const one = { 'csp-report': { 'blocked-uri': 'x' } }
+const batch = (size: number) =>
+  Array.from({ length: size }, (_, i) => ({ type: 'csp-violation', body: { documentURL: 'http://localhost:3000/', effectiveDirective: 'script-src', blockedURL: `eval-${i}` } }))
 
 describe('POST /api/csp-report (Q52)', () => {
+  // One trusted proxy, so each test can be its own client through the header
+  // that proxy would have appended. The untrusted default is tested below.
+  beforeAll(() => {
+    process.env.CSP_REPORT_TRUSTED_PROXIES = '1'
+  })
+  afterAll(() => {
+    delete process.env.CSP_REPORT_TRUSTED_PROXIES
+  })
   afterEach(() => vi.restoreAllMocks())
 
   it('logs the legacy csp-report object as one compact line and answers 204', async () => {
@@ -19,8 +31,7 @@ describe('POST /api/csp-report (Q52)', () => {
 
   it('logs each entry of a Reporting API array, at most MAX_REPORTS of them', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const entries = Array.from({ length: MAX_REPORTS + 5 }, (_, i) => ({ type: 'csp-violation', body: { documentURL: 'http://localhost:3000/', effectiveDirective: 'script-src', blockedURL: `eval-${i}` } }))
-    const res = await post(entries, 'application/reports+json', { 'x-forwarded-for': '10.0.0.2' })
+    const res = await post(batch(MAX_REPORTS + 5), 'application/reports+json', { 'x-forwarded-for': '10.0.0.2' })
     expect(res.status).toBe(204)
     expect(warn).toHaveBeenCalledTimes(MAX_REPORTS)
   })
@@ -43,10 +54,79 @@ describe('POST /api/csp-report (Q52)', () => {
   it('rate-limits a client after 30 reports a minute (per process, like the API)', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     let last = 0
-    for (let i = 0; i < 31; i++) last = (await post({ 'csp-report': { 'blocked-uri': 'x' } }, 'application/csp-report', { 'x-forwarded-for': '10.0.0.5' })).status
+    for (let i = 0; i < RATE_LIMIT.max + 1; i++) last = (await post(one, 'application/csp-report', { 'x-forwarded-for': '10.0.0.5' })).status
     expect(last).toBe(429)
     // Another client is unaffected.
-    expect((await post({ 'csp-report': { 'blocked-uri': 'x' } }, 'application/csp-report', { 'x-forwarded-for': '10.0.0.6' })).status).toBe(204)
+    expect((await post(one, 'application/csp-report', { 'x-forwarded-for': '10.0.0.6' })).status).toBe(204)
+  })
+
+  it('a Reporting API batch is charged per report, so 30 reports a minute means 30 log lines', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const headers = { 'x-forwarded-for': '10.0.0.7' }
+    for (let i = 0; i < RATE_LIMIT.max / MAX_REPORTS; i++) {
+      expect((await post(batch(MAX_REPORTS), 'application/reports+json', headers)).status).toBe(204)
+    }
+    expect(warn).toHaveBeenCalledTimes(RATE_LIMIT.max)
+    expect((await post(one, 'application/csp-report', headers)).status).toBe(429)
+    expect(warn).toHaveBeenCalledTimes(RATE_LIMIT.max)
+  })
+
+  it('a batch the window cannot take whole is refused and charges nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const headers = { 'x-forwarded-for': '10.0.0.8' }
+    const used = RATE_LIMIT.max - MAX_REPORTS + 1
+    for (let i = 0; i < used; i++) await post(one, 'application/csp-report', headers)
+    expect(warn).toHaveBeenCalledTimes(used)
+    expect((await post(batch(MAX_REPORTS), 'application/reports+json', headers)).status).toBe(429)
+    expect(warn).toHaveBeenCalledTimes(used)
+    // The refused batch did not eat what was left.
+    expect((await post(one, 'application/csp-report', headers)).status).toBe(204)
+  })
+
+  it('a client is charged to the address the trusted proxy appended, not the one it sent itself', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (let i = 0; i < RATE_LIMIT.max; i++) await post(one, 'application/csp-report', { 'x-forwarded-for': `203.0.113.${i}, 10.0.0.9` })
+    expect((await post(one, 'application/csp-report', { 'x-forwarded-for': '198.51.100.1, 10.0.0.9' })).status).toBe(429)
+  })
+})
+
+describe('POST /api/csp-report with no trusted proxy (the default)', () => {
+  it('every caller shares one budget: rotating X-Forwarded-For does not buy more', async () => {
+    delete process.env.CSP_REPORT_TRUSTED_PROXIES
+    vi.resetModules()
+    const { POST: fresh } = await import('@/app/api/csp-report/route')
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (let i = 0; i < RATE_LIMIT.max; i++) {
+      expect((await fresh(request(one, 'application/csp-report', { 'x-forwarded-for': `203.0.113.${i}` }))).status).toBe(204)
+    }
+    expect((await fresh(request(one, 'application/csp-report', { 'x-forwarded-for': '198.51.100.1' }))).status).toBe(429)
+    expect((await fresh(request(one, 'application/csp-report', { 'x-real-ip': '198.51.100.2' }))).status).toBe(429)
+    vi.restoreAllMocks()
+  })
+})
+
+describe('clientOf / trustedProxyHops', () => {
+  const forwarded = (value?: string) => new Request('http://localhost:3000/api/csp-report', { method: 'POST', headers: value === undefined ? {} : { 'x-forwarded-for': value } })
+
+  it('reads CSP_REPORT_TRUSTED_PROXIES as a whole number of proxies, 0 when unset, and refuses anything else', () => {
+    expect(trustedProxyHops({})).toBe(0)
+    expect(trustedProxyHops({ CSP_REPORT_TRUSTED_PROXIES: '' })).toBe(0)
+    expect(trustedProxyHops({ CSP_REPORT_TRUSTED_PROXIES: ' 2 ' })).toBe(2)
+    expect(() => trustedProxyHops({ CSP_REPORT_TRUSTED_PROXIES: 'yes' })).toThrow(/CSP_REPORT_TRUSTED_PROXIES/)
+    expect(() => trustedProxyHops({ CSP_REPORT_TRUSTED_PROXIES: '-1' })).toThrow(/CSP_REPORT_TRUSTED_PROXIES/)
+  })
+
+  it('ignores the header entirely with no trusted proxy', () => {
+    expect(clientOf(forwarded('203.0.113.9'), 0)).toBe(SHARED_CLIENT)
+    expect(clientOf(forwarded(undefined), 0)).toBe(SHARED_CLIENT)
+  })
+
+  it('takes the hops-th address from the right, or the first when the chain is shorter', () => {
+    expect(clientOf(forwarded('spoofed, 203.0.113.1, 10.0.0.2'), 1)).toBe('10.0.0.2')
+    expect(clientOf(forwarded('spoofed, 203.0.113.1, 10.0.0.2'), 2)).toBe('203.0.113.1')
+    expect(clientOf(forwarded('203.0.113.1'), 3)).toBe('203.0.113.1')
+    expect(clientOf(forwarded(' , '), 1)).toBe(SHARED_CLIENT)
+    expect(clientOf(forwarded(undefined), 1)).toBe(SHARED_CLIENT)
   })
 })
 
@@ -64,13 +144,16 @@ describe('summarize / sanitizeUrl', () => {
     expect(summarize({ 'document-uri': 'http://localhost:3000/reset-password/8f3a9c2e1b7d4e6f0a1b2c3d4e5f6a7b' })).toEqual({ 'document-uri': 'http://localhost:3000/reset-password/[redacted]' })
   })
 
-  it('the limiter forgets a client after the window and stays bounded in clients', () => {
-    const limiter = new ReportRateLimiter(2, 1000, 2)
-    expect(limiter.allow('a', 0)).toBe(true)
-    expect(limiter.allow('a', 1)).toBe(true)
-    expect(limiter.allow('a', 2)).toBe(false)
-    expect(limiter.allow('a', 1500)).toBe(true)
-    limiter.allow('b', 1500); limiter.allow('c', 1500)
-    expect(limiter.allow('d', 1500)).toBe(true)
+  it('the limiter charges per report, refuses a cost it cannot take whole, forgets a client after the window and stays bounded in clients', () => {
+    const limiter = new ReportRateLimiter(3, 1000, 2)
+    expect(limiter.allow('a', 2, 0)).toBe(true)
+    expect(limiter.exhausted('a', 0)).toBe(false)
+    expect(limiter.allow('a', 2, 1)).toBe(false)
+    expect(limiter.allow('a', 1, 1)).toBe(true)
+    expect(limiter.exhausted('a', 1)).toBe(true)
+    expect(limiter.allow('a', 1, 2)).toBe(false)
+    expect(limiter.allow('a', 3, 1500)).toBe(true)
+    limiter.allow('b', 1, 1500); limiter.allow('c', 1, 1500)
+    expect(limiter.allow('d', 1, 1500)).toBe(true)
   })
 })

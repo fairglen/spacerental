@@ -4,9 +4,11 @@
 // The endpoint is public and unauthenticated by nature (the browser posts to
 // it on the user's behalf), so everything it accepts is bounded (review on
 // #71): the body size, the content types, the number of reports per request,
-// the length of every logged field, and the rate per client. URLs are logged
-// without query strings and with token-like path segments redacted — a
-// violation on /reset-password/<token> must not put the token in the logs.
+// the length of every logged field, and the rate — per report, per client when
+// a trusted proxy identifies clients (CSP_REPORT_TRUSTED_PROXIES), otherwise
+// for the process as a whole. URLs are logged without query strings and with
+// token-like path segments redacted — a violation on /reset-password/<token>
+// must not put the token in the logs.
 
 export type CspReport = Record<string, unknown>
 
@@ -64,19 +66,33 @@ export function summarize(report: CspReport): Record<string, unknown> {
   return out
 }
 
-/** A small sliding window per client, bounded in clients too; per process like the API's limiter. */
+/**
+ * A small sliding window of *reports* per client, bounded in clients too; per
+ * process like the API's limiter. One request is charged for every report it
+ * carries, so a Reporting API batch of MAX_REPORTS costs MAX_REPORTS, not one
+ * (review on #71, round 2).
+ */
 export class ReportRateLimiter {
   private hits = new Map<string, number[]>()
   constructor(private readonly max = RATE_LIMIT.max, private readonly windowMs = RATE_LIMIT.windowMs, private readonly maxClients = RATE_LIMIT.maxClients) {}
-  allow(client: string, now = Date.now()): boolean {
+
+  private recent(client: string, now: number): number[] {
     const since = now - this.windowMs
     const recent = (this.hits.get(client) ?? []).filter((t) => t > since)
-    if (recent.length >= this.max) {
-      this.hits.set(client, recent)
-      return false
-    }
-    recent.push(now)
     this.hits.set(client, recent)
+    return recent
+  }
+
+  /** Nothing left in the window: the cheap answer before a body is read. */
+  exhausted(client: string, now = Date.now()): boolean {
+    return this.recent(client, now).length >= this.max
+  }
+
+  /** Charge `cost` reports to `client`; false, and nothing charged, when the window cannot take them all. */
+  allow(client: string, cost = 1, now = Date.now()): boolean {
+    const recent = this.recent(client, now)
+    if (recent.length + cost > this.max) return false
+    for (let i = 0; i < cost; i++) recent.push(now)
     if (this.hits.size > this.maxClients) {
       // Drop the oldest client rather than grow without bound.
       const oldest = this.hits.keys().next().value
@@ -112,7 +128,34 @@ export function acceptsContentType(contentType: string | null): boolean {
   return ACCEPTED_CONTENT_TYPES.includes(type)
 }
 
-export function clientOf(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  return (forwarded ? forwarded.split(',')[0] : request.headers.get('x-real-ip') ?? 'unknown').trim()
+/**
+ * How many reverse proxies the deployment controls stand in front of Next.js —
+ * the same opt-in the API's limiter has (RATE_LIMIT_TRUST_FORWARDED_FOR). 0,
+ * the default, means X-Forwarded-For is not trusted at all: Next.js only fills
+ * it from the socket when the header is absent, so a direct caller can send
+ * any value, and there is no peer address a route handler could fall back to.
+ */
+export function trustedProxyHops(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.CSP_REPORT_TRUSTED_PROXIES?.trim()
+  if (!raw) return 0
+  if (!/^\d+$/.test(raw)) throw new Error(`CSP_REPORT_TRUSTED_PROXIES must be a whole number of proxies, got ${JSON.stringify(raw)}`)
+  return Number(raw)
+}
+
+/** One bucket for every caller when no proxy is trusted; the limit is then a bound on the log, not per client. */
+export const SHARED_CLIENT = 'shared'
+
+/**
+ * The client a request is charged to. With `hops` trusted proxies, each one
+ * appended the address it saw, so the client is the `hops`-th entry from the
+ * right of X-Forwarded-For (a shorter header than that: its first entry).
+ */
+export function clientOf(request: Request, hops = trustedProxyHops()): string {
+  if (hops === 0) return SHARED_CLIENT
+  const entries = (request.headers.get('x-forwarded-for') ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+  if (entries.length === 0) return SHARED_CLIENT
+  return entries[Math.max(0, entries.length - hops)]
 }

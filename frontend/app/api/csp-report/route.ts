@@ -10,7 +10,9 @@ const limiter = new ReportRateLimiter()
 
 export async function POST(request: Request): Promise<Response> {
   if (!acceptsContentType(request.headers.get('content-type'))) return new Response(null, { status: 415 })
-  if (!limiter.allow(clientOf(request))) return new Response(null, { status: 429 })
+  const client = clientOf(request)
+  // A client with nothing left is refused before its body is read.
+  if (limiter.exhausted(client)) return new Response(null, { status: 429 })
   const text = await readBounded(request)
   if (text === null) return new Response(null, { status: 413 })
   let body: unknown = null
@@ -19,7 +21,11 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     // Not JSON: nothing to record, but never an error back to a browser.
   }
-  for (const report of reportsIn(body)) {
+  const reports = reportsIn(body)
+  // Charged per report, so a batch cannot multiply the rate; an empty or
+  // unparsable body still costs one.
+  if (!limiter.allow(client, Math.max(1, reports.length))) return new Response(null, { status: 429 })
+  for (const report of reports) {
     console.warn('[csp-report]', JSON.stringify(summarize(report)))
   }
   return new Response(null, { status: 204 })

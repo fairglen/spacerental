@@ -1957,7 +1957,9 @@ body.
 
 **Priority: P1. State: IN PROGRESS** — [PR #71](https://github.com/fairglen/spacerental/pull/71) (→ `ci/fast-e2e-and-workflow-hygiene`, retargets when #70 merges); on `refactor/admin-routers-headers-docker`:
 `frontend/lib/securityHeaders.js` (used by `next.config.js`), `/api/csp-report`
-(logs every violation, both report formats), `backend/app/security_headers.py`
+(logs every violation, both report formats; 30 reports a minute, charged per
+report, per client only behind a trusted proxy — `CSP_REPORT_TRUSTED_PROXIES`,
+the same opt-in as the API's limiter), `backend/app/security_headers.py`
 (outermost middleware; the media mount's own `nosniff` is now its). Tests at
 each level (backend integration, Vitest, Playwright `security-headers.spec`).
 **Observed report:** the full e2e run (62 tests, production build) under the
