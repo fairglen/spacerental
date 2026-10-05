@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import { Providers } from './providers'
 import pt from '@/lib/i18n/pt.json'
 import { ROBOTS_APP, metadataBaseFrom } from '@/lib/seo'
+import { BrandSymbols } from '@/components/brand/BrandSymbols'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -60,6 +61,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </head>
       )}
       <body className={inter.className}>
+        {/* B51: the brand mark and wordmark, inlined once for every <use> on the page. */}
+        <BrandSymbols />
         <Providers>{children}</Providers>
       </body>
     </html>

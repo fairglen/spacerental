@@ -7,8 +7,11 @@ estamos" lines, robots.txt, sitemap.xml, llms.txt, llms-full.txt,
 .well-known/security.txt and site.webmanifest — are rendered here from
 assets/data/business.json and assets/data/faq.json, and committed. In
 index.html only the blocks between `<!-- generated:<name> -->` and
-`<!-- /generated:<name> -->` are touched; everything else (the hero, "Como
-funciona", the form, the footer) is hand-written and left alone.
+`<!-- /generated:<name> -->` are touched; everything else (the hero's words,
+"Como funciona", the form, the footer) is hand-written and left alone. The
+`brand-*` blocks (B51) inline the mark and the wordmark from
+assets/img/brand/ — the symbols once, then the header, hero and watermark
+uses — so the drawing on the page is the brand file's.
 
     python3 scripts/render-static.py          # rewrite the generated files
     python3 scripts/render-static.py --check  # exit 1 with a diff if any differs
@@ -408,6 +411,68 @@ def block_where(business: dict) -> str:
           </a>"""
 
 
+# --- brand (B51) -------------------------------------------------------------
+
+BRAND_DIR = SITE / "assets" / "img" / "brand"
+# The approved render: the mark 400px wide in the hero column, 440px as the
+# phone watermark; the wordmark 22px tall in the header.
+HERO_MARK_WIDTH = 400
+WATERMARK_WIDTH = 440
+WORDMARK_HEIGHT = 22
+
+
+def svg_parts(name: str) -> tuple[str, str, float, float]:
+    """(viewBox, inner markup, width, height) of a brand SVG — one currentColor
+    path each; the symbol keeps the file's drawing byte for byte."""
+    text = (BRAND_DIR / name).read_text(encoding="utf-8")
+    m = re.search(r'<svg[^>]*viewBox="([^"]+)"[^>]*>(.*)</svg>\s*$', text, re.S)
+    if not m:
+        sys.exit(f"{name}: no viewBox/body found")
+    _, _, w, h = (float(v) for v in m.group(1).split())
+    return m.group(1), m.group(2).strip(), w, h
+
+
+def block_brand_symbols() -> str:
+    """One hidden <svg> with the mark and the wordmark as <symbol>s: the three
+    places that draw them reference these (`<use href="#brand-…">`) — inline,
+    no request, the colour inherited — without carrying the path data three
+    times. The footer keeps the external lockup (B50)."""
+    mark_vb, mark_inner, _, _ = svg_parts("logo-mark.svg")
+    word_vb, word_inner, _, _ = svg_parts("wordmark.svg")
+    return (
+        # Not `hidden`/display:none: WebKit will not draw a <use> whose <symbol> lives in a hidden svg.
+        '  <svg aria-hidden="true" focusable="false" width="0" height="0" style="position:absolute;overflow:hidden">\n'
+        f'    <symbol id="brand-mark" viewBox="{mark_vb}">{mark_inner}</symbol>\n'
+        f'    <symbol id="brand-wordmark" viewBox="{word_vb}">{word_inner}</symbol>\n'
+        "  </svg>"
+    )
+
+
+def use_svg(symbol: str, width: int | None, height: int | None, cls: str, indent: str) -> str:
+    name = "logo-mark.svg" if symbol == "brand-mark" else "wordmark.svg"
+    vb, _, w, h = svg_parts(name)
+    if width is None:
+        width = round(height * w / h)
+    if height is None:
+        height = round(width * h / w)
+    return (
+        f'{indent}<svg class="{cls}" width="{width}" height="{height}" viewBox="{vb}" aria-hidden="true" focusable="false">'
+        f'<use href="#{symbol}"></use></svg>'
+    )
+
+
+def block_brand_header() -> str:
+    return use_svg("brand-wordmark", None, WORDMARK_HEIGHT, "brand-wordmark", "      ")
+
+
+def block_brand_hero_mark() -> str:
+    return use_svg("brand-mark", HERO_MARK_WIDTH, None, "hero-mark-svg", "        ")
+
+
+def block_brand_hero_watermark() -> str:
+    return use_svg("brand-mark", WATERMARK_WIDTH, None, "hero-watermark", "    ")
+
+
 # --- whole files ------------------------------------------------------------
 
 AI_CRAWLERS = ["GPTBot", "ChatGPT-User", "ClaudeBot", "Claude-Web", "PerplexityBot", "Google-Extended", "Applebot-Extended", "CCBot"]
@@ -570,6 +635,10 @@ def outputs(business: dict, faq: dict, env: dict | None) -> dict[Path, str]:
         "pricing": block_pricing(business),
         "faq": block_faq(faq_items),
         "where": block_where(business),
+        "brand-symbols": block_brand_symbols(),
+        "brand-header": block_brand_header(),
+        "brand-hero-mark": block_brand_hero_mark(),
+        "brand-hero-watermark": block_brand_hero_watermark(),
     }
     files = {
         INDEX: render_index(INDEX.read_text(encoding="utf-8"), blocks),

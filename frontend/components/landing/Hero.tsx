@@ -4,12 +4,24 @@ import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
 import { useT } from '@/lib/i18n'
 import { SpaceModeText } from '@/components/spaces/SpaceModeText'
+import { BrandMark } from '@/components/brand/BrandMark'
 
 export function Hero() {
   const t = useT()
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-white via-accent to-primary-light/30 py-20 md:py-32">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      {/* B51: under 1024px the mark is a watermark bleeding off the bottom-right,
+          behind the buttons and benefits (the content box below is `relative`,
+          so it paints above). The static site's `.hero-watermark`. */}
+      <BrandMark
+        width={440}
+        className="lg:hidden absolute -right-28 -bottom-12 w-[440px] h-auto text-primary opacity-[var(--hero-watermark-opacity)] pointer-events-none"
+      />
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* B51: from 1024px, two columns — the text at its 48rem, the mark centred
+            in whatever is left (closer at 1440, further at 1920 — intended). The
+            static site's `.hero-grid`. */}
+        <div className="lg:grid lg:grid-cols-[minmax(0,48rem)_1fr] lg:gap-8 lg:items-center">
         <div className="max-w-3xl">
           {/* The same fade-up the hero always had, as a CSS animation
               (tailwindcss-animate) — P1.3 dropped framer-motion, 34 KB of
@@ -53,6 +65,16 @@ export function Hero() {
               </div>
             </div>
           </div>
+        </div>
+        {/* B51: the mark as the illustration over a soft disc (a `before:` pseudo
+            that takes no layout and no pointer). The static site's `.hero-mark`. */}
+        <div
+          aria-hidden="true"
+          data-testid="hero-mark"
+          className="hidden lg:flex relative min-h-[420px] items-center justify-center text-primary before:content-[''] before:absolute before:left-1/2 before:top-1/2 before:h-[460px] before:w-[460px] before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:bg-[radial-gradient(circle_at_30%_30%,rgba(168,213,186,.55),rgba(232,244,240,0)_70%)] before:pointer-events-none"
+        >
+          <BrandMark width={400} className="relative w-[min(100%,400px)] h-auto" />
+        </div>
         </div>
       </div>
       <div className="absolute right-0 top-0 h-[600px] w-[600px] rounded-full bg-primary-light/20 blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />

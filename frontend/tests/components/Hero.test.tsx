@@ -48,3 +48,54 @@ describe('Hero navigation', () => {
     expect(screen.getByRole('link', { name: t('hero.cta_secondary') })).toHaveAttribute('href', '/#como-funciona')
   })
 })
+
+// B51: the brand mark is the hero illustration from 1024px and a watermark
+// under it — the same numbers as the static site's `.hero-grid`,
+// `.hero-mark`, `.hero-mark::before` and `.hero-watermark`.
+describe('Hero brand mark (B51)', () => {
+  it('lays the text and the mark out as two columns from lg, the text column unchanged', () => {
+    const { container } = render(<Hero />)
+    const grid = container.querySelector('.lg\\:grid')!
+    expect(grid.className).toContain('lg:grid-cols-[minmax(0,48rem)_1fr]')
+    expect(grid.className).toContain('lg:gap-8')
+    expect(grid.className).toContain('lg:items-center')
+    const text = grid.firstElementChild!
+    expect(text.className).toContain('max-w-3xl')
+    // The headline is still the first thing in the text column (V04).
+    expect(text.firstElementChild!.firstElementChild).toBe(text.querySelector('h1'))
+  })
+
+  it('the mark column is hidden until lg, decorative, 420px tall, with the disc as a before: pseudo and the 400px mark', () => {
+    const { container } = render(<Hero />)
+    const column = container.querySelector('[data-testid="hero-mark"]')!
+    expect(column).toHaveAttribute('aria-hidden', 'true')
+    for (const cls of ['hidden', 'lg:flex', 'relative', 'min-h-[420px]', 'items-center', 'justify-center', 'text-primary',
+      'before:h-[460px]', 'before:w-[460px]', 'before:rounded-full', 'before:pointer-events-none',
+      "before:bg-[radial-gradient(circle_at_30%_30%,rgba(168,213,186,.55),rgba(232,244,240,0)_70%)]"]) {
+      expect(column.className, cls).toContain(cls)
+    }
+    const mark = column.querySelector('svg')!
+    expect(mark).toHaveAttribute('width', '400')
+    expect(mark).toHaveAttribute('height', '365')
+    expect(mark).toHaveAttribute('aria-hidden', 'true')
+    expect(mark.className.baseVal).toContain('w-[min(100%,400px)]')
+    expect(mark.querySelector('use')).toHaveAttribute('href', '#brand-mark')
+  })
+
+  it('the watermark is the same mark, 440px, bleeding off the bottom-right at the tunable opacity, hidden from lg, behind the text', () => {
+    const { container } = render(<Hero />)
+    const uses = container.querySelectorAll('use[href="#brand-mark"]')
+    expect(uses).toHaveLength(2)
+    const watermark = uses[0].closest('svg')!
+    expect(watermark).toHaveAttribute('width', '440')
+    expect(watermark).toHaveAttribute('height', '401')
+    expect(watermark).toHaveAttribute('aria-hidden', 'true')
+    for (const cls of ['lg:hidden', 'absolute', '-right-28', '-bottom-12', 'w-[440px]', 'opacity-[var(--hero-watermark-opacity)]', 'pointer-events-none', 'text-primary']) {
+      expect(watermark.className.baseVal, cls).toContain(cls)
+    }
+    // Painted before the content box, which is positioned — so the words stay on top.
+    const content = watermark.nextElementSibling!
+    expect(content.className).toContain('relative')
+    expect(content.querySelector('h1')).not.toBeNull()
+  })
+})
