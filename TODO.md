@@ -172,6 +172,24 @@ Round 7 (2026-10-05): a customer booking whose second flush loses the slot
 race closes the Checkout Session it had just created before answering 409,
 so a vanished booking cannot be paid for.
 
+**Stack repair, CI speed and code quality (2026-10-05, after #65 and #67
+merged):** by explicit owner assignment, delivered unattended in three
+sequential parts the loop publishes and never merges. Part 0 repairs the
+stacked PRs: when the loop started, #65–#68 were all merged (#65 and #67 at
+08:52 UTC that day), so C+L (K01–K03, B50) sat on `feat/admin-crud-ui` @
+`cea4d08` with no PR; they are rebased onto `main` as
+`feat/customer-credit-and-brand` (Q40). Part 1
+`ci/fast-e2e-and-workflow-hygiene` (Q41–Q49): isolated, parallel Playwright
+specs, a production-build e2e stack with an e2e-only rate-limit
+configuration, a sharded and cached e2e job, workflow hygiene, security
+scanning, `pytest-xdist`, one required check. Part 2
+`refactor/admin-routers-headers-docker` (Q50–Q56): admin routers by entity
+with an OpenAPI snapshot, frontend decomposition, security headers, hardened
+images, backlog archive, small fixes. Recorded as the Q-series near the end
+of this file; links C08, O05, S24, S26. Decisions the owner did not give are
+taken the conservative way, recorded under the task and tagged `DECISION:`
+in the commit body.
+
 States used below:
 
 - **QUEUED:** prioritized work awaiting its dependencies and turn. Recording a
@@ -5185,6 +5203,268 @@ than the mark). Reverse: rebuild with `s = 0.45 * mark_height / cap`.
 **DECISION (loop, B50):** `metadataBase` = `NEXTAUTH_URL` when set (every
 Compose/deploy sets it), else Next's own fallback; Next 14 ignores it in
 `next dev` anyway.
+
+## Stack repair, CI speed and code quality (Q-series, Q40–Q56) — owner assignment 2026-10-05
+
+One assignment in THREE sequential parts, each published as its own PR by
+the loop and never merged by it. **Part 0** (Q40) repairs the stacked PRs
+#65 → #68 so each PR shows only its own work; **Part 1**
+`ci/fast-e2e-and-workflow-hygiene` (Q41–Q49), branched from Part 0's head,
+takes the e2e job under 6 minutes on GitHub runners and hardens every
+workflow; **Part 2** `refactor/admin-routers-headers-docker` (Q50–Q56),
+branched from Part 1's head, is behaviour-preserving: routers by entity,
+component decomposition, security headers, hardened images, backlog hygiene.
+Links: C08 (its "required check behaviour for path-filtered workflows" note
+is closed by Q49; its artifact/diagnostics acceptance is kept by Q44), O05
+(G01's `admin_audit` router moves into the admin package in Q50 with its
+tests), S24 (Q45 closes it), S26 (Q53 closes most of it), B18/B48 (the
+public request budget the parallel suite must not exhaust: Q42 raises the
+limits for the e2e stack only, the limiter tests stay). Binding: tenant
+scoping, wrapped responses, Decimal money, formal register, `lib/api.ts`,
+Alembic for every schema change, never work on main, every change ships
+with tests, **never weaken, skip or delete a test or a rate limit to get
+green** (an e2e-only configuration is allowed by the owner and must be
+labelled as such). Decisions the owner did not give are taken the
+conservative way, recorded under the task and tagged `DECISION:` in the
+commit body; three failed attempts on an item → blocked and recorded.
+
+### Q40 — Part 0: repair the PR stack (#65 → #68)
+
+**Priority: P1. State: IN PROGRESS** on `feat/customer-credit-and-brand`.
+**Found:** the assignment describes #65–#68 as open and mis-stacked; when
+the loop started (2026-10-05 09:00 UTC) all four were MERGED — #66 into
+`feat/admin-crud-backend` (squash `7f49c8d`, 2026-10-01), #68 into
+`feat/customer-credit-pack-upsell-notifications` (`3f9e689`, 2026-10-01),
+#65 into `main` (`3b668d0`, 2026-10-05 08:52) and #67 into
+`feat/admin-crud-ui` (`cea4d08`, 2026-10-05 08:52). `main` therefore holds
+A1+A2 (G01–G06 and the seven review rounds), while C+L (K01–K03, B50) sit on
+`feat/admin-crud-ui` with no open PR. **DECISION:** the one C+L squash is
+rebased onto `main` (`git rebase --onto origin/main dda5b70`; three
+conflicts — TODO.md, `admin/bookings/[id]/page.tsx`,
+`AdminEntityPages.test.tsx` — resolved to the C side, which already carried
+main's fixes) on a fresh branch `feat/customer-credit-and-brand` and opened
+as ONE PR to `main`; the resulting tree is byte-identical to `cea4d08`
+(`git diff cea4d08 HEAD` is empty) and its diff against `main` touches 116
+files, every one in #67 ∪ #68's file set (the 28 files of those PRs that are
+absent are the review fixes already on `main`). Alternative rejected:
+force-pushing the rebased result to `feat/admin-crud-ui` and opening the PR
+from there — the branch name no longer describes its content and the owner
+merged into it. The chain is now `main ← Part 0 ← Part 1 ← Part 2`.
+**Acceptance:** the PR's diff is C+L only; backend, Vitest, build, static
+smoke and Playwright are green on the branch; no unanswered review thread.
+**Validation:** the file-set comparison above, the full local suites and CI.
+
+### Q41 — Isolated, parallel Playwright specs
+
+**Priority: P1. State: QUEUED (Part 1).** **Scope:**
+`frontend/tests/e2e/fixtures.ts` with API-level helpers that give each test
+its own data — `createCustomer()` (register + enrol, unique email),
+`loginAs(user)` → storageState, `createBooking(...)`, `buyPack(...)` through
+the stub checkout, `createBlock(...)`, `freshDay(offset)` so no two tests
+contend for one slot; UI-driven setup in existing specs replaced by them
+while the UI steps under test stay; admin specs that mutate shared seed rows
+(rooms, packages, the seeded booking) create their own room/package through
+the admin API first; nothing asserts on another spec's side effects.
+`playwright.config.ts`: `fullyParallel: true`, `workers: CI ? 4 : undefined`,
+`retries: CI ? 1 : 0`, trace on first retry, `expect.timeout` 10 s, test
+`timeout` 60 s, `blob` reporter in CI (for Q44's shards), `html` locally.
+The B18/B48 pacing sleeps (`waitOutPublicRateWindow`) become unnecessary
+under Q42's e2e stack and go. **Acceptance:** the whole suite passes three
+times in a row locally with 4 workers, zero flakes, every spec independent of
+ordering. **Validation:** the three runs' wall times in the PR body;
+`npx playwright test --workers 4` green; no test removed or weakened.
+
+### Q42 — e2e stack: production build and e2e-only rate limits
+
+**Priority: P1. State: QUEUED (Part 1).** **Scope:** `docker-compose.e2e.yml`
+(an overlay on `docker-compose.yml`, used by CI and documented for the native
+path) in which the frontend runs a PRODUCTION build (`next build` + `next
+start`), the backend runs without `--reload`, and
+`RATE_LIMIT_AUTH_MAX_REQUESTS` / `RATE_LIMIT_PUBLIC_MAX_REQUESTS` (and the
+support/upload tiers the specs hit) are set to values a 4-worker suite cannot
+reach — **labelled "e2e stack only"** in the file and in README. The limiter
+unit/integration tests are untouched and still prove the real defaults; no
+browser spec asserts a 429 today, so none needs a dedicated stack.
+**Acceptance:** `docker compose -f docker-compose.yml -f docker-compose.e2e.yml
+up -d --build` brings up the stack a fresh clone can run the suite against;
+the dev stack (`docker compose up`) is unchanged. **Validation:** the suite
+under Q41 passes against it locally and in CI; `tests/test_ratelimit*.py`
+unchanged and green.
+
+### Q43 — Review the three `test.skip` occurrences
+
+**Priority: P2. State: QUEUED (Part 1).** `booking.spec.ts:536` (no open hour
+within 24 h on a Sunday before 08:00 UTC), `photos.spec.ts:12` and
+`single-space.spec.ts:17` (both: the stack must have exactly one public
+space). **Acceptance:** each is either re-enabled (because Q41's fixtures
+remove the condition) or kept with its reason recorded here as its own
+line; no unexplained skip remains. **Validation:** `grep -n 'test.skip'`
+output matches this record.
+
+### Q44 — The e2e job itself under 6 minutes
+
+**Priority: P1. State: QUEUED (Part 1).** Baseline (GitHub runners, last
+green runs of #65/#67, 2026-10-05): job wall **14m13s–16m44s**; the `Run E2E`
+step alone 14m32s; `docker compose up --build` 1m02s; Playwright install 51 s.
+**Scope:** the e2e stack of Q42; Docker layer cache for both images
+(`docker/setup-buildx-action` + `docker/bake-action` or `compose build`
+with `cache-from/cache-to: type=gha`); `actions/cache` for
+`~/.cache/ms-playwright` keyed on the Playwright version in
+`package-lock.json`; `strategy.matrix.shard: [1, 2]` with
+`--shard=${{ matrix.shard }}/2`, `fail-fast: false`, and a `merge-reports`
+job that uploads one HTML report; a path filter that skips e2e when only
+`docs/**`, `*.md` or `flowspace-site/**` change (Q49 keeps the required
+check satisfied); the backend wait uses `/health` with a hard 60 s cap;
+seeding via `docker compose exec`; stack logs uploaded on failure (as
+today). **Acceptance:** the e2e job (each shard) finishes under 6 minutes
+wall on this PR with the full suite; no test removed. **Validation:** the
+before/after table in the PR body (three CI runs).
+
+### Q45 — Workflow hygiene: permissions, concurrency, timeouts, pins, Dependabot
+
+**Priority: P1. State: QUEUED (Part 1). Closes S24.** **Scope:** every
+workflow declares `permissions: contents: read` at the top and grants more
+only in the job that needs it (deploy: `pages: write`, `id-token: write`;
+docs-sync: nothing more — it only reads); `concurrency: { group:
+${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: ${{
+github.event_name == 'pull_request' }} }`; `timeout-minutes` on every job
+(lint 10, unit 15, migrations 15, e2e 30, deploy 10); every `uses:` pinned
+to a full commit SHA with the version in a trailing comment;
+`.github/dependabot.yml` (github-actions weekly; npm weekly grouped
+minor/patch; pip weekly grouped). **Acceptance:** `actionlint` passes; every
+workflow runs green on the PR. **Validation:** `npx -y @rhysd/actionlint` (or
+the action) output in the PR body.
+
+### Q46 — Security scanning workflow
+
+**Priority: P2. State: QUEUED (Part 1).** **Scope:**
+`.github/workflows/security.yml`: CodeQL (`python`,
+`javascript-typescript`) on push to `main` and weekly; `pip-audit -r
+backend/requirements.txt` and `npm audit --audit-level=high` on pull
+requests — both REPORTING, not blocking, for the first two weeks, with the
+date to flip them to blocking in a comment in the file. **Acceptance:** the
+workflow runs green on the PR and its findings are visible in the run log
+and the Security tab. **Validation:** the run on this PR; the flip date
+recorded here.
+
+### Q47 — Lint job: formatting, ESLint and the type check
+
+**Priority: P2. State: QUEUED (Part 1).** **Scope:** the lint workflow adds
+`ruff format --check backend`, `npx eslint .` for the frontend (what `next
+build` lints, made explicit and fast) and `npx tsc --noEmit`, which moves
+here from frontend-tests so a type error fails in the cheapest job; the
+lint path filter widens to the frontend accordingly. If `ruff format` would
+reformat untouched files, the formatting commit is separate and
+mechanical. **Acceptance:** lint green on the PR; a deliberate type error
+on a scratch branch fails lint, not frontend-tests. **Validation:** the
+workflow run.
+
+### Q48 — Backend tests in parallel (`pytest-xdist`, one database per worker)
+
+**Priority: P1. State: QUEUED (Part 1).** Baseline: the CI `Run tests` step
+takes **11m26s** (848–858 tests). **Scope:** `pytest-xdist` in
+`requirements-dev.txt`, `pytest -n auto`; `tests/conftest.py` gives each
+worker its own database `spacerental_test_<worker id>`, created and dropped
+by a session-scoped fixture (the single-process run keeps the plain name);
+`docker-compose.test.yml` and the loop's helpers keep working. **Acceptance:**
+the whole suite passes with `-n auto` locally and in CI; no test changed
+to make it pass. **Validation:** before/after times in the PR body.
+
+### Q49 — One required check, CODEOWNERS and the README note (closes C08's note)
+
+**Priority: P1. State: QUEUED (Part 1).** **Scope:** `checks.yml` with one
+`required-checks` job that depends on every other workflow's result (via
+`workflow_run` or a reusable-workflow call) and passes when each is
+success OR skipped by its path filter — the single check to require in
+branch protection; README documents how to set it as required (the
+frontend-tests/deploy "required check" comments and T4 point here).
+`CODEOWNERS` naming the owner for `.github/**`, `backend/app/auth*`,
+`backend/app/payments.py`, `backend/alembic/**`. **Acceptance:** on this PR
+`required-checks` is green while a path-filtered workflow is skipped.
+**Validation:** the check list in the PR body; branch protection itself is
+the owner's click.
+
+### Q50 — Admin routers by entity, with an OpenAPI snapshot
+
+**Priority: P1. State: QUEUED (Part 2).** `backend/app/routers/admin.py`
+(1,743 lines) and `admin_users.py` (1,053) become the package
+`backend/app/routers/admin/`: `_common.py` (require_admin/owner, locked
+loaders, `_room_in_org`, error helpers), `dashboard.py`, `spaces.py`,
+`rooms.py` (incl. availability and blocks mounting), `bookings.py`,
+`users.py`, `packages.py`, `purchases.py`, `support.py`, `audit.py`,
+`organization.py`; one `router = APIRouter(prefix="/admin")` assembled in
+`__init__.py` with the SAME paths and operation ids. **Acceptance:** the
+OpenAPI schema before and after differs only in operation tags;
+`tests/test_openapi_stable.py` asserts the path+method set against a
+committed snapshot. **Validation:** the schema diff in the PR body, the new
+test, the full backend suite.
+
+### Q51 — Frontend decomposition
+
+**Priority: P2. State: QUEUED (Part 2).** `BookingModal.tsx` → shell +
+`PaymentPlan.tsx` (breakdown) + `PackUpsell.tsx` + `useBookingPlan.ts`; the
+admin `rooms/[id]` and `users/[id]` pages → section components under
+`components/admin/<entity>/`. **Acceptance:** no visual change; the existing
+component tests pass with import moves only; Playwright proves the
+journeys. **Validation:** Vitest, Playwright, the file-size table in the PR
+body.
+
+### Q52 — Security headers (Next and API), CSP report-only
+
+**Priority: P1. State: QUEUED (Part 2).** **Scope:** `headers()` in
+`next.config.js` for all routes — `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`
+for `/admin` and `/dashboard` plus `frame-ancestors 'none'`,
+`Permissions-Policy: camera=(), microphone=(), geolocation=()`, HSTS only
+when `NODE_ENV=production` behind TLS (documented), and a
+`Content-Security-Policy-Report-Only` allowing self, the API origin, the
+media origin, openstreetmap.org frames and fonts; every violation seen
+during the e2e run is recorded and the policy tightened; NOT enforcing in
+this PR (the flip is Q56). Backend: the same static headers on `/media` and
+API responses via one middleware. **Acceptance:** header tests at the right
+level (Next: a request-level test; backend: integration); e2e green with
+the report-only policy. **Validation:** the CSP report summary in the PR
+body.
+
+### Q53 — Hardened container images (closes most of S26)
+
+**Priority: P2. State: QUEUED (Part 2).** **Scope:** both Dockerfiles pin
+their base image to a digest (tag in a comment), create and switch to a
+non-root user, declare a `HEALTHCHECK`, drop build tooling from the runtime
+stage (multi-stage), and get a `.dockerignore`; the frontend gets a
+production image used by the e2e stack (if Q42 did not add it). The Compose
+dev flow is unchanged. **Acceptance:** `docker compose up -d --build` on a
+fresh clone still works in one step; the e2e stack uses the production
+image. **Validation:** the e2e run in CI; `docker inspect` user/healthcheck
+in the PR body.
+
+### Q54 — Backlog hygiene: archive DONE/DEFERRED tasks
+
+**Priority: P2. State: QUEUED (Part 2).** **Scope:** every DONE/DEFERRED task
+block moves out of TODO.md into `docs/backlog-archive/<yyyy-mm>.md` (one
+file per month of completion, verbatim, with its evidence); TODO.md keeps
+the contract, the execution boundary, open/queued/blocked tasks and a
+one-line index of archived IDs with links; CLAUDE.md (and its AGENTS.md
+copy) say where history lives. **Acceptance:** TODO.md ends under 1,200
+lines; every archived ID resolves from the index. **Validation:** `wc -l
+TODO.md`; a link check over the index.
+
+### Q55 — Small fixes found during the audit
+
+**Priority: P2. State: QUEUED (Part 2).** `CORS allow_methods=["*"]` → the
+explicit list the frontend uses; the in-process rate limiter documented as
+single-replica only in README and `config.py`; the `eslint-disable` lines no
+longer needed (8 today) removed; every `test.skip` left from Q43 has a
+linked task. **Acceptance:** behaviour unchanged, suites green.
+**Validation:** backend CORS test, `npx eslint .`, the grep in Q43.
+
+### Q56 — Flip the Content-Security-Policy from report-only to enforcing
+
+**Priority: P3. State: QUEUED (after Part 2).** Recorded by Q52 with the
+observed report: the violations seen during the e2e run under the
+report-only policy, and the directives tightened in response. **Acceptance:**
+the policy enforces with zero violations on the full e2e run and a manual
+pass over the admin and dashboard pages. Not part of this assignment.
 
 ## Deferred scope
 
