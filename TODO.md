@@ -1391,6 +1391,24 @@ both under WCAG AA's 4.5:1 before any watermark; Lighthouse reports it as
 sizing. Not changed here (B51 keeps the palette); when decided, tighten the
 B51 contrast assertion to ≥ 4.5 for every element.
 
+### B53 — Photo carousel: the counter follows intermediate scroll events during a programmatic move
+
+**Priority: P2. State: QUEUED** (found by B51's CI, 2026-10-06). In
+`frontend/components/spaces/PhotoCarousel.tsx`, `goTo()` sets the index and
+starts a smooth `scrollTo`; `onScroll` then recomputes the index from the
+live `scrollLeft`, so the first scroll event of the animation (near 0) sets
+it back and the counter/dots flicker 2 → 1 → 2 on every "Fotografia
+seguinte". On a starved CI runner the smooth scroll can stall after that
+first event and the counter stays at the old number: `photos.spec.ts:48`
+("the room being booked shows its photos … and a gallery") failed on two
+#90 runs (each with a retry) while passing 6/6 locally on the same code —
+the page is untouched by B51. **Fix:** make the programmatic move
+authoritative — keep the target in a ref while the scroll is in flight,
+have `onScroll` ignore positions until it lands (±2px), and clear the ref on
+`pointerdown`/`wheel` so a swipe takes over; then the test is deterministic
+without being weakened. Not done in B51 (three CI rounds spent; the change is
+to a component outside the assignment).
+
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
 Delivered and archived (see the index); the assignment text and decisions are in [docs/backlog-archive/2026-09.md](docs/backlog-archive/2026-09.md#brand-and-copy-revision-w-series-owner-assignment-2026-09-22). Still open here: W06/W07.
