@@ -1928,8 +1928,16 @@ test, the full backend suite.
 
 ### Q51 — Frontend decomposition
 
-**Priority: P2. State: QUEUED (Part 2)** — see the Part 2 PR body for what
-landed; anything not landed stays here as the next slice. `BookingModal.tsx` → shell +
+**Priority: P2. State: IN PROGRESS (first slice on the Part 2 PR)** —
+`BookingModal.tsx` (483 lines) is now a shell (324) over
+`useBookingPlan.ts` (the bank, the plan, the choices, the method, the pack
+purchase; 95), `PaymentPlan.tsx` (the summary box; 87) and `PackUpsell.tsx`
+("Comprar um pack"; 74), by moving the exact blocks; the 36 modal component
+tests pass unchanged (imports untouched) and the full e2e suite is green on
+the production build. **Remaining slice (QUEUED):** the admin `rooms/[id]`
+(278 lines) and `users/[id]` (379) pages into section components under
+`components/admin/<entity>/`, with `AdminEntityPages.test.tsx` passing on
+import moves only. `BookingModal.tsx` → shell +
 `PaymentPlan.tsx` (breakdown) + `PackUpsell.tsx` + `useBookingPlan.ts`; the
 admin `rooms/[id]` and `users/[id]` pages → section components under
 `components/admin/<entity>/`. **Acceptance:** no visual change; the existing
