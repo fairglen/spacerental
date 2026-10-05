@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -12,10 +13,12 @@ from app.booking_validity import booking_window_end, holds_slot, local_hourly_sl
 from app.database import get_db
 from app.models.booking import Booking
 from app.models.organization import Organization
+from app.models.package import Package
 from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule, Room, Space
 from app.ratelimit import PUBLIC_TIER, rate_limit
 from app.schemas.organization import PublicContactOut
+from app.schemas.package import PackageOut
 from app.schemas.space import AvailabilitySlot, RoomOut, SlotReason, SpaceOut
 
 router = APIRouter(tags=["spaces"])
@@ -34,8 +37,16 @@ async def list_spaces(db: AsyncSession = Depends(get_db)):
 
 @router.get("/spaces/{space_id}")
 @rate_limit(PUBLIC_TIER)
-async def get_space(space_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """Space detail with rooms (public)."""
+async def get_space(
+    space_id: uuid.UUID,
+    include: Literal["packages"] | None = Query(
+        None,
+        description="`packages` adds the organisation's active packs, so the landing "
+        "page reads everything it shows in one request (P1.2).",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Space detail with rooms (public); `?include=packages` adds the org's packs."""
     result = await db.execute(
         select(Space)
         .options(selectinload(Space.rooms).selectinload(Room.availability_rules))
@@ -53,7 +64,7 @@ async def get_space(space_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     org_settings = (
         await db.scalar(select(Organization.settings).where(Organization.id == space.org_id))
     ) or {}
-    return {
+    payload = {
         "space": SpaceOut.model_validate(space),
         "rooms": [RoomOut.model_validate(r) for r in active_rooms],
         "contact": PublicContactOut(
@@ -61,6 +72,15 @@ async def get_space(space_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
             phone=org_settings.get("contact_phone") or None,
         ),
     }
+    if include == "packages":
+        # The same rows GET /packages?org_id= returns, in the same order.
+        result = await db.execute(
+            select(Package)
+            .where(Package.org_id == space.org_id, Package.is_active == True)  # noqa: E712
+            .order_by(Package.hours.asc())
+        )
+        payload["packages"] = [PackageOut.model_validate(p) for p in result.scalars().all()]
+    return payload
 
 
 @router.get("/rooms/{room_id}/availability")

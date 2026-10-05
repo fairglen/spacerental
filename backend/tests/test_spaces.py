@@ -182,3 +182,76 @@ class TestRoomAvailability:
             params={"date": date_str},
         )
         assert resp.status_code == 404
+
+
+class TestGetSpaceIncludePackages:
+    """P1.2: `?include=packages` lets the landing read everything in one request."""
+
+    async def _packages(self, db_session, org_id, other_org_id):
+        from app.models.package import Package
+
+        db_session.add_all(
+            [
+                Package(
+                    org_id=org_id,
+                    name="Pack 20h",
+                    hours=20,
+                    price=Decimal("180.00"),
+                    validity_days=180,
+                ),
+                Package(
+                    org_id=org_id,
+                    name="Pack 10h",
+                    hours=10,
+                    price=Decimal("99.00"),
+                    validity_days=180,
+                ),
+                Package(
+                    org_id=org_id,
+                    name="Retired",
+                    hours=5,
+                    price=Decimal("50.00"),
+                    validity_days=30,
+                    is_active=False,
+                ),
+                Package(
+                    org_id=other_org_id,
+                    name="Elsewhere",
+                    hours=10,
+                    price=Decimal("1.00"),
+                    validity_days=30,
+                ),
+            ]
+        )
+        await db_session.commit()
+
+    async def test_include_packages_adds_the_orgs_active_packs_in_hours_order(
+        self, client, db_session, test_org, test_space, test_room
+    ):
+        from app.models.organization import Organization, OrgPlan
+
+        other = Organization(name="Other", slug="other", plan=OrgPlan.starter, settings={})
+        db_session.add(other)
+        await db_session.commit()
+        await self._packages(db_session, test_org.id, other.id)
+
+        resp = await client.get(f"/api/v1/spaces/{test_space.id}", params={"include": "packages"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["space"]["id"] == str(test_space.id)
+        assert [r["id"] for r in body["rooms"]] == [str(test_room.id)]
+        assert [(p["name"], p["hours"]) for p in body["packages"]] == [
+            ("Pack 10h", 10),
+            ("Pack 20h", 20),
+        ]
+        # Byte-for-byte what the packages endpoint answers for the org.
+        listed = await client.get("/api/v1/packages", params={"org_id": str(test_org.id)})
+        assert body["packages"] == listed.json()["packages"]
+
+    async def test_without_include_the_shape_is_unchanged(self, client, test_space):
+        body = (await client.get(f"/api/v1/spaces/{test_space.id}")).json()
+        assert set(body) == {"space", "rooms", "contact"}
+
+    async def test_unknown_include_is_refused(self, client, test_space):
+        resp = await client.get(f"/api/v1/spaces/{test_space.id}", params={"include": "bookings"})
+        assert resp.status_code == 422

@@ -18,6 +18,32 @@ describe('spacesApi.list', () => {
   })
 })
 
+describe('spacesApi.getWithPackages (P1.2)', () => {
+  it('asks for ?include=packages and unwraps space, rooms, contact and the packs with numbers at the boundary', async () => {
+    const mockApi = {
+      get: vi.fn().mockResolvedValue({
+        data: {
+          space: { id: 's-1', org_id: 'o-1', name: 'A', images: [], amenities: [], latitude: '38.700000', longitude: '-9.100000' },
+          rooms: [{ id: 'r-1', hourly_rate: '11.00', images: [], amenities: [], photos: [] }],
+          contact: { email: 'geral@x.pt', phone: null },
+          packages: [{ id: 'p-1', org_id: 'o-1', name: '10h', hours: 10, price: '99.00', validity_days: 180, is_active: true }],
+        },
+      }),
+    } as any
+    const result = await spacesApi.getWithPackages('s-1', mockApi)
+    expect(mockApi.get).toHaveBeenCalledWith('/spaces/s-1', { params: { include: 'packages' } })
+    expect(result.space.latitude).toBe(38.7)
+    expect(result.rooms[0].hourly_rate).toBe(11)
+    expect(result.contact).toEqual({ email: 'geral@x.pt', phone: null })
+    expect(result.packages).toEqual([expect.objectContaining({ id: 'p-1', price: 99 })])
+  })
+
+  it('a response without packages yields an empty list, never undefined', async () => {
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { space: { id: 's-1', images: [], amenities: [] }, rooms: [] } }) } as any
+    expect((await spacesApi.getWithPackages('s-1', mockApi)).packages).toEqual([])
+  })
+})
+
 describe('bookingsApi.listMine', () => {
   it('extracts bookings array from wrapped response', async () => {
     const mockApi = { get: vi.fn().mockResolvedValue({ data: { bookings: [{ id: '1' }] } }) } as any

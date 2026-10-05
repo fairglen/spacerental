@@ -169,6 +169,22 @@ export const spacesApi = {
       contact: { email: r.data.contact?.email ?? null, phone: r.data.contact?.phone ?? null },
     })),
 
+  // P1.2: the landing's one composite read — the detail plus the organisation's
+  // active packs (`?include=packages`) — so the server renders both from a
+  // single request instead of the three-deep chain the browser used to walk.
+  getWithPackages: (
+    id: string,
+    api = apiClient,
+  ): Promise<{ space: Space; rooms: Room[]; contact?: PublicContact; packages: Package[] }> =>
+    api
+      .get<{ space: Space; rooms: Room[]; contact?: PublicContact; packages?: Package[] }>(`/spaces/${id}`, { params: { include: 'packages' } })
+      .then(r => ({
+        space: normSpace(r.data.space),
+        rooms: (r.data.rooms ?? []).map(normRoom),
+        contact: { email: r.data.contact?.email ?? null, phone: r.data.contact?.phone ?? null },
+        packages: (r.data.packages ?? []).map(normPackage),
+      })),
+
   getAvailability: (roomId: string, date: string, api = apiClient) =>
     api.get<{ slots: AvailabilitySlot[] }>(`/rooms/${roomId}/availability`, { params: { date } })
       .then(r => r.data.slots),

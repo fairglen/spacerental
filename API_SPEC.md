@@ -73,15 +73,17 @@ List all active spaces (public). Each space carries its location: `address`,
 Response: `{ spaces: Space[] }`
 
 ### GET /spaces/:id
-Response: `{ space, rooms, contact: { email, phone } }` — `contact` is the
-organisation's public contact when the owner set one (G04), else nulls, and
-the customer-facing block keeps its default then.
+Query: `?include=packages` (optional; any other value is 422) adds
+`packages: Package[]` — the organisation's active packs, exactly what
+`GET /packages?org_id=` answers — so the landing page reads everything it
+shows in one request (P1.2; the server renders it before the browser asks).
+Response: `{ space, rooms, contact: { email, phone }, packages? }` — `contact`
+is the organisation's public contact when the owner set one (G04), else
+nulls, and the customer-facing block keeps its default then.
 Each room carries `availability_rules: [{ day_of_week, open_time, close_time }]`
 (V06): its active opening windows, weekday 0 = Monday, times in UTC like every
 rule (R01). "Onde estamos" derives the space's hours from their union. The
 list endpoint (`GET /spaces`) does not load rooms.
-Space detail with rooms.
-Response: `{ space: Space, rooms: Room[] }`
 
 ### GET /rooms/:id/availability
 Query: `?date=YYYY-MM-DD` — the SPACE's local date (R01).

@@ -2115,7 +2115,30 @@ later task is in the PR body, taken on `b57f30c`'s production build.
 
 ### P1.2 — Landing page data on the server
 
-**Priority: P1. State: QUEUED.** **Metric:** landing LCP (desktop, local
+**Priority: P1. State: DONE 2026-10-05** on `perf/frontend-first-paint`:
+`app/page.tsx` is a server component (`force-dynamic`) that loads
+`GET /spaces` and one composite `GET /spaces/{id}?include=packages`
+(`backend/app/routers/spaces.py`, documented in API_SPEC.md, three
+integration tests) through `INTERNAL_API_URL` (`lib/landing.ts`) and hydrates
+React Query (`lib/landingState.ts`, `HydrationBoundary`) at the keys the
+components read (`lib/queryKeys.ts`, shared by `useSingleSpace`, `SpaceCards`,
+`Pricing`, `SpaceRoomsView`); `Pricing` reads the rooms from the same
+`['space', id]` key as the cards, so the second `/spaces/{id}` request is
+gone; `<link rel="preconnect">` to the API origin in the root layout.
+**Measured (harness, production build):** the landing's client API calls
+**4 (3 deep, last at 164 ms) → 0**, LCP 108 → 60 ms, total bytes on the
+wire 979 → 800 KB; the HTML carries the rooms and the packs (22 KB gzipped,
+was 6 KB). **DECISION:** no cross-request cache by default
+(`LANDING_CACHE_SECONDS=0`): an operator's price change must be on the page
+at once — `admin.spec.ts` (C06) pins it, and the API cannot invalidate a cache
+here yet (P1.6) — so each render costs two internal API calls instead of the
+browser's four; `LANDING_CACHE_SECONDS=60` is the knob the owner asked for,
+documented in `.env.example`, for real traffic once P1.6 exists. The server's
+reads count against the public rate limit of the frontend's address; past it
+the page logs and renders without data (the browser fetches as before).
+Vitest `landing.test.ts` (4), `landingState.test.ts` (3), `api.test.ts` (+2);
+Playwright `landing-ssr.spec.ts` (2: the HTML names the seeded rooms and
+packs; a cold load makes no catalog request). **Metric:** landing LCP (desktop, local
 stack, cold cache, median of 5 from P1.1) and the client API waterfall on
 `/`. **Target:** LCP ≤ 2.5 s; **zero** client-side API calls before first
 paint for what the page shows (the space, its rooms, the packages) and
@@ -2167,6 +2190,19 @@ e2e specs pass unchanged; P1.1 before/after request counts in the PR.
 Google Fonts round trip, `font-display: swap`), with Lighthouse before/after
 recorded in `.pr-evidence/p1/`. **Acceptance:** the photo component tests
 assert the attributes; the static site's existing checks pass.
+
+### P1.6 — Landing cache invalidation from admin mutations
+
+**Priority: P3. State: QUEUED (found by P1.2).** **Metric:** internal API
+calls per landing render. **Target:** the landing's server-side data cached
+across requests (`LANDING_CACHE_SECONDS=60`, `unstable_cache` with a tag) and
+invalidated when it changes — a Next route handler (`POST /api/revalidate`,
+shared secret) called by the API after a space, room, package or public
+contact mutation, or a short poll of a catalog `updated_at` — so a price
+change still reaches the page at once (C06, `admin.spec.ts`) while a
+landing render costs zero API calls between changes. **Acceptance:** the
+C06 spec passes with the cache on; an integration test proves the API calls
+the revalidation hook after each mutation class.
 
 ### P2.1 — Compression and cache headers
 
