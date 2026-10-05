@@ -27,6 +27,11 @@ describe('adminBookingErrorMessage — a refused move', () => {
     expect(adminBookingErrorMessage(httpError(409, 'The hours credited for this cancellation were already used; make a new booking instead'))).toBe('O crédito já foi usado; crie uma nova reserva.')
   })
 
+  it('explains a credit the hour bank cannot hold, with the way out (K01, review on #69)', () => {
+    expect(adminBookingErrorMessage(httpError(409, "The credit (1000.00 h) exceeds what the hour bank can hold (999.99 h); lower the booking's amount first, or cancel with credit_hours: false and a reason")))
+      .toBe('O crédito ultrapassa o máximo do banco de horas (999,99 h). Corrija primeiro o valor da reserva, ou cancele sem creditar as horas, com um motivo.')
+  })
+
   it('falls back to a generic line for a real server error and a network failure', () => {
     expect(adminBookingErrorMessage(httpError(500))).toMatch(/Não foi possível guardar/)
     expect(adminBookingErrorMessage(new Error('Network Error'))).toMatch(/ligação/)

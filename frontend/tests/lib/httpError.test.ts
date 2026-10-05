@@ -6,6 +6,10 @@ function httpError(status: number, detail?: string) {
 }
 
 describe('cancellationErrorMessage (C07)', () => {
+  it('a credit the hour bank cannot hold points the customer to a person, not to a retry (K01, review on #69)', () => {
+    expect(cancellationErrorMessage(httpError(409, 'The credit for this booking (1000.00 h) exceeds what the hour bank can hold (999.99 h); contact the space')))
+      .toBe('O crédito desta reserva excede o que o banco de horas suporta. Fale connosco pela Ajuda para corrigirmos o valor da reserva antes de a cancelar.')
+  })
   it('explains the 24h rule from the backend 400', () => {
     expect(cancellationErrorMessage(httpError(400, 'Bookings can only be cancelled more than 24 hours in advance')))
       .toMatch(/24 horas/)

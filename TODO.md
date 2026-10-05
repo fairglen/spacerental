@@ -5278,6 +5278,12 @@ Round 4 (2026-10-05): the credit stays in the lock-ordered bank walk (locked
 in its turn, never drawn) so the ledger's one lock order holds; and `PUT
 /admin/purchases/:id` refuses to reactivate a cancellation credit whose
 booking is no longer cancelled (the customer would hold both).
+Round 5 (2026-10-05, from the review summary rather than threads): the
+oversized-credit 409 has its own Portuguese line on the customer's cancel
+dialog and on the operator's error mapper (a retry cannot fix it; the
+amount must change), and the booking modal keeps its radios and "Confirmar
+Reserva" disabled while a pack purchase is in flight, so a customer cannot
+leave with a pending purchase and a hold at once.
 
 ### Q41 — Isolated, parallel Playwright specs
 

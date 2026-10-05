@@ -651,6 +651,23 @@ describe('BookingModal — "Comprar um pack" (K02)', () => {
     expect(screen.getByRole('radio', { name: /Usar as horas do pack e pagar o resto/ })).toBeChecked()
   })
 
+  it('while a pack purchase is in flight nothing else can be confirmed (review on #69)', async () => {
+    vi.mocked(packagesApi.list).mockResolvedValue(packs)
+    // Never settles: Checkout has not answered yet.
+    vi.mocked(packagesApi.purchase).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(await screen.findByRole('radio', { name: 'Comprar um pack' }))
+    await user.click((await screen.findAllByRole('button', { name: 'Comprar' }))[0])
+    await screen.findByRole('button', { name: 'A processar...' })
+    // Switching back to paying now must not re-arm the booking's confirm.
+    const payNow = screen.getByRole('radio', { name: /Pagar 33,00/ })
+    expect(payNow).toBeDisabled()
+    await user.click(payNow)
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeDisabled()
+    expect(bookingsApi.create).not.toHaveBeenCalled()
+  })
+
   it('a failed purchase start says so and keeps the modal', async () => {
     vi.mocked(packagesApi.list).mockResolvedValue(packs)
     vi.mocked(packagesApi.purchase).mockRejectedValue(new Error('boom'))
