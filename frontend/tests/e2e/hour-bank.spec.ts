@@ -14,7 +14,7 @@ import { ADMIN_STORAGE_STATE } from './global-setup'
  */
 test.use({ storageState: ADMIN_STORAGE_STATE, timezoneId: 'UTC', viewport: { width: 1280, height: 900 } })
 
-test('two packs form one bank: a 12h day draws on both, the balance shows what is left', async ({ page, browser, api, admin, room, customer }) => {
+test('two packs form one bank: a 12h day draws on both, the balance shows what is left', async ({ page, browser, contextOptions, api, admin, room, customer }) => {
   const pack = await packageByHours(api, admin.orgId, 10)
 
   // Two purchases, the small one lapsing first.
@@ -46,7 +46,7 @@ test('two packs form one bank: a 12h day draws on both, the balance shows what i
   await expect(page.getByTestId('user-hour-bank')).toContainText('8h disponíveis')
 
   // The customer's own screens: the booking, and one balance of 8h.
-  const theirs = await contextAs(browser, customer)
+  const theirs = await contextAs(browser, customer, contextOptions)
   const own = await theirs.newPage()
   try {
     await own.goto('/dashboard')

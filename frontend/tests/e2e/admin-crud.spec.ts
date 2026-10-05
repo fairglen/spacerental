@@ -252,7 +252,7 @@ test('anonymise: the booking lists the placeholder and the old session is dead',
   expect(booking.id).toBeTruthy()
 })
 
-test('settings: an admin who is not the owner reads with a note and cannot save', async ({ browser }) => {
+test('settings: an admin who is not the owner reads with a note and cannot save', async ({ browser, contextOptions }) => {
   const email = `admin2-${randomUUID().slice(0, 8)}@example.com`
   const created = await api.post(`${API_URL}/admin/users`, { headers: auth, params: { org_id: org }, data: { name: 'Admin Dois', email, password: 'admin2-pass-123' } })
   const user = (await created.json()).user
@@ -260,7 +260,7 @@ test('settings: an admin who is not the owner reads with a note and cannot save'
   expect(promoted.ok(), await promoted.text()).toBeTruthy()
 
   // Signed in as the new admin (the form is auth.spec.ts's subject, not this one's).
-  const context = await contextAs(browser, { email, password: 'admin2-pass-123' })
+  const context = await contextAs(browser, { email, password: 'admin2-pass-123' }, contextOptions)
   const page = await context.newPage()
   await page.goto('/admin/settings')
   await expect(page.getByText(/Só o proprietário/)).toBeVisible({ timeout: 15000 })

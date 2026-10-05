@@ -58,12 +58,12 @@ test('a signed-out visitor sends a help request and gets a reference, and both e
 // C18: from the cancel dialog of a paid booking, the money question goes to a
 // person through the help dialog, with the booking preselected. The customer
 // and the room are this test's own, so the dashboard holds exactly one card.
-test('a customer opens the help dialog from the cancel dialog and submits about that booking', async ({ browser, api, room, customer }) => {
+test('a customer opens the help dialog from the cancel dialog and submits about that booking', async ({ browser, contextOptions, api, room, customer }) => {
   // A confirmed hourly booking a week out, made through the stub gateways.
   const day = freshDay(8)
   const { booking } = await createBooking(api, customer, { roomId: room.id, start: at(day, 15), end: at(day, 16), pay: true })
 
-  const context = await contextAs(browser, customer)
+  const context = await contextAs(browser, customer, contextOptions)
   try {
     const page = await context.newPage()
     await page.goto('/dashboard')

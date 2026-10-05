@@ -31,7 +31,7 @@ function daysFromToday(day: Date): number {
 
 test.use({ timezoneId: 'UTC', viewport: { width: 1280, height: 1000 } })
 
-test('pay 2h → cancel → the bank shows the credit → rebook with it, no checkout', async ({ browser, api, room, customer }) => {
+test('pay 2h → cancel → the bank shows the credit → rebook with it, no checkout', async ({ browser, contextOptions, api, room, customer }) => {
   // ── A customer who paid for 2h, set up through the API ─────────────────
   const payDay = freshDay(12)
   const { booking: paidBooking } = await createBooking(api, customer, { roomId: room.id, start: at(payDay, 9), end: at(payDay, 11), pay: true })
@@ -39,7 +39,7 @@ test('pay 2h → cancel → the bank shows the credit → rebook with it, no che
   expect(bankBefore).toHaveLength(0)
 
   // ── Cancel on the dashboard: the dialog says where the hours go ────────
-  const context = await contextAs(browser, customer)
+  const context = await contextAs(browser, customer, contextOptions)
   await preferDayView(context)
   const page = await context.newPage()
   try {

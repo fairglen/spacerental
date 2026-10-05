@@ -1,3 +1,4 @@
+import type { Browser, BrowserContextOptions } from '@playwright/test'
 import { type Page } from '@playwright/test'
 import { test, expect, API_URL, at, auth, contextAs, createBooking, createCustomer, freshDay, type Customer, type Room } from './fixtures'
 import { preferDayView, selectDayView } from './helpers/rooms'
@@ -55,8 +56,8 @@ function daysFromToday(day: Date): number {
 test.use({ timezoneId: 'UTC', viewport: { width: 1280, height: 1000 } })
 
 /** A signed-in page for `customer`, on the day view; the caller closes the context. */
-async function signedIn(browser: import('@playwright/test').Browser, customer: Customer) {
-  const context = await contextAs(browser, customer)
+async function signedIn(browser: Browser, contextOptions: BrowserContextOptions, customer: Customer) {
+  const context = await contextAs(browser, customer, contextOptions)
   await preferDayView(context)
   const page = await context.newPage()
   return { context, page }
@@ -73,9 +74,9 @@ async function openSlot(page: Page, room: Room, day: Date, fromHour: number, toH
   return modal
 }
 
-test('empty bank: "Comprar um pack" first → stub checkout → back on the slot with the pack preselected → confirmed, no second checkout', async ({ browser, api, room, customer }) => {
+test('empty bank: "Comprar um pack" first → stub checkout → back on the slot with the pack preselected → confirmed, no second checkout', async ({ browser, contextOptions, api, room, customer }) => {
   const day = freshDay(5)
-  const { context, page } = await signedIn(browser, customer)
+  const { context, page } = await signedIn(browser, contextOptions, customer)
   try {
     const modal = await openSlot(page, room, day, 9, 10)
     // Never bought a pack: the pack comes first, the hourly price second, hourly preselected.
@@ -123,10 +124,10 @@ test('empty bank: "Comprar um pack" first → stub checkout → back on the slot
   }
 })
 
-test('taken meanwhile: back from Checkout the page says the hour is reserved and opens no modal', async ({ browser, api, room, customer }) => {
+test('taken meanwhile: back from Checkout the page says the hour is reserved and opens no modal', async ({ browser, contextOptions, api, room, customer }) => {
   const rival = await createCustomer(api, { tag: 'rapido', name: 'Cliente Rápido' })
   const day = freshDay(5)
-  const { context, page } = await signedIn(browser, customer)
+  const { context, page } = await signedIn(browser, contextOptions, customer)
   try {
     const modal = await openSlot(page, room, day, 14, 15)
     await modal.getByRole('radio', { name: 'Comprar um pack' }).check()

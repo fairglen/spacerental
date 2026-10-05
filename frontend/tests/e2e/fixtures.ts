@@ -354,14 +354,21 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
   },
 })
 
-/** A browser context signed in as `user` (`null` = the seeded admin), on this project's baseURL. */
+/**
+ * A browser context signed in as `user` (`null` = the seeded admin).
+ *
+ * `browser.newContext()` knows nothing of the test's `test.use()` options
+ * (timezone, viewport, baseURL…), so callers pass their `contextOptions`
+ * fixture — the merged options the default `context` would have been
+ * created with — and this context behaves like the test's own.
+ */
 export async function contextAs(
   browser: Browser,
   user: { email: string; password: string } | null,
-  options: Omit<BrowserContextOptions, 'storageState'> = {},
+  contextOptions: BrowserContextOptions,
 ) {
   const storageState = await loginAs(user ?? ADMIN_CREDENTIALS)
-  return browser.newContext({ ...options, storageState })
+  return browser.newContext({ ...contextOptions, storageState })
 }
 
 export { expect }

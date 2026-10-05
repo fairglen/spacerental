@@ -42,13 +42,13 @@ test.describe('Admin session persistence (B22)', () => {
     expect(new URL(page.url()).pathname).toBe('/admin/bookings')
   })
 
-  test('a plain member is still redirected away from /admin', async ({ browser, api }) => {
+  test('a plain member is still redirected away from /admin', async ({ browser, contextOptions, api }) => {
     const member = await createCustomer(api, { tag: 'member-b22', name: 'Membro B22' })
     const { memberships } = await (await api.get(`${API_URL}/auth/memberships`, { headers: auth(member.token) })).json()
     expect(memberships[0].role).toBe('member')
 
     // A NextAuth session for that member, same handshake as global-setup.ts.
-    const context = await contextAs(browser, member)
+    const context = await contextAs(browser, member, contextOptions)
     const page = await context.newPage()
     try {
       await page.goto('/admin')

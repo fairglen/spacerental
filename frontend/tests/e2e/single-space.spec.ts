@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect, API_URL } from './fixtures'
+import { test, expect, API_URL, SEEDED_ROOMS } from './fixtures'
 import { preferDayView, selectDayView } from './helpers/rooms'
 
 /**
@@ -25,12 +25,14 @@ test.describe('single-space mode', () => {
     const { rooms } = (await (await request.get(`${API_URL}/spaces/${spaces[0].id}`)).json()) as { rooms: { id: string; name: string }[] }
 
     await page.goto('/')
-    // The landing previews a few rooms and, past that, links to the full
-    // rooms view; which rooms are previewed is not fixed while other specs add
-    // rooms of their own. Take the first card as a customer would, and resolve
-    // the room it stands for by its exact name.
-    const card = page.getByTestId('room-card').first()
-    await expect(card).toBeVisible({ timeout: 15000 })
+    // The landing previews the space's first rooms and, past that, links to
+    // the full rooms view. Other specs add and deactivate rooms of their own
+    // while this runs, so "the first card" could stand for a room that is
+    // gone by the time it is clicked. The seeded rooms are never deactivated
+    // and, created first, are what the preview shows: take one of those.
+    const seededHeading = page.getByRole('heading', { name: new RegExp(`^(${SEEDED_ROOMS.join('|')})(\\s|$)`) })
+    const card = page.getByTestId('room-card').filter({ has: seededHeading }).first()
+    await expect(card, 'a seeded room is previewed on the landing').toBeVisible({ timeout: 15000 })
     const cardName = (await card.getByRole('heading').first().textContent())!.trim()
     const target = rooms.find((r) => cardName.startsWith(r.name))
     expect(target, `landing card "${cardName}" is one of the space's rooms`).toBeTruthy()

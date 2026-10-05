@@ -30,7 +30,7 @@ function daysFromToday(day: Date): number {
 
 test.use({ timezoneId: 'UTC', viewport: { width: 1280, height: 1000 } })
 
-test('7h on the pack, 8h booked: 11,00 € at checkout, the split on the dashboard, 0h left', async ({ browser, api, room, customer }) => {
+test('7h on the pack, 8h booked: 11,00 € at checkout, the split on the dashboard, 0h left', async ({ browser, contextOptions, api, room, customer }) => {
   // ── A customer with exactly 7h left, set up through the API ────────────
   const pack = await packageByHours(api, customer.orgId, 10)
   await buyPack(api, customer, pack.id)
@@ -42,7 +42,7 @@ test('7h on the pack, 8h booked: 11,00 € at checkout, the split on the dashboa
 
   // ── The customer books 8h in the UI ────────────────────────────────────
   const day = freshDay(4)
-  const context = await contextAs(browser, customer)
+  const context = await contextAs(browser, customer, contextOptions)
   await preferDayView(context)
   const page = await context.newPage()
   try {
