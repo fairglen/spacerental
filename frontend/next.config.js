@@ -10,6 +10,7 @@ function appVersion() {
 }
 
 const { securityHeaders } = require('./lib/securityHeaders')
+const { cacheHeaders } = require('./lib/cacheHeaders')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -17,9 +18,10 @@ const nextConfig = {
   images: {
     domains: ['images.unsplash.com', 'via.placeholder.com'],
   },
-  // Q52: static security headers on every route, CSP in report-only mode.
+  // Q52: static security headers on every route, CSP in report-only mode;
+  // P2.1: the brand set is immutable.
   async headers() {
-    return securityHeaders()
+    return [...securityHeaders(), ...cacheHeaders()]
   },
 }
 

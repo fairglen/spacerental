@@ -41,7 +41,7 @@ from app.schemas.admin_users import (
     OrgUserOut,
     RoleUpdate,
 )
-from app.schemas.booking import AdminBookingOut
+from app.schemas.booking import AdminBookingListOut, list_row
 from app.schemas.package import AdminPurchaseOut, PackageBalanceOut
 from app.schemas.support import SupportRequestOut
 from app.schemas.user import PasswordSet
@@ -333,7 +333,7 @@ async def admin_get_user(
     )
     return {
         "user": _row(member, len(bookings)),
-        "bookings": [AdminBookingOut.model_validate(b) for b in bookings],
+        "bookings": [list_row(AdminBookingListOut.model_validate(b)) for b in bookings],
         "purchases": [AdminPurchaseOut.model_validate(p) for p in purchases],
         # The same bank the customer sees on their packs page (H02).
         "balance": PackageBalanceOut.model_validate(

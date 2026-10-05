@@ -1,0 +1,11 @@
+{
+  "_comment": "P2.4: budgets the perf harness (tests/perf/vitals.spec.ts) asserts. They are the numbers measured on the e2e stack's production build on 2026-10-05 after P1.1–P2.2, with ~5% of headroom for noise — not aspirations. LCP is the owner's ceiling; locally it is a two-digit number of milliseconds.",
+  "pages": {
+    "landing": { "lcp_ms": 2500, "js_before_load_kb": 220, "requests": 53, "api_calls": 0 },
+    "spaces": { "lcp_ms": 2500, "js_before_load_kb": 252, "requests": 68, "api_calls": 2 },
+    "space-week": { "lcp_ms": 2500, "js_before_load_kb": 252, "requests": 72, "api_calls": 3 },
+    "space-day": { "lcp_ms": 2500, "js_before_load_kb": 252, "requests": 63, "api_calls": 3 },
+    "dashboard": { "lcp_ms": 2500, "js_before_load_kb": 246, "requests": 48, "api_calls": 3 },
+    "admin-calendar": { "lcp_ms": 2500, "js_before_load_kb": 342, "requests": 71, "api_calls": 2 }
+  }
+}

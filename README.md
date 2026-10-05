@@ -453,9 +453,37 @@ docker compose -f docker-compose.test.yml run --rm backend-tests pytest -m perf
 ```
 The Playwright project is `perf` (`playwright.perf.config.ts`), separate from
 the e2e suite so neither runs the other; it honours `E2E_BASE_URL` and
-`E2E_API_URL` like the e2e specs. Budgets live in `frontend/perf-budget.json`
-(asserted when the file exists) and in `BUDGET` in
-`backend/tests/perf/test_read_paths.py`.
+`E2E_API_URL` like the e2e specs.
+
+**Budgets** (P2.4) are the numbers measured, with a little headroom, never
+aspirations: `frontend/perf-budget.json` (per page: LCP, JavaScript before
+`load`, requests, API calls — asserted by `perf:web`) and `BUDGET` in
+`backend/tests/perf/test_read_paths.py` (bytes per row, statements and
+writes per request). When a change moves a number for a good reason, change
+the budget in the same PR and say why. CI runs both as the `perf-web` and
+`perf-api` jobs (`.github/workflows/perf.yml`, called by `checks.yml`);
+they are informational — not part of `required-checks` — until they have
+been stable for a while, and each uploads its measurements as an artifact
+(`perf-web`, `perf-api`). The before/after of every performance task is in
+TODO.md's P-series.
+
+**What the API does for caches** (P2.1): responses above 1 KiB are gzipped
+for a client that accepts it; every response carries a `Cache-Control` by
+class — photos immutable for a year, the anonymous catalog shareable for a
+minute, availability `no-cache`, everything authenticated `no-store` —
+see the table in API_SPEC.md.
+
+**Hold sweeper** (P2.2): a task started with the API flips lapsed unpaid
+holds to `expired` every `HOLD_SWEEP_INTERVAL_SECONDS` (default 60, 0 off),
+so the dashboard and balance reads write nothing. Single-replica by design,
+like the rate limiter.
+
+**Production server** (P2.3): the backend image's command is
+`uvicorn --workers ${WEB_CONCURRENCY:-1} --proxy-headers --timeout-keep-alive 15`
+with `ORJSONResponse` rendering the JSON and `pool_pre_ping` on the engine.
+`WEB_CONCURRENCY` defaults to 1 on purpose: the rate limiter and the hold
+sweeper live in each process, so more workers multiply the limits — see
+`.env.example` for the pool arithmetic before raising it.
 
 ### Pre-commit hooks
 The repo ships with a `.pre-commit-config.yaml` that runs trailing-whitespace fixes, YAML linting, ruff on `backend/`, and frontend `tsc --noEmit` on every commit. Backend pytest and frontend Vitest run on push.

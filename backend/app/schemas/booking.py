@@ -3,12 +3,19 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.models.booking import BookingStatus, PaymentMethod
 from app.schemas.bounds import Money, Notes, before_latest_instant
 from app.schemas.package import BookingPackageDebitOut
-from app.schemas.space import RoomOut
+from app.schemas.space import RoomOut, RoomSummary
 from app.schemas.user import UserOut
 
 
@@ -119,6 +126,38 @@ class AdminBookingOut(BookingOut):
             return (d.expires_at is None, d.expires_at, str(d.purchase_id))
 
         return sorted(debits, key=key)
+
+
+# P2.2: the list shapes. A row in a list carries its room as a summary — the
+# full RoomOut, with its photos and opening windows, made every row ≈2.3 KB
+# and GET /bookings/me 80 KB for 34 rows. The single-booking routes (create,
+# resume, detail) keep BookingOut / AdminBookingOut with the full room.
+class BookingListOut(BookingOut):
+    room: RoomSummary | None = None
+    # Nothing in a list reads it; 47 bytes a row.
+    updated_at: datetime | None = Field(default=None, exclude=True)
+
+
+class AdminBookingListOut(AdminBookingOut):
+    room: RoomSummary | None = None
+    updated_at: datetime | None = Field(default=None, exclude=True)
+
+
+# The optionals a list row leaves out when null — the client types allow their
+# absence and nothing reads them from a list. `access_code` is NOT among them:
+# its null is the statement "no code for this booking" (the e2e suite and the
+# dashboard read it as such).
+OMIT_WHEN_NULL = ("notes", "hold_expires_at", "recurrence_rule_id", "user", "admin_note")
+
+
+def list_row(model: BookingOut) -> dict:
+    """A booking as one row of a list (P2.2): the JSON shape, minus the null
+    optionals in OMIT_WHEN_NULL."""
+    data = model.model_dump(mode="json")
+    for key in OMIT_WHEN_NULL:
+        if data.get(key) is None:
+            data.pop(key, None)
+    return data
 
 
 class CancellationCreditOut(BaseModel):

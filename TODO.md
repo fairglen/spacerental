@@ -2274,7 +2274,28 @@ the revalidation hook after each mutation class.
 
 ### P2.1 — Compression and cache headers
 
-**Priority: P1. State: QUEUED (Part 2).** **Metric:** bytes on the wire for
+**Priority: P1. State: DONE 2026-10-05** on `perf/api-caching-and-payloads`.
+`GZipMiddleware(minimum_size=1024)` on the API; `app/cache_headers.py`, one
+middleware setting `Cache-Control` on every response that has none —
+`/media/**` immutable for a year (names are content-addressed), the
+anonymous catalog (`/spaces`, `/spaces/{id}`, `/packages`) `public,
+max-age=60, stale-while-revalidate=300`, availability `no-cache`, and
+`no-store` for anything with `Authorization`, any write, any error and
+`/health`; the Next app serves `/brand/**` immutable (`lib/cacheHeaders.js`,
+copied into the runner image). API_SPEC.md has the table. **Measured:**
+`GET /bookings/me` (50 rows) **117 KB → 4.3 KB on the wire**, the admin
+list (100 rows) 253 KB → 10 KB, availability 1.5 KB → 0.2 KB (`pytest -m
+perf`, `wire_bytes`); harness totals on the wire: dashboard 456 → 366 KB,
+admin calendar 664 → 552 KB, room page 1,265 → 1,040 KB. Tests:
+`test_cache_headers.py` (7: every class, a photo immutable and a missing one
+not, gzip above a kilobyte with `Vary`, plain below it and for a client that
+refuses it), Vitest `cacheHeaders.test.ts`, Playwright `cache-headers.spec.ts`
+(2); e2e 66/66. **DECISION:** availability is `no-cache` rather than the
+minute the catalog gets — it changes with every booking and a stale copy
+would only produce a 409 the customer did nothing to earn. **DECISION:**
+`/brand/**` is immutable as the owner asked although its names are not
+hashed: a changed brand asset must get a new name (the parity test is where
+that shows). **Metric:** bytes on the wire for
 `GET /bookings/me`, `GET /spaces/{id}` and `GET /admin/bookings` (P1.1); the
 repeat-view request count for media. **Target:** `GZipMiddleware(minimum_size=1024)`
 on the API (compressed responses for JSON above 1 KiB, small ones untouched);
@@ -2288,7 +2309,33 @@ uncompressed small one, each `Cache-Control` value), and the e2e suite green.
 
 ### P2.2 — Leaner payloads, the sweep off the read path
 
-**Priority: P1. State: QUEUED (Part 2).** **Metric:** bytes per row in
+**Priority: P1. State: DONE 2026-10-05** on `perf/api-caching-and-payloads`.
+`RoomSummary` (`id`, `space_id`, `name`, `hourly_rate`) is what a booking
+row carries in every list (`GET /bookings/me`, `/admin/bookings`,
+`/admin/calendar`, a customer's bookings on `/admin/users/{id}`), through
+`BookingListOut` / `AdminBookingListOut`; list rows also omit their null
+optionals (`access_code` stays, its null means "no code") and `updated_at`
+(nothing reads it); the single-booking routes
+keep `BookingOut` with the full room. `app/holds.py`: a lifespan task
+(`HOLD_SWEEP_INTERVAL_SECONDS`, default 60, 0 off) reconciles every lapsed
+unpaid hold; `_expire_lapsed_holds` reads first and only writes when a hold
+really lapsed, so the reads write nothing in the steady state. API_SPEC.md
+documents both. **Measured (`pytest -m perf`):** `GET /bookings/me`
+**2,340 → 587 B/row**, writes **1 → 0**, 2.3 KB on the wire for 50 rows;
+`GET /admin/bookings` 2,530 → 771 B/row. Tests: `test_booking_lists.py`
+(4: the summary and the omitted fields on every list, a set optional kept, a
+single booking whole), `test_hold_sweep.py` (5: one sweep flips exactly the
+lapsed holds and the second finds nothing, the loop runs on its interval and
+stops when cancelled, a failed sweep does not stop it, a read with nothing
+lapsed writes nothing, a read still reconciles a hold the sweeper has not
+reached); the 333 tests around bookings, holds, packs and the admin pass
+unchanged. **DECISION:** the read-time reconciliation stays, made write-free
+in the common case (a SELECT first), rather than removed: the C03/C13 suites
+pin that a lapsed hold is `expired` the moment it is read, and a customer
+who reads within the sweeper's minute should not see a stale hold.
+**DECISION:** no `photo` in the summary although the assignment listed one —
+no list renders a cover and it was 290 bytes a row; the detail routes carry
+the photos. **Metric:** bytes per row in
 `GET /bookings/me` (owner's baseline ≈ 2.4 KB/row: 80 KB for 34 rows);
 statements issued by that GET (P1.1 counter). **Target:** ≤ **600 B/row**
 uncompressed, with `RoomSummary` (`id`, `space_id`, `name`, `hourly_rate`,
@@ -2303,7 +2350,31 @@ the statement count; dashboard Vitest/e2e specs pass with the summary shape;
 
 ### P2.3 — Server configuration: ORJSON, workers, pool, index, lean JWT lookup
 
-**Priority: P1. State: QUEUED (Part 2).** **Metric:** p50 of
+**Priority: P1. State: DONE 2026-10-05** on `perf/api-caching-and-payloads`.
+`ORJSONResponse` is the app's default response class (orjson 3.12.0, the
+one new runtime dependency; the wire format is pinned by
+`test_json_encoding.py`: money a two-decimal string, ids strings, instants
+as before — `Z` on the rows, `+00:00` on the slots — the stub checkout page
+still HTML, errors still JSON); `pool_pre_ping=True` and the pool arithmetic
+in `database.py` and `.env.example`; `ix_bookings_org_id_start_time` in
+`Booking.__table_args__` with migration `0017` (upgrade → `alembic check`
+clean → downgrade → upgrade on a fresh database); the list routes join the
+room (and, for the operator, the customer) into the one query instead of a
+second query per list; the production image's command is
+`uvicorn --workers ${WEB_CONCURRENCY:-1} --proxy-headers
+--timeout-keep-alive 15`. **Measured (`pytest -m perf`):** `GET /bookings/me`
+statements **4 → 3**; `GET /admin/bookings` statements **7 → 5**, plan
+**Limit → Sort → Seq Scan → Limit → Incremental Sort → Index Scan using
+ix_bookings_org_id_start_time**, p50 52 → 48 ms in-process on 10 000 rows.
+**DECISION:** `WEB_CONCURRENCY` defaults to **1**, not the 2 the assignment
+named: the rate limiter and the hold sweeper live in each process, so a
+second worker would silently double every rate limit — "never weaken a rate
+limit" wins; the knob and the arithmetic are documented for the day the
+limiter is shared. **DECISION:** the JWT lookup stays one `SELECT` of the
+user row (eight columns, relationships never loaded); `load_only` would turn
+a later touch of a deferred column into a lazy load that an async session
+cannot run — the statement count the assignment cared about came down by
+joining the lists' rooms instead. **Metric:** p50 of
 `GET /bookings/me` and `GET /admin/bookings` with 10 000 rows (P1.1 fixture,
 timed in-process); `EXPLAIN` on the admin list; statements per authenticated
 request. **Target:** `ORJSONResponse` as the default response class (orjson,
@@ -2321,7 +2392,18 @@ plan and the statement count; the OpenAPI snapshot unchanged.
 
 ### P2.4 — Performance in CI, budgets, README
 
-**Priority: P2. State: QUEUED (Part 2).** **Metric:** the budgets
+**Priority: P2. State: DONE 2026-10-05** on `perf/api-caching-and-payloads`.
+`frontend/perf-budget.json` — per page LCP (the owner's 2.5 s ceiling),
+JavaScript before `load`, requests and API calls, each the number measured
+after P1–P2.2 with ~5 % of headroom — asserted by the Playwright `perf`
+project; the backend `BUDGET` pinned to the measured bytes per row,
+statements and writes. `.github/workflows/perf.yml` (`perf-api`: `pytest -m
+perf` on a service Postgres; `perf-web`: the e2e stack from the e2e job's
+layer cache, `npm run perf:web`, then `perf:sizes` on the image's build),
+called by `checks.yml` whenever backend or frontend files change, both
+uploading their measurements as artifacts; **not** in `required-checks`
+(informational until stable). README: budgets, the CI jobs, the cache
+classes, the sweeper, the production server. **Metric:** the budgets
 themselves. **Target:** `frontend/perf-budget.json` — landing LCP ≤ 2.5 s,
 landing JS ≤ 300 KB gzipped, requests per page (`/` ≤ 12, `/spaces/{id}`
 week view ≤ 10, `/admin/calendar` ≤ 8), `/bookings/me` ≤ 600 B/row,
@@ -2337,6 +2419,19 @@ measured, not aspirations.
 
 Use these when the user is ready to start a delivery assignment. They are
 instructions to copy later, not a request to execute them during backlog editing.
+
+**DECISION (loop, P2.4, CI follow-up):** the web harness measures with
+`prefers-reduced-motion: reduce` emulated. Chromium stops reporting LCP at
+the first compositor-driven scroll, and the `?room=` pages scroll themselves
+smoothly to the calendar on mount; on the shared runner that scroll landed
+before the first paint's LCP entry was presented, so `space-day` had no LCP
+in any CI run (and `space-week`'s equalled its FCP). Under reduced motion the
+scroll is instant and programmatic, which LCP survives; the budgets and
+everything on the wire are unchanged, and the room pages' LCP now includes
+their photo (~250 ms locally). Residual, a product call: field LCP for
+`?room=` deep links is cut short the same way by the smooth auto-scroll.
+Alternative: scroll instantly on load. Reverse: drop `reducedMotion` from
+`measureOnce`.
 
 ### Existing-PR assignment
 

@@ -13,7 +13,7 @@ from pydantic import AwareDatetime
 from sqlalchemy import String, and_, func, or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import audit, cancellation_credit, clock, deletion, email, package_hours
 from app.auth import require_admin
@@ -51,10 +51,12 @@ from app.schemas.audit import AdminActionOut
 from app.schemas.booking import (
     AdminBookingCreate,
     AdminBookingDetailOut,
+    AdminBookingListOut,
     AdminBookingOut,
     BookingStatusUpdate,
     CancellationCreditOut,
     MarkPaidBody,
+    list_row,
 )
 
 from ._common import _WITH_DEBITS, _locked_booking, _room_in_org
@@ -123,7 +125,8 @@ async def admin_list_bookings(
     total = total_result.scalar_one()
 
     result = await db.execute(
-        query.options(selectinload(Booking.room), selectinload(Booking.user), _WITH_DEBITS)
+        # P2.3: room and customer joined (many-to-one), the debits still per list.
+        query.options(joinedload(Booking.room), joinedload(Booking.user), _WITH_DEBITS)
         .where(and_(*filters))
         .order_by(order, Booking.id.desc())
         .offset((page - 1) * page_size)
@@ -132,7 +135,7 @@ async def admin_list_bookings(
     bookings = result.scalars().all()
     attach_access_codes(lock_gateway, bookings)
     return {
-        "bookings": [AdminBookingOut.model_validate(b) for b in bookings],
+        "bookings": [list_row(AdminBookingListOut.model_validate(b)) for b in bookings],
         "total": total,
         "page": page,
         "page_size": page_size,
