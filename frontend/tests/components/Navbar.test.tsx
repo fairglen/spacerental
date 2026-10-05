@@ -141,12 +141,14 @@ describe('Navbar org switcher visibility (B33b/B33c)', () => {
     expect(screen.queryByRole('combobox')).toBeNull()
   })
 
-  it('keeps the switcher for multi-org users, controlled from the first render', () => {
+  it('keeps the switcher for multi-org users, controlled from the first render', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       signedInWith([membership('org-1', 'owner'), membership('org-2')])
       render(<Navbar />)
-      expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0)
+      // The switcher's module loads on demand (P1.3): wait for it, then the
+      // same assertions as before.
+      expect((await screen.findAllByRole('combobox')).length).toBeGreaterThan(0)
       const uncontrolled = error.mock.calls.filter((call) => String(call[0]).includes('uncontrolled'))
       expect(uncontrolled).toEqual([])
     } finally {

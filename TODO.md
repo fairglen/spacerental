@@ -2154,7 +2154,36 @@ weakened.
 
 ### P1.3 — Bundle diet
 
-**Priority: P1. State: QUEUED.** **Metric:** JavaScript bytes on the wire
+**Priority: P1. State: DONE 2026-10-05** on `perf/frontend-first-paint`.
+What the analyzer showed in the landing's first load (gzipped): Next 130 KB,
+framer-motion 34.5 KB (the hero's one fade-up), the Radix select 16 KB (the
+navbar's organisation switcher, shown only to members of several
+organisations), date-fns 12 KB (the help dialog, mounted closed on every
+page), and on `/spaces/[id]` react-big-calendar + lodash + react-overlays
++ its localizer ≈ 62 KB before a room is even picked. Done: the hero's
+animation is CSS (`tailwindcss-animate`, `motion-reduce` honoured) and
+framer-motion is out of `package.json`; `OrgSwitcher` is its own module
+loaded with `next/dynamic` only when the session has two memberships;
+`HelpDialog` loads on the first "Ajuda" (then stays mounted); the booking
+calendar loads with `next/dynamic` once a room is picked; the "Onde
+estamos" map embed (294 KB of third-party script, more than the whole app)
+renders after the page's own `load` event — still with no click (L04) —
+because `loading="lazy"` did not keep it off the first paint at desktop
+width. **Measured:** `perf:sizes` `/` **249.5 → 187.4 KB gzipped** (795 →
+610 KB raw), `/spaces/[id]` 277 → 201 KB, `/spaces` 278 → 202 KB,
+`/dashboard` 210 → 192 KB; harness: landing JavaScript before `load`
+**208 KB** (all of it was before: 639 KB), total on the wire 979 → 690 KB,
+requests 56 → 50; dashboard JavaScript 369 → 264 KB; e2e 64/64 on the
+rebuilt image, Vitest 685. **DECISION:** `Hero`, `ValueProps`, `HowItWorks`
+stay client components — their copy goes through `useT()`, whose locale is
+chosen in the browser (localStorage); a server component would freeze them
+in Portuguese. date-fns stays imported per name from `date-fns` (v3 is
+tree-shaken; the submodule form changes nothing in the output, checked with
+the analyzer). The ≤ 300 KB gzipped target was already met by Next's own
+count on the baseline; the number that moved is the real one. Side effect
+for P1.4: on a deep-linked room the availability calls now start after the
+calendar chunk arrives (last call 282 → 472 ms) — the chunk is to be warmed
+right after the rooms paint. **Metric:** JavaScript bytes on the wire
 for `/` (gzipped, from P1.1 and `perf:sizes`). **Target:** ≤ 300 KB gzipped
 on `/`; `react-big-calendar` (and its CSS) loaded with `next/dynamic` only
 where a calendar renders; `framer-motion` replaced by CSS transitions and

@@ -191,7 +191,10 @@ describe('HelpProvider', () => {
     )
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'abrir' }))
-    expect(within(dialog()).getByLabelText(/Assunto/)).toHaveValue('payment')
+    // The dialog's module loads on the first opening (P1.3): wait for it,
+    // then the presets are what the caller asked for.
+    const opened = await screen.findByRole('dialog', { name: /ajuda/i })
+    expect(within(opened).getByLabelText(/Assunto/)).toHaveValue('payment')
     await waitFor(() => expect(within(dialog()).getByLabelText(/Reserva/)).toHaveValue('b-1'))
   })
 })

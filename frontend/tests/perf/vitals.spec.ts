@@ -26,6 +26,8 @@ type Measurement = Vitals & {
   requests: number
   by_type: Record<string, number>
   js_kb: number
+  /** Script bytes requested before the page's load event — what competes with the first paint. */
+  js_before_load_kb: number
   css_kb: number
   image_kb: number
   total_kb: number
@@ -75,8 +77,13 @@ async function measureOnce(browser: Browser, spec: PageSpec, url: string): Promi
   const page = await context.newPage()
   const cdp = await context.newCDPSession(page)
   await cdp.send('Network.enable')
+  await cdp.send('Page.enable')
   const requests = new Map<string, Request>()
   let origin: number | null = null
+  let loadedAt: number | null = null
+  cdp.on('Page.loadEventFired', (e) => {
+    loadedAt = e.timestamp
+  })
   cdp.on('Network.requestWillBeSent', (e) => {
     if (origin === null) origin = e.timestamp
     requests.set(e.requestId, { url: e.request.url, type: e.type ?? 'Other', status: null, bytes: 0, start: e.timestamp, end: e.timestamp })
@@ -138,6 +145,7 @@ async function measureOnce(browser: Browser, spec: PageSpec, url: string): Promi
     requests: all.length,
     by_type,
     js_kb: kb(sum('Script')),
+    js_before_load_kb: kb(all.filter((r) => r.type === 'Script' && (loadedAt === null || r.start <= loadedAt)).reduce((n, r) => n + r.bytes, 0)),
     css_kb: kb(sum('Stylesheet')),
     image_kb: kb(sum('Image')),
     total_kb: kb(all.reduce((n, r) => n + r.bytes, 0)),
@@ -184,9 +192,9 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   const header =
-    '| Page | TTFB | FCP | LCP | Load | Requests | API calls (depth, last end) | Media | Preflights | JS wire | Total wire |\n|---|---|---|---|---|---|---|---|---|---|---|'
+    '| Page | TTFB | FCP | LCP | Load | Requests | API calls (depth, last end) | Media | Preflights | JS ≤ load | JS wire | Total wire |\n|---|---|---|---|---|---|---|---|---|---|---|---|'
   const rows = summary.map(({ slug, m }) =>
-    `| ${slug} | ${m.ttfb_ms} ms | ${m.fcp_ms ?? '—'} ms | ${m.lcp_ms ?? '—'} ms | ${m.load_ms} ms | ${m.requests} | ${m.api_calls.length} (${m.api_waterfall_depth}, ${m.api_last_call_end_ms ?? '—'} ms) | ${m.media_calls} | ${m.preflights} | ${m.js_kb} KB | ${m.total_kb} KB |`,
+    `| ${slug} | ${m.ttfb_ms} ms | ${m.fcp_ms ?? '—'} ms | ${m.lcp_ms ?? '—'} ms | ${m.load_ms} ms | ${m.requests} | ${m.api_calls.length} (${m.api_waterfall_depth}, ${m.api_last_call_end_ms ?? '—'} ms) | ${m.media_calls} | ${m.preflights} | ${m.js_before_load_kb} KB | ${m.js_kb} KB | ${m.total_kb} KB |`,
   )
   const md = `${header}\n${rows.join('\n')}\n`
   await writeFile(`${OUT_DIR}/summary.md`, md)
