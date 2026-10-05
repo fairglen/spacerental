@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import timedelta
 from decimal import Decimal
@@ -36,6 +37,23 @@ from app.payments import (
     get_payment_gateway,
 )
 from app.schemas.booking import BookingCheckoutOut, BookingCreate, BookingOut
+
+logger = logging.getLogger(__name__)
+
+
+async def _expire_orphan_session(gateway: PaymentGateway, session_id: str | None) -> None:
+    """Close a Checkout Session whose booking row did not survive. A session
+    that was already paid cannot be closed: it is logged loudly, since the
+    money then has no booking (the webhook will report the same)."""
+    if not session_id:
+        return
+    try:
+        await gateway.expire_checkout_session(session_id)
+    except CheckoutSessionCompletedError:
+        logger.error("Checkout session %s was paid for a booking that was not saved", session_id)
+    except PaymentProviderError:
+        logger.exception("Could not close the orphaned checkout session %s", session_id)
+
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
@@ -287,10 +305,14 @@ async def create_booking(
         # an UPDATE of the row just inserted, and a non-HOT update re-runs the
         # GIST exclusion check — which can end in a deadlock report against
         # a concurrent insert on the same slot, exactly as the first flush
-        # can. Still a lost race, still a 409.
+        # can. Still a lost race, still a 409 — and the session created a
+        # moment ago names a booking that is about to vanish, so it is
+        # closed first (review on #65): paid, it would charge for nothing.
+        await db.rollback()
+        if checkout_url is not None:
+            await _expire_orphan_session(gateway, booking.stripe_checkout_session_id)
         if not is_lost_slot_race(exc):
             raise
-        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This time slot is already booked",
