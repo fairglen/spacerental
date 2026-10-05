@@ -23,11 +23,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { moveOutcome } from '@/components/admin/calendar/BookingSheet'
 import { formatBookingCost, formatCurrency, formatHours, isUnpaidHold, packSplitLine, STATUS_LABELS } from '@/lib/utils'
 import { PAYMENT_LABELS, hardDeleteAllowed } from '@/lib/admin/bookingLabels'
+import { creditHoursFor } from '@/lib/cancellationCredit'
+import { utcToWall, wallToUtc } from '@/lib/spaceClock'
 import type { AdminBookingPatch, Booking } from '@/types'
 
-const toLocalDate = (iso: string) => format(parseISO(iso), 'yyyy-MM-dd')
-const toLocalTime = (iso: string) => format(parseISO(iso), 'HH:mm')
-const fromLocal = (date: string, time: string) => new Date(`${date}T${time}:00`).toISOString()
+// The form speaks the room's space clock (R01), not the operator's browser
+// zone: an operator abroad would otherwise move a booking to the wrong
+// instant (review on #65). `DEFAULT_TZ` only until the spaces have loaded.
+const DEFAULT_TZ = 'Europe/Lisbon'
 
 /** One booking (G06): Cliente, Quando/Onde, Pagamento, Acesso, Notas, DangerZone, Histórico. */
 export default function AdminBookingPage() {
@@ -59,22 +62,28 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   })
   const { data: spaces } = useQuery({ queryKey: ['admin', 'spaces', currentOrgId], queryFn: () => adminApi.getSpaces(api), enabled })
   const rooms = (spaces ?? []).flatMap((s) => (s.rooms ?? []).filter((r) => r.is_active))
+  const zoneOfRoom = (roomId: string | undefined) =>
+    (spaces ?? []).find((s) => (s.rooms ?? []).some((r) => r.id === roomId))?.timezone ?? DEFAULT_TZ
 
   const [moving, setMoving] = useState(false)
   const [move, setMove] = useState({ room_id: '', date: '', start: '', end: '' })
   const [priceOpen, setPriceOpen] = useState(false)
   const [price, setPrice] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [creditHours, setCreditHours] = useState(true)
   const [payOpen, setPayOpen] = useState(false)
   const [notes, setNotes] = useState({ notes: '', admin_note: '' })
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!data) return
     const b = data.booking
-    setMove({ room_id: b.room_id, date: toLocalDate(b.start_time), start: toLocalTime(b.start_time), end: toLocalTime(b.end_time) })
+    const zone = zoneOfRoom(b.room_id)
+    const start = utcToWall(b.start_time, zone)
+    setMove({ room_id: b.room_id, date: start.date, start: start.time, end: utcToWall(b.end_time, zone).time })
     setNotes({ notes: b.notes ?? '', admin_note: b.admin_note ?? '' })
     setPrice(b.total_amount.toFixed(2))
-  }, [data])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, spaces])
 
   const done = async (message: string) => { toast({ title: message, variant: 'success' }); await invalidate(bookingId) }
   const fail = (err: unknown) => toast({ title: adminBookingErrorMessage(err), variant: 'error' })
@@ -83,7 +92,8 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   })
   const reschedule = useMutation({
     mutationFn: () => {
-      const body: AdminBookingPatch = { start_time: fromLocal(move.date, move.start), end_time: fromLocal(move.date, move.end) }
+      const zone = zoneOfRoom(move.room_id)
+      const body: AdminBookingPatch = { start_time: wallToUtc(move.date, move.start, zone), end_time: wallToUtc(move.date, move.end, zone) }
       if (data && move.room_id !== data.booking.room_id) body.room_id = move.room_id
       return adminApi.updateBookingDetails(bookingId, body, api)
     },
@@ -109,6 +119,12 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
   const canCancel = ['pending', 'confirmed'].includes(b.status)
   const canMarkPaid = isUnpaidHold(b) || b.status === 'expired'
   const deletable = hardDeleteAllowed(b)
+  // K01: a paid booking's cancellation credits its hours unless unticked.
+  const creditable = creditHoursFor(b)
+  const credit = b.cancellation_credit ?? null
+  // Read-only times on the same clock the form uses (review on #65).
+  const wall = utcToWall(b.start_time, zoneOfRoom(b.room_id))
+  const wallEnd = utcToWall(b.end_time, zoneOfRoom(b.room_id))
 
   async function copyStripeId() {
     if (!b.stripe_checkout_session_id) return
@@ -121,7 +137,7 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
         title={`Reserva #${short.toUpperCase()}`}
         crumbs={[{ label: 'Reservas', href: '/admin/bookings' }, { label: `#${short.toUpperCase()}` }]}
         badge={<Badge variant={b.status === 'confirmed' ? 'success' : b.status === 'pending' ? 'warning' : 'secondary'}>{STATUS_LABELS[b.status]}</Badge>}
-        description={`${format(parseISO(b.start_time), "EEEE d 'de' MMMM, HH:mm", { locale: pt })}–${format(parseISO(b.end_time), 'HH:mm', { locale: pt })} · ${b.room?.name ?? ''}`}
+        description={`${format(parseISO(`${wall.date}T00:00:00`), "EEEE d 'de' MMMM", { locale: pt })}, ${wall.time}–${wallEnd.time} · ${b.room?.name ?? ''}`}
         actions={
           <>
             {b.status === 'pending' && <Button type="button" size="sm" onClick={() => setStatus.mutate('confirmed')} disabled={setStatus.isPending}>Confirmar</Button>}
@@ -146,8 +162,8 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
           {!moving ? (
             <dl className="text-sm space-y-1">
               <div><dt className="inline text-muted-foreground">Sala: </dt><dd className="inline">{b.room ? <Link href={`/admin/rooms/${b.room.id}`} className="underline underline-offset-2">{b.room.name}</Link> : '—'}</dd></div>
-              <div><dt className="inline text-muted-foreground">Data: </dt><dd className="inline">{format(parseISO(b.start_time), "EEEE, d 'de' MMMM 'de' yyyy", { locale: pt })}</dd></div>
-              <div><dt className="inline text-muted-foreground">Horas: </dt><dd className="inline">{toLocalTime(b.start_time)}–{toLocalTime(b.end_time)} ({formatHours(b.duration_hours)})</dd></div>
+              <div><dt className="inline text-muted-foreground">Data: </dt><dd className="inline">{format(parseISO(`${wall.date}T00:00:00`), "EEEE, d 'de' MMMM 'de' yyyy", { locale: pt })}</dd></div>
+              <div><dt className="inline text-muted-foreground">Horas: </dt><dd className="inline">{wall.time}–{wallEnd.time} ({formatHours(b.duration_hours)})</dd></div>
               {b.hold_expires_at && b.status === 'pending' && <div><dt className="inline text-muted-foreground">Reserva de lugar até: </dt><dd className="inline">{format(parseISO(b.hold_expires_at), 'HH:mm', { locale: pt })}</dd></div>}
             </dl>
           ) : (
@@ -181,6 +197,17 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
               <div>
                 <dt className="text-muted-foreground">Horas de pack, por compra:</dt>
                 <dd><ul className="list-disc pl-5">{b.package_debits!.map((d) => <li key={d.purchase_id}><Link href={`/admin/purchases/${d.purchase_id}`} className="underline underline-offset-2">{packSplitLine(d)}</Link></li>)}</ul></dd>
+              </div>
+            )}
+            {credit && (
+              <div>
+                <dt className="inline text-muted-foreground">Crédito criado: </dt>
+                <dd className="inline">
+                  <Link href={`/admin/purchases/${credit.id}`} className="underline underline-offset-2" data-testid="booking-credit">
+                    {formatHours(credit.hours_total)}
+                  </Link>
+                  {credit.status === 'cancelled' ? ' (revertido)' : ` · ${formatHours(credit.hours_remaining)} por usar`}
+                </dd>
               </div>
             )}
             <div>
@@ -224,8 +251,8 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
         entityLabel="reserva"
         name={short}
         shortId={short}
-        keeps="Cancelar devolve as horas de pack ao cliente e avisa-o por email; nada é devolvido em dinheiro aqui. Eliminar só é possível para uma reserva que nunca movimentou dinheiro nem horas."
-        soft={canCancel ? { active: true, onToggle: async () => { setCancelOpen(true) }, activeLabel: 'Cancelar reserva', buttonLabel: 'Cancelar reserva', hint: 'Pede um motivo; o cliente recebe um email.' } : undefined}
+        keeps="Cancelar devolve as horas de pack ao cliente e credita-lhe as horas pagas no banco de horas; avisa-o por email. Nada é devolvido em dinheiro. Eliminar só é possível para uma reserva que nunca movimentou dinheiro nem horas."
+        soft={canCancel ? { active: true, onToggle: async () => { setCreditHours(true); setCancelOpen(true) }, activeLabel: 'Cancelar reserva', buttonLabel: 'Cancelar reserva', hint: 'Pede um motivo; o cliente recebe um email.' } : undefined}
         hard={{
           onDelete: async (confirm) => {
             await adminApi.deleteBooking(bookingId, confirm, b.payment_method === 'manual' ? 'Eliminada pelo espaço' : undefined, api)
@@ -263,15 +290,29 @@ function BookingDetail({ bookingId }: { bookingId: string }) {
       <ReasonDialog
         open={cancelOpen}
         title="Cancelar esta reserva"
-        description="O cliente recebe um email. As horas de pack voltam ao saldo dele; nada é devolvido em dinheiro aqui."
+        description={creditable !== null
+          ? 'O cliente recebe um email. As horas de pack voltam ao saldo dele; as horas pagas ficam no banco de horas dele. Nada é devolvido em dinheiro.'
+          : 'O cliente recebe um email. As horas de pack voltam ao saldo dele; nada é devolvido em dinheiro aqui.'}
         confirmLabel="Sim, cancelar"
         destructive
         onConfirm={async (reason) => {
-          await patch.mutateAsync({ status: 'cancelled', admin_note: [b.admin_note, `Cancelada pelo espaço: ${reason}`].filter(Boolean).join('\n') })
-          await done('Reserva cancelada.')
+          const body: AdminBookingPatch = { status: 'cancelled', reason, admin_note: [b.admin_note, `Cancelada pelo espaço: ${reason}`].filter(Boolean).join('\n') }
+          if (creditable !== null && !creditHours) body.credit_hours = false
+          const result = await patch.mutateAsync(body)
+          await done(result.credit ? `Reserva cancelada. ${formatHours(result.credit.hours)} creditadas ao cliente.` : 'Reserva cancelada.')
         }}
         onClose={() => setCancelOpen(false)}
-      />
+      >
+        {creditable !== null && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" checked={creditHours} onChange={(e) => setCreditHours(e.target.checked)} />
+            <span>
+              Creditar as horas ao cliente ({formatHours(creditable)})
+              <span className="block text-xs text-muted-foreground">Sem crédito, o motivo fica no histórico e o cliente não recebe nada.</span>
+            </span>
+          </label>
+        )}
+      </ReasonDialog>
       <ReasonDialog
         open={payOpen}
         title="Marcar como paga"

@@ -23,6 +23,10 @@ describe('adminBookingErrorMessage — a refused move', () => {
     expect(adminBookingErrorMessage(httpError(409, 'The package no longer has enough hours to reinstate this booking'))).toMatch(/pack do cliente/)
   })
 
+  it('explains a reinstatement refused because the cancellation credit was spent (K01)', () => {
+    expect(adminBookingErrorMessage(httpError(409, 'The hours credited for this cancellation were already used; make a new booking instead'))).toBe('O crédito já foi usado; crie uma nova reserva.')
+  })
+
   it('falls back to a generic line for a real server error and a network failure', () => {
     expect(adminBookingErrorMessage(httpError(500))).toMatch(/Não foi possível guardar/)
     expect(adminBookingErrorMessage(new Error('Network Error'))).toMatch(/ligação/)

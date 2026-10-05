@@ -25,14 +25,16 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatBookingCost, formatCurrency, formatHours, packSplitLines, STATUS_LABELS } from '@/lib/utils'
+import { purchaseLabel } from '@/lib/cancellationCredit'
 import { SUPPORT_CATEGORY_LABELS } from '@/components/help/HelpDialog'
 import { ROLE_LABELS, RoleDialog } from '@/components/admin/users/RoleDialog'
 import { GrantHoursDialog } from '@/components/admin/users/GrantHoursDialog'
 import { ExtendValidityDialog } from '@/components/admin/users/ExtendValidityDialog'
 import type { AdminPurchase, ComplimentaryHoursBody, OrgUser } from '@/types'
 
+// A customer may have no name (the API allows null); blank clears it.
 const schema = z.object({
-  name: z.string().min(1, 'Nome obrigatório'),
+  name: z.string(),
   email: z.string().email('Email inválido'),
 })
 type FormValues = z.infer<typeof schema>
@@ -136,7 +138,7 @@ function UserDetail({ userId }: { userId: string }) {
         form={form}
         successMessage="Conta guardada."
         onCancel={() => router.push('/admin/users')}
-        onSubmit={(values) => adminApi.updateUser(userId, { name: values.name, email: values.email }, api)}
+        onSubmit={(values) => adminApi.updateUser(userId, { name: values.name.trim() || null, email: values.email }, api)}
         onSaved={() => invalidate(userId)}
         extra={!isSelf && (
           <Button type="button" variant={suspended ? 'outline' : 'destructive'} size="sm" onClick={() => suspend.mutate(!suspended)} disabled={suspend.isPending}>
@@ -222,7 +224,7 @@ function UserDetail({ userId }: { userId: string }) {
               <tbody className="divide-y divide-border">
                 {purchases.map((p) => (
                   <tr key={p.id} className={p.status !== 'active' ? 'opacity-60' : undefined}>
-                    <td className="px-2 py-2"><Link href={`/admin/purchases/${p.id}`} className="underline underline-offset-2">{p.package?.name ?? 'Pack'}</Link></td>
+                    <td className="px-2 py-2"><Link href={`/admin/purchases/${p.id}`} className="underline underline-offset-2">{purchaseLabel(p)}</Link></td>
                     <td className="px-2 py-2">{formatHours(p.hours_remaining)} de {formatHours(p.hours_total)}</td>
                     <td className="px-2 py-2">{p.amount_paid === 0 ? <Badge variant="secondary">Oferta</Badge> : formatCurrency(p.amount_paid)}</td>
                     <td className="px-2 py-2"><Badge variant={p.status === 'active' ? 'default' : 'secondary'}>{PURCHASE_STATUS[p.status]}</Badge></td>

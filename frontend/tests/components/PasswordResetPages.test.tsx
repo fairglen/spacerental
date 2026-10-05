@@ -46,6 +46,12 @@ describe('Sign-in page and the reset flow (G03)', () => {
     render(<SignInPage />)
     expect(screen.getByRole('status')).toHaveTextContent('A sua password foi alterada')
   })
+
+  it('says why after the app signed a stale session out (review on #65)', () => {
+    searchParams = new URLSearchParams('session=expired')
+    render(<SignInPage />)
+    expect(screen.getByRole('status')).toHaveTextContent('A sua sessão terminou')
+  })
 })
 
 describe('Forgot password page', () => {

@@ -9,6 +9,7 @@ import { EntityList, type Column } from '@/components/admin/crud/EntityList'
 import { PageHeader } from '@/components/admin/crud/PageHeader'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatHours } from '@/lib/utils'
+import { PURCHASE_SOURCE_LABELS, purchaseLabel } from '@/lib/cancellationCredit'
 import type { AdminPurchaseRow, PurchaseFilters } from '@/types'
 
 const FILTERS = ['user_id', 'package_id', 'status', 'expiring'] as const
@@ -38,7 +39,7 @@ function PurchasesList() {
 
   const columns: Column<AdminPurchaseRow>[] = [
     { key: 'customer', header: 'Cliente', render: (p) => <span className="font-medium text-foreground">{p.user.name || p.user.email}<span className="block text-xs text-muted-foreground">{p.user.email}</span></span> },
-    { key: 'package', header: 'Pack', render: (p) => p.package?.name ?? 'Pack' },
+    { key: 'package', header: 'Pack', render: (p) => <span>{purchaseLabel(p)}<span className="block text-xs text-muted-foreground">{PURCHASE_SOURCE_LABELS[p.source]}</span></span> },
     { key: 'hours', header: 'Horas', render: (p) => `${formatHours(p.hours_remaining)} de ${formatHours(p.hours_total)}` },
     { key: 'paid', header: 'Pago', render: (p) => (p.amount_paid === 0 ? <Badge variant="secondary">Oferta</Badge> : formatCurrency(p.amount_paid)) },
     { key: 'status', header: 'Estado', render: (p) => <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>{PURCHASE_STATUS[p.status]}</Badge> },

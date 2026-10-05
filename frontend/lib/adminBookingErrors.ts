@@ -8,6 +8,8 @@ export function adminBookingErrorMessage(error: unknown): string {
     case 409:
       if (detail.includes('another block') || detail.includes('bloque')) return 'Já existe um bloqueio nesse horário.'
       if (detail.includes('hold this time')) return 'Há reservas nesse horário. Mova-as ou cancele-as primeiro.'
+      // K01: the credited hours went into another booking; no reinstating.
+      if (detail.includes('already used')) return 'O crédito já foi usado; crie uma nova reserva.'
       // H03: a refused write named by its constraint, never a server error.
       if (detail.includes('violates a constraint')) {
         return detail.includes('package_hours')

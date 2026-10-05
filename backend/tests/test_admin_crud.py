@@ -252,6 +252,13 @@ class TestBookings:
         assert await ids(q=w.booking.id.hex[:8]) == [str(w.booking.id)]
         assert await ids(payment_method="package") == [str(cancelled.id)]
         assert set(await ids(include_cancelled="false")) == {str(w.booking.id), str(w.pending.id)}
+        # TIMESTAMPTZ filters take aware instants only (review on #65).
+        naive = await client.get(
+            f"{API}/admin/bookings",
+            params={**w.params, "from": "2026-09-30T10:00:00"},
+            headers=w.headers,
+        )
+        assert naive.status_code == 422, naive.text
         assert await ids(sort="start_time") == [
             str(w.booking.id),
             str(w.pending.id),

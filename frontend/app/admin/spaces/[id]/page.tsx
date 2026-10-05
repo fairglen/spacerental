@@ -120,9 +120,10 @@ function SpaceDetail({ spaceId }: { spaceId: string }) {
         onSubmit={async (values) => {
           await adminApi.updateSpace(spaceId, {
             name: values.name,
-            description: values.description.trim() || undefined,
-            address: values.address.trim() || undefined,
-            city: values.city.trim() || undefined,
+            // Blank clears a stored value: the API takes an explicit null.
+            description: values.description.trim() || null,
+            address: values.address.trim() || null,
+            city: values.city.trim() || null,
             timezone: values.timezone,
             amenities: values.amenities.split(',').map((s) => s.trim()).filter(Boolean),
             ...locationPayload(values),

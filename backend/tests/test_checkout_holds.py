@@ -645,3 +645,41 @@ class TestThirdReview:
         )
         assert retry.status_code == 200, retry.text
         assert expired_ids == [created["checkout_url"].rsplit("/", 1)[-1]]
+
+
+class TestAnOrphanedSession:
+    async def test_a_lost_race_after_the_session_exists_closes_the_session(
+        self, client, auth_headers, test_room, test_member, payments, db_session, monkeypatch
+    ):
+        """Review on #65: the second flush (writing the session id) can lose
+        the slot race; the booking rolls back, so the session created a
+        moment earlier must not stay payable."""
+        from app.routers import bookings as bookings_router
+        from sqlalchemy.exc import DBAPIError
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        real_flush = AsyncSession.flush
+
+        async def flush_losing_the_race(self, *args, **kwargs):
+            # Exactly the flush that writes the session id onto the row.
+            if any(getattr(o, "stripe_checkout_session_id", None) for o in self.dirty):
+                raise DBAPIError("UPDATE bookings", {}, Exception("deadlock detected"))
+            return await real_flush(self, *args, **kwargs)
+
+        monkeypatch.setattr(AsyncSession, "flush", flush_losing_the_race)
+        monkeypatch.setattr(bookings_router, "is_lost_slot_race", lambda _exc: True)
+        start = _monday()
+        resp = await client.post(
+            "/api/v1/bookings",
+            json={
+                "room_id": str(test_room.id),
+                "start_time": start.isoformat(),
+                "end_time": (start + timedelta(hours=1)).isoformat(),
+                "payment_method": "hourly",
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 409, resp.text
+        # No booking survived, and the stub holds no session for one.
+        assert (await db_session.execute(select(Booking))).first() is None
+        assert payments.sessions == {}

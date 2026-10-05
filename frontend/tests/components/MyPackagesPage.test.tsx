@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MyPackagesPage from '@/app/dashboard/packages/page'
 import { packagesApi } from '@/lib/api'
 import type { MyPackages, Package, UserPackagePurchase } from '@/types'
+import { addDays, format } from 'date-fns'
+import { pt } from 'date-fns/locale'
 
 let searchParams = new URLSearchParams()
 
@@ -43,7 +45,7 @@ const activePurchase: UserPackagePurchase = {
   hours_used: 3,
   hours_remaining: 7, amount_paid: 100,
   status: 'active',
-  purchased_at: new Date().toISOString(),
+  source: 'purchase' as const, source_booking_id: null, purchased_at: new Date().toISOString(),
   expires_at: new Date('2027-01-01').toISOString(),
   package: pack10,
 }
@@ -115,16 +117,18 @@ describe('Packages page hours formatting (B30)', () => {
 
 describe('Packages page — the hour bank (H02)', () => {
   it('shows one balance across packs and the slice that lapses first, then the history', async () => {
+    // Relative, not pinned: a fixed date lapses one day and takes the test with it.
+    const soon = addDays(new Date(), 5)
     mine([
       { ...activePurchase, id: 'later', hours_remaining: 10, hours_used: 0, expires_at: '2027-03-01T00:00:00Z' },
-      { ...activePurchase, id: 'soon', hours_remaining: 2, hours_used: 8, expires_at: '2026-10-03T00:00:00Z' },
+      { ...activePurchase, id: 'soon', hours_remaining: 2, hours_used: 8, expires_at: soon.toISOString() },
     ])
     vi.mocked(packagesApi.list).mockResolvedValue([pack10])
     renderPage()
 
     const bank = await screen.findByRole('region', { name: /banco de horas/i })
     expect(bank).toHaveTextContent(/12h disponíveis/)
-    expect(bank).toHaveTextContent(/2h expiram a 3 de out\./)
+    expect(bank).toHaveTextContent(`2h expiram a ${format(soon, "d 'de' MMM", { locale: pt })}`)
     // The purchase history stays exactly as it was, below the bank.
     const history = screen.getByText(/10h restantes de 10h/)
     expect(bank.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

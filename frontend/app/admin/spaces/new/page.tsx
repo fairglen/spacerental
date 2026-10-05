@@ -1,13 +1,14 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { adminApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
+import { useOrg } from '@/contexts/OrgContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,6 +26,7 @@ const schema = z.object({
   description: z.string().optional(),
   address: z.string().min(2, 'Morada obrigatória'),
   city: z.string().min(2, 'Cidade obrigatória'),
+  timezone: z.string().min(1, 'Fuso horário obrigatório'),
   amenities: z.string().optional(),
   ...locationFormShape,
 }).superRefine(refineCoordinatePair)
@@ -35,10 +37,21 @@ export default function NewSpacePage() {
   const api = useApi()
   const router = useRouter()
   const [created, setCreated] = useState<Space | null>(null)
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, formState: { errors, dirtyFields } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: locationDefaults(),
+    defaultValues: { ...locationDefaults(), timezone: 'Europe/Lisbon' },
   })
+  // The organisation's clock is the default for a new space (review on #65);
+  // the operator can still give this one its own.
+  const { currentOrgId } = useOrg()
+  const { data: organisation } = useQuery({
+    queryKey: ['admin', 'organization', currentOrgId],
+    queryFn: () => adminApi.getOrganization(api),
+    enabled: !!session?.accessToken && !!currentOrgId,
+  })
+  useEffect(() => {
+    if (organisation?.timezone && !dirtyFields.timezone) setValue('timezone', organisation.timezone)
+  }, [organisation, dirtyFields.timezone, setValue])
 
   const mutation = useMutation({
     mutationFn: (data: FormData) =>
@@ -105,6 +118,12 @@ export default function NewSpacePage() {
               <Label htmlFor="city">Cidade *</Label>
               <Input id="city" {...register('city')} className="mt-1" placeholder="ex: Lisboa" />
               {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="timezone">Fuso horário *</Label>
+              <Input id="timezone" {...register('timezone')} className="mt-1" placeholder="ex: Europe/Lisbon" />
+              <p className="text-xs text-muted-foreground mt-1">Nome IANA. Começa no fuso da organização; as horas das salas são lidas neste relógio.</p>
+              {errors.timezone && <p className="text-xs text-red-600 mt-1">{errors.timezone.message}</p>}
             </div>
             {/* The location slice of this form's helpers; see SpaceLocationFields. */}
             <SpaceLocationFields

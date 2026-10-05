@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { LayoutDashboard, Building2, Calendar, CalendarDays, Package, LogOut, LifeBuoy, Users, DoorOpen, Clock, History, Settings } from 'lucide-react'
+import { BrandLogo } from '@/components/layout/BrandLogo'
 import { ToastProvider } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { useOrg } from '@/contexts/OrgContext'
@@ -78,9 +79,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen bg-background">
       <aside className="w-56 bg-white border-r border-border flex flex-col">
         <div className="p-4 border-b border-border">
-          <Link href="/" className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-primary" />
-            <span className="font-bold text-foreground text-sm">{t('brand.name')}</span>
+          <Link href="/" className="flex items-center text-primary" aria-label={t('brand.name')}>
+            <BrandLogo height={24} />
           </Link>
           <p className="text-xs text-muted-foreground mt-1">Painel de Admin</p>
         </div>

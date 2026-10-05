@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import clock, email, package_hours
+from app import cancellation_credit, clock, email, package_hours
 from app.email import EmailGateway
 from app.locks import LockGateway, try_revoke_access_code
 from app.models.booking import Booking, BookingStatus
@@ -57,9 +57,13 @@ async def apply_cancellation(
     # cancelled without the credit, and never credited twice — the
     # already-cancelled guard above is what makes a repeat call a 400 rather
     # than a second credit. Money is not touched here, for any method.
+    now = clock.utcnow()
     await package_hours.settle_status_change(
-        db, booking, previous=previous, new=BookingStatus.cancelled, now=clock.utcnow()
+        db, booking, previous=previous, new=BookingStatus.cancelled, now=now
     )
+    # The money share comes back as hours in the bank (K01), in the same
+    # transaction, never as a refund (O02 superseded).
+    credit = await cancellation_credit.create_credit(db, booking, previous=previous, now=now)
 
     email.enqueue_email(
         background_tasks,
@@ -70,6 +74,8 @@ async def apply_cancellation(
             room_name=booking.room.name,
             start_time=booking.start_time,
             end_time=booking.end_time,
+            credit_hours=credit.hours_total if credit is not None else None,
+            credit_expires_at=credit.expires_at if credit is not None else None,
         ),
     )
 

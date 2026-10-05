@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Building2, LogOut, User, Menu, X, LifeBuoy } from 'lucide-react'
+import { LogOut, User, Menu, X, LifeBuoy } from 'lucide-react'
+import { BrandLogo } from '@/components/layout/BrandLogo'
 import { useHelp } from '@/components/help/HelpProvider'
 import { useOrg } from '@/contexts/OrgContext'
 import { useT } from '@/lib/i18n'
@@ -66,9 +67,8 @@ export function Navbar() {
     <nav className="sticky top-0 z-50 w-full border-b border-border bg-white/90 backdrop-blur-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <Building2 className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold text-foreground">{t('brand.name')}</span>
+          <Link href="/" className="flex items-center text-primary" aria-label={t('brand.name')}>
+            <BrandLogo height={28} />
           </Link>
 
           {/* Desktop nav */}

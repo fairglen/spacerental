@@ -675,3 +675,40 @@ test('the menu toggle announces the action it will perform', async ({ page }) =>
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(toggle).toHaveAttribute('aria-label', 'Abrir menu');
 });
+
+// B50: the brand set replaces the text wordmark and the old favicon.
+test('header and footer carry the lockup (currentColor, explicit size) and the head has the icons', async ({ page }) => {
+  await page.goto('/');
+  const header = page.locator('.site-nav .wordmark .brand-lockup');
+  await expect(header).toHaveCount(1);
+  await expect(header).toHaveAttribute('aria-label', 'FlowSpace');
+  expect(await header.evaluate((el) => [el.getAttribute('width'), el.getAttribute('height')])).toEqual(['114', '28']);
+  expect(await header.evaluate((el) => el.querySelector('use')?.getAttribute('href'))).toBe('assets/img/brand/logo-horizontal.svg#lockup');
+  // The header stays 64px tall and the lockup takes the link's colour.
+  expect(await page.locator('.site-nav .container').evaluate((el) => el.getBoundingClientRect().height)).toBe(64);
+  expect(await header.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(61, 122, 94)');
+  const footer = page.locator('.site-footer .footer-wordmark .brand-lockup');
+  await expect(footer).toHaveCount(1);
+  expect(await footer.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(255, 255, 255)');
+  // No text wordmark left.
+  await expect(page.locator('.site-nav .wordmark')).toHaveText('');
+  // Icons, manifest-style metadata.
+  await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', 'assets/img/brand/favicon.svg');
+  await expect(page.locator('link[rel="icon"][sizes="32x32"]')).toHaveAttribute('href', 'assets/img/brand/favicon-32.png');
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('href', 'assets/img/brand/apple-touch-icon.png');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#3D7A5E');
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', 'https://flowspace.pt/assets/img/brand/og-image.png');
+  // Every referenced brand file is actually served.
+  for (const path of ['assets/img/brand/logo-horizontal.svg', 'assets/img/brand/favicon.svg', 'assets/img/brand/favicon-32.png', 'assets/img/brand/apple-touch-icon.png', 'assets/img/brand/og-image.png']) {
+    const res = await page.request.get(`/${path}`);
+    expect(res.status(), path).toBe(200);
+  }
+});
+
+test('at 390px the lockup fits well under 60% of the header', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const box = (await page.locator('.site-nav .wordmark .brand-lockup').boundingBox())!;
+  expect(box.width).toBeLessThan(390 * 0.6);
+  expect(box.height).toBe(28);
+});

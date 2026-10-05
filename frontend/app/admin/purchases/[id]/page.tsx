@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendValidityDialog } from '@/components/admin/users/ExtendValidityDialog'
 import { formatCurrency, formatHours, STATUS_LABELS } from '@/lib/utils'
+import { PURCHASE_SOURCE_LABELS, purchaseLabel } from '@/lib/cancellationCredit'
 import type { Booking } from '@/types'
 
 const PURCHASE_STATUS: Record<'pending' | 'active' | 'cancelled', string> = { pending: 'Por pagar', active: 'Ativo', cancelled: 'Cancelado' }
@@ -61,7 +62,7 @@ function PurchaseDetail({ purchaseId }: { purchaseId: string }) {
   return (
     <div className="p-8 max-w-4xl space-y-6">
       <PageHeader
-        title={`${p.package?.name ?? 'Pack'} · ${user.name || user.email}`}
+        title={`${purchaseLabel(p)} · ${user.name || user.email}`}
         crumbs={[{ label: 'Banco de horas', href: '/admin/purchases' }, { label: `#${short.toUpperCase()}` }]}
         badge={<Badge variant={p.status === 'active' ? 'default' : 'secondary'}>{PURCHASE_STATUS[p.status]}</Badge>}
         description={`${formatHours(p.hours_remaining)} de ${formatHours(p.hours_total)} por gastar · ${p.amount_paid === 0 ? 'oferta' : formatCurrency(p.amount_paid)} · válido até ${format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}${lapsed ? ' (caducou)' : ''}`}
@@ -75,6 +76,12 @@ function PurchaseDetail({ purchaseId }: { purchaseId: string }) {
       <section aria-labelledby="cliente" className="rounded-xl border border-border bg-white p-5">
         <h2 id="cliente" className="text-base font-semibold text-foreground">Cliente</h2>
         <p className="text-sm mt-2">{user.name || '—'} · <Link href={`/admin/users/${user.id}`} className="text-primary underline underline-offset-2">{user.email}</Link></p>
+        <p className="text-sm mt-1" data-testid="purchase-source">
+          <span className="text-muted-foreground">Origem: </span>{PURCHASE_SOURCE_LABELS[p.source]}
+          {p.source === 'cancellation_credit' && p.source_booking_id && (
+            <> · <Link href={`/admin/bookings/${p.source_booking_id}`} className="underline underline-offset-2">reserva cancelada</Link></>
+          )}
+        </p>
       </section>
       <section aria-labelledby="descontos" className="rounded-xl border border-border bg-white p-5">
         <h2 id="descontos" className="text-base font-semibold text-foreground">Horas descontadas por reservas</h2>
@@ -116,7 +123,8 @@ function PurchaseDetail({ purchaseId }: { purchaseId: string }) {
         } : undefined}
         hard={{
           onDelete: async (confirm) => { await adminApi.deletePurchase(purchaseId, confirm, api); toast({ title: 'Compra eliminada.', variant: 'success' }); await invalidate(); router.push('/admin/purchases') },
-          disabledReason: p.amount_paid !== 0 || debits.length > 0 ? 'Esta compra foi paga ou já foi usada por reservas: cancele-a em vez de a eliminar.' : undefined,
+          // A pending checkout carries the price but nothing was paid yet (review on #65).
+          disabledReason: (p.status !== 'pending' && p.amount_paid !== 0) || debits.length > 0 ? 'Esta compra foi paga ou já foi usada por reservas: cancele-a em vez de a eliminar.' : undefined,
         }}
         onDone={() => undefined}
       />

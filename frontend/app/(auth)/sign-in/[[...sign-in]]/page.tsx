@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Building2 } from 'lucide-react'
+import { BrandLogo } from '@/components/layout/BrandLogo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,6 +32,9 @@ export default function SignInPage() {
   const callbackUrl = safeInternalPath(searchParams.get('callbackUrl'))
   // Set by /reset-password after a successful change (G03).
   const passwordReset = searchParams.get('password') === 'reset'
+  // The backend refused the session's token (a password change elsewhere, a
+  // suspension, or it expired) and the app signed out (review on #65).
+  const sessionExpired = searchParams.get('session') === 'expired'
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
@@ -57,9 +60,8 @@ export default function SignInPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-primary">
-            <Building2 className="h-6 w-6" />
-            <span className="text-xl font-bold text-foreground">{t('brand.name')}</span>
+          <Link href="/" className="inline-flex items-center text-primary" aria-label={t('brand.name')}>
+            <BrandLogo height={32} />
           </Link>
         </div>
         <Card>
@@ -71,6 +73,11 @@ export default function SignInPage() {
             {passwordReset && (
               <p role="status" className="text-sm text-primary bg-primary/10 rounded-lg px-3 py-2 mb-4">
                 A sua password foi alterada. Inicie sessão com a nova password.
+              </p>
+            )}
+            {sessionExpired && !passwordReset && (
+              <p role="status" className="text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2 mb-4">
+                A sua sessão terminou — por exemplo, depois de uma alteração de password. Inicie sessão de novo.
               </p>
             )}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

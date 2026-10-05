@@ -5,12 +5,13 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import AwareDatetime
 from sqlalchemy import String, and_, distinct, func, or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import audit, clock, deletion, email, package_hours
+from app import audit, cancellation_credit, clock, deletion, email, package_hours
 from app.auth import require_admin, require_owner
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
@@ -51,6 +52,7 @@ from app.schemas.booking import (
     AdminBookingDetailOut,
     AdminBookingOut,
     BookingStatusUpdate,
+    CancellationCreditOut,
     MarkPaidBody,
 )
 from app.schemas.organization import OrganizationSettingsOut, OrganizationSettingsUpdate
@@ -180,6 +182,7 @@ async def admin_create_space(
         longitude=body.longitude,
         images=body.images,
         amenities=body.amenities,
+        timezone=body.timezone,
     )
     db.add(space)
     await db.flush()
@@ -265,6 +268,7 @@ async def admin_update_space(
 @router.delete("/spaces/{space_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_space(
     space_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
     confirm: str | None = Query(default=None, max_length=255),
     admin: User = Depends(require_admin),
@@ -278,11 +282,16 @@ async def admin_delete_space(
         select(Space)
         .options(selectinload(Space.rooms))
         .where(Space.id == space_id, Space.org_id == org_id)
+        .with_for_update(of=Space)
     )
     space = result.scalar_one_or_none()
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
     deletion.require_confirm(confirm, space.id, space.name)
+    # The rooms' rows too: a booking being inserted takes a KEY SHARE lock on
+    # its room, which waits behind this, so no booking can slip in between
+    # the count below and the cascade.
+    await db.execute(select(Room.id).where(Room.space_id == space.id).with_for_update())
     booked = (
         await db.execute(
             select(Room.id, Room.name, func.count(Booking.id))
@@ -302,13 +311,14 @@ async def admin_delete_space(
     await db.delete(space)
     await db.flush()
     await audit.record(db, actor=admin, org_id=org_id, entity=space, action="delete", before=before)
-    await _delete_photo_files(storage, photos)
+    background_tasks.add_task(_delete_photo_files, storage, photos)
 
 
 async def _delete_photo_files(storage: MediaStorage, photos: list[dict]) -> None:
-    # After the rows are gone. A file that will not go is logged, never
-    # raised: an orphan file is a nuisance, a rolled-back delete that left
-    # some files already gone would be a dangling row.
+    # Runs after the response, i.e. after the transaction committed: a commit
+    # that fails leaves the rows and their files intact. A file that will not
+    # go is logged, never raised — an orphan file is a nuisance, a dangling
+    # row would be worse.
     for photo in photos:
         for key in (photo.get("key"), photo.get("thumb_key")):
             if key:
@@ -677,6 +687,7 @@ async def admin_copy_availability_to_all_days(
 @router.delete("/rooms/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_room(
     room_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
     confirm: str | None = Query(default=None, max_length=255),
     admin: User = Depends(require_admin),
@@ -686,7 +697,11 @@ async def admin_delete_room(
     """Hard delete (G02): only a room with no booking and no block ever —
     cancelled and expired ones are history too. `is_active` (A07) is the
     everyday delete. Rules, and the photo files, go with it."""
-    result = await db.execute(select(Room).where(Room.id == room_id, Room.org_id == org_id))
+    # Locked: an inserting booking or block waits on the room's row (KEY
+    # SHARE), so nothing crosses the guard below and gets cascaded away.
+    result = await db.execute(
+        select(Room).where(Room.id == room_id, Room.org_id == org_id).with_for_update()
+    )
     room = result.scalar_one_or_none()
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
@@ -707,7 +722,7 @@ async def admin_delete_room(
     await db.delete(room)
     await db.flush()
     await audit.record(db, actor=admin, org_id=org_id, entity=room, action="delete", before=before)
-    await _delete_photo_files(storage, photos)
+    background_tasks.add_task(_delete_photo_files, storage, photos)
 
 
 @router.delete("/rooms/{room_id}/availability/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -761,8 +776,8 @@ async def admin_list_bookings(
     booking_status: BookingStatus | None = Query(None, alias="status"),
     payment_method: PaymentMethod | None = Query(None),
     q: str | None = Query(None, max_length=200),
-    from_date: datetime | None = Query(None, alias="from"),
-    to_date: datetime | None = Query(None, alias="to"),
+    from_date: AwareDatetime | None = Query(None, alias="from"),
+    to_date: AwareDatetime | None = Query(None, alias="to"),
     include_cancelled: bool = Query(True),
     sort: BookingSort = Query("-start_time"),
     page: int = Query(1, ge=1, le=1_000_000),
@@ -883,8 +898,12 @@ async def admin_get_booking(
         .scalars()
         .all()
     )
+    out = AdminBookingDetailOut.model_validate(booking)
+    credit = await cancellation_credit.existing_credit(db, booking.id)
+    if credit is not None:
+        out.cancellation_credit = CancellationCreditOut.model_validate(credit)
     return {
-        "booking": AdminBookingDetailOut.model_validate(booking),
+        "booking": out,
         "history": [AdminActionOut.model_validate(a) for a in history],
     }
 
@@ -1119,6 +1138,25 @@ async def admin_update_booking(
             detail=("The package no longer has enough hours to reinstate this booking"),
         )
 
+    # K01: a cancelled booking's paid hours live in the bank. Reinstating it
+    # takes them back — unless the customer already spent some, in which case
+    # the reinstatement is refused and a new booking is the way.
+    if previous_status is BookingStatus.cancelled and new_status in (
+        BookingStatus.confirmed,
+        BookingStatus.completed,
+        BookingStatus.pending,
+    ):
+        try:
+            await cancellation_credit.reverse_credit(db, booking.id)
+        except cancellation_credit.CreditSpentError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "The hours credited for this cancellation were already used; "
+                    "make a new booking instead"
+                ),
+            ) from None
+
     booking.status = new_status
     # Keep the hold marker consistent with the new status (C03): a one-off
     # revived as `pending` is an unpaid hold again and needs a fresh deadline
@@ -1179,6 +1217,19 @@ async def admin_update_booking(
             lock_gateway=lock_gateway,
         )
     elif new_status != previous_status and new_status is BookingStatus.cancelled:
+        # The paid hours go to the customer's bank (K01) unless the operator
+        # unticked it, with a reason the trail keeps.
+        credit = None
+        if body.credit_hours:
+            credit = await cancellation_credit.create_credit(
+                db, booking, previous=previous_status, now=now
+            )
+        if credit is not None:
+            response["credit"] = {
+                "id": str(credit.id),
+                "hours": f"{credit.hours_total:.2f}",
+                "expires_at": credit.expires_at.isoformat(),
+            }
         email.enqueue_email(
             background_tasks,
             email_gateway,
@@ -1188,6 +1239,8 @@ async def admin_update_booking(
                 room_name=booking.room.name,
                 start_time=booking.start_time,
                 end_time=booking.end_time,
+                credit_hours=credit.hours_total if credit is not None else None,
+                credit_expires_at=credit.expires_at if credit is not None else None,
             ),
         )
         await try_revoke_access_code(lock_gateway, booking_id=booking.id)
@@ -1635,8 +1688,10 @@ async def admin_delete_package(
 ):
     """Hard delete (G02): only a package nobody ever bought or was granted;
     `is_active` is the everyday delete."""
+    # Locked: a purchase being inserted waits on the package's row, so none
+    # can cross the guard below and be cascaded away with the package.
     result = await db.execute(
-        select(Package).where(Package.id == package_id, Package.org_id == org_id)
+        select(Package).where(Package.id == package_id, Package.org_id == org_id).with_for_update()
     )
     package = result.scalar_one_or_none()
     if package is None:

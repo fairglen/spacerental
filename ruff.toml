@@ -54,3 +54,4 @@ select = [
 # name, which pyflakes reads as a redefinition in every test that takes it.
 "backend/tests/test_deletion_policy.py" = ["F811"]
 "backend/tests/test_admin_crud.py" = ["F811"]
+"backend/tests/test_cancellation_credit.py" = ["F811"]

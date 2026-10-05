@@ -6,6 +6,8 @@ import { AxiosError, AxiosHeaders } from 'axios'
 import { adminApi } from '@/lib/api'
 import { ToastProvider } from '@/components/ui/toast'
 import AdminRoomPage from '@/app/admin/rooms/[id]/page'
+import AdminSpacePage from '@/app/admin/spaces/[id]/page'
+import NewSpacePage from '@/app/admin/spaces/new/page'
 import AdminRoomsListPage from '@/app/admin/rooms/page'
 import AdminBookingPage from '@/app/admin/bookings/[id]/page'
 import AdminUserPage from '@/app/admin/users/[id]/page'
@@ -32,7 +34,7 @@ vi.mock('next/navigation', () => ({
   useParams: () => nav.params,
 }))
 vi.mock('@/lib/api', () => ({
-  adminApi: {
+  adminApi: { updateSpace: vi.fn(),
     getRoom: vi.fn(), getSpace: vi.fn(), getSpaces: vi.fn(), updateRoom: vi.fn(), duplicateRoom: vi.fn(), setAvailability: vi.fn(),
     copyAvailabilityToAllDays: vi.fn(), createBlock: vi.fn(), deleteBlock: vi.fn(), deleteRoom: vi.fn(), getHistory: vi.fn(),
     getBooking: vi.fn(), updateBookingDetails: vi.fn(), markBookingPaid: vi.fn(), deleteBooking: vi.fn(),
@@ -167,17 +169,61 @@ describe('Reserva', () => {
     await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(booking.id, { total_amount: 20, reason: 'Desconto de fidelidade' }, expect.anything()))
   })
 
-  it('a paid booking cannot be hard-deleted; cancelling asks for a reason', async () => {
-    vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({ booking: { ...booking, status: 'cancelled' }, hours: undefined })
+  it('a paid booking cannot be hard-deleted; cancelling asks for a reason and credits the hours by default (K01)', async () => {
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({
+      booking: { ...booking, status: 'cancelled' }, hours: undefined,
+      credit: { id: 'c-1', hours: 2, expires_at: '2031-01-01T00:00:00Z' },
+    })
     const user = userEvent.setup()
     renderPage(<AdminBookingPage />)
     await screen.findByRole('heading', { level: 1 })
     expect(screen.getByTestId('danger-disabled')).toHaveTextContent('cancele-a')
     await user.click(screen.getByRole('button', { name: 'Cancelar reserva' }))
     const dialog = await screen.findByRole('dialog')
+    // 22,00 € at 11 €/h: the box names the 2h and starts ticked.
+    expect(within(dialog).getByRole('checkbox', { name: /Creditar as horas ao cliente \(2h\)/ })).toBeChecked()
     await user.type(within(dialog).getByLabelText('Motivo'), 'Cliente pediu')
     await user.click(within(dialog).getByRole('button', { name: 'Sim, cancelar' }))
-    await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(booking.id, { status: 'cancelled', admin_note: 'Cancelada pelo espaço: Cliente pediu' }, expect.anything()))
+    await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(
+      booking.id, { status: 'cancelled', reason: 'Cliente pediu', admin_note: 'Cancelada pelo espaço: Cliente pediu' }, expect.anything(),
+    ))
+    expect((await screen.findAllByText(/Reserva cancelada\. 2h creditadas ao cliente\./))[0]).toBeInTheDocument()
+  })
+
+  it('unticking the credit sends credit_hours: false with the reason (K01)', async () => {
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({ booking: { ...booking, status: 'cancelled' }, hours: undefined })
+    const user = userEvent.setup()
+    renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Cancelar reserva' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('checkbox', { name: /Creditar as horas/ }))
+    await user.type(within(dialog).getByLabelText('Motivo'), 'Não compareceu')
+    await user.click(within(dialog).getByRole('button', { name: 'Sim, cancelar' }))
+    await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(
+      booking.id, { status: 'cancelled', reason: 'Não compareceu', admin_note: 'Cancelada pelo espaço: Não compareceu', credit_hours: false }, expect.anything(),
+    ))
+  })
+
+  it('a package booking offers no credit box; a cancelled one shows the credit it created (K01)', async () => {
+    vi.mocked(adminApi.getBooking).mockResolvedValue({ booking: { ...booking, payment_method: 'package', package_hours_used: 2, stripe_checkout_session_id: null }, history: [] })
+    const user = userEvent.setup()
+    const { unmount } = renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Cancelar reserva' }))
+    expect(within(await screen.findByRole('dialog')).queryByRole('checkbox')).toBeNull()
+    unmount()
+
+    vi.mocked(adminApi.getBooking).mockResolvedValue({
+      booking: { ...booking, status: 'cancelled', cancellation_credit: { id: 'c-1', hours_total: 2, hours_remaining: 1.5, status: 'active', expires_at: '2031-01-01T00:00:00Z' } },
+      history: [],
+    })
+    renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    const link = screen.getByTestId('booking-credit')
+    expect(link).toHaveAttribute('href', '/admin/purchases/c-1')
+    expect(link).toHaveTextContent('2h')
+    expect(link.parentElement).toHaveTextContent('1,5h por usar')
   })
 
   it('an expired hold can be hard-deleted after typing the id', async () => {
@@ -277,7 +323,7 @@ describe('Banco de horas', () => {
   it('adjusting below the debited hours shows the 409 inline', async () => {
     nav.params = { id: 'p-1' }
     vi.mocked(adminApi.getPurchase).mockResolvedValue({
-      purchase: { id: 'p-1', user_id: 'u-1', package_id: 'k', org_id: 'org-1', hours_total: 10, hours_used: 4, hours_remaining: 6, amount_paid: 100, status: 'active', purchased_at: '2030-01-01T00:00:00Z', expires_at: '2031-01-01T00:00:00Z', package: { id: 'k', org_id: 'org-1', name: 'Pack 10', hours: 10, price: 100, validity_days: 365, is_active: true }, admin_note: null },
+      purchase: { id: 'p-1', user_id: 'u-1', package_id: 'k', org_id: 'org-1', hours_total: 10, hours_used: 4, hours_remaining: 6, amount_paid: 100, status: 'active', source: 'purchase' as const, source_booking_id: null, purchased_at: '2030-01-01T00:00:00Z', expires_at: '2031-01-01T00:00:00Z', package: { id: 'k', org_id: 'org-1', name: 'Pack 10', hours: 10, price: 100, validity_days: 365, is_active: true }, admin_note: null },
       user: { id: 'u-1', name: 'Ana', email: 'ana@x.pt' },
       debits: [{ booking_id: booking.id, hours: 4, start_time: booking.start_time, end_time: booking.end_time, status: 'confirmed', room_name: 'Sala A' }],
     })
@@ -355,5 +401,153 @@ describe('Definições', () => {
     expect(await within(second.container).findByText(/Só o proprietário/)).toBeInTheDocument()
     await waitFor(() => expect(within(second.container).getByLabelText('Nome')).toBeDisabled())
     expect(within(second.container).getByRole('button', { name: 'Guardar' })).toBeDisabled()
+  })
+})
+
+// Review on #65: blank clears a stored value; forms speak the space's clock.
+describe('Review on #65 — clearing fields and the space clock', () => {
+  it('a blank room description is sent as null, not omitted', async () => {
+    nav.params = { id: 'r-1' }
+    vi.mocked(adminApi.getRoom).mockResolvedValue({ room: { ...room, description: 'Antiga' }, space, rules: [], blocks: [], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    vi.mocked(adminApi.updateRoom).mockResolvedValue({ ...room, description: null })
+    const user = userEvent.setup()
+    renderPage(<AdminRoomPage />)
+    await screen.findByRole('heading', { level: 1, name: /Sala A/ })
+    // The form resets to the loaded values once they arrive; edit after that.
+    await waitFor(() => expect(screen.getByLabelText('Descrição')).toHaveValue('Antiga'))
+    await user.clear(screen.getByLabelText('Descrição'))
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(adminApi.updateRoom).toHaveBeenCalledWith('r-1', expect.objectContaining({ description: null }), expect.anything()))
+  })
+
+  it('a blank space description, address or city is sent as null', async () => {
+    nav.params = { id: 's-1' }
+    vi.mocked(adminApi.getSpace).mockResolvedValue({ space: { ...space, description: 'Velha', address: 'Rua', city: 'Lisboa', rooms: [] }, photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    vi.mocked(adminApi.updateSpace).mockResolvedValue(space)
+    const user = userEvent.setup()
+    renderPage(<AdminSpacePage />)
+    await screen.findByRole('heading', { level: 1, name: /Espaço Calmo/ })
+    await waitFor(() => expect(screen.getByLabelText('Descrição')).toHaveValue('Velha'))
+    await user.clear(screen.getByLabelText('Descrição'))
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(adminApi.updateSpace).toHaveBeenCalledWith('s-1', expect.objectContaining({ description: null, address: 'Rua', city: 'Lisboa' }), expect.anything()))
+  })
+
+  it('a customer without a name can still be saved; a blank name is null', async () => {
+    nav.params = { id: 'u-1' }
+    vi.mocked(adminApi.getUser).mockResolvedValue({ user: { ...orgUser, name: null }, bookings: [], purchases: [], balance: { hours_available: 0, hours_expiring_next: null }, support_requests: [] })
+    vi.mocked(adminApi.updateUser).mockResolvedValue({ ...orgUser, name: null, email: 'nova@x.pt' })
+    const user = userEvent.setup()
+    renderPage(<AdminUserPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByLabelText('Email')).toHaveValue('ana@x.pt'))
+    await user.clear(screen.getByLabelText('Email'))
+    await user.type(screen.getByLabelText('Email'), 'nova@x.pt')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(adminApi.updateUser).toHaveBeenCalledWith('u-1', { name: null, email: 'nova@x.pt' }, expect.anything()))
+  })
+
+  it('the move form shows and sends the room\'s space clock, not the browser\'s', async () => {
+    nav.params = { id: booking.id }
+    const tokyo = { ...space, id: 's-jp', timezone: 'Asia/Tokyo' }
+    const roomJp = { ...room, id: 'r-jp', space_id: 's-jp', name: 'Sala Tóquio' }
+    vi.mocked(adminApi.getSpaces).mockResolvedValue([{ ...tokyo, rooms: [roomJp] }])
+    // 09:00Z is 18:00 in Tokyo.
+    vi.mocked(adminApi.getBooking).mockResolvedValue({ booking: { ...booking, room_id: 'r-jp', room: roomJp, start_time: '2030-03-04T09:00:00Z', end_time: '2030-03-04T11:00:00Z', stripe_checkout_session_id: null }, history: [] })
+    vi.mocked(adminApi.updateBookingDetails).mockResolvedValue({ booking, hours: undefined })
+    const user = userEvent.setup()
+    renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Alterar horário' }))
+    await waitFor(() => expect(screen.getByLabelText('Início')).toHaveValue('18:00'))
+    expect(screen.getByLabelText('Fim')).toHaveValue('20:00')
+    await user.clear(screen.getByLabelText('Fim'))
+    await user.type(screen.getByLabelText('Fim'), '21:00')
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    await waitFor(() => expect(adminApi.updateBookingDetails).toHaveBeenCalledWith(booking.id, { start_time: '2030-03-04T09:00:00.000Z', end_time: '2030-03-04T12:00:00.000Z' }, expect.anything()))
+  })
+
+  it('a block typed on the room page is the space\'s wall clock', async () => {
+    nav.params = { id: 'r-1' }
+    vi.mocked(adminApi.getRoom).mockResolvedValue({ room, space: { ...space, timezone: 'Asia/Tokyo' }, rules: [], blocks: [], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    vi.mocked(adminApi.createBlock).mockResolvedValue({ id: 'k', org_id: 'org-1', room_id: 'r-1', start_time: '2030-03-04T00:00:00Z', end_time: '2030-03-04T01:00:00Z', reason: 'Obras', created_by: null, created_at: '' })
+    const user = userEvent.setup()
+    renderPage(<AdminRoomPage />)
+    await screen.findByRole('heading', { level: 1, name: /Sala A/ })
+    await user.type(screen.getByLabelText('Início'), '2030-03-04T09:00')
+    await user.type(screen.getByLabelText('Fim'), '2030-03-04T10:00')
+    await user.type(screen.getByLabelText('Motivo'), 'Obras')
+    await user.click(screen.getByRole('button', { name: 'Bloquear' }))
+    await waitFor(() => expect(adminApi.createBlock).toHaveBeenCalledWith('r-1', { start_time: '2030-03-04T00:00:00.000Z', end_time: '2030-03-04T01:00:00.000Z', reason: 'Obras' }, expect.anything()))
+  })
+})
+
+// Review on #65, round 4.
+describe('Review on #65 — round 4', () => {
+  it('a day with two windows keeps both through the editor; a window can be added and removed', async () => {
+    nav.params = { id: 'r-1' }
+    const twoWindows = [
+      { id: 'a', room_id: 'r-1', day_of_week: 0, open_time: '09:00:00', close_time: '12:00:00', is_active: true },
+      { id: 'b', room_id: 'r-1', day_of_week: 0, open_time: '14:00:00', close_time: '18:00:00', is_active: true },
+    ] as typeof rules
+    vi.mocked(adminApi.getRoom).mockResolvedValue({ room, space, rules: twoWindows, blocks: [], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    vi.mocked(adminApi.setAvailability).mockResolvedValue(twoWindows)
+    const user = userEvent.setup()
+    renderPage(<AdminRoomPage />)
+    await screen.findByRole('heading', { level: 1, name: /Sala A/ })
+    expect(screen.getByLabelText('Segunda-feira abre')).toHaveValue('09:00')
+    expect(screen.getByLabelText('Segunda-feira abre (2)')).toHaveValue('14:00')
+    await user.click(screen.getByRole('button', { name: 'Guardar horário' }))
+    await waitFor(() => expect(adminApi.setAvailability).toHaveBeenCalledWith('r-1', [
+      { day_of_week: 0, open_time: '09:00', close_time: '12:00' },
+      { day_of_week: 0, open_time: '14:00', close_time: '18:00' },
+    ], expect.anything()))
+    await user.click(screen.getByRole('button', { name: 'Remover período 2 de Segunda-feira' }))
+    expect(screen.queryByLabelText('Segunda-feira abre (2)')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Adicionar período a Segunda-feira' }))
+    expect(screen.getByLabelText('Segunda-feira abre (2)')).toHaveValue('12:00')
+  })
+
+  it('the booking summary and the block list read on the space clock, like the forms', async () => {
+    nav.params = { id: booking.id }
+    const tokyo = { ...space, id: 's-jp', timezone: 'Asia/Tokyo' }
+    const roomJp = { ...room, id: 'r-jp', space_id: 's-jp', name: 'Sala Tóquio' }
+    vi.mocked(adminApi.getSpaces).mockResolvedValue([{ ...tokyo, rooms: [roomJp] }])
+    vi.mocked(adminApi.getBooking).mockResolvedValue({ booking: { ...booking, room_id: 'r-jp', room: roomJp, start_time: '2030-03-04T09:00:00Z', end_time: '2030-03-04T11:00:00Z', stripe_checkout_session_id: null }, history: [] })
+    const { unmount } = renderPage(<AdminBookingPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByText(/^18:00–20:00/)).toBeInTheDocument())
+    unmount()
+
+    nav.params = { id: 'r-1' }
+    vi.mocked(adminApi.getRoom).mockResolvedValue({ room, space: tokyo, rules: [], blocks: [{ id: 'k', org_id: 'org-1', room_id: 'r-1', start_time: '2030-03-04T00:00:00Z', end_time: '2030-03-04T01:00:00Z', reason: 'Obras', created_by: null, created_at: '' }], photo_count: 0, bookings: { total: 0, upcoming: 0 } })
+    renderPage(<AdminRoomPage />)
+    await screen.findByRole('heading', { level: 1, name: /Sala A/ })
+    expect(screen.getByText(/09:00 – 10:00/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remover bloqueio 2030-03-04T09:00' })).toBeInTheDocument()
+  })
+
+  it('a new space starts on the organisation\'s timezone and sends it', async () => {
+    vi.mocked(adminApi.getOrganization).mockResolvedValue({ id: 'org-1', name: 'Org', slug: 'org', plan: 'starter', contact_email: null, contact_phone: null, timezone: 'Asia/Tokyo', created_at: '', updated_at: '' })
+    renderPage(<NewSpacePage />)
+    await waitFor(() => expect(screen.getByLabelText('Fuso horário *')).toHaveValue('Asia/Tokyo'))
+  })
+})
+
+// Review on #65, round 6: a pending checkout carries the price but nothing was paid.
+describe('Review on #65 — round 6', () => {
+  it('a pending purchase can be hard-deleted; a paid one cannot', async () => {
+    nav.params = { id: 'p-1' }
+    const base = { id: 'p-1', user_id: 'u-1', package_id: 'k', org_id: 'org-1', hours_total: 10, hours_used: 0, hours_remaining: 10, amount_paid: 100, source: 'purchase' as const, source_booking_id: null, purchased_at: '2030-01-01T00:00:00Z', expires_at: '2031-01-01T00:00:00Z', package: { id: 'k', org_id: 'org-1', name: 'Pack 10', hours: 10, price: 100, validity_days: 365, is_active: true }, admin_note: null }
+    const user = { id: 'u-1', name: 'Ana', email: 'ana@x.pt' }
+    vi.mocked(adminApi.getPurchase).mockResolvedValue({ purchase: { ...base, status: 'pending' }, user, debits: [] })
+    const { unmount } = renderPage(<AdminPurchasePage />)
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByTestId('danger-disabled')).toBeNull()
+    unmount()
+    vi.mocked(adminApi.getPurchase).mockResolvedValue({ purchase: { ...base, status: 'active' }, user, debits: [] })
+    renderPage(<AdminPurchasePage />)
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.getByTestId('danger-disabled')).toHaveTextContent('cancele-a')
   })
 })

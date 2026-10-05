@@ -439,6 +439,9 @@ class TestPayableSessions:
     async def test_deleting_a_pending_purchase_expires_its_session_first(
         self, client, db_session, w, payments
     ):
+        """The real shape of a checkout-created row (review on #65): `pending`
+        with the package's price in `amount_paid` from the start, nothing
+        paid yet — deletable, after its session is closed."""
         pending = UserPackagePurchase(
             user_id=w.member.id,
             package_id=w.package.id,
@@ -446,7 +449,7 @@ class TestPayableSessions:
             hours_total=Decimal("10.00"),
             hours_used=Decimal("0.00"),
             hours_remaining=Decimal("10.00"),
-            amount_paid=Decimal("0.00"),
+            amount_paid=Decimal("100.00"),
             status=PurchaseStatus.pending,
             purchased_at=datetime.now(tz=UTC),
             expires_at=datetime.now(tz=UTC) + timedelta(days=365),
@@ -583,6 +586,43 @@ class TestUser:
         wrong = await self._anonymise(client, w, w.member.id, confirm="nope")
         assert wrong.status_code == 422
 
+    async def test_an_operator_who_acted_cannot_be_hard_deleted_only_anonymised(
+        self, client, db_session, w
+    ):
+        """Review on #65: deleting the actor would null `actor_id` and turn
+        their actions into "Sistema"; anonymisation keeps the row."""
+        second = User(email="second-admin@test.com", name="Second", password_hash="x")
+        db_session.add(second)
+        await db_session.flush()
+        db_session.add(
+            OrganizationMember(org_id=w.org.id, user_id=second.id, role=MemberRole.admin)
+        )
+        await db_session.commit()
+        acted = await client.put(
+            f"{API}/admin/bookings/{w.booking.id}",
+            params=w.params,
+            json={"admin_note": "visto"},
+            headers=_headers(second, "admin"),
+        )
+        assert acted.status_code == 200, acted.text
+        refused = await client.delete(
+            f"{API}/admin/users/{second.id}",
+            params={**w.params, "confirm": "second-admin@test.com"},
+            headers=w.headers,
+        )
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["detail"]["blockers"]["admin_actions"] == 1
+        anonymised = await self._anonymise(client, w, second.id, confirm="second-admin@test.com")
+        assert anonymised.status_code == 200, anonymised.text
+        action = (
+            await db_session.execute(
+                select(AdminAction).where(
+                    AdminAction.actor_user_id == second.id, AdminAction.action == "update"
+                )
+            )
+        ).scalar_one()
+        assert action.actor_user_id == second.id
+
     async def test_anonymising_someone_from_another_org_is_a_404(self, client, db_session, w):
         resp = await self._anonymise(client, w, w.other_admin.id)
         assert resp.status_code == 404
@@ -598,6 +638,7 @@ class TestUser:
         )
         assert referenced.status_code == 409, referenced.text
         assert referenced.json()["detail"]["blockers"] == {
+            "admin_actions": 0,
             "bookings": 2,
             "purchases": 1,
             "support_requests": 1,
@@ -826,6 +867,15 @@ class TestSupportRequest:
         assert (action.entity_type, action.action) == ("support_request", "delete")
         assert action.before["message"].startswith("A sala estava fechada")
         assert action.before["contact_email"] == "member-a@test.com"
+
+    async def test_the_displayed_uppercase_reference_confirms_too(self, client, db_session, w):
+        """Review on #65: the panel shows `#3F9A12BC`; typing it must work."""
+        resp = await client.delete(
+            f"{API}/admin/support/requests/{w.request.id}",
+            params={**w.params, "confirm": w.request.id.hex[:8].upper()},
+            headers=w.headers,
+        )
+        assert resp.status_code == 204, resp.text
 
 
 class TestCrossTenant:

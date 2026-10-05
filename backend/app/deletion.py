@@ -16,8 +16,10 @@ def short_id(entity_id: uuid.UUID) -> str:
 
 
 def require_confirm(confirm: str | None, entity_id: uuid.UUID, *names: str | None) -> None:
-    accepted = {short_id(entity_id), *(n.strip() for n in names if n)}
-    if confirm is None or confirm.strip() not in accepted:
+    # Case does not matter: the panel shows a support reference as `3F9A12BC`
+    # and a short id as `3f9a12bc`, and a person types what they see.
+    accepted = {short_id(entity_id), *(n.strip().lower() for n in names if n)}
+    if confirm is None or confirm.strip().lower() not in accepted:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="confirm must be the entity's name or its short id",
