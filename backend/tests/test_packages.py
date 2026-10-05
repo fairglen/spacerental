@@ -100,6 +100,83 @@ class TestPurchasePackage:
         assert mine.json()["purchases"][0]["status"] == "pending"
 
 
+class TestReturnTo:
+    """K02: a purchase started from the booking page comes back to it."""
+
+    async def _buy(self, client, auth_headers, test_org, test_package, return_to):
+        return await client.post(
+            f"/api/v1/packages/{test_package.id}/purchase",
+            json={"org_id": str(test_org.id), "return_to": return_to},
+            headers=auth_headers,
+        )
+
+    async def test_the_stub_checkout_lands_on_return_to_with_the_outcome(
+        self, client, auth_headers, test_org, test_package, test_member, payments
+    ):
+        path = "/spaces/abc?room=r1&start=2030-01-01T09:00:00Z&end=2030-01-01T11:00:00Z"
+        resp = await self._buy(client, auth_headers, test_org, test_package, path)
+        assert resp.status_code == 201, resp.text
+        session_id = f"cs_stub_{uuid.UUID(resp.json()['purchase']['id']).hex}"
+        session = payments.sessions[session_id]
+        front = settings.FRONTEND_URL
+        assert session["success_url"] == f"{front}{path}&pagamento=sucesso"
+        assert session["cancel_url"] == f"{front}{path}&pagamento=cancelado"
+
+        stub = f"/checkout/stub/{session_id}"
+        backed_out = await client.post(f"{stub}/cancel", follow_redirects=False)
+        assert backed_out.status_code == 303, backed_out.text
+        assert backed_out.headers["location"] == f"{front}{path}&pagamento=cancelado"
+        paid = await client.post(f"{stub}/pay", follow_redirects=False)
+        assert paid.status_code == 303, paid.text
+        assert paid.headers["location"] == f"{front}{path}&pagamento=sucesso"
+        mine = await client.get("/api/v1/packages/me", headers=auth_headers)
+        assert mine.json()["purchases"][0]["status"] == "active"
+
+    async def test_a_path_without_a_query_gets_a_question_mark(
+        self, client, auth_headers, test_org, test_package, test_member, payments
+    ):
+        resp = await self._buy(client, auth_headers, test_org, test_package, "/spaces")
+        assert resp.status_code == 201, resp.text
+        session_id = f"cs_stub_{uuid.UUID(resp.json()['purchase']['id']).hex}"
+        assert (
+            payments.sessions[session_id]["success_url"]
+            == f"{settings.FRONTEND_URL}/spaces?pagamento=sucesso"
+        )
+
+    async def test_without_return_to_the_configured_pages_stay(
+        self, client, auth_headers, test_org, test_package, test_member, payments
+    ):
+        resp = await client.post(
+            f"/api/v1/packages/{test_package.id}/purchase",
+            json={"org_id": str(test_org.id)},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        session_id = f"cs_stub_{uuid.UUID(resp.json()['purchase']['id']).hex}"
+        paid = await client.post(f"/checkout/stub/{session_id}/pay", follow_redirects=False)
+        assert paid.headers["location"] == "http://test/success"
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "spaces/abc",
+            "//evil.example/x",
+            "/\\evil.example/x",
+            "/x?next=http://evil.example",
+            "/spaces#frag",
+            "/spa ces",
+            "/x\n",
+            "/" + "a" * 512,
+        ],
+    )
+    async def test_anything_but_a_relative_path_is_refused_and_creates_no_purchase(
+        self, client, auth_headers, test_org, test_package, test_member, db_session, bad
+    ):
+        resp = await self._buy(client, auth_headers, test_org, test_package, bad)
+        assert resp.status_code == 422, resp.text
+        assert (await db_session.scalar(select(func.count()).select_from(UserPackagePurchase))) == 0
+
+
 class TestMyPackages:
     async def test_list_my_packages(
         self,

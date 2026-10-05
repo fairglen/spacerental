@@ -100,6 +100,36 @@ class TestEmailContentTemplates:
         assert "Responda a este email" in forward.text_body  # W05d: formal register
         assert "Responde a este email" not in forward.text_body + forward.html_body
 
+    def test_every_html_email_opens_with_the_logo_from_the_frontend(self):
+        """B50: an absolute URL on the frontend, 200 px wide, alt FlowSpace; the
+        text part has no header."""
+        start = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)
+        kwargs = {
+            "to": "c@example.com",
+            "space_name": "E",
+            "room_name": "R",
+            "start_time": start,
+            "end_time": start + timedelta(hours=1),
+        }
+        logo = f"{settings.FRONTEND_URL}/brand/logo-email.png"
+        for message in (
+            booking_confirmation_email(**kwargs),
+            booking_cancellation_email(**kwargs),
+            support_request_email(
+                request_id=uuid.uuid4(),
+                category="other",
+                message="m",
+                contact_email="c@example.com",
+                context={},
+                user_id=None,
+                booking_id=None,
+            ),
+        ):
+            assert message.html_body.startswith("<p><img ")
+            assert f'src="{logo}" width="200"' in message.html_body
+            assert f'alt="{BRAND_NAME}"' in message.html_body
+            assert logo not in message.text_body
+
     def test_cancellation_email_is_portuguese(self):
         start = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)
         end = start + timedelta(hours=2)

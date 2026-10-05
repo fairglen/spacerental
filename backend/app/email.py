@@ -28,6 +28,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from functools import cache
 from html import escape
 from zoneinfo import ZoneInfo
@@ -173,10 +174,32 @@ def _format_datetime_pt(start: datetime, end: datetime) -> tuple[str, str]:
     return date_str, time_str
 
 
+def format_datetime_pt(start: datetime, end: datetime) -> tuple[str, str]:
+    """`_format_datetime_pt` for callers outside this module (K03)."""
+    return _format_datetime_pt(start, end)
+
+
+def _format_date_pt(when: datetime) -> str:
+    local = when.astimezone(LISBON_TZ)
+    return f"{local.day} de {_MONTHS_PT[local.month - 1]} de {local.year}"
+
+
 # Every customer email ends the same way; the operator-facing support mail
 # (an internal forward) does not.
 SIGN_OFF_TEXT = f"Até breve,\nA equipa {BRAND_NAME}\n"
 SIGN_OFF_HTML = f"<p>Até breve,<br />A equipa {escape(BRAND_NAME)}</p>"
+
+
+def _branded(html_body: str) -> str:
+    """Every HTML email opens with the logo (B50): an absolute URL on the
+    frontend, where the brand set is served, 200 px wide so mail clients
+    that ignore CSS still size it. The text part carries no header."""
+    logo = f"{settings.FRONTEND_URL.rstrip('/')}/brand/logo-email.png"
+    header = (
+        f'<p><img src="{escape(logo)}" width="200" height="182" alt="{escape(BRAND_NAME)}" '
+        'style="display:block;width:200px;height:auto" /></p>'
+    )
+    return header + html_body
 
 
 def booking_confirmation_email(
@@ -225,7 +248,12 @@ def booking_confirmation_email(
         f'<p><a href="{safe_cancel_url}">Cancelar reserva</a></p>'
         f"{SIGN_OFF_HTML}"
     )
-    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
+
+
+def _format_hours_pt(hours: Decimal) -> str:
+    text = f"{hours:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+    return f"{text} hora" if text == "1" else f"{text} horas"
 
 
 def booking_cancellation_email(
@@ -235,16 +263,34 @@ def booking_cancellation_email(
     room_name: str,
     start_time: datetime,
     end_time: datetime,
+    credit_hours: Decimal | None = None,
+    credit_expires_at: datetime | None = None,
 ) -> EmailMessage:
     date_str, time_str = _format_datetime_pt(start_time, end_time)
     browse_url = f"{settings.FRONTEND_URL}/spaces"
+    bank_url = f"{settings.FRONTEND_URL}/dashboard"
     subject = f"Reserva cancelada — {room_name}"
+    # K01: the paid hours are in the bank, not refunded — say so, with the
+    # expiry, so the customer knows what to do with them.
+    credit_text = credit_html = ""
+    if credit_hours is not None and credit_hours > 0 and credit_expires_at is not None:
+        hours_str = _format_hours_pt(credit_hours)
+        until = _format_date_pt(credit_expires_at)
+        credit_text = (
+            f"As {hours_str} pagas ficaram no seu banco de horas, válidas até {until}. "
+            f"Pode usá-las numa nova reserva, sem novo pagamento:\n{bank_url}\n\n"
+        )
+        credit_html = (
+            f"<p>As {hours_str} pagas ficaram no seu banco de horas, válidas até {until}. "
+            f'<a href="{bank_url}">Pode usá-las numa nova reserva</a>, sem novo pagamento.</p>'
+        )
     text_body = (
         "A sua reserva foi cancelada.\n\n"
         f"Espaço: {space_name}\n"
         f"Sala: {room_name}\n"
         f"Data: {date_str}\n"
         f"Horário: {time_str}\n\n"
+        f"{credit_text}"
         f"Pode fazer uma nova reserva em:\n{browse_url}\n\n"
         f"{SIGN_OFF_TEXT}"
     )
@@ -256,10 +302,11 @@ def booking_cancellation_email(
         f"<li><strong>Data:</strong> {date_str}</li>"
         f"<li><strong>Horário:</strong> {time_str}</li>"
         "</ul>"
+        f"{credit_html}"
         f'<p><a href="{browse_url}">Fazer nova reserva</a></p>'
         f"{SIGN_OFF_HTML}"
     )
-    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 
 
 SUPPORT_CATEGORY_LABELS_PT = {
@@ -300,24 +347,77 @@ def support_request_email(
         ("Versão", context.get("app_version", "—")),
         ("Enviado às", context.get("timestamp", "—")),
     ]
+    # K03: straight to the request in the admin inbox.
+    admin_url = f"{settings.FRONTEND_URL}/admin/support/{request_id}"
     text_body = (
         f"Novo pedido de ajuda #{reference}\n\n{message}\n\n"
         + "\n".join(f"{name}: {value}" for name, value in facts)
-        + "\n\nResponda a este email para falar com o cliente.\n"
+        + f"\n\nAbrir no painel: {admin_url}\n"
+        + "Responda a este email para falar com o cliente.\n"
     )
     html_body = (
         f"<p>Novo pedido de ajuda <strong>#{escape(reference)}</strong></p>"
         f'<p style="white-space:pre-wrap">{escape(message)}</p>'
         "<ul>"
         + "".join(f"<li><strong>{escape(n)}:</strong> {escape(str(v))}</li>" for n, v in facts)
-        + "</ul><p>Responda a este email para falar com o cliente.</p>"
+        + f'</ul><p><a href="{escape(admin_url)}">Abrir no painel</a></p>'
+        "<p>Responda a este email para falar com o cliente.</p>"
     )
     return EmailMessage(
-        to=settings.SUPPORT_EMAIL,
+        to=settings.SUPPORT_INBOX_EMAIL,
         subject=f"[Ajuda] {label} — #{reference}",
-        html_body=html_body,
+        html_body=_branded(html_body),
         text_body=text_body,
         reply_to=contact_email,
+    )
+
+
+def support_request_received_email(
+    *,
+    to: str,
+    reference: str,
+    category: str,
+    message: str,
+    booking_summary: str | None,
+) -> EmailMessage:
+    """The requester's copy of their own help request (K03): what they sent,
+    quoted verbatim but escaped, and where the answer will come from. Reply-To
+    is the support inbox so a reply lands next to the original."""
+    label = SUPPORT_CATEGORY_LABELS_PT.get(str(category), str(category))
+    subject = f"[{BRAND_NAME}] Recebemos o seu pedido #{reference}"
+    booking_text = f"Reserva: {booking_summary}\n" if booking_summary else ""
+    booking_html = (
+        f"<li><strong>Reserva:</strong> {escape(booking_summary)}</li>" if booking_summary else ""
+    )
+    text_body = (
+        f"Obrigado por nos contactar. Recebemos o seu pedido #{reference} e vamos "
+        "responder o mais depressa possível.\n\n"
+        f"Assunto: {label}\n"
+        f"{booking_text}"
+        f"\nA sua mensagem:\n{message}\n\n"
+        f"Respondemos por email para {to}. Se quiser acrescentar algo, "
+        "responda a este email.\n\n"
+        f"{SIGN_OFF_TEXT}"
+    )
+    html_body = (
+        f"<p>Obrigado por nos contactar. Recebemos o seu pedido <strong>#{escape(reference)}"
+        "</strong> e vamos responder o mais depressa possível.</p>"
+        "<ul>"
+        f"<li><strong>Assunto:</strong> {escape(label)}</li>"
+        f"{booking_html}"
+        "</ul>"
+        "<p>A sua mensagem:</p>"
+        f'<blockquote style="white-space:pre-wrap">{escape(message)}</blockquote>'
+        f"<p>Respondemos por email para {escape(to)}. Se quiser acrescentar algo, "
+        "responda a este email.</p>"
+        f"{SIGN_OFF_HTML}"
+    )
+    return EmailMessage(
+        to=to,
+        subject=subject,
+        html_body=_branded(html_body),
+        text_body=text_body,
+        reply_to=settings.SUPPORT_INBOX_EMAIL,
     )
 
 
@@ -340,7 +440,7 @@ def password_reset_email(*, to: str, link: str) -> EmailMessage:
         "<p>Se não fez este pedido, ignore este email: a sua password mantém-se.</p>"
         f"{SIGN_OFF_HTML}"
     )
-    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 
 
 def set_password_email(*, to: str, link: str) -> EmailMessage:
@@ -367,7 +467,7 @@ def set_password_email(*, to: str, link: str) -> EmailMessage:
         f"{escape(settings.FRONTEND_URL)}/forgot-password</a>.</p>"
         f"{SIGN_OFF_HTML}"
     )
-    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 
 
 # ─── Queueing ───────────────────────────────────────────────────────────────

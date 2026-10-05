@@ -158,7 +158,10 @@ class Booking(Base):
         "RecurrenceRule", back_populates="bookings", lazy="noload"
     )
     package_purchase: Mapped["UserPackagePurchase | None"] = relationship(  # noqa: F821
-        "UserPackagePurchase", lazy="noload"
+        "UserPackagePurchase",
+        lazy="noload",
+        # Two paths since K01 (a credit's `source_booking_id` points back here).
+        foreign_keys=[package_purchase_id],
     )
     # H02: where this booking's pack hours are debited from, one row per
     # purchase, present only while the booking holds them (`package_hours`).

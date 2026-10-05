@@ -25,6 +25,7 @@ type CapturedCalendarProps = {
   onSelectSlot: (payload: SelectSlotPayload) => void
   slotPropGetter: (date: Date) => CalendarStyle
   events: { start: Date; end: Date; title: string }[]
+  date: Date
   view: string
   views: string[]
   onView: (view: string) => void
@@ -600,5 +601,61 @@ describe('BookingCalendar booking window (H01)', () => {
       expect(screen.getByRole('button', { name: 'Semana' })).toHaveClass('rbc-active')
       expect(screen.getByRole('button', { name: 'Dia' })).not.toHaveClass('rbc-active')
     })
+  })
+})
+
+// K02: back from buying a pack, the calendar opens on the slot's day and
+// selects it again once availability is known — or says it is gone.
+describe('BookingCalendar reopen after a pack purchase (K02)', () => {
+  // Inside the booking window (the calendar fetches nothing past it): five days out.
+  const base = new Date()
+  base.setUTCDate(base.getUTCDate() + 5)
+  const at = (h: number) => new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), h)).toISOString()
+  const S = at(9), M = at(10), E = at(11), E2 = at(12)
+  const day = [slot(S, M), slot(M, E), slot(E, E2)]
+  function renderReopen(slots: AvailabilitySlot[]) {
+    const onSlotSelect = vi.fn()
+    const onReopenDone = vi.fn()
+    vi.mocked(spacesApi.getAvailability).mockResolvedValue(slots)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BookingCalendar
+          room={room}
+          onSlotSelect={onSlotSelect}
+          initialDate={parseISO(S)}
+          reopen={{ start: parseISO(S), end: parseISO(E) }}
+          onReopenDone={onReopenDone}
+        />
+      </QueryClientProvider>,
+    )
+    return { onSlotSelect, onReopenDone }
+  }
+
+  it("opens on the slot's day and reselects a range that is still free, once", async () => {
+    const { onSlotSelect, onReopenDone } = renderReopen(day)
+    await waitFor(() => expect(onSlotSelect).toHaveBeenCalledWith(parseISO(S), parseISO(E)))
+    const dayKey = format(parseISO(S), 'yyyy-MM-dd')
+    expect(format(calendar!.date, 'yyyy-MM-dd')).toBe(dayKey)
+    expect(vi.mocked(spacesApi.getAvailability).mock.calls.some(([, d]) => d === dayKey)).toBe(true)
+    expect(onReopenDone).toHaveBeenCalledTimes(1)
+    expect(onSlotSelect).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows the "já está reservada" notice instead when the hour was taken meanwhile', async () => {
+    const { onSlotSelect, onReopenDone } = renderReopen([day[0], slot(M, E, false), day[2]])
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/já está reservada/)
+    expect(alert).toHaveTextContent(format(parseISO(M), 'HH:mm'))
+    expect(onSlotSelect).not.toHaveBeenCalled()
+    expect(onReopenDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('a slot that is no longer on offer at all (closed day) gets a notice too', async () => {
+    const { onSlotSelect, onReopenDone } = renderReopen([])
+    expect(await screen.findByRole('alert')).toHaveTextContent(/já não está disponível/)
+    expect(onSlotSelect).not.toHaveBeenCalled()
+    expect(onReopenDone).toHaveBeenCalledTimes(1)
   })
 })

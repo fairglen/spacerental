@@ -133,9 +133,15 @@ become four PRs the loop opens and never merges: `feat/admin-crud-backend`
 (B50). Recorded as the G/K/B series near the end of this file, with the
 owner's decisions and the CRUD matrix the admin parts start from. Part A1
 opened as [PR #65](https://github.com/fairglen/spacerental/pull/65)
-(G01–G04, base `main`) on 2026-09-30, and Part A2 as
+(G01–G04, base `main`) on 2026-09-30, Part A2 as
 [PR #66](https://github.com/fairglen/spacerental/pull/66) (G05–G06, base
-`feat/admin-crud-backend`) on 2026-10-01; the owner reviews and merges.
+`feat/admin-crud-backend`), Part C as
+[PR #67](https://github.com/fairglen/spacerental/pull/67) (K01–K03, base
+`feat/admin-crud-ui`) and Part L as
+[PR #68](https://github.com/fairglen/spacerental/pull/68) (B50, base
+`feat/customer-credit-pack-upsell-notifications`), the last three on
+2026-10-01; each retargets to `main` as the one below it merges. The owner
+reviews and merges; the loop never does.
 Review rounds on #65 (Copilot, 2026-10-01 → fixed 2026-10-01/05, also
 cherry-picked onto #67): stale NextAuth sessions end on the first 401 in the
 signed-in areas and the dashboard layout checks the token server-side
@@ -2333,6 +2339,12 @@ worker/startup commands in README.
 
 ### O02 — Consistent cancellations and refunds
 
+**Note (2026-10-01, K01):** cancellation refunds are superseded by the hour
+credit — a cancelled paid booking's money share goes to the customer's hour
+bank (`source = cancellation_credit`), never back as money. What remains of
+O02 is cash refunds outside cancellation (goodwill, disputes), the durable
+refund ledger and the provider round trip; still deferred.
+
 **Depends on:** O01. **Scope:** payment/refund persistence, gateway operations,
 webhooks, user/admin views and all booking/package/series cancellation paths.
 
@@ -2392,6 +2404,19 @@ failed revoke retained/retried, wrong-user/org code access denial, and local
 stub customer-code → cancel → revoke walkthrough including series changes.
 
 ### O05 — Tenant-scoped audit history
+
+**State: DONE for the minimal mandatory scope (G01, 2026-10-01, PR #65; the
+admin browsing page in PR #66).** `admin_actions` (migration 0013) records
+actor, organisation, action, entity, before/after snapshot, reason and
+request id in the same transaction as every admin mutation route (the
+scenario table in `tests/test_audit.py` enforces one row per route; a
+rollback leaves none); system actors are distinguished; passwords, tokens
+and access codes are never snapshotted; `GET /admin/audit` and the seven
+`/history` routes are admin-only, tenant-scoped, newest-first, paged;
+`/admin/audit` browses it. What this entry still names beyond that —
+series changes, refund operations, role changes as first-class audited
+transitions, and the O04 dependency — stays open and is not blocked on
+anything here.
 
 **Depends on:** O04. **Scope:** `AuditLog` model/migration, transition call sites,
 admin endpoint/API wrapper and `frontend/app/admin/audit/page.tsx`.
@@ -3345,7 +3370,12 @@ is W01 below; the deploy workflow publishes it on the merge to main.
 ### B49 — The flowspace-site smoke suite is stale since the real Apps Script URL landed
 
 **Priority: P2. State: IN PROGRESS** on `feat/flowspace-brand-copy` (found as
-the W-series baseline, 2026-09-22). **Evidence:** `0fc2c10` — the rewrite matches
+the W-series baseline, 2026-09-22). **Evidence (B50, 2026-10-01, Part L):** the
+static site's header and footer carry the new lockup, the brand favicons
+replace `assets/img/favicon.svg`, `og:image`/`theme-color` are set, the
+deploy allowlist (`assets/**`) ships `assets/img/brand/`, and the standalone
+smoke suite (35) asserts the header logo, its size and colour, the footer
+lockup and every `<link rel="icon">`. **Evidence:** `0fc2c10` — the rewrite matches
 `const APPS_SCRIPT_URL = '…';` whatever it holds; the placeholder test serves the
 placeholder explicitly; a new test pins that a script without the constant still
 throws. 22 passed on the committed file (3/21 before). `flowspace-site/tests/smoke.spec.ts`
@@ -4893,7 +4923,7 @@ with the placeholder, old JWT rejected; a non-owner cannot save settings.
 
 ### K01 — Cancellation credit: paid hours go to the hour bank
 
-**Priority: P1. State: QUEUED (Part C).** Today cancelling a money-paid
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** Today cancelling a money-paid
 booking just loses the money. **Scope:** `UserPackagePurchase` gains
 `source` (`purchase | complimentary | cancellation_credit`; backfill:
 `amount_paid` 0 and no Stripe session → complimentary, else purchase) and
@@ -4933,9 +4963,52 @@ audited reason; reinstate whole → credit cancelled; reinstate after spend →
 tests for the dialog copy and bank labels. Playwright: pay → cancel → the
 bank shows the hours → rebook with them, no checkout.
 
+**Delivered (2026-10-01):** migration `0016_cancellation_credit` (enum
+`purchase_source`, backfill, `source_booking_id` UNIQUE FK SET NULL,
+`package_id` nullable); `app/cancellation_credit.py` (`create_credit`,
+`reverse_credit`, `CreditSpentError`) wired into `booking_cancellation.
+apply_cancellation` (customer and series cancels) and the admin status
+change; `BookingStatusUpdate.credit_hours` (default true, reason required
+when false); `GET /admin/bookings/{id}.cancellation_credit`; the email
+line; `CANCELLATION_CREDIT_VALIDITY_DAYS` in config/Compose/`.env.example`
+mirrored as `NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS`
+(`lib/cancellationCredit.ts`); customer dialog line + "Precisa de outra
+solução? Fale connosco"; bank card and `/dashboard/packages` label
+"Crédito — cancelamento de <d MMM>"; admin cancel dialog checkbox
+"Creditar as horas ao cliente (<N>h)", success toast with the hours, booking
+detail "Crédito criado: <N>h" linking the purchase, purchases list/detail
+"Origem". Evidence: `backend/tests/test_cancellation_credit.py` (16, real
+PG, pinned clock) covering every validation bullet above; `tests/
+test_mixed_payment.py`'s lapsed-hold test cancels with `credit_hours:
+false` so its 8h hold still lapses (the credit would otherwise cover it —
+by design); migration round trip 0016 up → check → base → up → check on a
+throwaway PG 16; Vitest `DashboardPage` +7, `AdminEntityPages` +2 (+1
+reworked), `api.test` +1, `adminBookingErrors` +1; Playwright
+`tests/e2e/cancellation-credit.spec.ts` (pay → cancel → bank → rebook, no
+checkout).
+
+**DECISION (loop, K01):** `package_id` is nullable — a credit belongs to no
+pack — rather than a hidden system package "Crédito". Alternatives: a hidden
+inactive package per org (keeps NOT NULL, but every package list/count and
+the hour-bank maths would have to special-case it). Reverse: add the system
+package in a migration, backfill credit rows to it, restore NOT NULL.
+**DECISION (loop, K01):** a booking cancelled → reinstated → cancelled again
+reactivates its one credit row (fresh expiry, unspent by construction)
+instead of refusing a second credit, so the customer is never short the
+hours they paid for; the UNIQUE `source_booking_id` still holds. Reverse:
+return None in `create_credit` when a row exists in any state.
+**DECISION (loop, K01):** the "Precisa de outra solução? Fale connosco"
+line keeps the `payment` help category and stays muted below the buttons,
+exactly where the old "Questões sobre o valor pago?" was.
+**DECISION (loop, K01):** `is_creditable` treats an operator-confirmed
+booking as paid (status `confirmed`/`completed`, method hourly/mixed/manual,
+amount > 0): the operator asserted the payment when confirming. The
+alternative — only Stripe-paid rows — would leave cash/MB WAY customers
+without their hours.
+
 ### K02 — Offer a new pack when the bank cannot cover the booking
 
-**Priority: P1. State: QUEUED (Part C).** **Scope:** backend `POST
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** **Scope:** backend `POST
 /packages/{id}/purchase` accepts optional `return_to` (a relative path:
 starts with "/", no scheme/host/"//", ≤ 512 chars; else 422); when present
 the checkout success URL is `<FRONTEND_URL><return_to>` + `pagamento=
@@ -4960,9 +5033,47 @@ pack preselected → confirm with no second checkout; and the taken-meanwhile
 case (booked via the API as another user during the detour → notice, no
 modal).
 
+**Delivered (2026-10-01):** `PackagePurchaseBody.return_to` with
+`validate_return_to` (422 for anything but a relative path);
+`PaymentGateway.create_checkout_session(success_url=, cancel_url=)` on both
+implementations, the stub page redirecting to the session's own URLs;
+`packagesApi.purchase(…, returnTo)`; `lib/bookingDeepLink.ts`
+(`parseSlotParams`, `slotReturnPath`); `components/booking/PaymentNotice.tsx`
+(the dashboard's notice, now shared, with a `booking` context);
+`BookingCalendar` `initialDate`/`reopen`/`onReopenDone` (free → modal, taken
+→ the existing "já está reservada" notice, gone → "já não está
+disponível"); `SpaceRoomsView` reads `?start=&end=&pagamento=` once and
+strips them (keeping `?room=`); `paymentOptions()` in `lib/paymentSplit.ts`
+gives the order; `BookingModal` lists "Comprar um pack" with the inline
+packs (name, hours, price, "válido N dias"), the "O horário não fica
+reservado…" line, "Comprar" → purchase with `return_to` → Checkout, and
+disables "Confirmar Reserva" while buying. Evidence: backend
+`tests/test_packages.py::TestReturnTo` (3 + 8 rejections); Vitest
+`BookingModal` +5 (+6 reworked for the new empty-bank options),
+`BookingCalendar` +3, `SpaceRoomDeepLink` +6, `bookingDeepLink` +14,
+`PaymentNotice` +3, `api.test` +1; Playwright `tests/e2e/pack-upsell.spec.ts`
+(empty bank → buy → back on the slot with the pack preselected → confirmed,
+no second checkout; taken meanwhile → notice, no modal, the pack in the
+bank all the same).
+
+**DECISION (loop, K02):** with an empty bank the hourly option stays
+preselected even when "Comprar um pack" is listed first (the order changes,
+the default — confirm → Checkout — keeps today's behaviour). Alternative:
+preselect the pack for a first-time customer. Reverse: default `choice` to
+`'buy'` when `options[0] === 'buy'`.
+**DECISION (loop, K02):** "bought a pack before" = any row in `/packages/me`
+(active, spent, expired, cancelled, or a cancellation credit). Alternative:
+only `source = purchase` rows.
+**DECISION (loop, K02):** the packs on sale are fetched only once the bank
+is known to fall short (no request for a customer whose hours cover the
+block).
+**DECISION (loop, K02):** `?start=&end=` must be whole hours, in order, at
+most a day apart; anything else is ignored like a bad `?room=` is (no
+error on a page that works without it).
+
 ### K03 — Support request notifications, both directions
 
-**Priority: P1. State: QUEUED (Part C).** **Scope:** config
+**Priority: P1. State: DONE (Part C, 2026-10-01, PR #67).** **Scope:** config
 `SUPPORT_INBOX_EMAIL` default `geral+support@flowspace.pt` (the
 notification destination; `SUPPORT_EMAIL` was only that target, so it is
 renamed — Compose, `.env.example`, README); the customer-facing contact
@@ -4980,9 +5091,29 @@ right recipients/subjects/Reply-To; `<script>` in the message arrives
 escaped in both; the honeypot sends nothing; component test for the copy;
 Playwright: submit → the hook shows both.
 
+**Delivered (2026-10-01):** `SUPPORT_INBOX_EMAIL` (config, Compose,
+`.env.example`, README, API_SPEC) replaces `SUPPORT_EMAIL`; `email.
+support_request_received_email` (subject "[FlowSpace] Recebemos o seu
+pedido #<ref>", category, booking date/hours when linked, the message
+escaped, "Respondemos por email para <address>", Reply-To the inbox); the
+inbox template gains "Abrir no painel" → `/admin/support/<id>`; both sent
+through `enqueue_email` after the row exists; the dialog's success line
+"Enviámos uma cópia para <email>; respondemos por email para o mesmo
+endereço."; `GET /__test__/emails` also lists `reply_to`. Evidence:
+`tests/test_support.py` (two emails with the right recipients/subjects/
+Reply-To, the escaped `<script>`-style payload in both, the booking line,
+the honeypot still sends nothing, a mail failure still keeps the request);
+`test_password_reset.py` hook shape; Vitest `HelpDialog` +1 (+1 reworked);
+Playwright `help.spec.ts` reads both emails from the stub mailbox.
+
+**DECISION (loop, K03):** the requester copy names a linked booking by its
+Lisbon date and hours only (no room name, which would need a second query
+on a public, throttled endpoint). Alternative: load the room for the
+summary.
+
 ### B50 — New logo on both sites (brand set `flowspace-site/assets/img/brand/`)
 
-**Priority: P2. State: QUEUED (Part L).** The cleaned brand set (16 files:
+**Priority: P2. State: DONE (Part L, 2026-10-01, PR #68).** The cleaned brand set (16 files:
 `logo-full.svg`, `logo-mark.svg`, `wordmark.svg`, `spiral-mark.svg`,
 `favicon.svg`, favicon-16/32/48/192/512.png, `apple-touch-icon.png`,
 `logo-email.png`, `logo-email-white-bg.png`, `logo-full-white.png`,
@@ -5010,6 +5141,50 @@ Navbar/Footer (img with alt "FlowSpace", link to "/"), the checksum parity
 test, static smoke asserts the header logo and the favicon links;
 screenshots of both headers (light) and both footers (dark) at 1280 px and
 390 px, and the favicon in a tab.
+
+**Delivered (2026-10-01):** the 16 files committed plus `logo-horizontal.svg`
+(built from `logo-mark.svg` + `wordmark.svg`: wordmark cap height = half
+the mark height, baseline on the mark's floor, gap 0.35× the mark height,
+viewBox 3058×749, `id="lockup"`, `currentColor`); `frontend/public/brand/`
+= a byte-for-byte copy guarded by `tests/lib/brandParity.test.ts`;
+`components/layout/BrandLogo.tsx` (`<svg><use href="/brand/
+logo-horizontal.svg#lockup">`, explicit width/height from the viewBox,
+`role="img"` `aria-label="FlowSpace"`) in the Navbar (28 px, `text-primary`,
+link to "/"), the Footer (24 px, white), the admin sidebar (24 px) and the
+four auth pages (32 px); Building2 + text wordmark removed everywhere
+(`brand.name` stays for `<title>`, aria-labels and the copyright line);
+`app/layout.tsx` icons (svg/32/16/apple), `openGraph.images` =
+`/brand/og-image.png` 1200×630, `manifest` → `public/manifest.webmanifest`
+(192/512, theme #3D7A5E), `viewport.themeColor`, `metadataBase` from
+`NEXTAUTH_URL`; every HTML email opens with `<FRONTEND_URL>/brand/
+logo-email.png` (200 px, alt FlowSpace; `_branded()` in `app/email.py`).
+Static site: the lockup in the header (`.wordmark`, 114×28, primary) and
+footer (98×24, white) of `index.html`, the header of `privacidade.html`;
+`assets/img/favicon.svg` removed in favour of `assets/img/brand/`
+(svg/32/16 `<link rel="icon">`s, apple-touch-icon, `theme-color`,
+`og:*` with the absolute `https://flowspace.pt/assets/img/brand/
+og-image.png`). No layout shift: explicit width/height everywhere, the
+header stays 64 px; at 390 px the lockup is 114 px (< 30 % of the header),
+so the mark-only fallback is not needed. Evidence: Vitest `brandParity`
+2, `Navbar` +1, `Footer` reworked (631 total); backend `test_email` +1
+(header on every template) and `test_support` escaping test adjusted;
+static smoke +2 (35 total); screenshots in `.pr-evidence/l/` (both headers
+at 1280/390, both footers at 1280/390, sign-in, admin sidebar, favicon
+sizes).
+
+**DECISION (loop, B50):** the lockup is referenced through `<use>` rather
+than an `<img>`: an `<img>` cannot take the CSS colour, and inlining 42 KB
+of path data twice per page or shipping a white duplicate were the
+alternatives. `<use>` with a same-origin file works in every current
+browser. Reverse: swap `BrandLogo` for `<img src="/brand/logo-horizontal.
+svg">` plus a white copy for the footer.
+**DECISION (loop, B50):** the wordmark in the lockup is scaled so its cap
+height is half the mark's height (ratio 4.08:1), which reads at 28 px;
+alternative: the owner's `logo-full.svg` proportions (wordmark narrower
+than the mark). Reverse: rebuild with `s = 0.45 * mark_height / cap`.
+**DECISION (loop, B50):** `metadataBase` = `NEXTAUTH_URL` when set (every
+Compose/deploy sets it), else Next's own fallback; Next 14 ignores it in
+`next dev` anyway.
 
 ## Deferred scope
 

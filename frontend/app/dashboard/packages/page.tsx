@@ -15,6 +15,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
 import { formatHours } from '@/lib/utils'
+import { purchaseLabel } from '@/lib/cancellationCredit'
 
 export default function MyPackagesPage() {
   const { data: session } = useSession()
@@ -92,7 +93,7 @@ export default function MyPackagesPage() {
                   <Card key={p.id}>
                     <CardContent className="p-5">
                       <div className="flex items-center justify-between mb-3">
-                        <p className="font-semibold text-foreground">{p.package?.name ?? 'Pacote'}</p>
+                        <p className="font-semibold text-foreground">{purchaseLabel(p)}</p>
                         <span className="text-sm text-muted-foreground">Expira: {format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}</span>
                       </div>
                       <div className="w-full bg-border rounded-full h-2 mb-2">

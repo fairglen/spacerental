@@ -86,7 +86,7 @@ describe('GrantHoursDialog', () => {
 describe('ExtendValidityDialog', () => {
   const purchase: AdminPurchase = {
     id: 'p1', user_id: 'u1', package_id: 'k10', org_id: 'o', hours_total: 10, hours_used: 3, hours_remaining: 7, amount_paid: 100,
-    status: 'active', purchased_at: '2026-01-01T00:00:00Z', expires_at: '2030-03-01T00:00:00Z', admin_note: null, package: packages[0],
+    status: 'active', source: 'purchase' as const, source_booking_id: null, purchased_at: '2026-01-01T00:00:00Z', expires_at: '2030-03-01T00:00:00Z', admin_note: null, package: packages[0],
   }
 
   it('sends the chosen day (end of day) and the reason', async () => {

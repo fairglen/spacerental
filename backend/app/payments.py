@@ -173,11 +173,15 @@ class PaymentGateway(ABC):
         kind: CheckoutKind,
         reference_id: uuid.UUID,
         org_id: uuid.UUID,
+        success_url: str | None = None,
+        cancel_url: str | None = None,
     ) -> CheckoutSession:
         """Create a one-off payment session for `amount`.
 
         `org_id` rides along in the metadata so the webhook can scope its
-        lookup to the paying tenant (CLAUDE.md §4).
+        lookup to the paying tenant (CLAUDE.md §4). `success_url` and
+        `cancel_url` override the configured landing pages for this one
+        session (K02: back to the booking page, not the dashboard).
         """
 
     @abstractmethod
@@ -228,13 +232,15 @@ class StripeGateway(PaymentGateway):
         kind: CheckoutKind,
         reference_id: uuid.UUID,
         org_id: uuid.UUID,
+        success_url: str | None = None,
+        cancel_url: str | None = None,
     ) -> CheckoutSession:
         try:
             session = await self._client.v1.checkout.sessions.create_async(
                 params={
                     "mode": "payment",
-                    "success_url": self._success_url,
-                    "cancel_url": self._cancel_url,
+                    "success_url": success_url or self._success_url,
+                    "cancel_url": cancel_url or self._cancel_url,
                     "client_reference_id": str(reference_id),
                     "metadata": {
                         "kind": kind.value,
@@ -344,6 +350,8 @@ class StubPaymentGateway(PaymentGateway):
         kind: CheckoutKind,
         reference_id: uuid.UUID,
         org_id: uuid.UUID,
+        success_url: str | None = None,
+        cancel_url: str | None = None,
     ) -> CheckoutSession:
         session_id = f"cs_stub_{reference_id.hex}"
         self.sessions[session_id] = {
@@ -353,6 +361,10 @@ class StubPaymentGateway(PaymentGateway):
             "kind": kind.value,
             "reference_id": str(reference_id),
             "org_id": str(org_id),
+            # Where the stub page sends the payer afterwards (K02); the
+            # gateway's defaults when the session asked for nothing.
+            "success_url": success_url or self._success_url,
+            "cancel_url": cancel_url or self._cancel_url,
         }
         return CheckoutSession(
             id=session_id,

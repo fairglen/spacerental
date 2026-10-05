@@ -45,7 +45,7 @@ const activePurchase: UserPackagePurchase = {
   hours_used: 3,
   hours_remaining: 7, amount_paid: 100,
   status: 'active',
-  purchased_at: new Date().toISOString(),
+  source: 'purchase' as const, source_booking_id: null, purchased_at: new Date().toISOString(),
   expires_at: new Date('2027-01-01').toISOString(),
   package: pack10,
 }

@@ -104,7 +104,8 @@ GitHub Pages on every push to `main` that touches `flowspace-site/**` (or the
 workflow itself), and on manual `workflow_dispatch`.
 
 **Only an explicit allowlist of files is published.** The workflow stages
-`index.html`, `privacidade.html`, `assets/**` and a short list of optional
+`index.html`, `privacidade.html`, `assets/**` (which carries the brand set,
+`assets/img/brand/`, B50) and a short list of optional
 root files (`favicon.*`, `robots.txt`, `sitemap.xml`, `CNAME`, `.nojekyll`, …)
 into a clean directory and uploads *that*. It previously uploaded
 `flowspace-site/` wholesale, which also served `README.md`, `apps-script/Code.gs`

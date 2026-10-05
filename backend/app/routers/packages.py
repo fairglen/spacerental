@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from app import clock, package_hours
 from app.auth import get_current_user
 from app.booking_validity import expire_user_holds
+from app.config import settings
 from app.database import get_db
 from app.models.organization import OrganizationMember
 from app.models.package import Package, PurchaseStatus, UserPackagePurchase
@@ -106,6 +107,14 @@ async def purchase_package(
     db.add(purchase)
     await db.flush()
 
+    # K02: back to where the customer came from (the booking page with its
+    # slot), with the same `pagamento=` outcome the dashboard reads.
+    success_url = cancel_url = None
+    if body.return_to is not None:
+        base = f"{settings.FRONTEND_URL.rstrip('/')}{body.return_to}"
+        joiner = "&" if "?" in body.return_to else "?"
+        success_url = f"{base}{joiner}pagamento=sucesso"
+        cancel_url = f"{base}{joiner}pagamento=cancelado"
     try:
         session = await gateway.create_checkout_session(
             amount=package.price,
@@ -113,6 +122,8 @@ async def purchase_package(
             kind=CheckoutKind.package_purchase,
             reference_id=purchase.id,
             org_id=purchase.org_id,
+            success_url=success_url,
+            cancel_url=cancel_url,
         )
     except PaymentProviderError as exc:
         # get_db rolls back on the raised exception — no dangling purchase.

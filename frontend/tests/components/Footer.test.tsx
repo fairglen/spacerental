@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { Footer } from '@/components/layout/Footer'
 import { t } from '@/lib/i18n'
 import { CONTACT_EMAIL } from '@/lib/contact'
@@ -17,9 +17,14 @@ describe('Footer navigation', () => {
     }
   })
 
-  it('names the brand from the catalog in the wordmark and the copyright line (W02)', () => {
+  it('names the brand from the catalog in the copyright line and shows the lockup in white (W02, B50)', () => {
     render(<Footer />)
-    expect(screen.getByText(t('brand.name'))).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: t('brand.name') })
+    expect(link).toHaveAttribute('href', '/')
+    expect(link.className).toContain('text-white')
+    const logo = within(link).getByRole('img', { name: 'FlowSpace' })
+    expect(logo).toHaveAttribute('height', '24')
+    expect(logo.querySelector('use')).toHaveAttribute('href', '/brand/logo-horizontal.svg#lockup')
     expect(
       screen.getByText(t('footer.copyright', { year: new Date().getFullYear(), brand: t('brand.name') }))
     ).toBeInTheDocument()
