@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import AwareDatetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload
 
 from app.auth import require_admin
 from app.database import get_db
@@ -22,7 +22,7 @@ from app.models.booking import Booking
 from app.models.room_block import RoomBlock
 from app.models.space import Room
 from app.models.user import User
-from app.schemas.booking import AdminBookingOut
+from app.schemas.booking import AdminBookingListOut, list_row
 from app.schemas.room_block import RoomBlockOut
 
 from ._common import _WITH_DEBITS
@@ -59,7 +59,7 @@ async def admin_calendar(
 
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room), selectinload(Booking.user), _WITH_DEBITS)
+        .options(joinedload(Booking.room), joinedload(Booking.user), _WITH_DEBITS)
         .where(
             Booking.org_id == org_id,
             Booking.room_id.in_(room_ids),
@@ -88,6 +88,6 @@ async def admin_calendar(
         .all()
     )
     return {
-        "bookings": [AdminBookingOut.model_validate(b) for b in bookings],
+        "bookings": [list_row(AdminBookingListOut.model_validate(b)) for b in bookings],
         "blocks": [RoomBlockOut.model_validate(b) for b in blocks],
     }

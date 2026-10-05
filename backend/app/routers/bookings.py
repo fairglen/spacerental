@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import clock, email, package_hours
 from app.auth import get_current_user
@@ -36,7 +36,13 @@ from app.payments import (
     PaymentProviderError,
     get_payment_gateway,
 )
-from app.schemas.booking import BookingCheckoutOut, BookingCreate, BookingOut
+from app.schemas.booking import (
+    BookingCheckoutOut,
+    BookingCreate,
+    BookingListOut,
+    BookingOut,
+    list_row,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,15 +76,19 @@ async def my_bookings(
     # blocks anything (C03), and a lapsed mixed hold's pack hours are back on
     # the pack (C13).
     await expire_user_holds(db, user.id, clock.utcnow())
+    # P2.3: the room comes with the rows in one JOIN (a many-to-one, four
+    # columns in the summary) instead of a second query.
     result = await db.execute(
         select(Booking)
-        .options(selectinload(Booking.room))
+        .options(joinedload(Booking.room))
         .where(Booking.user_id == user.id)
         .order_by(Booking.start_time.desc())
     )
     bookings = result.scalars().all()
     attach_access_codes(lock_gateway, bookings)
-    return {"bookings": [BookingOut.model_validate(b) for b in bookings]}
+    # P2.2: list rows omit their null optionals (notes, hold deadline, series,
+    # code, user); the client types allow absence, and it is ~100 bytes a row.
+    return {"bookings": [list_row(BookingListOut.model_validate(b)) for b in bookings]}
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

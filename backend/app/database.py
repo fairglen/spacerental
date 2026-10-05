@@ -3,11 +3,18 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
+# Pool arithmetic (P2.3): every uvicorn worker owns a pool of this size, so a
+# deployment may hold up to WEB_CONCURRENCY x (pool_size + max_overflow)
+# connections — 30 per worker here — and PostgreSQL's max_connections (100 by
+# default) must leave room for that, the sweeper's session and psql.
+# pre_ping: a connection the server closed (restart, idle timeout, a failover)
+# is noticed and replaced before the request uses it, instead of failing it.
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
     pool_size=10,
     max_overflow=20,
+    pool_pre_ping=True,
 )
 
 async_session_factory = async_sessionmaker(

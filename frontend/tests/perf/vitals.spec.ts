@@ -47,7 +47,7 @@ type PageSpec = {
   /** Something the page does after load whose requests count too (a click that fans out). */
   after?: (page: Page) => Promise<void>
 }
-type Budget = Partial<Record<'lcp_ms' | 'js_kb' | 'requests' | 'api_calls', number>>
+type Budget = Partial<Record<'lcp_ms' | 'js_kb' | 'js_before_load_kb' | 'requests' | 'api_calls', number>>
 
 const kb = (bytes: number) => Math.round(bytes / 102.4) / 10
 const median = (values: number[]) => {
@@ -73,6 +73,14 @@ async function measureOnce(browser: Browser, spec: PageSpec, url: string): Promi
   const context = await browser.newContext({
     viewport: spec.viewport ?? DESKTOP,
     storageState: spec.auth ? ADMIN_STORAGE_STATE : undefined,
+    // Chromium stops reporting LCP at the first compositor-driven scroll, and
+    // the `?room=` pages scroll themselves (smoothly) to the calendar on
+    // mount. On a slow runner that scroll lands before the first paint's LCP
+    // entry is presented and the page then has no LCP at all (CI: space-day
+    // null in every run, space-week == FCP). Under reduced motion the page
+    // scrolls instantly — a programmatic scroll, which LCP survives — so the
+    // metric is observable everywhere; nothing on the wire changes.
+    reducedMotion: 'reduce',
   })
   const page = await context.newPage()
   const cdp = await context.newCDPSession(page)
@@ -227,6 +235,7 @@ for (const spec of PAGES) {
     const budget = budgetFor(spec.slug)
     if (budget.lcp_ms !== undefined) expect.soft(m.lcp_ms ?? Infinity, `${spec.slug} LCP`).toBeLessThanOrEqual(budget.lcp_ms)
     if (budget.js_kb !== undefined) expect.soft(m.js_kb, `${spec.slug} JS on the wire`).toBeLessThanOrEqual(budget.js_kb)
+    if (budget.js_before_load_kb !== undefined) expect.soft(m.js_before_load_kb, `${spec.slug} JS before load`).toBeLessThanOrEqual(budget.js_before_load_kb)
     if (budget.requests !== undefined) expect.soft(m.requests, `${spec.slug} requests`).toBeLessThanOrEqual(budget.requests)
     if (budget.api_calls !== undefined) expect.soft(m.api_calls.length, `${spec.slug} API calls`).toBeLessThanOrEqual(budget.api_calls)
   })

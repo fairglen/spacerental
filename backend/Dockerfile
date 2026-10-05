@@ -29,4 +29,8 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
 # ENTRYPOINT (not CMD) so `alembic upgrade head` runs even when docker-compose
 # overrides the command with the --reload dev server.
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# P2.3: the production server. WEB_CONCURRENCY workers (default 1 — see
+# .env.example: the in-process rate limiter and the hold sweeper are per
+# process, so more workers multiply the limits), proxy headers honoured
+# (the client address behind the TLS terminator), keep-alive 15 s.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1} --proxy-headers --timeout-keep-alive 15"]

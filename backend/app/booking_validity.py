@@ -23,7 +23,7 @@ from datetime import date as date_
 from itertools import pairwise
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, exists, or_, select, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -165,15 +165,24 @@ async def _expire_lapsed_holds(db: AsyncSession, now: datetime, *scope) -> int:
     then matches nothing — so each lapsed hold credits its hours once. Booking
     locks are taken before the purchase lock, the order `package_hours` asks of
     every status transition.
+
+    A read first (P2.2): the common case is nothing to do, and a SELECT that
+    finds nothing costs no row lock and no WAL — the reads that call this
+    (`GET /bookings/me`, `/packages/me`) issue no write unless a hold really
+    lapsed since the sweeper (app/holds.py) last ran.
     """
+    lapsed_filter = [
+        Booking.status == BookingStatus.pending,
+        Booking.hold_expires_at.is_not(None),
+        Booking.hold_expires_at <= now,
+        *scope,
+    ]
+    any_lapsed = await db.scalar(select(exists().where(*lapsed_filter)))
+    if not any_lapsed:
+        return 0
     result = await db.execute(
         update(Booking)
-        .where(
-            Booking.status == BookingStatus.pending,
-            Booking.hold_expires_at.is_not(None),
-            Booking.hold_expires_at <= now,
-            *scope,
-        )
+        .where(*lapsed_filter)
         .values(status=BookingStatus.expired)
         .returning(Booking.id, Booking.package_hours_used)
         .execution_options(synchronize_session=False)
