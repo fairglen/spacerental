@@ -2579,7 +2579,7 @@ the workflow is green on the PR; the README documents the owner flow.
 **Evidence (S1.1–S1.6, 2026-10-05):** `python3 tests/test_static_site.py` 24
 passed; node tests 44; smoke suite 41/41 (+6); backend
 `test_openapi_public.py` 4 + OpenAPI snapshot 2 + cache headers 7 passed;
-ruff clean. Lighthouse (local `python3 -m http.server`): desktop SEO 1.00 /
+ruff clean; the authz matrix classifies `GET /openapi-public.json` as public (CI round 1 on #75). Lighthouse (local `python3 -m http.server`): desktop SEO 1.00 /
 Best Practices 1.00 / Accessibility 0.96 → 0.97 (`landmark-one-main` fixed
 by `<main>`; `color-contrast` on muted text remains — design unchanged,
 owner's call); mobile 1.00 / 1.00 / 0.97. linkinator 15 links, none broken.
