@@ -27,8 +27,11 @@ test('calendar: cancel from the sheet, book manually, block an hour, and the cus
   }
   // With resources there is one column per room, in the header's order; the
   // room list the API returns is not ordered, so the header is the map.
-  const headerTexts = await page.locator('.rbc-time-header-content').allTextContents()
-  const columnIndex = headerTexts.findIndex((text) => text.includes(room.name))
+  // react-big-calendar renders one resource header (`.rbc-row-resource
+  // .rbc-header`) per room, in column order.
+  const headerTexts = await page.locator('.rbc-time-header-content .rbc-row-resource .rbc-header').allTextContents()
+  const columnIndex = headerTexts.findIndex((text) => text.trim() === room.name)
+  expect(headerTexts.length, 'one resource header per room').toBeGreaterThanOrEqual(SEEDED_ROOMS.length + 1)
   expect(columnIndex).toBeGreaterThanOrEqual(0)
   const column = page.locator('.rbc-time-content .rbc-day-slot').nth(columnIndex)
 

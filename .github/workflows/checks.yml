@@ -55,7 +55,8 @@ jobs:
           matches() { printf '%s\n' "$files" | grep -Eq "$1" && echo true || echo false; }
           # A workflow or Compose change can break any area: run them all.
           infra='^(\.github/|docker-compose|\.env\.example$)'
-          backend="$(matches "^(backend/|ruff\.toml$)|$infra")"
+          # .pre-commit-config.yaml pins the same Ruff as lint.yml: a hook bump must run it.
+          backend="$(matches "^(backend/|ruff\.toml$|\.pre-commit-config\.yaml$)|$infra")"
           frontend="$(matches "^frontend/|$infra")"
           docs="$(matches '^(AGENTS|CLAUDE)\.md$|^\.github/')"
           e2e=false; { [ "$backend" = true ] || [ "$frontend" = true ]; } && e2e=true
