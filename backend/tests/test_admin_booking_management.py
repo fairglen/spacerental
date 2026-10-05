@@ -8,6 +8,7 @@ by an operator action: a changed duration is reported, not charged.
 import uuid
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
@@ -170,8 +171,14 @@ class TestReschedule:
         # Exactly one email, the confirmation, saying the booking changed.
         assert len(emails.sent) == 1
         assert "alterada" in emails.sent[0].text_body
-        # Rendered in Lisbon time: 14:00 UTC is 15:00 there in summer.
-        assert "15:00 às 17:00" in emails.sent[0].text_body
+        # Rendered on Lisbon's clock, whichever side of the clock change the
+        # next-but-two Monday falls (it used to say 15:00 and broke in October).
+        lisbon = ZoneInfo("Europe/Lisbon")
+        wall = (
+            f"{new_start.astimezone(lisbon):%H:%M} às "
+            f"{(new_start + timedelta(hours=2)).astimezone(lisbon):%H:%M}"
+        )
+        assert wall in emails.sent[0].text_body
 
     async def test_a_changed_duration_moves_no_money_and_reports_both_hour_counts(
         self,
