@@ -109,6 +109,8 @@ ROUTES: dict[tuple[str, str], str] = {
     ("PUT", f"{API}/admin/spaces/{{space_id}}/images/order"): OPERATOR,
     ("DELETE", f"{API}/admin/spaces/{{space_id}}/images/{{image_id}}"): OPERATOR,
     ("GET", f"{API}/admin/bookings"): OPERATOR,
+    # P1.4: the operator calendar's one read; cross-org cases in test_admin_calendar.py.
+    ("GET", f"{API}/admin/calendar"): OPERATOR,
     # A02 blocked time; cross-org cases in test_room_blocks.py.
     ("GET", f"{API}/admin/rooms/{{room_id}}/blocks"): OPERATOR,
     ("POST", f"{API}/admin/rooms/{{room_id}}/blocks"): OPERATOR,
