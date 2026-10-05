@@ -1285,6 +1285,54 @@ independent of which URL is committed. Test-only; no production file changes.
 new needle test), and the needle still throws on a
 file without the constant.
 
+### B51 — Brand mark as the hero illustration (desktop) and watermark (mobile); wordmark header — both sites
+
+**Priority: P2. State: IN PROGRESS** on `feat/hero-logo` (from `main`
+`20ca568`; no open chain — #74–#76 merged on 2026-10-05). Owner assignment
+2026-10-05: one visual change on BOTH the static site (F01, `flowspace-site/`)
+and the app landing (`frontend/`), pixel-equivalent, no copy change, no new
+dependency, the static-vs-app parity tests (`copy-parity.test.mjs`,
+`brandParity.test.ts`) kept green. Builds on the brand set from B50.
+
+**Scope (measurements from the approved render):**
+- Hero ≥ 1024px: a two-column grid `minmax(0, 48rem) 1fr`, gap 2rem,
+  `align-items: center`; the text column unchanged; the right column
+  (`min-height: 420px`) centres the brand mark (`logo-mark.svg`, inline,
+  `fill: currentColor`, `--color-primary`, `width: min(100%, 400px)`,
+  explicit width/height, `aria-hidden`) over a soft disc (a 460×460 px
+  pseudo-element, `radial-gradient(circle at 30% 30%, rgba(168,213,186,.55),
+  rgba(232,244,240,0) 70%)`, `pointer-events: none`). `.hero-glow` stays.
+- Hero < 1024px: single column, the right column hidden; a watermark — the
+  same mark, `position: absolute; right: -7rem; bottom: -3rem; width: 440px;
+  opacity: var(--hero-watermark-opacity, .08); pointer-events: none;
+  aria-hidden` — bleeding off the bottom-right behind the buttons and
+  benefits inside the hero's `position: relative; overflow: hidden` box;
+  text contrast over it ≥ 4.5:1 (asserted). Nothing animates; CLS 0.
+- Header (both sites): the lockup gives way to `wordmark.svg` alone, inline,
+  22px tall, `--color-primary`, inside the existing link to "/" with
+  `aria-label="FlowSpace"`. The mark alone never appears below 36px. Footer
+  unchanged (white lockup, B50).
+- Static site: the SVGs are emitted by `scripts/render-static.py` inside
+  `brand-*` generated fences (no JavaScript); `site.css` gains `.hero-grid`,
+  `.hero-mark`, `.hero-mark::before`, `.hero-watermark` and the 1024px media
+  query next to the `.hero*` rules, in the "the app's …" comment style.
+- App: `BrandMark` / `BrandWordmark` components rendering the same inline
+  SVG from the brand files (no loader dependency); `Hero.tsx` with the
+  Tailwind equivalents (`lg:grid lg:grid-cols-[minmax(0,48rem)_1fr] lg:gap-8
+  lg:items-center`, `hidden lg:flex`, `lg:hidden absolute -right-28 -bottom-12
+  w-[440px] opacity-[var(--hero-watermark-opacity)] pointer-events-none`);
+  the Navbar uses `BrandWordmark`. No i18n change.
+
+**Acceptance:** static smoke — at 1440 the mark is in the right column and no
+watermark is displayed; at 390 the watermark is present and the right column
+is not; the header link has `aria-label="FlowSpace"` and contains an svg; no
+horizontal scroll at 390; text contrast over the watermark ≥ 4.5:1; CLS 0.
+App — Hero component test for both branches, Navbar test for the wordmark
+link, Playwright at 1440 and 390 with the same assertions, CLS 0, parity
+tests green. Evidence: before/after screenshots of both heroes at 1920,
+1440, 1024, 768 and 390 (`.pr-evidence/hero/`), and a side-by-side sheet
+(static vs app at 1920 and 390).
+
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
 Delivered and archived (see the index); the assignment text and decisions are in [docs/backlog-archive/2026-09.md](docs/backlog-archive/2026-09.md#brand-and-copy-revision-w-series-owner-assignment-2026-09-22). Still open here: W06/W07.
