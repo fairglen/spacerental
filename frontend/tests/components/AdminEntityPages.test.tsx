@@ -148,7 +148,8 @@ describe('Reserva', () => {
     expect(screen.getByTestId('booking-amount')).toHaveTextContent('22,00')
     expect(screen.getByText('cs_test_abc')).toBeInTheDocument()
     expect(screen.getByText('4321')).toBeInTheDocument()
-    expect(screen.getByLabelText('Nota do cliente')).toHaveValue('Projetor')
+    // The note form fills in once the booking has landed, a tick after the heading.
+    await waitFor(() => expect(screen.getByLabelText('Nota do cliente')).toHaveValue('Projetor'))
     expect(screen.getByText('Valor corrigido')).toBeInTheDocument()
     await userEvent.setup().click(screen.getByText('Valor corrigido').closest('button')!)
     expect(screen.getByText('22.00 → 20.00')).toBeInTheDocument()
