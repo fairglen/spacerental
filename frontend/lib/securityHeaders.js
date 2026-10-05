@@ -3,8 +3,10 @@
 // import it without a build step.
 //
 // - X-Content-Type-Options, Referrer-Policy and Permissions-Policy everywhere.
-// - X-Frame-Options: DENY on the signed-in areas (/dashboard, /admin), and
-//   `frame-ancestors 'none'` in the policy for every page.
+// - X-Frame-Options: DENY everywhere too — `frame-ancestors 'none'` is in the
+//   policy for every page, but the policy is report-only, so this is what
+//   actually keeps the sign-in and password-reset forms out of a frame
+//   (review on #71, round 6). Nothing of ours is meant to be embedded.
 // - Strict-Transport-Security only in a production build: browsers ignore it
 //   over plain HTTP, so it is harmless on a laptop and takes effect behind
 //   TLS. It commits browsers to HTTPS for two years — deploy behind TLS first.
@@ -54,6 +56,7 @@ function securityHeaders({
   const apiOrigin = originOf(apiUrl)
   const everywhere = [
     { key: 'X-Content-Type-Options', value: 'nosniff' },
+    { key: 'X-Frame-Options', value: 'DENY' },
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
     { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
     ...(production ? [{ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' }] : []),
@@ -62,14 +65,10 @@ function securityHeaders({
       value: contentSecurityPolicy({ production, apiOrigin, mediaOrigin: mediaOrigin ? originOf(mediaOrigin) : '' }),
     },
   ]
-  const noFraming = [{ key: 'X-Frame-Options', value: 'DENY' }]
+  // The root path has its own rule: `/:path*` does not match `/`.
   return [
     { source: '/:path*', headers: everywhere },
     { source: '/', headers: everywhere },
-    { source: '/dashboard', headers: noFraming },
-    { source: '/dashboard/:path*', headers: noFraming },
-    { source: '/admin', headers: noFraming },
-    { source: '/admin/:path*', headers: noFraming },
   ]
 }
 

@@ -24,12 +24,13 @@ describe('securityHeaders (Q52)', () => {
     expect(headerMap(dev, '/')).toEqual(all)
   })
 
-  it('denies framing on the signed-in areas only, and in the policy for every page', () => {
-    for (const source of ['/dashboard', '/dashboard/:path*', '/admin', '/admin/:path*']) {
-      expect(headerMap(dev, source)['X-Frame-Options']).toBe('DENY')
+  it('denies framing on every page — enforced by X-Frame-Options while the policy only reports', () => {
+    // Every rule, so the public sign-in and password-reset forms are covered
+    // too (review round 6), not only the signed-in areas.
+    expect(dev.length).toBeGreaterThan(0)
+    for (const rule of dev) {
+      expect(rule.headers.find((h) => h.key === 'X-Frame-Options')?.value, rule.source).toBe('DENY')
     }
-    expect(headerMap(dev, '/:path*')['X-Frame-Options']).toBeUndefined()
-    expect(dev.some((r) => r.source.startsWith('/spaces') && r.headers.some((h) => h.key === 'X-Frame-Options'))).toBe(false)
     expect(headerMap(dev, '/:path*')['Content-Security-Policy-Report-Only']).toContain("frame-ancestors 'none'")
   })
 

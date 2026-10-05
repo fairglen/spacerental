@@ -1987,7 +1987,9 @@ report-only policy logged **zero** real violations (`.pr-evidence/p2/csp-report.
 outside production; Q56 owns the flip. **Scope:** `headers()` in
 `next.config.js` for all routes — `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`
-for `/admin` and `/dashboard` plus `frame-ancestors 'none'`,
+on every page (review round 6 widened it from `/admin` and `/dashboard`: the
+policy's `frame-ancestors 'none'` is report-only, so the header is what keeps
+the public sign-in and reset forms out of a frame) plus `frame-ancestors 'none'`,
 `Permissions-Policy: camera=(), microphone=(), geolocation=()`, HSTS only
 when `NODE_ENV=production` behind TLS (documented), and a
 `Content-Security-Policy-Report-Only` allowing self, the API origin, the

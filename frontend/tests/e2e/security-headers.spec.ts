@@ -13,14 +13,15 @@ const STATIC = {
 }
 
 test.describe('security headers', () => {
-  test('every page carries the static headers and a report-only policy; the signed-in areas deny framing', async ({ request }) => {
-    for (const path of ['/', '/spaces', '/sign-in']) {
+  test('every page carries the static headers and a report-only policy, and denies framing', async ({ request }) => {
+    for (const path of ['/', '/spaces', '/sign-in', '/forgot-password']) {
       const res = await request.get(path, { maxRedirects: 0 })
       expect(res.status(), path).toBe(200)
       for (const [name, value] of Object.entries(STATIC)) expect(res.headers()[name], `${name} on ${path}`).toBe(value)
       expect(res.headers()['content-security-policy-report-only'], path).toContain("frame-ancestors 'none'")
       expect(res.headers()['content-security-policy'], `${path} must not enforce yet`).toBeUndefined()
-      expect(res.headers()['x-frame-options'], `${path} is a public page`).toBeUndefined()
+      // Enforced, not only reported: a public form in a frame is a clickjacking target (round 6).
+      expect(res.headers()['x-frame-options'], path).toBe('DENY')
     }
     // Signed out, /dashboard and /admin redirect to sign-in — the redirect
     // response itself is what the browser gets, with the framing denial.
