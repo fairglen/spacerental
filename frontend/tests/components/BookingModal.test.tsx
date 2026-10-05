@@ -612,6 +612,45 @@ describe('BookingModal — "Comprar um pack" (K02)', () => {
     expect(bookingsApi.create).not.toHaveBeenCalled()
   })
 
+  it('a new slot forgets a "Comprar um pack" choice: the list closes and the default is derived again (review on #69)', async () => {
+    vi.mocked(packagesApi.list).mockResolvedValue(packs)
+    // 2h in the bank: a 3h block offers the pack-plus-money split and the
+    // pack to buy; a 2h block is fully covered and offers no pack to buy.
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <BookingModal room={room} start={start} end={end} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await user.click(await screen.findByRole('radio', { name: 'Comprar um pack' }))
+    await screen.findByTestId('buy-pack')
+
+    // The customer closes and picks a shorter slot the bank covers whole.
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <BookingModal room={room} start={start} end={new Date('2026-08-10T11:00:00Z')} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.queryByTestId('buy-pack')).toBeNull())
+    expect(screen.queryByRole('radio', { name: 'Comprar um pack' })).toBeNull()
+    // Without the reset the stale `buy` fell through to "pay now" — a second
+    // charge for hours the pack already covers.
+    expect(screen.getByRole('radio', { name: /Usar horas do pack/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Confirmar Reserva' })).toBeEnabled()
+
+    // And a longer slot again: the list stays closed until asked for.
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <BookingModal room={room} start={new Date('2026-08-11T09:00:00Z')} end={new Date('2026-08-11T12:00:00Z')} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await screen.findByRole('radio', { name: 'Comprar um pack' })
+    expect(screen.queryByTestId('buy-pack')).toBeNull()
+    expect(screen.getByRole('radio', { name: /Usar as horas do pack e pagar o resto/ })).toBeChecked()
+  })
+
   it('a failed purchase start says so and keeps the modal', async () => {
     vi.mocked(packagesApi.list).mockResolvedValue(packs)
     vi.mocked(packagesApi.purchase).mockRejectedValue(new Error('boom'))

@@ -63,7 +63,20 @@ async def apply_cancellation(
     )
     # The money share comes back as hours in the bank (K01), in the same
     # transaction, never as a refund (O02 superseded).
-    credit = await cancellation_credit.create_credit(db, booking, previous=previous, now=now)
+    try:
+        credit = await cancellation_credit.create_credit(
+            db, booking, previous=previous, now=now
+        )
+    except cancellation_credit.CreditTooLargeError as exc:
+        # Only an operator's price override can get here; the request fails
+        # whole (the status change above rolls back with it).
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"The credit for this booking ({exc.hours} h) exceeds what the hour bank "
+                f"can hold ({cancellation_credit.MAX_LEDGER_HOURS} h); contact the space"
+            ),
+        ) from None
 
     email.enqueue_email(
         background_tasks,

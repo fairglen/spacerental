@@ -5253,6 +5253,17 @@ merged into it. The chain is now `main ← Part 0 ← Part 1 ← Part 2`.
 **Acceptance:** the PR's diff is C+L only; backend, Vitest, build, static
 smoke and Playwright are green on the branch; no unanswered review thread.
 **Validation:** the file-set comparison above, the full local suites and CI.
+Opened as [PR #69](https://github.com/fairglen/spacerental/pull/69) on
+2026-10-05; local suites on `31dde69`: pytest 860, Vitest 649, build, static
+smoke 35 + 44, Playwright 59/59. Review round 1 (Copilot, 2026-10-05), all
+three valid and fixed in one commit: a cancellation credit above 999.99 h
+(only an operator's price override can produce one; the ledger is
+`Numeric(5, 2)`) is a handled 409 on both cancel paths instead of a numeric
+overflow turned 500; complimentary grants are stored with `source =
+complimentary` (they defaulted to `purchase`, so "Origem" called them a
+sale); the booking modal forgets a "Comprar um pack" choice when the slot
+changes (it reopened the pack list, or fell through to paying again once
+the bank covered the new block).
 
 ### Q41 — Isolated, parallel Playwright specs
 

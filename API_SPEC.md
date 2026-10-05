@@ -256,6 +256,11 @@ cancelled again reactivates its one row with a fresh expiry. The cancellation
 email gains the line "As N horas pagas ficaram no seu banco de horas, válidas
 até <data>." when a credit was created. Credited hours spend like any other:
 `package` and `mixed` bookings draw them soonest-expiring first.
+The ledger holds hours as `Numeric(5, 2)`: a credit above 999.99 h (only an
+operator's price override can produce one — 11 000 € at 11 €/h) is refused as
+`409` with nothing written, on this endpoint and on the operator's
+`PUT /admin/bookings/:id` (which names the way out: lower the amount, or
+`credit_hours: false` with a reason).
 
 ### POST /bookings/:id/checkout
 "Pagar agora" for an unpaid hold (own only). An hourly booking holds its slot
@@ -713,7 +718,8 @@ Complimentary hours (A05): a purchase of `hours` of `package_id` at 0,00 €
 with a reason. Body: `{ hours (0 < h ≤ 999, 2 dp), package_id, reason
 (1–2000), expires_at? (tz-aware, future; default now + the package's
 `validity_days`) }`. → 201 `{ purchase: AdminPurchase }` with
-`amount_paid: "0.00"`, `admin_note = reason`, `status: "active"`. 404 for a
+`amount_paid: "0.00"`, `admin_note = reason`, `status: "active"`,
+`source: "complimentary"` (K01's "Origem"; a sale is `purchase`). 404 for a
 non-member or a package of another org; 400 for a past `expires_at`.
 
 `UserPackagePurchase` now carries `amount_paid` (the package's price at

@@ -332,6 +332,14 @@ class TestComplimentaryHours:
         assert purchase["status"] == "active"
         assert purchase["admin_note"] == "Compensação por avaria do ar condicionado"
         assert purchase["package"]["name"] == "Pack 10h"
+        # A grant is not a sale: "Origem" tells them apart (K01, review on #69).
+        assert purchase["source"] == "complimentary"
+        listed = await client.get(
+            f"{API}/admin/purchases", params=_org(test_org), headers=admin_headers
+        )
+        assert listed.status_code == 200, listed.text
+        row = next(p for p in listed.json()["purchases"] if p["id"] == purchase["id"])
+        assert row["source"] == "complimentary"
         expires = datetime.fromisoformat(purchase["expires_at"])
         assert abs((expires - datetime.now(tz=UTC)).days - 90) <= 1
 

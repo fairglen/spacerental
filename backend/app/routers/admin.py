@@ -1221,9 +1221,19 @@ async def admin_update_booking(
         # unticked it, with a reason the trail keeps.
         credit = None
         if body.credit_hours:
-            credit = await cancellation_credit.create_credit(
-                db, booking, previous=previous_status, now=now
-            )
+            try:
+                credit = await cancellation_credit.create_credit(
+                    db, booking, previous=previous_status, now=now
+                )
+            except cancellation_credit.CreditTooLargeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"The credit ({exc.hours} h) exceeds what the hour bank can hold "
+                        f"({cancellation_credit.MAX_LEDGER_HOURS} h); lower the booking's "
+                        "amount first, or cancel with credit_hours: false and a reason"
+                    ),
+                ) from None
         if credit is not None:
             response["credit"] = {
                 "id": str(credit.id),

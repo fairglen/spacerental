@@ -142,14 +142,21 @@ export function BookingModal({ room, start, end, onClose }: BookingModalProps) {
   })
 
   // A fresh slot selection should not inherit the previous one's series
-  // settings or a stale error from a dismissed attempt.
+  // settings, a stale error from a dismissed attempt, or its payment choice:
+  // a "Comprar um pack" left over would reopen the pack list on the next
+  // slot — or, once the bank covers the new block and that option is gone,
+  // would silently land on paying again (review on #69). Back to the
+  // data-derived default instead.
   useEffect(() => {
+    setChoice(null)
     setRepeatWeekly(false)
     setUntilDate('')
     mutation.reset()
     purchase.reset()
+    // `end` too: the same start with another end is another block, with
+    // another plan behind the choice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [start])
+  }, [start, end])
 
   if (!room || !start || !end) return null
 

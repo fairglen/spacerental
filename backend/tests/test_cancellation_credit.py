@@ -220,6 +220,27 @@ class TestCustomerCancellation:
         assert credit.hours_total == Decimal("2.27")
         assert credit.amount_paid == Decimal("25.00")
 
+    async def test_a_credit_the_ledger_cannot_hold_refuses_the_cancellation(
+        self, client, auth_headers, admin, test_room, test_org, payments, db_session
+    ):
+        """Review on #69: hours live in Numeric(5, 2); an operator's override
+        of 11 000 € at 11 €/h would be 1 000 h — a handled 409, not a numeric
+        overflow turned 500, and the booking stays as it was."""
+        booking = await _paid(client, payments, auth_headers, test_room, _monday(), hours=2)
+        fixed = await client.put(
+            f"{API}/admin/bookings/{booking['id']}",
+            params=_org(test_org),
+            json={"total_amount": "11000.00", "reason": "erro de digitação a corrigir"},
+            headers=admin,
+        )
+        assert fixed.status_code == 200, fixed.text
+
+        resp = await client.delete(f"{API}/bookings/{booking['id']}", headers=auth_headers)
+        assert resp.status_code == 409, resp.text
+        assert "1000.00 h" in resp.json()["detail"]
+        assert (await _db_booking(db_session, booking["id"])).status is BookingStatus.confirmed
+        assert await _credits(db_session, booking["id"]) == []
+
     async def test_a_second_cancel_credits_nothing_more(
         self, client, auth_headers, test_room, payments, db_session
     ):
@@ -391,6 +412,42 @@ class TestOperatorCancellation:
         assert row["source"] == "cancellation_credit"
         assert row["package"] is None
         assert row["source_booking_id"] == booking["id"]
+
+    async def test_a_credit_the_ledger_cannot_hold_is_a_409_the_operator_can_act_on(
+        self, client, auth_headers, admin, test_room, test_org, payments, db_session
+    ):
+        """Review on #69: the operator path answers 409 with the way out, and
+        cancelling without the credit (with a reason) still works."""
+        booking = await _paid(client, payments, auth_headers, test_room, _monday(), hours=2)
+        fixed = await client.put(
+            f"{API}/admin/bookings/{booking['id']}",
+            params=_org(test_org),
+            json={"total_amount": "11000.00", "reason": "erro de digitação a corrigir"},
+            headers=admin,
+        )
+        assert fixed.status_code == 200, fixed.text
+
+        refused = await client.put(
+            f"{API}/admin/bookings/{booking['id']}",
+            params=_org(test_org),
+            json={"status": "cancelled"},
+            headers=admin,
+        )
+        assert refused.status_code == 409, refused.text
+        assert "credit_hours: false" in refused.json()["detail"]
+        assert (await _db_booking(db_session, booking["id"])).status is BookingStatus.confirmed
+        assert await _credits(db_session, booking["id"]) == []
+
+        without = await client.put(
+            f"{API}/admin/bookings/{booking['id']}",
+            params=_org(test_org),
+            json={"status": "cancelled", "credit_hours": False, "reason": "valor errado"},
+            headers=admin,
+        )
+        assert without.status_code == 200, without.text
+        assert "credit" not in without.json()
+        assert (await _db_booking(db_session, booking["id"])).status is BookingStatus.cancelled
+        assert await _credits(db_session, booking["id"]) == []
 
     async def test_a_manual_booking_is_credited_too(
         self,

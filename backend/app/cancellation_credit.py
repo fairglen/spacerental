@@ -35,6 +35,22 @@ class CreditSpentError(Exception):
     """A credited hour is already in another booking: no reversal."""
 
 
+# The purchases ledger stores hours as Numeric(5, 2), like the packs and the
+# complimentary grants (≤ 999 h). An operator may override a booking's amount
+# with no ratio to the rate, so the derived credit is checked here — a 409
+# the caller can act on, not a numeric overflow that turns into a 500 and a
+# rolled-back cancellation (review on #69).
+MAX_LEDGER_HOURS = Decimal("999.99")
+
+
+class CreditTooLargeError(Exception):
+    """The credit would not fit the hour bank's ledger; nothing was written."""
+
+    def __init__(self, hours: Decimal) -> None:
+        super().__init__(f"{hours} h exceeds the ledger maximum of {MAX_LEDGER_HOURS} h")
+        self.hours = hours
+
+
 def credit_hours_for(booking: Booking) -> Decimal:
     rate = booking.room.hourly_rate
     if rate <= 0 or booking.total_amount <= 0:
@@ -69,6 +85,8 @@ async def create_credit(
     hours = credit_hours_for(booking)
     if hours <= 0:
         return None
+    if hours > MAX_LEDGER_HOURS:
+        raise CreditTooLargeError(hours)
     existing = await existing_credit(db, booking.id)
     if existing is not None:
         if existing.status is not PurchaseStatus.cancelled or existing.hours_used > 0:

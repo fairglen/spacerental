@@ -25,7 +25,13 @@ from app.email import EmailGateway, get_email_gateway
 from app.models.audit import AdminAction
 from app.models.booking import Booking
 from app.models.organization import MemberRole, Organization, OrganizationMember
-from app.models.package import BookingPackageDebit, Package, PurchaseStatus, UserPackagePurchase
+from app.models.package import (
+    BookingPackageDebit,
+    Package,
+    PurchaseSource,
+    PurchaseStatus,
+    UserPackagePurchase,
+)
 from app.models.password_reset import PasswordResetToken
 from app.models.space import Room
 from app.models.support import SupportRequest
@@ -709,6 +715,9 @@ async def admin_grant_hours(
         purchased_at=now,
         expires_at=expires_at,
         status=PurchaseStatus.active,
+        # What "Origem" shows (K01): a grant, not a sale — the column's
+        # default is for rows the customer paid for (review on #69).
+        source=PurchaseSource.complimentary,
     )
     db.add(purchase)
     await db.flush()
