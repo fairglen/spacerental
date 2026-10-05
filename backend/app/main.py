@@ -21,6 +21,7 @@ from app.routers import (
     bookings,
     checkout_stub,
     media,
+    openapi_public,
     packages,
     recurrences,
     spaces,
@@ -131,6 +132,8 @@ app.include_router(webhooks.router, prefix=API_PREFIX)
 # No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
 # see app/routers/checkout_stub.py.
 app.include_router(checkout_stub.router)
+# S1.5: the public, read-only OpenAPI card for agents (no prefix: /openapi-public.json).
+app.include_router(openapi_public.router)
 # Local-only (G03): the stub mailbox for browser tests; never in production.
 test_hooks.mount(
     app,
