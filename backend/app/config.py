@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     CANCELLATION_CREDIT_VALIDITY_DAYS: int = Field(default=365, gt=0)
 
     # ── Rate limiting ────────────────────────────────────────────────────
+    # The limiter keeps its sliding windows in process memory (app/ratelimit.py):
+    # it is a per-replica budget, correct for ONE backend process. Behind two or
+    # more replicas each has its own counters, so the effective limit is
+    # multiplied by the replica count — move the counters to a shared store
+    # before scaling out (Q55).
     RATE_LIMIT_ENABLED: bool = True
     # Auth tier: credential endpoints. Strict, because each accepted request
     # costs an Argon2 hash (m=64MB) and is the surface for credential stuffing.

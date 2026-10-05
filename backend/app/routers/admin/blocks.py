@@ -1,10 +1,6 @@
-"""Blocked time (A02): CRUD under /admin/rooms/{id}/blocks.
+"""Blocked time on a room (A02)."""
 
-A block may not overlap a booking that holds its slot: the operator moves or
-cancels the booking first, and the refusal names it. Nothing is ever
-overridden silently.
-"""
-
+import logging
 import uuid
 from datetime import datetime
 
@@ -33,7 +29,9 @@ from app.schemas.room_block import (
     RoomBlockUpdate,
 )
 
-router = APIRouter(prefix="/admin/rooms/{room_id}/blocks", tags=["admin-blocks"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/rooms/{room_id}/blocks", tags=["admin-blocks"])
 
 
 async def _room(db: AsyncSession, room_id: uuid.UUID, org_id: uuid.UUID) -> Room:

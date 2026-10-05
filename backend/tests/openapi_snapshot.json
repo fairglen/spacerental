@@ -1,0 +1,477 @@
+[
+  {
+    "method": "GET",
+    "path": "/__test__/emails",
+    "operation_id": "stub_emails___test___emails_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/audit",
+    "operation_id": "admin_list_audit_api_v1_admin_audit_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/bookings",
+    "operation_id": "admin_list_bookings_api_v1_admin_bookings_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/bookings",
+    "operation_id": "admin_create_booking_api_v1_admin_bookings_post"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/bookings/{booking_id}",
+    "operation_id": "admin_delete_booking_api_v1_admin_bookings__booking_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/bookings/{booking_id}",
+    "operation_id": "admin_get_booking_api_v1_admin_bookings__booking_id__get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/bookings/{booking_id}",
+    "operation_id": "admin_update_booking_api_v1_admin_bookings__booking_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/bookings/{booking_id}/history",
+    "operation_id": "booking_history_api_v1_admin_bookings__booking_id__history_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/bookings/{booking_id}/mark-paid",
+    "operation_id": "admin_mark_booking_paid_api_v1_admin_bookings__booking_id__mark_paid_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/dashboard",
+    "operation_id": "dashboard_api_v1_admin_dashboard_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/organization",
+    "operation_id": "admin_get_organization_api_v1_admin_organization_get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/organization",
+    "operation_id": "admin_update_organization_api_v1_admin_organization_put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/packages",
+    "operation_id": "admin_list_packages_api_v1_admin_packages_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/packages",
+    "operation_id": "admin_create_package_api_v1_admin_packages_post"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/packages/{package_id}",
+    "operation_id": "admin_delete_package_api_v1_admin_packages__package_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/packages/{package_id}",
+    "operation_id": "admin_get_package_api_v1_admin_packages__package_id__get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/packages/{package_id}",
+    "operation_id": "admin_update_package_api_v1_admin_packages__package_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/packages/{package_id}/history",
+    "operation_id": "package_history_api_v1_admin_packages__package_id__history_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/purchases",
+    "operation_id": "admin_list_purchases_api_v1_admin_purchases_get"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/purchases/{purchase_id}",
+    "operation_id": "admin_delete_purchase_api_v1_admin_purchases__purchase_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/purchases/{purchase_id}",
+    "operation_id": "admin_get_purchase_api_v1_admin_purchases__purchase_id__get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/purchases/{purchase_id}",
+    "operation_id": "admin_update_purchase_api_v1_admin_purchases__purchase_id__put"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/purchases/{purchase_id}/adjust",
+    "operation_id": "admin_adjust_purchase_api_v1_admin_purchases__purchase_id__adjust_post"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/purchases/{purchase_id}/expiry",
+    "operation_id": "admin_extend_purchase_api_v1_admin_purchases__purchase_id__expiry_put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/purchases/{purchase_id}/history",
+    "operation_id": "purchase_history_api_v1_admin_purchases__purchase_id__history_get"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/rooms/{room_id}",
+    "operation_id": "admin_delete_room_api_v1_admin_rooms__room_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/rooms/{room_id}",
+    "operation_id": "admin_get_room_api_v1_admin_rooms__room_id__get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/rooms/{room_id}",
+    "operation_id": "admin_update_room_api_v1_admin_rooms__room_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/rooms/{room_id}/availability",
+    "operation_id": "admin_get_availability_api_v1_admin_rooms__room_id__availability_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/rooms/{room_id}/availability",
+    "operation_id": "admin_set_availability_api_v1_admin_rooms__room_id__availability_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/rooms/{room_id}/availability/copy-to-all-days",
+    "operation_id": "admin_copy_availability_to_all_days_api_v1_admin_rooms__room_id__availability_copy_to_all_days_post"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/rooms/{room_id}/availability/{rule_id}",
+    "operation_id": "admin_delete_availability_rule_api_v1_admin_rooms__room_id__availability__rule_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/rooms/{room_id}/blocks",
+    "operation_id": "list_blocks_api_v1_admin_rooms__room_id__blocks_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/rooms/{room_id}/blocks",
+    "operation_id": "create_block_api_v1_admin_rooms__room_id__blocks_post"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/rooms/{room_id}/blocks/{block_id}",
+    "operation_id": "delete_block_api_v1_admin_rooms__room_id__blocks__block_id__delete"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/rooms/{room_id}/blocks/{block_id}",
+    "operation_id": "update_block_api_v1_admin_rooms__room_id__blocks__block_id__put"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/rooms/{room_id}/duplicate",
+    "operation_id": "admin_duplicate_room_api_v1_admin_rooms__room_id__duplicate_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/rooms/{room_id}/history",
+    "operation_id": "room_history_api_v1_admin_rooms__room_id__history_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/rooms/{room_id}/images",
+    "operation_id": "upload_room_image_api_v1_admin_rooms__room_id__images_post"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/rooms/{room_id}/images/order",
+    "operation_id": "reorder_room_images_api_v1_admin_rooms__room_id__images_order_put"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/rooms/{room_id}/images/{image_id}",
+    "operation_id": "delete_room_image_api_v1_admin_rooms__room_id__images__image_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/spaces",
+    "operation_id": "admin_list_spaces_api_v1_admin_spaces_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/spaces",
+    "operation_id": "admin_create_space_api_v1_admin_spaces_post"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/spaces/{space_id}",
+    "operation_id": "admin_delete_space_api_v1_admin_spaces__space_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/spaces/{space_id}",
+    "operation_id": "admin_get_space_api_v1_admin_spaces__space_id__get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/spaces/{space_id}",
+    "operation_id": "admin_update_space_api_v1_admin_spaces__space_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/spaces/{space_id}/history",
+    "operation_id": "space_history_api_v1_admin_spaces__space_id__history_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/spaces/{space_id}/images",
+    "operation_id": "upload_space_image_api_v1_admin_spaces__space_id__images_post"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/spaces/{space_id}/images/order",
+    "operation_id": "reorder_space_images_api_v1_admin_spaces__space_id__images_order_put"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/spaces/{space_id}/images/{image_id}",
+    "operation_id": "delete_space_image_api_v1_admin_spaces__space_id__images__image_id__delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/spaces/{space_id}/rooms",
+    "operation_id": "admin_create_room_api_v1_admin_spaces__space_id__rooms_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/support/requests",
+    "operation_id": "admin_list_support_requests_api_v1_admin_support_requests_get"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/support/requests/{request_id}",
+    "operation_id": "admin_delete_support_request_api_v1_admin_support_requests__request_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/support/requests/{request_id}",
+    "operation_id": "admin_get_support_request_api_v1_admin_support_requests__request_id__get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/support/requests/{request_id}",
+    "operation_id": "admin_update_support_request_api_v1_admin_support_requests__request_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/support/requests/{request_id}/history",
+    "operation_id": "support_request_history_api_v1_admin_support_requests__request_id__history_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/users",
+    "operation_id": "admin_list_users_api_v1_admin_users_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/users",
+    "operation_id": "admin_create_user_api_v1_admin_users_post"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/users/{user_id}",
+    "operation_id": "admin_delete_user_api_v1_admin_users__user_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/users/{user_id}",
+    "operation_id": "admin_get_user_api_v1_admin_users__user_id__get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/users/{user_id}",
+    "operation_id": "admin_update_user_api_v1_admin_users__user_id__put"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/users/{user_id}/anonymise",
+    "operation_id": "admin_anonymise_user_api_v1_admin_users__user_id__anonymise_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/users/{user_id}/complimentary-hours",
+    "operation_id": "admin_grant_hours_api_v1_admin_users__user_id__complimentary_hours_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/users/{user_id}/history",
+    "operation_id": "user_history_api_v1_admin_users__user_id__history_get"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/users/{user_id}/membership",
+    "operation_id": "admin_remove_membership_api_v1_admin_users__user_id__membership_delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/users/{user_id}/password-reset",
+    "operation_id": "admin_send_password_reset_api_v1_admin_users__user_id__password_reset_post"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/users/{user_id}/role",
+    "operation_id": "admin_set_role_api_v1_admin_users__user_id__role_put"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/users/{user_id}/set-password",
+    "operation_id": "admin_set_password_api_v1_admin_users__user_id__set_password_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/enroll",
+    "operation_id": "enroll_api_v1_auth_enroll_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "operation_id": "login_api_v1_auth_login_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "operation_id": "me_api_v1_auth_me_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/auth/memberships",
+    "operation_id": "memberships_api_v1_auth_memberships_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/password-reset/confirm",
+    "operation_id": "confirm_password_reset_api_v1_auth_password_reset_confirm_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/password-reset/request",
+    "operation_id": "request_password_reset_api_v1_auth_password_reset_request_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/register",
+    "operation_id": "register_api_v1_auth_register_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/register/operator",
+    "operation_id": "register_operator_api_v1_auth_register_operator_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bookings",
+    "operation_id": "create_booking_api_v1_bookings_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/bookings/me",
+    "operation_id": "my_bookings_api_v1_bookings_me_get"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/bookings/{booking_id}",
+    "operation_id": "cancel_booking_api_v1_bookings__booking_id__delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/bookings/{booking_id}/checkout",
+    "operation_id": "resume_checkout_api_v1_bookings__booking_id__checkout_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/packages",
+    "operation_id": "list_packages_api_v1_packages_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/packages/me",
+    "operation_id": "my_packages_api_v1_packages_me_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/packages/{package_id}/purchase",
+    "operation_id": "purchase_package_api_v1_packages__package_id__purchase_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/recurrences",
+    "operation_id": "create_recurrence_api_v1_recurrences_post"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/recurrences/{recurrence_id}",
+    "operation_id": "cancel_recurrence_api_v1_recurrences__recurrence_id__delete"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/recurrences/{recurrence_id}",
+    "operation_id": "update_recurrence_api_v1_recurrences__recurrence_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/rooms/{room_id}/availability",
+    "operation_id": "get_room_availability_api_v1_rooms__room_id__availability_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/spaces",
+    "operation_id": "list_spaces_api_v1_spaces_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/spaces/{space_id}",
+    "operation_id": "get_space_api_v1_spaces__space_id__get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support/requests",
+    "operation_id": "create_support_request_api_v1_support_requests_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/webhooks/stripe",
+    "operation_id": "stripe_webhook_api_v1_webhooks_stripe_post"
+  },
+  {
+    "method": "GET",
+    "path": "/checkout/stub/{session_id}",
+    "operation_id": "show_checkout_checkout_stub__session_id__get"
+  },
+  {
+    "method": "POST",
+    "path": "/checkout/stub/{session_id}/cancel",
+    "operation_id": "cancel_checkout_checkout_stub__session_id__cancel_post"
+  },
+  {
+    "method": "POST",
+    "path": "/checkout/stub/{session_id}/pay",
+    "operation_id": "pay_checkout_checkout_stub__session_id__pay_post"
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "operation_id": "health_check_health_get"
+  }
+]

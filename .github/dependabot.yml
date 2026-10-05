@@ -1,9 +1,28 @@
-# Keeps the SHA-pinned actions and the two dependency trees current (Q45).
-# Every `uses:` in .github/workflows is pinned to a full commit, so the weekly
-# actions update is what moves them; npm and pip updates are grouped so one
-# PR a week carries the minor/patch bumps instead of one PR per package.
+# Keeps the SHA-pinned actions, the two dependency trees and the digest-pinned
+# container images current (Q45, Q53). Every `uses:` in .github/workflows is
+# pinned to a full commit, so the weekly actions update is what moves them;
+# npm and pip updates are grouped so one PR a week carries the minor/patch
+# bumps instead of one PR per package. The `docker` and `docker-compose`
+# entries move the `@sha256:` pins in the Dockerfiles and the Compose files —
+# without them an immutable pin would never pick up an OS or runtime fix
+# (review on #71, round 4).
 version: 2
 updates:
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
