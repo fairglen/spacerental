@@ -271,7 +271,7 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
                     value="pack"
                     checked={usesPack}
                     onChange={() => setChoice('pack')}
-                    disabled={mutation.isPending}
+                    disabled={mutation.isPending || purchase.isPending}
                   />
                   <span>
                     {canPayWithPackage
@@ -287,12 +287,12 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
                     value="hourly"
                     checked={!usesPack && !buying}
                     onChange={() => setChoice('hourly')}
-                    disabled={mutation.isPending}
+                    disabled={mutation.isPending || purchase.isPending}
                   />
                   <span>{plan.kind === 'none' ? `Pagar ${formatCurrency(total)} agora` : canPayWithPackage ? `Pagar ${formatCurrency(total)} agora` : 'Pagar tudo agora'}</span>
                 </label>
               ) : (
-                <PackUpsell key={option} packages={packages} buying={buying} onChoose={() => setChoice('buy')} purchase={purchase} disabled={mutation.isPending} isUnauthenticated={isUnauthenticated} />
+                <PackUpsell key={option} packages={packages} buying={buying} onChoose={() => setChoice('buy')} purchase={purchase} disabled={mutation.isPending || purchase.isPending} isUnauthenticated={isUnauthenticated} />
               ))}
             </fieldset>
           )}
@@ -335,8 +335,10 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
           <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button>
           <Button
             onClick={() => mutation.mutate()}
-            // Not while the bank is still being polled for the pack just bought.
-            disabled={mutation.isPending || isUnauthenticated || !canSubmit || buying || waitingForPack}
+            // While a pack purchase is in flight the booking must not be confirmed
+            // too: the customer would leave with a pending purchase AND a hold.
+            // Nor while the bank is still being polled for the pack just bought.
+            disabled={mutation.isPending || purchase.isPending || isUnauthenticated || !canSubmit || buying || waitingForPack}
           >
             {mutation.isPending ? 'A confirmar...' : repeatWeekly ? 'Confirmar Série' : 'Confirmar Reserva'}
           </Button>
