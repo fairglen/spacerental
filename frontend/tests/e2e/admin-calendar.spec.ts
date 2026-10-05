@@ -1,57 +1,39 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, API_URL, at, auth, createBooking, freshDay, isoDate, SEEDED_ROOMS } from './fixtures'
 import { ADMIN_STORAGE_STATE } from './global-setup'
-
-const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
 
 /**
  * A03 as an operator: open the calendar, click a booking and cancel it from
  * the sheet, create a manual booking on an empty slot, block an hour, and
  * see both as unavailable on the customer calendar.
+ *
+ * Everything happens in a room of this test's own (Q41): nothing else books
+ * it, so the day needs no cleaning and the free-hour assertions hold.
  */
 test.use({ storageState: ADMIN_STORAGE_STATE, timezoneId: 'UTC', viewport: { width: 1400, height: 1000 } })
 
-const isoDate = (d: Date) => d.toISOString().slice(0, 10)
-function dayAt(daysAhead: number, hour: number): Date {
-  const d = new Date(); d.setUTCDate(d.getUTCDate() + daysAhead)
-  while (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1)
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour))
-}
+test('calendar: cancel from the sheet, book manually, block an hour, and the customer sees both taken', async ({ page, api, admin, room }) => {
+  const day = freshDay(16)
+  const headers = auth(admin.token)
 
-test('calendar: cancel from the sheet, book manually, block an hour, and the customer sees both taken', async ({ page, request }) => {
-  const login = await request.post(`${API_URL}/auth/login`, { data: { email: 'admin@demo.com', password: 'admin123' } })
-  const token = (await login.json()).access_token
-  const auth = { Authorization: `Bearer ${token}` }
-  const { spaces } = await (await request.get(`${API_URL}/spaces`)).json()
-  const { rooms } = await (await request.get(`${API_URL}/spaces/${spaces[0].id}`)).json()
-  const room = rooms[0]
-  const day = dayAt(16, 0)
-
-  // Clean the day this test uses, then seed one confirmed booking at 10:00.
-  const mine = (await (await request.get(`${API_URL}/bookings/me`, { headers: auth })).json()).bookings
-  for (const b of mine) {
-    if (b.start_time.slice(0, 10) === isoDate(day) && !['cancelled', 'expired'].includes(b.status)) {
-      await request.put(`${API_URL}/admin/bookings/${b.id}`, { headers: auth, params: { org_id: room.org_id }, data: { status: 'cancelled' } })
-    }
-  }
-  const blocks = await (await request.get(`${API_URL}/admin/rooms/${room.id}/blocks`, { headers: auth, params: { org_id: room.org_id, from: day.toISOString(), to: dayAt(17, 0).toISOString() } })).json()
-  for (const k of blocks.blocks) await request.delete(`${API_URL}/admin/rooms/${room.id}/blocks/${k.id}`, { headers: auth, params: { org_id: room.org_id } })
-
-  const seeded = await request.post(`${API_URL}/bookings`, {
-    headers: auth,
-    data: { room_id: room.id, start_time: dayAt(16, 10).toISOString(), end_time: dayAt(16, 11).toISOString(), payment_method: 'hourly' },
-  })
-  expect(seeded.ok(), await seeded.text()).toBeTruthy()
-  const { booking, checkout_url } = await seeded.json()
-  await request.post(`${new URL(API_URL).origin}/checkout/stub/${new URL(checkout_url).pathname.split('/').pop()}/pay`, { maxRedirects: 0 })
+  // One confirmed booking at 10:00, the admin's own, paid on the stub.
+  const { booking } = await createBooking(api, { token: admin.token }, { roomId: room.id, start: at(day, 10), end: at(day, 11), pay: true })
 
   // ── Open the calendar on that day, day-by-room ──────────────────────────
   await page.goto(`/admin/calendar?view=day&date=${isoDate(day)}`)
   await expect(page.getByRole('heading', { name: 'Calendário' })).toBeVisible({ timeout: 15000 })
-  // One column per room.
-  for (const r of rooms) await expect(page.locator('.rbc-time-header-content').getByText(r.name, { exact: true })).toBeVisible({ timeout: 15000 })
+  // One column per room: the seeded ones and this test's.
+  for (const name of [...SEEDED_ROOMS, room.name]) {
+    await expect(page.locator('.rbc-time-header-content').getByText(name, { exact: true })).toBeVisible({ timeout: 15000 })
+  }
+  // With resources there is one column per room, in the header's order; the
+  // room list the API returns is not ordered, so the header is the map.
+  const headerTexts = await page.locator('.rbc-time-header-content').allTextContents()
+  const columnIndex = headerTexts.findIndex((text) => text.includes(room.name))
+  expect(columnIndex).toBeGreaterThanOrEqual(0)
+  const column = page.locator('.rbc-time-content .rbc-day-slot').nth(columnIndex)
 
   // ── Click the seeded booking and cancel it from the sheet ───────────────
-  const event = page.locator('.rbc-event').filter({ hasText: 'Demo Admin' }).first()
+  const event = column.locator('.rbc-event').filter({ hasText: 'Demo Admin' }).first()
   await expect(event).toBeVisible({ timeout: 15000 })
   await event.click()
   const sheet = page.getByRole('dialog', { name: 'Reserva' })
@@ -63,16 +45,13 @@ test('calendar: cancel from the sheet, book manually, block an hour, and the cus
   await sheet.getByRole('button', { name: 'Sim, cancelar' }).click()
   await expect(sheet.getByRole('status')).toContainText('Reserva cancelada')
   await sheet.getByRole('button', { name: 'Fechar' }).click()
-  await expect(page.locator('.rbc-event').filter({ hasText: 'Demo Admin' })).toHaveCount(0)
-  const cancelled = (await (await request.get(`${API_URL}/bookings/me`, { headers: auth })).json()).bookings.find((b: { id: string }) => b.id === booking.id)
+  await expect(column.locator('.rbc-event').filter({ hasText: 'Demo Admin' })).toHaveCount(0)
+  const cancelled = (await (await api.get(`${API_URL}/bookings/me`, { headers })).json()).bookings.find((b: { id: string }) => b.id === booking.id)
   expect(cancelled.status).toBe('cancelled')
 
   // ── Manual booking on an empty slot (14:00) via the dialog ─────────────
-  // With resources there is one column per room, in the rooms' order; a
-  // selection is a press and release on the grid (react-big-calendar's
+  // A selection is a press and release on the grid (react-big-calendar's
   // selectable layer), not a click on the cell.
-  const columnIndex = rooms.findIndex((r: { id: string }) => r.id === room.id)
-  const column = page.locator('.rbc-time-content .rbc-day-slot').nth(columnIndex)
   const selectHour = async (hour: number) => {
     const rowIndex = await page.locator('.rbc-time-gutter .rbc-timeslot-group').evaluateAll(
       (groups, h) => groups.findIndex((g) => g.textContent?.includes(`${String(h).padStart(2, '0')}:00`)), hour,
@@ -95,7 +74,7 @@ test('calendar: cancel from the sheet, book manually, block an hour, and the cus
   await dialog.getByLabel(/Nota interna/).fill('E2E: pago em dinheiro')
   await dialog.getByRole('button', { name: 'Criar reserva' }).click()
   await expect(dialog).toHaveCount(0)
-  await expect(page.locator('.rbc-event').filter({ hasText: 'local' }).filter({ hasText: 'Demo Admin' })).toBeVisible({ timeout: 15000 })
+  await expect(column.locator('.rbc-event').filter({ hasText: 'local' }).filter({ hasText: 'Demo Admin' })).toBeVisible({ timeout: 15000 })
 
   // ── Block 16:00–17:00 ──────────────────────────────────────────────────
   await selectHour(16)
@@ -104,19 +83,14 @@ test('calendar: cancel from the sheet, book manually, block an hour, and the cus
   const blockDialog = page.getByRole('dialog', { name: 'Bloquear horário' })
   await blockDialog.getByLabel('Motivo').fill('E2E: limpeza')
   await blockDialog.getByRole('button', { name: 'Bloquear', exact: true }).click()
-  await expect(page.locator('.rbc-event').filter({ hasText: 'limpeza' })).toBeVisible({ timeout: 15000 })
+  await expect(column.locator('.rbc-event').filter({ hasText: 'limpeza' })).toBeVisible({ timeout: 15000 })
 
   // ── The customer calendar shows 14:00 and 16:00 as taken ───────────────
-  const { slots } = await (await request.get(`${API_URL}/rooms/${room.id}/availability`, { params: { date: isoDate(day) } })).json()
+  const { slots } = await (await api.get(`${API_URL}/rooms/${room.id}/availability`, { params: { date: isoDate(day) } })).json()
   const byHour = Object.fromEntries(slots.map((s: { start: string; available: boolean }) => [new Date(s.start).getUTCHours(), s.available]))
   expect(byHour[14]).toBe(false)
   expect(byHour[16]).toBe(false)
   expect(byHour[10]).toBe(true) // the cancelled one is free again
   expect(byHour[15]).toBe(true)
-
-  // Clean up: cancel the manual booking, remove the block.
-  const manual = (await (await request.get(`${API_URL}/admin/bookings`, { headers: auth, params: { org_id: room.org_id, from: dayAt(16, 14).toISOString(), to: dayAt(16, 15).toISOString() } })).json()).bookings[0]
-  await request.put(`${API_URL}/admin/bookings/${manual.id}`, { headers: auth, params: { org_id: room.org_id }, data: { status: 'cancelled' } })
-  const left = await (await request.get(`${API_URL}/admin/rooms/${room.id}/blocks`, { headers: auth, params: { org_id: room.org_id, from: day.toISOString(), to: dayAt(17, 0).toISOString() } })).json()
-  for (const k of left.blocks) await request.delete(`${API_URL}/admin/rooms/${room.id}/blocks/${k.id}`, { headers: auth, params: { org_id: room.org_id } })
+  // The room, its manual booking and its block leave with the `room` fixture.
 })

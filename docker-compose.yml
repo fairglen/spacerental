@@ -116,7 +116,11 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      # The dev server with bind-mounted sources; `runner` (the production
+      # build) is what docker-compose.e2e.yml selects for the browser suite.
+      target: dev
     ports:
       - "3000:3000"
     environment:

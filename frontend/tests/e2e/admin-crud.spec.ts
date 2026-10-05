@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { setTimeout as delay } from 'node:timers/promises'
-import { test, expect, request as playwrightRequest, type APIRequestContext } from '@playwright/test'
+import { request as playwrightRequest, type APIRequestContext } from '@playwright/test'
 import { ADMIN_STORAGE_STATE } from './global-setup'
-import { waitOutPublicRateWindow } from './helpers/rooms'
+import { API_URL, adminSession, at, auth as bearer, contextAs, createBooking, expect, freshDay, test, type Admin } from './fixtures'
 
 /**
  * Part A2 (G05/G06) as the seeded owner: the room lifecycle on the new pages,
@@ -10,12 +9,12 @@ import { waitOutPublicRateWindow } from './helpers/rooms'
  * story, a purchase adjustment refused inline, anonymisation, and the
  * settings page as a non-owner.
  */
-const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8000/api/v1'
 const API_ROOT = API_URL.replace(/\/api\/v1\/?$/, '')
 
 test.use({ storageState: ADMIN_STORAGE_STATE, viewport: { width: 1400, height: 1000 } })
 
 let api: APIRequestContext
+let admin: Admin
 let auth: { Authorization: string }
 let org: string
 let space: { id: string; name: string }
@@ -23,38 +22,29 @@ let me: { id: string; email: string }
 
 test.beforeAll(async () => {
   api = await playwrightRequest.newContext()
-  const login = await api.post(`${API_URL}/auth/login`, { data: { email: 'admin@demo.com', password: 'admin123' } })
-  expect(login.ok(), await login.text()).toBeTruthy()
-  auth = { Authorization: `Bearer ${(await login.json()).access_token}` }
-  const { spaces } = await (await api.get(`${API_URL}/spaces`)).json()
-  space = spaces[0]
-  const detail = await (await api.get(`${API_URL}/spaces/${space.id}`)).json()
-  org = detail.rooms[0].org_id
+  admin = await adminSession(api)
+  auth = bearer(admin.token)
+  org = admin.orgId
+  const detail = await (await api.get(`${API_URL}/spaces/${admin.spaceId}`)).json()
+  space = { id: admin.spaceId, name: detail.space.name }
   me = await (await api.get(`${API_URL}/auth/me`, { headers: auth })).json()
 })
 
 test.afterAll(async () => {
   await api.dispose()
-  // This file spends most of the auth tier's minute (logins, a reset, a
-  // set-password); the next file starts with a fresh window.
-  await waitOutPublicRateWindow()
 })
 
+/** One hour at `hour` on this test's own day, `daysAhead` out. */
 function futureSlot(daysAhead: number, hour: number) {
-  const d = new Date(); d.setUTCDate(d.getUTCDate() + daysAhead); while (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1)
-  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour))
+  const start = at(freshDay(daysAhead), hour)
   return { start_time: start.toISOString(), end_time: new Date(start.getTime() + 3.6e6).toISOString() }
 }
 
-/** A manual booking on the first free hour of that day: earlier runs may hold some. */
+/** A manual booking in a room of this test's own, so the hour is free. */
 async function manualBooking(userId: string, roomId: string, daysAhead: number, hour: number) {
-  let made
-  for (const h of [hour, hour + 1, hour + 2, hour + 3, hour - 1, hour - 2]) {
-    made = await api.post(`${API_URL}/admin/bookings`, { headers: auth, params: { org_id: org }, data: { user_id: userId, room_id: roomId, ...futureSlot(daysAhead, h) } })
-    if (made.ok()) break
-  }
-  expect(made!.ok(), await made!.text()).toBeTruthy()
-  return (await made!.json()).booking as { id: string; total_amount: string }
+  const made = await api.post(`${API_URL}/admin/bookings`, { headers: auth, params: { org_id: org }, data: { user_id: userId, room_id: roomId, ...futureSlot(daysAhead, hour) } })
+  expect(made.ok(), await made.text()).toBeTruthy()
+  return (await made.json()).booking as { id: string; total_amount: string }
 }
 
 /** Sign in through NextAuth's credentials callback (as global-setup does), so
@@ -136,18 +126,11 @@ test('room: create → duplicate → edit hours → block an hour → deactivate
   expect(gone.status(), await gone.text()).toBe(204)
 })
 
-test('booking: correct the amount with a reason → history diff → the customer sees the new amount', async ({ page }) => {
-  const { rooms } = await (await api.get(`${API_URL}/spaces/${space.id}`)).json()
-  // A paid hourly booking (the dashboard prices those; a manual one reads "Pago no local").
-  let created
-  for (const h of [15, 16, 17, 14, 13]) {
-    created = await api.post(`${API_URL}/bookings`, { headers: auth, data: { room_id: rooms[0].id, ...futureSlot(12, h), payment_method: 'hourly' } })
-    if (created.ok()) break
-  }
-  expect(created!.ok(), await created!.text()).toBeTruthy()
-  const { booking, checkout_url } = await created!.json()
-  const sessionId = new URL(checkout_url).pathname.split('/').pop()
-  expect((await api.post(`${API_ROOT}/checkout/stub/${sessionId}/pay`, { maxRedirects: 0 })).status()).toBe(303)
+test('booking: correct the amount with a reason → history diff → the customer sees the new amount', async ({ page, room }) => {
+  // A paid hourly booking (the dashboard prices those; a manual one reads
+  // "Pago no local"), by the owner as a customer, in this test's own room.
+  const day = freshDay(12)
+  const { booking } = await createBooking(api, { token: admin.token }, { roomId: room.id, start: at(day, 15), end: at(day, 16), pay: true })
   await page.goto(`/admin/bookings/${booking.id}`)
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Reserva #')
   await page.getByRole('button', { name: 'Corrigir valor' }).click()
@@ -161,9 +144,8 @@ test('booking: correct the amount with a reason → history diff → the custome
   await expect(page.getByText(/→ 9\.00/)).toBeVisible()
   // The customer's dashboard (the owner is the customer here) shows it.
   await page.goto('/dashboard')
-  const card = page.locator('div.rounded-xl').filter({ hasText: rooms[0].name }).filter({ hasText: '9,00' })
+  const card = page.locator('div.rounded-xl').filter({ hasText: room.name }).filter({ hasText: '9,00' })
   await expect(card.first()).toBeVisible({ timeout: 15000 })
-  await api.put(`${API_URL}/admin/bookings/${booking.id}`, { headers: auth, params: { org_id: org }, data: { status: 'cancelled' } })
 })
 
 test('customer: create with the link → set password → sign in → suspend → refused → set password → still refused → reactivate → sign in', async ({ page, browser, baseURL }) => {
@@ -214,7 +196,7 @@ test('customer: create with the link → set password → sign in → suspend �
   expect(userId).toBeTruthy()
 })
 
-test('purchase: adjusting below the hours already booked is refused inline, naming the booking', async ({ page }) => {
+test('purchase: adjusting below the hours already booked is refused inline, naming the booking', async ({ page, room }) => {
   // Fresh customer with 3 complimentary hours, of which a pack booking draws 2.
   const email = `banco-${randomUUID().slice(0, 8)}@example.com`
   const created = await api.post(`${API_URL}/admin/users`, { headers: auth, params: { org_id: org }, data: { name: 'Banco E2E', email, password: 'banco-pass-123' } })
@@ -226,15 +208,10 @@ test('purchase: adjusting below the hours already booked is refused inline, nami
   const purchase = (await granted.json()).purchase
   const login = await api.post(`${API_URL}/auth/login`, { data: { email, password: 'banco-pass-123' } })
   const customerAuth = { Authorization: `Bearer ${(await login.json()).access_token}` }
-  const { rooms } = await (await api.get(`${API_URL}/spaces/${space.id}`)).json()
-  // Any free two-hour block in the next weeks: earlier runs may hold some.
-  let booked
-  for (const days of [14, 15, 16, 17, 18, 19, 21, 22]) {
-    const slot = futureSlot(days, 10)
-    booked = await api.post(`${API_URL}/bookings`, { headers: customerAuth, data: { room_id: rooms[1]?.id ?? rooms[0].id, start_time: slot.start_time, end_time: new Date(new Date(slot.start_time).getTime() + 2 * 3.6e6).toISOString(), payment_method: 'package' } })
-    if (booked.ok()) break
-  }
-  expect(booked!.ok(), await booked!.text()).toBeTruthy()
+  // Two hours, two weeks out, in this test's own room.
+  const slotDay = freshDay(14)
+  const booked = await api.post(`${API_URL}/bookings`, { headers: customerAuth, data: { room_id: room.id, start_time: at(slotDay, 10).toISOString(), end_time: at(slotDay, 12).toISOString(), payment_method: 'package' } })
+  expect(booked.ok(), await booked.text()).toBeTruthy()
 
   await page.goto(`/admin/purchases/${purchase.id}`)
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Banco E2E')
@@ -246,18 +223,16 @@ test('purchase: adjusting below the hours already booked is refused inline, nami
   await dialog.getByRole('button', { name: 'Ajustar' }).click()
   await expect(dialog.getByRole('alert')).toContainText('held by bookings')
   await expect(dialog.getByRole('alert')).toContainText('2.00 h')
-  const { booking } = await booked!.json()
-  await api.put(`${API_URL}/admin/bookings/${booking.id}`, { headers: auth, params: { org_id: org }, data: { status: 'cancelled' } })
+  expect((await booked.json()).booking.id).toBeTruthy()
 })
 
-test('anonymise: the booking lists the placeholder and the old session is dead', async ({ page }) => {
+test('anonymise: the booking lists the placeholder and the old session is dead', async ({ page, room }) => {
   const email = `anon-${randomUUID().slice(0, 8)}@example.com`
   const created = await api.post(`${API_URL}/admin/users`, { headers: auth, params: { org_id: org }, data: { name: 'Anon E2E', email, password: 'anon-pass-123' } })
   const user = (await created.json()).user
   const login = await api.post(`${API_URL}/auth/login`, { data: { email, password: 'anon-pass-123' } })
   const oldToken = (await login.json()).access_token
-  const { rooms } = await (await api.get(`${API_URL}/spaces/${space.id}`)).json()
-  const booking = await manualBooking(user.id, rooms[0].id, 16, 12)
+  const booking = await manualBooking(user.id, room.id, 16, 12)
 
   await page.goto(`/admin/users/${user.id}`)
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Anon E2E')
@@ -268,11 +243,13 @@ test('anonymise: the booking lists the placeholder and the old session is dead',
   await dialog.getByRole('button', { name: 'Anonimizar' }).click()
   await expect(page.getByText('Conta anonimizada.').first()).toBeVisible()
 
-  await page.goto('/admin/bookings')
+  // The list is paged and other tests add bookings as this runs: filter it
+  // to this room, where the only row is the anonymised customer's.
+  await page.goto(`/admin/bookings?room_id=${room.id}`)
   await expect(page.getByText(/utilizador-[0-9a-f]{8}@anon\.invalid/).first()).toBeVisible({ timeout: 15000 })
   const dead = await api.get(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${oldToken}` } })
   expect(dead.status()).toBe(401)
-  await api.put(`${API_URL}/admin/bookings/${booking.id}`, { headers: auth, params: { org_id: org }, data: { status: 'cancelled' } })
+  expect(booking.id).toBeTruthy()
 })
 
 test('settings: an admin who is not the owner reads with a note and cannot save', async ({ browser }) => {
@@ -282,15 +259,9 @@ test('settings: an admin who is not the owner reads with a note and cannot save'
   const promoted = await api.put(`${API_URL}/admin/users/${user.id}/role`, { headers: auth, params: { org_id: org }, data: { role: 'admin' } })
   expect(promoted.ok(), await promoted.text()).toBeTruthy()
 
-  // The auth tier is shared by everything above; give it a moment.
-  await delay(5000)
-  const context = await browser.newContext()
+  // Signed in as the new admin (the form is auth.spec.ts's subject, not this one's).
+  const context = await contextAs(browser, { email, password: 'admin2-pass-123' })
   const page = await context.newPage()
-  await page.goto('/sign-in')
-  await page.getByLabel(/Email/i).fill(email)
-  await page.getByLabel('Password').fill('admin2-pass-123')
-  await page.getByRole('button', { name: /Entrar/i }).click()
-  await page.waitForURL('**/dashboard', { timeout: 15000 })
   await page.goto('/admin/settings')
   await expect(page.getByText(/Só o proprietário/)).toBeVisible({ timeout: 15000 })
   await expect(page.getByLabel('Nome')).toBeDisabled()

@@ -14,8 +14,10 @@ test.describe('room photos', () => {
     const room = rooms.find((r: { photos: unknown[] }) => r.photos.length >= 2)
     expect(room, 'the seed should have given a room at least two photos').toBeTruthy()
 
-    await page.goto('/')
-    const card = page.getByTestId('room-card').filter({ hasText: room.name })
+    // The rooms view lists every room; the landing previews a few, and which
+    // ones is not fixed while other specs add rooms of their own.
+    await page.goto('/spaces')
+    const card = page.getByTestId('room-card').filter({ has: page.getByRole('heading', { name: room.name, exact: true }) })
     const carousel = card.getByRole('region', { name: `${room.name} — fotografias` })
     await expect(carousel).toBeVisible({ timeout: 15000 })
 
@@ -35,7 +37,7 @@ test.describe('room photos', () => {
     // The second photo is the one on screen, and using the carousel did not
     // follow the card's booking link.
     await expect(carousel.getByRole('img').nth(1)).toBeInViewport()
-    await expect(page).toHaveURL(/\/$/)
+    await expect(page).toHaveURL(/\/spaces$/)
 
     // Keyboard: focus the frame, arrow back.
     await carousel.focus()
