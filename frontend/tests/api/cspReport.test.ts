@@ -83,6 +83,20 @@ describe('POST /api/csp-report (Q52)', () => {
     expect((await post(one, 'application/csp-report', headers)).status).toBe(204)
   })
 
+  it('an oversized body from a new client is refused without leaving a bucket behind, and its budget is intact', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const big = JSON.stringify({ 'csp-report': { 'blocked-uri': 'x'.repeat(MAX_BODY_BYTES) } })
+    for (let i = 0; i < 50; i++) {
+      expect((await post(big, 'application/csp-report', { 'x-forwarded-for': `203.0.113.${i}, 10.0.0.10` })).status).toBe(413)
+    }
+    expect(warn).not.toHaveBeenCalled()
+    // The same client still has its whole window: the 413s charged nothing.
+    for (let i = 0; i < RATE_LIMIT.max; i++) {
+      expect((await post(one, 'application/csp-report', { 'x-forwarded-for': '10.0.0.10' })).status).toBe(204)
+    }
+    expect((await post(one, 'application/csp-report', { 'x-forwarded-for': '10.0.0.10' })).status).toBe(429)
+  })
+
   it('a client is charged to the address the trusted proxy appended, not the one it sent itself', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     for (let i = 0; i < RATE_LIMIT.max; i++) await post(one, 'application/csp-report', { 'x-forwarded-for': `203.0.113.${i}, 10.0.0.9` })
@@ -155,5 +169,19 @@ describe('summarize / sanitizeUrl', () => {
     expect(limiter.allow('a', 3, 1500)).toBe(true)
     limiter.allow('b', 1, 1500); limiter.allow('c', 1, 1500)
     expect(limiter.allow('d', 1, 1500)).toBe(true)
+    expect(limiter.clients).toBe(2)
+  })
+
+  it('a lookup never creates a bucket: unseen or refused clients leave the map untouched, expired ones are dropped', () => {
+    const limiter = new ReportRateLimiter(1, 1000, 2)
+    for (let i = 0; i < 100; i++) expect(limiter.exhausted(`unseen-${i}`, 0)).toBe(false)
+    expect(limiter.clients).toBe(0)
+    for (let i = 0; i < 100; i++) expect(limiter.allow(`refused-${i}`, 2, 0)).toBe(false)
+    expect(limiter.clients).toBe(0)
+    expect(limiter.allow('a', 1, 0)).toBe(true)
+    expect(limiter.clients).toBe(1)
+    // Past the window the bucket is gone, not kept empty.
+    expect(limiter.exhausted('a', 1500)).toBe(false)
+    expect(limiter.clients).toBe(0)
   })
 })

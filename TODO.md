@@ -821,6 +821,24 @@ lose recovery work; provide an operator-visible manual-access contingency.
 failed revoke retained/retried, wrong-user/org code access denial, and local
 stub customer-code → cancel → revoke walkthrough including series changes.
 
+### O05 — Tenant-scoped audit history (residual scope)
+
+**State: QUEUED.** The minimal mandatory scope — `admin_actions` written in
+the same transaction as every admin mutation route, system actors
+distinguished, secrets never snapshotted, the admin-only tenant-scoped
+listing and `/history` routes, the `/admin/audit` page — is DONE (G01,
+PR #65; archived verbatim in
+[2026-10.md](docs/backlog-archive/2026-10.md#o05-tenant-scoped-audit-history)).
+What that entry names beyond it is still open and stays here (review on
+#71, round 3: Q54 had archived the whole task): **series changes, refund
+operations and role changes as first-class audited transitions**, each with
+the actor, organisation, action, target, timestamp and non-sensitive change
+metadata, written in the same transaction and absent after a rollback; and
+the O04 dependency (lock issuance/revocation outcomes as audited system
+actions). **Depends on:** O04 for the access-code transitions; O02 for refund
+operations. **Validation:** the `tests/test_audit.py` scenario table extended
+to each new transition (committed, rolled back, wrong role/org denied).
+
 ### O99 — Outcome 3 acceptance
 
 **Depends on:** O01–O05. **Scope:** integrated operational recovery exercise.
@@ -2154,4 +2172,4 @@ History lives in `docs/backlog-archive/<yyyy-mm>.md`, one file per month of comp
 - **G04** — Missing admin endpoints (tenant-scoped, audited, tested) — DONE 2026-10-05 · [2026-10.md](docs/backlog-archive/2026-10.md#g04-missing-admin-endpoints-tenant-scoped-audited-tested)
 - **G05** — Shared admin CRUD kit (`frontend/components/admin/crud/`) — DONE 2026-10-05 · [2026-10.md](docs/backlog-archive/2026-10.md#g05-shared-admin-crud-kit-frontendcomponentsadmincrud)
 - **G06** — Entity pages (migrate and complete; routes stable) — DONE 2026-10-05 · [2026-10.md](docs/backlog-archive/2026-10.md#g06-entity-pages-migrate-and-complete-routes-stable)
-- **O05** — Tenant-scoped audit history — DONE 2026-10-05 · [2026-10.md](docs/backlog-archive/2026-10.md#o05-tenant-scoped-audit-history)
+- **O05** — Tenant-scoped audit history — minimal scope DONE 2026-10-05 (residual scope QUEUED above, under Outcome 3) · [2026-10.md](docs/backlog-archive/2026-10.md#o05-tenant-scoped-audit-history)

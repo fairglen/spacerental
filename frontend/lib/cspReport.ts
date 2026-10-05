@@ -76,11 +76,22 @@ export class ReportRateLimiter {
   private hits = new Map<string, number[]>()
   constructor(private readonly max = RATE_LIMIT.max, private readonly windowMs = RATE_LIMIT.windowMs, private readonly maxClients = RATE_LIMIT.maxClients) {}
 
+  /** The client's hits still inside the window. A lookup never creates a
+   *  bucket (review on #71, round 3): `exhausted()` runs before the body is
+   *  read, so a 413 from an unseen client must leave nothing behind. */
   private recent(client: string, now: number): number[] {
     const since = now - this.windowMs
-    const recent = (this.hits.get(client) ?? []).filter((t) => t > since)
-    this.hits.set(client, recent)
+    const known = this.hits.get(client)
+    if (known === undefined) return []
+    const recent = known.filter((t) => t > since)
+    if (recent.length === 0) this.hits.delete(client)
+    else if (recent.length !== known.length) this.hits.set(client, recent)
     return recent
+  }
+
+  /** How many clients hold a bucket right now. */
+  get clients(): number {
+    return this.hits.size
   }
 
   /** Nothing left in the window: the cheap answer before a body is read. */
@@ -93,6 +104,10 @@ export class ReportRateLimiter {
     const recent = this.recent(client, now)
     if (recent.length + cost > this.max) return false
     for (let i = 0; i < cost; i++) recent.push(now)
+    // The bucket exists only once a charge is accepted; re-setting also makes
+    // this client the newest in insertion order.
+    this.hits.delete(client)
+    this.hits.set(client, recent)
     if (this.hits.size > this.maxClients) {
       // Drop the oldest client rather than grow without bound.
       const oldest = this.hits.keys().next().value
