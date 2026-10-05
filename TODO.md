@@ -161,6 +161,8 @@ lunch break makes two) and can add/remove one; the booking summary and the
 block list read on the space clock like the forms; the new-space page keys
 the organisation query by tenant; `POST /admin/spaces` stores the
 `timezone` it is given (it used to drop it).
+Round 5 (2026-10-05): a removed photo's files go after the commit (background
+task) and an upload whose audit write fails takes its files back.
 
 States used below:
 
