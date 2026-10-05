@@ -8,7 +8,9 @@
  * dots, "Fotografia anterior/seguinte", and a live region that only speaks
  * after the visitor moved it.
  *
- * Real photos later are a manifest edit (and the files), nothing here changes.
+ * Real photos later are a manifest edit (and the files), nothing here changes
+ * — except the first photo of each room, which index.html also carries as a
+ * static <img> rendered from assets/data/business.json (S1.1).
  */
 (function () {
   'use strict';
@@ -42,6 +44,9 @@
     var slug = container.getAttribute('data-room');
     var index = 0;
 
+    // The HTML carries the first photo as a plain <img> for crawlers and
+    // for visitors without JavaScript (S1.1); the carousel replaces it.
+    Array.prototype.forEach.call(container.querySelectorAll(':scope > img'), function (img) { container.removeChild(img); });
     container.setAttribute('role', 'region');
     container.setAttribute('aria-roledescription', 'carrossel');
     container.setAttribute('aria-label', label + ' — fotografias');

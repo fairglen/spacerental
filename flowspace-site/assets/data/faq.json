@@ -1,0 +1,55 @@
+{
+  "_comment": "S1.4 — the FAQ, one source for the page's <details>, the JSON-LD FAQPage and llms-full.txt (scripts/render-static.py). Formal register; {placeholders} are filled from business.json so a fact can never drift. The owner edits wording here.",
+  "items": [
+    {
+      "id": "para-quem",
+      "q": "Para quem é o FlowSpace?",
+      "a": "Para {audience} — psicólogos, terapeutas, nutricionistas, coaches e outros profissionais — que precisam de um gabinete profissional em {locality} sem assumir um contrato de arrendamento. Reserva apenas as horas de que precisa."
+    },
+    {
+      "id": "como-reservar",
+      "q": "Como reservo uma sala?",
+      "a": "Crie a sua conta na plataforma de reservas, escolha a sala e a hora no calendário e pague online de forma segura; a confirmação chega por email. Se preferir, envie-nos uma mensagem através do formulário de contacto e tratamos da reserva consigo."
+    },
+    {
+      "id": "a-hora",
+      "q": "O que significa reservar «à hora» e qual é o mínimo?",
+      "a": "Paga apenas as horas que reserva, sem mensalidade nem caução. A reserva mínima é de {minimum_hours} hora e pode reservar várias horas seguidas no mesmo dia."
+    },
+    {
+      "id": "packs",
+      "q": "Como funcionam os packs de horas?",
+      "a": "O {pack_name} tem {pack_discount}% de desconto face ao preço à hora; validade: {pack_validity_lower}. As horas ficam no seu banco de horas e são descontadas a cada reserva; se uma reserva exceder as horas disponíveis, paga apenas a diferença."
+    },
+    {
+      "id": "cancelamento",
+      "q": "Posso cancelar uma reserva?",
+      "a": "Sim, até {cancel_hours} horas antes do início, na sua área de cliente. As horas já pagas são creditadas no seu banco de horas para uma próxima reserva."
+    },
+    {
+      "id": "acesso",
+      "q": "Como acedo à sala no dia da reserva?",
+      "a": "O acesso faz-se com um código de acesso, que fica disponível na sua área de cliente assim que a reserva está confirmada."
+    },
+    {
+      "id": "incluido",
+      "q": "O que está incluído na reserva?",
+      "a": "{included}"
+    },
+    {
+      "id": "recorrente",
+      "q": "Preciso de uma sala todas as semanas. Têm condições especiais?",
+      "a": "Sim. A partir de {recurring_min_hours} horas semanais combinamos um horário fixo e um preço à medida — fale connosco através do formulário ou por email para {email}."
+    },
+    {
+      "id": "como-chegar",
+      "q": "Como chegar ao FlowSpace?",
+      "a": "Estamos na {street}, {postal_code} {locality} ({sublocality}). A estação de comboios de {station} fica a cerca de {station_distance_m} metros, menos de {station_walk_minutes} minutos a pé. Em «Onde estamos» encontra o mapa e as direções no Google Maps."
+    },
+    {
+      "id": "horario",
+      "q": "Qual é o horário de funcionamento?",
+      "a": "Todos os dias, das {opens} às {closes}."
+    }
+  ]
+}

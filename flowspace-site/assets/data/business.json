@@ -1,0 +1,90 @@
+{
+  "_comment": "S1.1 — the canonical facts of the business. Everything that renders a fact (index.html's generated blocks, the JSON-LD, robots.txt, sitemap.xml, llms.txt, llms-full.txt, .well-known/security.txt, site.webmanifest) is produced from this file by scripts/render-static.py; tests/test_static_site.py fails when a committed file disagrees with it. Edit here, run the script, commit both.",
+  "name": "FlowSpace",
+  "legal_name": "FlowSpace, Lda.",
+  "brand_line": "FlowSpace · Gabinetes profissionais",
+  "url": "https://flowspace.pt/",
+  "language": "pt-PT",
+  "email": "geral@flowspace.pt",
+  "phone": null,
+  "audience": "profissionais de saúde e bem-estar",
+  "title": "Salas para terapia e consultas à hora em Queluz · FlowSpace",
+  "description": "Gabinetes para profissionais de saúde e bem-estar, à hora, em Queluz — Massamã. Sem contratos nem caução: reserve online e pague só as horas que usa.",
+  "address": {
+    "street": "Rua 12 de Julho de 1997 5, Loja 1",
+    "postal_code": "2745-841",
+    "locality": "Queluz",
+    "sublocality": "Massamã",
+    "municipality": "Sintra",
+    "region": "Lisboa",
+    "country": "PT",
+    "country_name": "Portugal"
+  },
+  "geo": { "lat": 38.755723, "lng": -9.279799 },
+  "map_url": "https://www.google.com/maps/search/?api=1&query=Rua+12+de+Julho+de+1997%2C+2745-841+Queluz+%E2%80%94+Massam%C3%A3",
+  "hours": {
+    "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    "opens": "08:00",
+    "closes": "22:00",
+    "label": "Todos os dias, 08:00–22:00"
+  },
+  "area_served": ["Queluz", "Massamã", "Sintra", "Lisboa"],
+  "area_served_cities": ["Queluz", "Sintra", "Lisboa"],
+  "currency": "EUR",
+  "price_range": "€€",
+  "hourly": { "min": 12, "max": 18, "minimum_hours": 1 },
+  "packs": [
+    {
+      "name": "Pack 10 horas",
+      "hours": 10,
+      "discount_percent": 10,
+      "validity": "Sem expiração",
+      "badge": "Mais popular"
+    }
+  ],
+  "recurring": { "min_hours_per_week": 4, "price_label": "A combinar" },
+  "cancellation": { "hours_before": 24 },
+  "rooms": [
+    {
+      "slug": "sala-calma",
+      "name": "Sala Calma",
+      "capacity": 2,
+      "price_per_hour": 12,
+      "equipment": ["Ar condicionado", "Isolamento acústico", "Wi-Fi", "2 cadeirões"],
+      "photo": { "src": "assets/img/room-photos/sala-01.svg", "width": 1600, "height": 1200, "alt": "Sala Calma — gabinete com poltronas" }
+    },
+    {
+      "slug": "sala-brisa",
+      "name": "Sala Brisa",
+      "capacity": null,
+      "price_per_hour": 15,
+      "equipment": ["Ar condicionado", "Isolamento acústico", "Mesa de trabalho", "Wi-Fi"],
+      "photo": { "src": "assets/img/room-photos/sala-01.svg", "width": 1600, "height": 1200, "alt": "Sala Brisa — gabinete com mesa de trabalho" }
+    },
+    {
+      "slug": "sala-nevoa",
+      "name": "Sala Névoa",
+      "capacity": 6,
+      "price_per_hour": 18,
+      "equipment": ["Ar condicionado", "Luz natural", "4–6 lugares", "Wi-Fi"],
+      "photo": { "src": "assets/img/room-photos/sala-01.svg", "width": 1600, "height": 1200, "alt": "Sala Névoa — sala com luz natural para 4 a 6 pessoas" }
+    }
+  ],
+  "booking": {
+    "url": "https://flowspace.pt/#contacto",
+    "app_url": null,
+    "api_url": null,
+    "deep_link_format": "<app>/spaces/<space-id>?room=<room-id>&start=<ISO 8601>&end=<ISO 8601>",
+    "public_openapi_path": "/openapi-public.json"
+  },
+  "transport": {
+    "rail": { "station": "Massamá-Barcarena", "distance_m": 600, "walk_minutes": 10 }
+  },
+  "logo": "assets/img/brand/logo-email.png",
+  "og_image": { "src": "assets/img/brand/og-image.png", "width": 1200, "height": 630, "alt": "FlowSpace — gabinetes profissionais à hora em Queluz" },
+  "icons": { "svg": "assets/img/brand/favicon.svg", "png192": "assets/img/brand/favicon-192.png", "png512": "assets/img/brand/favicon-512.png" },
+  "theme_color": "#3D7A5E",
+  "same_as": [],
+  "security_txt_expires": "2027-10-05T00:00:00.000Z",
+  "privacy_page": "privacidade.html"
+}

@@ -1121,3 +1121,81 @@ section.tight {
   white-space: nowrap;
   border: 0;
 }
+
+/* S1.1 — the first photo is in the HTML (crawlers, no JavaScript); it fills
+ * the gallery box exactly like a slide until room-gallery.js replaces it. */
+.room-gallery > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* S1.4 — the facts line under the room name: text, not prose. */
+.room-facts {
+  margin: -0.5rem 0 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+/* S1.4 — skip link: invisible until focused, then the primary button. */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -100%;
+  z-index: 100;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-button);
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus {
+  top: 1rem;
+}
+/* S1.4 — the FAQ: native <details>, readable without JavaScript, styled as
+ * the card list the app's design uses. */
+.faq-list {
+  max-width: 48rem;
+  margin: 0 auto;
+}
+.faq-item {
+  border-bottom: 1px solid var(--color-border);
+}
+.faq-item summary {
+  padding: 1rem 0;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item summary::after {
+  content: '+';
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent-bg);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+.faq-item[open] summary::after {
+  content: '−';
+}
+.faq-item summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-button);
+}
+.faq-item p {
+  margin: 0 0 1rem;
+  color: var(--color-muted);
+}

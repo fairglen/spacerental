@@ -1,0 +1,24 @@
+# FlowSpace · Gabinetes profissionais
+
+> Gabinetes profissionais à hora em Queluz (Massamã, Sintra, Lisboa) para profissionais de saúde e bem-estar: salas equipadas reservadas apenas pelas horas necessárias, sem contratos nem caução, com reserva e pagamento online.
+
+## Factos
+
+- Morada: Rua 12 de Julho de 1997 5, Loja 1, 2745-841 Queluz (Massamã, Sintra), Portugal — lat 38.755723, lng -9.279799
+- Horário: Todos os dias, 08:00–22:00
+- Email: geral@flowspace.pt (sem telefone)
+- Preço à hora: 12€–18€/hora conforme a sala (Sala Calma 12€/hora; Sala Brisa 15€/hora; Sala Névoa 18€/hora); mínimo 1 hora
+- Packs: Pack 10 horas: 10% de desconto face ao preço à hora, sem expiração
+- Reserva recorrente: a combinar, a partir de 4 horas semanais
+- Cancelamento: até 24 horas antes do início; as horas pagas são creditadas no banco de horas
+- Reservas: https://flowspace.pt/#contacto (a plataforma de reservas online é anunciada aqui quando publicada)
+- Formato de ligação direta para uma sala e hora na plataforma: `<app>/spaces/<space-id>?room=<room-id>&start=<ISO 8601>&end=<ISO 8601>`
+- Disponibilidade legível por máquinas: `/openapi-public.json` na API da plataforma (OpenAPI, só leitura; o endereço é publicado com a plataforma)
+
+## Ligações
+
+- [Perguntas frequentes](https://flowspace.pt/#faq)
+- [Salas e preços](https://flowspace.pt/#salas)
+- [Onde estamos](https://flowspace.pt/#localizacao)
+- [Política de privacidade](https://flowspace.pt/privacidade.html)
+- [Versão completa para assistentes](https://flowspace.pt/llms-full.txt)
