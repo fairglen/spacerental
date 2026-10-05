@@ -2463,7 +2463,7 @@ booking URL = the app's public URL from `FRONTEND_URL`/site config; audience
 "profissionais de saúde e bem-estar"; area served Queluz, Massamã, Sintra,
 Lisboa (Área Metropolitana).
 
-Baseline (2026-10-05, `9f40508`, Lighthouse 12 desktop preset on
+Baseline (2026-10-05, `9f40508`, Lighthouse 13.5 desktop preset on
 `python3 -m http.server 8080`): SEO **1.00**, Best Practices **1.00**,
 Accessibility **0.96** (`color-contrast`, `landmark-one-main`). No
 structured data, no robots.txt, no sitemap, no llms.txt, no canonical;
@@ -2493,7 +2493,7 @@ repository; each needs the business's accounts.
 
 ### S1.1 — Facts file and progressive enhancement
 
-**Priority: P1. State: QUEUED.** `assets/data/business.json` holds the
+**Priority: P1. State: DONE 2026-10-05** (`9ef83e3`; evidence below under S1.5). `assets/data/business.json` holds the
 canonical facts (name, address parts, geo, hours, email, prices, packs, rooms
 with capacity/equipment/price, booking URL, logo and OG image paths).
 Everything that renders facts reads from it: for a no-build site that means
@@ -2509,7 +2509,7 @@ documents the generator.
 
 ### S1.2 — Head, titles and sharing
 
-**Priority: P1. State: QUEUED.** `<title>` ≤ 60 chars with intent + place +
+**Priority: P1. State: DONE 2026-10-05** (`9ef83e3`: title 59 chars, description 151; the brand set had no manifest link — `site.webmanifest` added, generated). `<title>` ≤ 60 chars with intent + place +
 brand; description ≤ 155 chars (audience, à hora, Queluz/Massamã, sem
 contratos, reserva online); H1 unchanged; canonical on both pages,
 `noindex` on `privacidade.html`; Open Graph + Twitter card complete
@@ -2521,7 +2521,7 @@ link.
 
 ### S1.3 — Structured data (JSON-LD, one generated `<script>`)
 
-**Priority: P1. State: QUEUED.** One `@graph`: `Organization`,
+**Priority: P1. State: DONE 2026-10-05** (`9ef83e3`; `tests/validate-structured-data.mjs` runs structured-data-testing-tool per node — it does not unpack `@graph`; output in the PR). One `@graph`: `Organization`,
 `LocalBusiness` (address, geo, hasMap, openingHoursSpecification Mo–Su
 08:00–22:00, email, priceRange "€€", areaServed, amenityFeature from the room
 tags, makesOffer — "Sala à hora" per room in EUR/HUR and one Offer per pack —
@@ -2534,7 +2534,7 @@ the PR.
 
 ### S1.4 — Content for search intent
 
-**Priority: P1. State: QUEUED.** Room cards get a facts line ("Até N pessoas
+**Priority: P1. State: DONE 2026-10-05** (`9ef83e3`: ten Q&As in `assets/data/faq.json`, facts interpolated; the owner edits wording there). Room cards get a facts line ("Até N pessoas
 · tags · preço/hora", no prose); a "Perguntas frequentes" section (`#faq`,
 after Preços, before Onde estamos) with 8–10 `<details>/<summary>` Q&As in
 formal Portuguese, 1–3 sentences each (for whom; how to book; "à hora" and
@@ -2550,7 +2550,7 @@ include `#faq`).
 
 ### S1.5 — Crawl files and the AI-facing card
 
-**Priority: P1. State: QUEUED.** `robots.txt` (allow all, explicit allows for
+**Priority: P1. State: DONE 2026-10-05** (site `9ef83e3`, backend `efbcb25`). `robots.txt` (allow all, explicit allows for
 GPTBot, ChatGPT-User, ClaudeBot, Claude-Web, PerplexityBot, Google-Extended,
 Applebot-Extended, CCBot; disallow only `/tests/`; Sitemap line),
 `sitemap.xml` (`/`, `/privacidade.html`, lastmod from git, image entries for
@@ -2567,7 +2567,7 @@ the header; the workflow's allowlist publishes the new files.
 
 ### S1.6 — Verification and measurement hooks
 
-**Priority: P1. State: QUEUED.** Verification tokens rendered into the HTML
+**Priority: P1. State: DONE 2026-10-05** (the commit after `efbcb25`: `flowspace-site-checks.yml`, `seo-budget.json`, `tests/lighthouse-budget.mjs`, README). Verification tokens rendered into the HTML
 by the generator from `flowspace-site/site.env.json` (gitignored;
 `site.env.example.json` committed; `SEARCH_CONSOLE_TOKEN`, `BING_TOKEN`) —
 no JS injection. CI: a new `flowspace-site-checks.yml` (path-filtered) runs
@@ -2575,6 +2575,43 @@ the node tests, the Python facts/JSON-LD tests, the Playwright smoke suite,
 Lighthouse (mobile preset; SEO ≥ 95, Best Practices ≥ 90 from
 `seo-budget.json`) and `linkinator` against a local server. **Acceptance:**
 the workflow is green on the PR; the README documents the owner flow.
+
+**Evidence (S1.1–S1.6, 2026-10-05):** `python3 tests/test_static_site.py` 24
+passed; node tests 44; smoke suite 41/41 (+6); backend
+`test_openapi_public.py` 4 + OpenAPI snapshot 2 + cache headers 7 passed;
+ruff clean. Lighthouse (local `python3 -m http.server`): desktop SEO 1.00 /
+Best Practices 1.00 / Accessibility 0.96 → 0.97 (`landmark-one-main` fixed
+by `<main>`; `color-contrast` on muted text remains — design unchanged,
+owner's call); mobile 1.00 / 1.00 / 0.97. linkinator 15 links, none broken.
+`.pr-evidence/seo/`.
+
+**DECISION (loop, S1.1):** the booking URL is the site's contact form
+(`booking.url`), since no public address of the booking platform exists in
+the repo; `booking.app_url`/`api_url` are null and the generator switches the
+ReserveAction and the llms.txt lines to them when set (S0). Reverse: set the
+two fields and regenerate.
+**DECISION (loop, S1.1):** capacity is stated only where the published tags
+state it (Sala Calma 2, Sala Névoa 6); Sala Brisa gets no number rather than
+the app's seed value. Reverse: set `capacity` in business.json.
+**DECISION (loop, S1.2):** `privacidade.html` is in the sitemap as the
+assignment lists it although it is `noindex` — a mixed signal Google
+tolerates. Reverse: drop it from `file_sitemap`.
+**DECISION (loop, S1.3):** `additionalType` is the Wikidata item for
+"coworking space" (Q5146147). Reverse: drop the property.
+**DECISION (loop, S1.4):** transport states only what OpenStreetMap confirms
+(the Massamá-Barcarena railway halt ~600 m away), not the line's name
+(Overpass timed out twice; Nominatim answered). Access states the software
+path (code in the customer area once confirmed). Invoices: nothing in the
+product → omitted.
+**DECISION (loop, S1.5):** the generator's `--check` ignores `<lastmod>`
+values (git's date lags by one commit by construction); the workflow checks
+out with full history so the printed date is right.
+**DECISION (loop, S1.6):** `assets/js/site-config.js` does not exist (the
+form URL lives in `contact-form.js`), so the tokens come from
+`flowspace-site/site.env.json` (gitignored, example committed) through the
+generator; the `verification` block is left as committed when the file is
+absent, so CI agrees with an owner-rendered token. Accessibility is reported
+by the budget, not gated, until the contrast finding is the owner's decision.
 
 ### S2.1 — The app stops competing
 
