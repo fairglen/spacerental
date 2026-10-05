@@ -34,6 +34,13 @@ describe('securityHeaders (Q52)', () => {
     expect(headerMap(dev, '/:path*')['Content-Security-Policy-Report-Only']).toContain("frame-ancestors 'none'")
   })
 
+  it('refuses a production build without the API URL, and only falls back to localhost in development', () => {
+    // Round 7: a policy naming the wrong origin would fail every browser call quietly once deployed.
+    expect(() => securityHeaders({ nodeEnv: 'production', apiUrl: undefined })).toThrow(/NEXT_PUBLIC_API_URL/)
+    const fallback = securityHeaders({ nodeEnv: 'development', apiUrl: undefined }) as Rule[]
+    expect(headerMap(fallback, '/:path*')['Content-Security-Policy-Report-Only']).toContain('connect-src \'self\' http://localhost:8000')
+  })
+
   it('sends HSTS in a production build only', () => {
     expect(headerMap(dev, '/:path*')['Strict-Transport-Security']).toBeUndefined()
     expect(headerMap(prod, '/:path*')['Strict-Transport-Security']).toBe('max-age=63072000; includeSubDomains')

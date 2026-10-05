@@ -18,7 +18,10 @@
 //   frame in "Onde estamos", inline styles/scripts (Next.js hydration), and
 //   `unsafe-eval` only outside production (the dev server's HMR).
 
-const API_FALLBACK = 'http://localhost:8000/api/v1'
+// Development only. A production build must name the real API origin, or
+// the policy would allow the wrong one and every browser call would fail
+// quietly once deployed (review on #71, round 7): it throws instead.
+const DEV_API_FALLBACK = 'http://localhost:8000/api/v1'
 
 function originOf(url) {
   return new URL(url).origin
@@ -49,10 +52,16 @@ function contentSecurityPolicy({ production, apiOrigin, mediaOrigin }) {
  */
 function securityHeaders({
   nodeEnv = process.env.NODE_ENV,
-  apiUrl = process.env.NEXT_PUBLIC_API_URL || API_FALLBACK,
+  apiUrl = process.env.NEXT_PUBLIC_API_URL,
   mediaOrigin = process.env.NEXT_PUBLIC_MEDIA_ORIGIN || '',
 } = {}) {
   const production = nodeEnv === 'production'
+  if (!apiUrl) {
+    if (production) {
+      throw new Error('NEXT_PUBLIC_API_URL is required for a production build: the security policy must name the real API origin')
+    }
+    apiUrl = DEV_API_FALLBACK
+  }
   const apiOrigin = originOf(apiUrl)
   const everywhere = [
     { key: 'X-Content-Type-Options', value: 'nosniff' },

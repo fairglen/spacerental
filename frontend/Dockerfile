@@ -25,7 +25,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so
 # they are build arguments here; runtime environment only reaches the server.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+# No default for the API URL: a production build that does not name its real
+# API origin fails in lib/securityHeaders.js rather than shipping a policy
+# for localhost (review round 7). docker-compose.e2e.yml passes it.
+ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED=false
 ARG NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS=30
 ARG NEXT_PUBLIC_CONTACT_PHONE=
