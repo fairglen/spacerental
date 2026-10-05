@@ -650,3 +650,43 @@ class TestReinstatement:
         (credit,) = await _credits(db_session, booking["id"])
         assert credit.status is PurchaseStatus.cancelled
         assert credit.hours_used == Decimal(1)
+
+    async def test_reinstating_a_mixed_booking_never_pays_its_pack_share_with_its_own_credit(
+        self,
+        client,
+        auth_headers,
+        admin,
+        test_room,
+        test_org,
+        test_user,
+        pack,
+        payments,
+        db_session,
+    ):
+        """Review on #69, round 3: the pack outlives the credit, so the
+        soonest-expiring walk would draw the re-debit from the booking's own
+        credit and then read it as spent. The credit is left out of that
+        walk: the pack pays, the credit is reversed, the booking comes back."""
+        seven = await _purchase(db_session, org=test_org, user=test_user, package=pack, hours="7")
+        seven.expires_at = datetime.now(tz=UTC) + timedelta(days=730)
+        await db_session.commit()
+        booking = await _paid(client, payments, auth_headers, test_room, _monday(), 8, "mixed")
+        assert (
+            await client.delete(f"{API}/bookings/{booking['id']}", headers=auth_headers)
+        ).status_code == 204
+        await db_session.refresh(seven)
+        assert seven.hours_remaining == Decimal(7)
+
+        back = await client.put(
+            f"{API}/admin/bookings/{booking['id']}",
+            params=_org(test_org),
+            json={"status": "confirmed"},
+            headers=admin,
+        )
+        assert back.status_code == 200, back.text
+        assert (await _db_booking(db_session, booking["id"])).status is BookingStatus.confirmed
+        await db_session.refresh(seven)
+        assert (seven.hours_remaining, seven.hours_used) == (Decimal(0), Decimal(7))
+        (credit,) = await _credits(db_session, booking["id"])
+        assert credit.status is PurchaseStatus.cancelled
+        assert (credit.hours_used, credit.hours_remaining) == (Decimal(0), Decimal(0))

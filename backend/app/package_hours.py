@@ -80,8 +80,15 @@ async def _walk(
     org_id: uuid.UUID,
     hours: Decimal,
     now: datetime,
+    not_for_booking: uuid.UUID | None = None,
 ) -> list[Draw]:
     """Debit up to `hours` across the bank, soonest-expiring purchase first.
+
+    `not_for_booking` leaves out the cancellation credit a booking created
+    (K01): the booking being reinstated must not pay its pack share with the
+    hours its own cancellation put in the bank — those are reversed right
+    after, and a draw from them would read as "spent" (review on #69). The
+    walk order over the remaining rows is unchanged.
 
     Candidate ids are read unlocked, then each candidate is re-read under
     `FOR UPDATE` and re-validated *under that lock*. That second check is the
@@ -94,15 +101,20 @@ async def _walk(
     than `hours` (an empty list when the bank is empty); the caller decides
     what that makes of the booking, or reverts it with `_undo`.
     """
+    conditions = [
+        UserPackagePurchase.user_id == user_id,
+        UserPackagePurchase.org_id == org_id,
+        UserPackagePurchase.status == PurchaseStatus.active,
+        UserPackagePurchase.expires_at > now,
+        UserPackagePurchase.hours_remaining >= _ANY_HOURS,
+    ]
+    if not_for_booking is not None:
+        conditions.append(
+            UserPackagePurchase.source_booking_id.is_distinct_from(not_for_booking)
+        )
     candidates = await db.execute(
         select(UserPackagePurchase.id)
-        .where(
-            UserPackagePurchase.user_id == user_id,
-            UserPackagePurchase.org_id == org_id,
-            UserPackagePurchase.status == PurchaseStatus.active,
-            UserPackagePurchase.expires_at > now,
-            UserPackagePurchase.hours_remaining >= _ANY_HOURS,
-        )
+        .where(*conditions)
         # Spend the soonest-expiring hours first so nothing lapses unused.
         .order_by(UserPackagePurchase.expires_at.asc(), UserPackagePurchase.id.asc())
     )
@@ -158,6 +170,7 @@ async def redeem_hours(
     org_id: uuid.UUID,
     hours: Decimal,
     now: datetime,
+    not_for_booking: uuid.UUID | None = None,
 ) -> list[Draw] | None:
     """Debit the whole of `hours` from the bank, or nothing at all.
 
@@ -165,7 +178,9 @@ async def redeem_hours(
     draw is put back before returning None, so a refused `package` booking
     leaves the balances exactly as they were.
     """
-    draws = await _walk(db, user_id=user_id, org_id=org_id, hours=hours, now=now)
+    draws = await _walk(
+        db, user_id=user_id, org_id=org_id, hours=hours, now=now, not_for_booking=not_for_booking
+    )
     if sum((taken for _, taken in draws), Decimal(0)) < hours:
         await _undo(db, draws)
         return None
@@ -264,6 +279,8 @@ async def redebit_booking(db: AsyncSession, booking: Booking, *, now: datetime) 
         org_id=booking.org_id,
         hours=booking.package_hours_used,
         now=now,
+        # Never from this booking's own cancellation credit (K01).
+        not_for_booking=booking.id,
     )
     if draws is None:
         return False

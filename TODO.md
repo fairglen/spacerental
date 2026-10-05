@@ -5269,6 +5269,11 @@ of the credit was spent, even after an operator cancelled the credit's
 purchase row (`PUT /admin/purchases`) — the cancelled status used to read as
 "already reversed" and let the booking come back while its hour was in
 another booking.
+Round 3 (2026-10-05): reinstating a `mixed` booking re-debits its pack
+share before the credit is reversed, and the soonest-expiring walk could
+draw it from the booking's own cancellation credit (a pack that outlives
+the credit), which then read as spent; the re-debit walk now leaves that
+credit out (`not_for_booking`), so the pack pays and the credit is reversed.
 
 ### Q41 — Isolated, parallel Playwright specs
 
