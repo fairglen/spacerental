@@ -13,7 +13,7 @@ export type Space = {
   id: string
   org_id: string
   name: string
-  description: string
+  description: string | null
   address: string
   city: string
   postal_code?: string | null
@@ -21,6 +21,8 @@ export type Space = {
   // sends Decimal strings and lib/api.ts converts them at the boundary.
   latitude?: number | null
   longitude?: number | null
+  // The clock the rooms' opening hours are read on (R01), an IANA name.
+  timezone?: string
   images: string[]
   // In display order; the first is the cover.
   photos?: Photo[]
@@ -35,7 +37,7 @@ export type Room = {
   space_id: string
   org_id: string
   name: string
-  description: string
+  description: string | null
   capacity: number
   hourly_rate: number
   images: string[]
@@ -155,10 +157,12 @@ export type MyPackages = {
 export type OrgUser = {
   id: string
   email: string
-  name: string
+  name: string | null
   role: 'owner' | 'admin' | 'member'
   joined_at: string
   bookings_count: number
+  // "Suspender" (G02): set while the account cannot sign in.
+  disabled_at?: string | null
   created_at: string
 }
 
@@ -269,11 +273,14 @@ export type SupportRequestBody = {
   website: string
 }
 
+// Triage (C19, G04): `in_progress` means someone is on it.
+export type SupportStatus = 'new' | 'in_progress' | 'closed'
+
 // What the sender gets back: a reference to quote, never the message.
 export type SupportRequestReceipt = {
   id: string
   reference: string
-  status: 'new' | 'closed'
+  status: SupportStatus
   created_at: string
 }
 
@@ -282,7 +289,7 @@ export type SupportRequestRow = {
   id: string
   reference: string
   category: SupportCategory
-  status: 'new' | 'closed'
+  status: SupportStatus
   contact_email: string
   user_id: string | null
   booking_id: string | null
@@ -338,4 +345,117 @@ export type AdminBookingPatch = {
   end_time?: string
   room_id?: string
   admin_note?: string | null
+  // G04: the customer-visible note, and the price override (needs a reason).
+  notes?: string | null
+  total_amount?: number
+  reason?: string
+}
+
+// ── Part A1's admin endpoints (G01–G04) ───────────────────────────────────
+
+// One row of the audit trail (G01).
+export type AuditActor = { id: string; name: string | null; email: string }
+export type AdminAction = {
+  id: string
+  org_id: string
+  actor: AuditActor | null
+  entity_type: AuditEntityType
+  entity_id: string
+  action: string
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  reason: string | null
+  request_id: string | null
+  created_at: string
+}
+export type AuditEntityType =
+  | 'space' | 'room' | 'availability_rule' | 'room_block' | 'booking' | 'user'
+  | 'package' | 'purchase' | 'support_request' | 'organization'
+export type PaginatedActions = { actions: AdminAction[]; total: number; page: number; page_size: number }
+export type AuditFilters = {
+  entity_type?: AuditEntityType
+  entity_id?: string
+  actor?: string
+  from?: string
+  to?: string
+  page?: number
+  page_size?: number
+}
+
+// The admin's space/room/booking/package pages (G04).
+export type BookingCounts = { total: number; upcoming: number }
+export type AdminSpaceDetail = { space: Space; photo_count: number; bookings: BookingCounts }
+export type AdminRoomDetail = {
+  room: Room
+  space: Space
+  rules: AvailabilityRule[]
+  blocks: RoomBlock[]
+  photo_count: number
+  bookings: BookingCounts
+}
+export type AdminBookingDetail = {
+  booking: Booking & { stripe_checkout_session_id: string | null }
+  history: AdminAction[]
+}
+export type AdminPackageDetail = {
+  package: Package
+  purchases: { total: number; active: number }
+  hours_outstanding: number
+}
+
+// The blockers a refused hard delete lists (G02): `detail.blockers` of a 409.
+export type DeleteBlockers =
+  | Array<{ room_id: string; name: string; bookings: number }>
+  | Record<string, number | string>
+  | Array<Record<string, unknown>>
+
+// Users (G03/G04).
+export type AdminUserCreateBody = { email: string; name?: string; password?: string }
+export type AdminUserPatch = { name?: string | null; email?: string; disabled_at?: string | null }
+export type AnonymisedUser = { id: string; email: string; name: string | null; disabled_at: string | null }
+
+// Purchases (G04): the list carries the customer alongside each row.
+export type AdminPurchaseRow = AdminPurchase & { user: AuditActor }
+export type PaginatedPurchases = { purchases: AdminPurchaseRow[]; total: number; page: number; page_size: number }
+export type PurchaseDebit = {
+  booking_id: string
+  hours: number
+  start_time: string
+  end_time: string
+  status: string
+  room_name: string | null
+}
+export type AdminPurchaseDetail = { purchase: AdminPurchase; user: AuditActor; debits: PurchaseDebit[] }
+export type PurchaseFilters = {
+  user_id?: string
+  package_id?: string
+  status?: UserPackagePurchase['status']
+  expiring_before?: string
+  page?: number
+  page_size?: number
+}
+
+// Support (G04): the detail carries the note and the person.
+export type SupportRequestDetail = SupportRequestRow & { admin_note: string | null; user: AuditActor | null }
+
+// Organisation settings (G04).
+export type OrganizationSettings = {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  contact_email: string | null
+  contact_phone: string | null
+  timezone: string
+  created_at: string
+  updated_at: string
+}
+// The organisation's public contact on the space detail (G04); nulls when unset.
+export type PublicContact = { email: string | null; phone: string | null }
+
+export type OrganizationSettingsPatch = {
+  name?: string
+  contact_email?: string | null
+  contact_phone?: string | null
+  timezone?: string
 }

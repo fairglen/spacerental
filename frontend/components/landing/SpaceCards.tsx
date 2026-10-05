@@ -82,7 +82,7 @@ function SingleSpaceRooms({ space }: { space: Space }) {
         </div>
       )}
       {/* Where the one space is, how to reach it and when it is open (V06). */}
-      <WhereWeAre space={space} rooms={rooms} headingAs="h3" className="mt-12" />
+      <WhereWeAre space={space} rooms={rooms} contact={data?.contact} headingAs="h3" className="mt-12" />
     </>
   )
 }

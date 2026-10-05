@@ -58,6 +58,24 @@ class TestAdminSpaces:
 
 
 class TestAdminRooms:
+    async def test_a_new_space_keeps_the_timezone_it_was_given(
+        self, client, admin_headers, test_org
+    ):
+        """Review on #65: the create route used to drop `timezone`."""
+        resp = await client.post(
+            "/api/v1/admin/spaces",
+            params={"org_id": str(test_org.id)},
+            json={
+                "name": "Tóquio",
+                "address": "Rua 1",
+                "city": "Tóquio",
+                "timezone": "Asia/Tokyo",
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["space"]["timezone"] == "Asia/Tokyo"
+
     async def test_admin_create_room_in_space(self, client, admin_headers, test_org, test_space):
         resp = await client.post(
             f"/api/v1/admin/spaces/{test_space.id}/rooms",

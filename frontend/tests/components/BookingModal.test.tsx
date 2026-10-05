@@ -501,8 +501,9 @@ describe('BookingModal price breakdown (C13)', () => {
   it('the bank spans packs (H02): one line says how many, and the sum is what is left', async () => {
     // 1h lapsing soon + 4h later cover the 3h block outright: 1 + 2, "de 2 packs".
     vi.mocked(packagesApi.listMine).mockResolvedValue([
-      purchase(4, { id: 'purchase-later', expires_at: '2027-06-01T00:00:00Z' }),
-      purchase(1, { id: 'purchase-soon', expires_at: '2026-10-01T00:00:00Z' }),
+      // Relative dates: a fixed "soon" expiry lapsed on 2026-10-01 and took the test with it.
+      purchase(4, { id: 'purchase-later', expires_at: new Date(Date.now() + 240 * 86_400_000).toISOString() }),
+      purchase(1, { id: 'purchase-soon', expires_at: new Date(Date.now() + 10 * 86_400_000).toISOString() }),
     ])
     renderModal()
 

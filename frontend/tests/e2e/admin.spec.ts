@@ -39,7 +39,7 @@ test.describe('Admin session persistence (B22)', () => {
 
   test('a cold deep link to /admin/bookings stays in admin', async ({ page }) => {
     await page.goto('/admin/bookings')
-    await expect(page.getByRole('heading', { name: 'Todas as Reservas' })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('heading', { name: 'Reservas' })).toBeVisible({ timeout: 15000 })
     await page.waitForTimeout(1500)
     expect(new URL(page.url()).pathname).toBe('/admin/bookings')
   })

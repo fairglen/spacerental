@@ -1,102 +1,77 @@
 'use client'
-import { useState } from 'react'
 import Link from 'next/link'
-import { useSession } from 'next-auth/react'
 import { useQuery } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
+import { Plus } from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import { useApi } from '@/lib/hooks/useApi'
-import { useOrg } from '@/contexts/OrgContext'
+import { useCrud } from '@/components/admin/crud/useCrud'
+import { useListState } from '@/components/admin/crud/useListState'
+import { EntityList, type Column } from '@/components/admin/crud/EntityList'
+import { PageHeader } from '@/components/admin/crud/PageHeader'
 import { ROLE_LABELS } from '@/components/admin/users/RoleDialog'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import type { OrgUser } from '@/types'
 
+const FILTERS = ['role', 'disabled'] as const
 const PAGE_SIZE = 20
 
-/** The org's members, searchable by name or email (A05). */
+/** Clientes (G06): the org's members, searched, filtered and sorted server-side. */
 export default function AdminUsersPage() {
-  const { currentOrgId } = useOrg()
-  return <OrgUsers key={currentOrgId} currentOrgId={currentOrgId} />
+  // Not keyed by organisation on purpose: `useListState` resets the page when
+  // the organisation changes, and every query key carries the org already.
+  return <UsersList />
 }
 
-function OrgUsers({ currentOrgId }: { currentOrgId: string | null }) {
-  const { data: session } = useSession()
-  const api = useApi()
-  const [page, setPage] = useState(1)
-  const [q, setQ] = useState('')
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['admin', 'users', currentOrgId, q, page],
-    queryFn: () => adminApi.getUsers({ page, page_size: PAGE_SIZE, ...(q ? { q } : {}) }, api),
-    enabled: !!session?.accessToken && !!currentOrgId,
+function UsersList() {
+  const { api, enabled, currentOrgId } = useCrud('users')
+  const { state, set } = useListState(FILTERS, { sort: 'name' })
+  const params = { page: state.page, page_size: PAGE_SIZE, sort: state.sort, ...(state.q ? { q: state.q } : {}), ...(state.filters.role ? { role: state.filters.role } : {}), ...(state.filters.disabled ? { disabled: state.filters.disabled } : {}) }
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['admin', 'users', currentOrgId, 'list', params],
+    queryFn: () => adminApi.getUsers(params, api),
+    enabled,
   })
-  const total = data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-
+  const columns: Column<OrgUser>[] = [
+    { key: 'name', header: 'Nome', sortKey: 'name', render: (u) => <span className="font-medium text-foreground">{u.name || '—'}{u.disabled_at && <Badge variant="destructive" className="ml-2 align-middle">Suspenso</Badge>}</span> },
+    { key: 'email', header: 'Email', sortKey: 'email', render: (u) => <span className="text-muted-foreground">{u.email}</span> },
+    { key: 'role', header: 'Função', render: (u) => <Badge variant={u.role === 'member' ? 'secondary' : 'default'}>{ROLE_LABELS[u.role]}</Badge> },
+    { key: 'bookings', header: 'Reservas', render: (u) => String(u.bookings_count) },
+    { key: 'joined', header: 'Desde', sortKey: 'joined_at', render: (u) => <span className="text-muted-foreground whitespace-nowrap">{format(parseISO(u.joined_at), 'd MMM yyyy', { locale: pt })}</span> },
+  ]
   return (
     <div className="p-8">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">Utilizadores</h1>
-          <p className="text-muted-foreground text-sm">Quem tem conta neste espaço: clientes e equipa. Abra um para ver reservas, packs e pedidos de ajuda.</p>
-        </div>
-        <div>
-          <Label htmlFor="users-search">Procurar</Label>
-          <Input id="users-search" value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="Nome ou email" className="mt-1 w-64" autoComplete="off" />
-        </div>
-      </div>
-
-      {isLoading ? (
-        <Skeleton className="h-64 rounded-xl" />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-red-600">Não foi possível carregar os utilizadores. Tente novamente.</p>
-      ) : (data?.users.length ?? 0) === 0 ? (
-        <p className="text-sm text-muted-foreground">{q ? 'Ninguém com esse nome ou email.' : 'Ainda não há utilizadores.'}</p>
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-background border-b border-border">
-                  <tr>
-                    {['Nome', 'Email', 'Papel', 'Reservas', 'Desde', ''].map((h, i) => (
-                      <th key={i} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {data!.users.map((u) => (
-                    <tr key={u.id}>
-                      <td className="px-4 py-3 text-foreground font-medium">{u.name || '—'}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
-                      <td className="px-4 py-3"><Badge variant={u.role === 'member' ? 'secondary' : 'default'}>{ROLE_LABELS[u.role]}</Badge></td>
-                      <td className="px-4 py-3 text-foreground">{u.bookings_count}</td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{format(parseISO(u.joined_at), 'd MMM yyyy', { locale: pt })}</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <Button asChild size="sm" variant="outline"><Link href={`/admin/users/${u.id}`} aria-label={`Ver ${u.email}`}>Ver</Link></Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {total > PAGE_SIZE && (
-              <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm">
-                <span className="text-muted-foreground">Página {page} de {totalPages} · {total} utilizadores</span>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
-                  <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Seguinte</Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <PageHeader
+        title="Clientes"
+        description="Quem pertence a este espaço: clientes e equipa."
+        actions={<Button asChild className="gap-2"><Link href="/admin/users/new"><Plus className="h-4 w-4" /> Novo cliente</Link></Button>}
+      />
+      <EntityList<OrgUser>
+        caption="Membros da organização"
+        columns={columns}
+        rows={isLoading ? undefined : data?.users ?? []}
+        rowKey={(u) => u.id}
+        rowHref={(u) => `/admin/users/${u.id}`}
+        total={data?.total}
+        page={state.page}
+        pageSize={PAGE_SIZE}
+        onPageChange={(page) => set({ page })}
+        search={{ value: state.q, onChange: (q) => set({ q }), placeholder: 'Nome ou email' }}
+        filters={{
+          chips: [
+            { key: 'role', label: 'Função', options: [{ value: 'member', label: 'Clientes' }, { value: 'admin', label: 'Administradores' }, { value: 'owner', label: 'Proprietários' }] },
+            { key: 'disabled', label: 'Estado', options: [{ value: 'false', label: 'Ativos' }, { value: 'true', label: 'Suspensos' }] },
+          ],
+          values: state.filters,
+          onChange: (key, value) => set({ filters: { [key]: value } }),
+        }}
+        sort={{ options: [{ value: 'name', label: 'Nome' }, { value: '-name', label: 'Nome ↓' }, { value: '-joined_at', label: 'Mais recentes' }, { value: 'joined_at', label: 'Mais antigos' }], value: state.sort, onChange: (sort) => set({ sort }) }}
+        isLoading={isLoading}
+        isError={isError}
+        onRetry={() => refetch()}
+        empty={{ title: 'Nenhum cliente para estes filtros.', action: <Button asChild><Link href="/admin/users/new">Novo cliente</Link></Button> }}
+      />
     </div>
   )
 }

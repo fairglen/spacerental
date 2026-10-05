@@ -1,11 +1,16 @@
 import axios from 'axios'
+import { sessionRevoked } from '@/lib/sessionRevoked'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase, Photo,
   AvailabilitySlot, AvailabilityRule, AdminStats, Membership, User,
   BookingCheckout, PackagePurchaseCheckout, RecurrenceWithBookings, PaginatedBookings,
   SupportRequestBody, SupportRequestReceipt, SupportRequestRow, PaginatedSupportRequests,
   OrgUser, OrgUserDetail, PaginatedOrgUsers, AdminPurchase, ComplimentaryHoursBody,
-  RoomBlock, AdminBookingPatch, PackageBalance, MyPackages,
+  RoomBlock, AdminBookingPatch, PackageBalance, MyPackages, SupportStatus,
+  AdminAction, PaginatedActions, AuditFilters, AdminSpaceDetail, AdminRoomDetail,
+  AdminBookingDetail, AdminPackageDetail, AdminUserCreateBody, AdminUserPatch, AnonymisedUser,
+  PaginatedPurchases, AdminPurchaseDetail, PurchaseFilters, SupportRequestDetail,
+  OrganizationSettings, OrganizationSettingsPatch, PublicContact,
 } from '@/types'
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
@@ -17,6 +22,25 @@ export function createAuthenticatedApi(accessToken: string | null | undefined) {
   if (accessToken) {
     instance.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
   }
+  return instance
+}
+
+/**
+ * For the signed-in areas (`useApi`): a token the backend no longer accepts
+ * ends the NextAuth session as well, instead of leaving a signed-in shell
+ * whose every call fails (review on #65). Public pages keep their own 401
+ * handling — the pack button offers "Entrar e continuar a compra" so the
+ * chosen pack survives re-authentication (B14).
+ */
+export function withSessionRevocation(instance: Api): Api {
+  if (!instance.defaults.headers.common['Authorization']) return instance
+  instance.interceptors.response.use(
+    (response) => response,
+    (error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 401) sessionRevoked()
+      return Promise.reject(error)
+    },
+  )
   return instance
 }
 
@@ -119,6 +143,15 @@ export const authApi = {
 
   registerOperator: (data: { email: string; password: string; name: string }) =>
     apiClient.post<RegisterResponse>('/auth/register/operator', data).then(r => r.data),
+
+  // Password reset (G03). The request always answers 202 with the same
+  // neutral sentence, whether or not the email exists; the page shows it.
+  requestPasswordReset: (email: string) =>
+    apiClient.post<{ detail: string }>('/auth/password-reset/request', { email }).then(r => r.data.detail),
+
+  // 400 for an unknown, used or expired token — the page offers a new request.
+  confirmPasswordReset: (token: string, password: string) =>
+    apiClient.post<{ detail: string }>('/auth/password-reset/confirm', { token, password }).then(r => r.data.detail),
 }
 
 // ─── Public ──────────────────────────────────────────────────────────────
@@ -127,10 +160,13 @@ export const spacesApi = {
   list: (api = apiClient) =>
     api.get<{ spaces: Space[] }>('/spaces').then(r => r.data.spaces.map(normSpace)),
 
-  get: (id: string, api = apiClient) =>
-    api.get<{ space: Space; rooms: Room[] }>(`/spaces/${id}`).then(r => ({
+  // `contact` (G04): the organisation's public contact when the owner set
+  // one; the customer-facing block falls back to `lib/contact.ts` otherwise.
+  get: (id: string, api = apiClient): Promise<{ space: Space; rooms: Room[]; contact?: PublicContact }> =>
+    api.get<{ space: Space; rooms: Room[]; contact?: PublicContact }>(`/spaces/${id}`).then(r => ({
       space: normSpace(r.data.space),
       rooms: (r.data.rooms ?? []).map(normRoom),
+      contact: { email: r.data.contact?.email ?? null, phone: r.data.contact?.phone ?? null },
     })),
 
   getAvailability: (roomId: string, date: string, api = apiClient) =>
@@ -238,6 +274,13 @@ function photosOf(kind: PhotoOwner, data: PhotoOwnerResponse): Photo[] {
   return (kind === 'rooms' ? data.room?.photos : data.space?.photos) ?? []
 }
 
+// Which entities have a `/history` (G01), and the path segment each lives under.
+export type HistoryEntity = 'spaces' | 'rooms' | 'bookings' | 'users' | 'packages' | 'purchases' | 'support'
+const HISTORY_PATH: Record<HistoryEntity, string> = {
+  spaces: 'spaces', rooms: 'rooms', bookings: 'bookings', users: 'users', packages: 'packages',
+  purchases: 'purchases', support: 'support/requests',
+}
+
 export const adminApi = {
   getDashboard: (api: Api) =>
     api.get<AdminStats>('/admin/dashboard').then(r => r.data),
@@ -309,7 +352,7 @@ export const adminApi = {
   // ── Users (A05) ──────────────────────────────────────────────────────
   // The org's members, searchable (`q`) and paged; the calendar's customer
   // picker uses the same call with a short page.
-  getUsers: (params: { q?: string; page?: number; page_size?: number }, api: Api): Promise<PaginatedOrgUsers> =>
+  getUsers: (params: { q?: string; page?: number; page_size?: number; role?: string; disabled?: string; sort?: string }, api: Api): Promise<PaginatedOrgUsers> =>
     api.get<PaginatedOrgUsers>('/admin/users', { params }).then(r => r.data),
 
   getUser: (id: string, api: Api): Promise<OrgUserDetail> =>
@@ -365,11 +408,93 @@ export const adminApi = {
       params: { ...(api.defaults.params || {}), ...params },
     }).then(r => ({ ...r.data, requests: r.data.requests.map(row => ({ ...row, booking: row.booking ? normBooking(row.booking) : null })) })),
 
-  updateSupportRequest: (id: string, status: 'new' | 'closed', api: Api): Promise<SupportRequestRow> =>
+  updateSupportRequest: (id: string, status: SupportStatus, api: Api): Promise<SupportRequestRow> =>
     api.put<{ request: SupportRequestRow }>(`/admin/support/requests/${id}`, { status }).then(r => r.data.request),
 
   getAvailability: (roomId: string, api: Api) =>
     api.get<{ rules: AvailabilityRule[] }>(`/admin/rooms/${roomId}/availability`).then(r => r.data.rules),
+
+  // ── Part A1 (G01–G04) ─────────────────────────────────────────────────
+  // The audit trail: the org's, and one entity's. Same shape, same paging.
+  getAudit: (params: AuditFilters, api: Api): Promise<PaginatedActions> =>
+    api.get<PaginatedActions>('/admin/audit', { params }).then(r => r.data),
+  getHistory: (entity: HistoryEntity, id: string, params: { page?: number; page_size?: number }, api: Api): Promise<PaginatedActions> =>
+    api.get<PaginatedActions>(`/admin/${HISTORY_PATH[entity]}/${id}/history`, { params }).then(r => r.data),
+
+  // Detail reads.
+  getSpace: (id: string, api: Api): Promise<AdminSpaceDetail> =>
+    api.get<AdminSpaceDetail>(`/admin/spaces/${id}`).then(r => ({ ...r.data, space: normSpace({ ...r.data.space, rooms: r.data.space.rooms ?? [] }) })),
+  getRoom: (id: string, api: Api): Promise<AdminRoomDetail> =>
+    api.get<AdminRoomDetail>(`/admin/rooms/${id}`).then(r => ({ ...r.data, room: normRoom(r.data.room), space: normSpace(r.data.space) })),
+  getBooking: (id: string, api: Api): Promise<AdminBookingDetail> =>
+    api.get<AdminBookingDetail>(`/admin/bookings/${id}`).then(r => ({ ...r.data, booking: normBooking(r.data.booking) })),
+  getPackage: (id: string, api: Api): Promise<AdminPackageDetail> =>
+    api.get<AdminPackageDetail>(`/admin/packages/${id}`).then(r => ({ ...r.data, package: normPackage(r.data.package), hours_outstanding: num(r.data.hours_outstanding) })),
+
+  // Rooms: duplicate, copy a day's window to the whole week, one rule off.
+  duplicateRoom: (id: string, api: Api) =>
+    api.post<{ room: Room }>(`/admin/rooms/${id}/duplicate`).then(r => normRoom(r.data.room)),
+  copyAvailabilityToAllDays: (roomId: string, dayOfWeek: number, api: Api) =>
+    api.post<{ rules: AvailabilityRule[] }>(`/admin/rooms/${roomId}/availability/copy-to-all-days`, { day_of_week: dayOfWeek }).then(r => r.data.rules),
+  deleteAvailabilityRule: (roomId: string, ruleId: string, api: Api) =>
+    api.delete(`/admin/rooms/${roomId}/availability/${ruleId}`).then(() => undefined),
+
+  // Hard deletes (G02): `confirm` is the entity's name or short id; the
+  // backend answers 409 with `detail.blockers` when something stands in the way.
+  deleteSpace: (id: string, confirm: string, api: Api) =>
+    api.delete(`/admin/spaces/${id}`, { params: { confirm } }).then(() => undefined),
+  deleteRoom: (id: string, confirm: string, api: Api) =>
+    api.delete(`/admin/rooms/${id}`, { params: { confirm } }).then(() => undefined),
+  deleteBooking: (id: string, confirm: string, reason: string | undefined, api: Api) =>
+    api.delete(`/admin/bookings/${id}`, { params: { confirm, ...(reason ? { reason } : {}) } }).then(() => undefined),
+  deletePackage: (id: string, confirm: string, api: Api) =>
+    api.delete(`/admin/packages/${id}`, { params: { confirm } }).then(() => undefined),
+  deletePurchase: (id: string, confirm: string, api: Api) =>
+    api.delete(`/admin/purchases/${id}`, { params: { confirm } }).then(() => undefined),
+  deleteSupportRequest: (id: string, confirm: string, api: Api) =>
+    api.delete(`/admin/support/requests/${id}`, { params: { confirm } }).then(() => undefined),
+  deleteUser: (id: string, confirm: string, api: Api) =>
+    api.delete(`/admin/users/${id}`, { params: { confirm } }).then(() => undefined),
+  removeMembership: (id: string, confirm: string, api: Api) =>
+    api.delete(`/admin/users/${id}/membership`, { params: { confirm } }).then(() => undefined),
+  anonymiseUser: (id: string, body: { confirm: string; reason?: string }, api: Api): Promise<AnonymisedUser> =>
+    api.post<{ user: AnonymisedUser }>(`/admin/users/${id}/anonymise`, body).then(r => r.data.user),
+
+  // Users (G03/G04).
+  createUser: (body: AdminUserCreateBody, api: Api): Promise<OrgUser> =>
+    api.post<{ user: OrgUser }>('/admin/users', body).then(r => r.data.user),
+  updateUser: (id: string, body: AdminUserPatch, api: Api): Promise<OrgUser> =>
+    api.put<{ user: OrgUser }>(`/admin/users/${id}`, body).then(r => r.data.user),
+  sendPasswordReset: (id: string, api: Api): Promise<{ sent_to: string; sent_at: string }> =>
+    api.post<{ sent_to: string; sent_at: string }>(`/admin/users/${id}/password-reset`).then(r => r.data),
+  setPassword: (id: string, password: string, api: Api): Promise<OrgUser> =>
+    api.post<{ user: OrgUser }>(`/admin/users/${id}/set-password`, { password }).then(r => r.data.user),
+
+  // Purchases (G04): "Banco de horas".
+  getPurchases: (params: PurchaseFilters, api: Api): Promise<PaginatedPurchases> =>
+    api.get<PaginatedPurchases>('/admin/purchases', { params }).then(r => ({ ...r.data, purchases: r.data.purchases.map(p => normPurchase(p)) })),
+  getPurchase: (id: string, api: Api): Promise<AdminPurchaseDetail> =>
+    api.get<AdminPurchaseDetail>(`/admin/purchases/${id}`).then(r => ({
+      ...r.data,
+      purchase: normPurchase(r.data.purchase),
+      debits: r.data.debits.map(d => ({ ...d, hours: num(d.hours) })),
+    })),
+  adjustPurchase: (id: string, body: { hours: number; reason: string }, api: Api): Promise<AdminPurchase> =>
+    api.post<{ purchase: AdminPurchase }>(`/admin/purchases/${id}/adjust`, { hours: String(body.hours), reason: body.reason }).then(r => normPurchase(r.data.purchase)),
+  updatePurchase: (id: string, body: { status?: 'active' | 'cancelled'; admin_note?: string | null; reason?: string }, api: Api): Promise<AdminPurchase> =>
+    api.put<{ purchase: AdminPurchase }>(`/admin/purchases/${id}`, body).then(r => normPurchase(r.data.purchase)),
+
+  // Support (G04): the detail and the triage note.
+  getSupportRequest: (id: string, api: Api): Promise<SupportRequestDetail> =>
+    api.get<{ request: SupportRequestDetail }>(`/admin/support/requests/${id}`).then(r => ({ ...r.data.request, booking: r.data.request.booking ? normBooking(r.data.request.booking) : null })),
+  updateSupportRequestDetail: (id: string, body: { status?: SupportStatus; admin_note?: string | null }, api: Api): Promise<SupportRequestDetail> =>
+    api.put<{ request: SupportRequestDetail }>(`/admin/support/requests/${id}`, body).then(r => r.data.request),
+
+  // Organisation (G04): admins read, the owner writes.
+  getOrganization: (api: Api): Promise<OrganizationSettings> =>
+    api.get<{ organization: OrganizationSettings }>('/admin/organization').then(r => r.data.organization),
+  updateOrganization: (body: OrganizationSettingsPatch, api: Api): Promise<OrganizationSettings> =>
+    api.put<{ organization: OrganizationSettings }>('/admin/organization', body).then(r => r.data.organization),
 
   setAvailability: (
     roomId: string,

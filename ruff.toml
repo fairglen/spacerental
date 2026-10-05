@@ -50,3 +50,7 @@ select = [
 # to keep dependencies explicit to each test. Pytest style rules are often
 # subjective and over-constrain test readability.
 "backend/tests/*" = ["PLC0415", "PT006", "PT011", "PT018", "RUF043"]
+# A fixture imported from another test module is found by pytest under its
+# name, which pyflakes reads as a redefinition in every test that takes it.
+"backend/tests/test_deletion_policy.py" = ["F811"]
+"backend/tests/test_admin_crud.py" = ["F811"]

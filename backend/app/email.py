@@ -321,6 +321,55 @@ def support_request_email(
     )
 
 
+def password_reset_email(*, to: str, link: str) -> EmailMessage:
+    """The self-service reset link (G03), also what an operator sends from the
+    customer's page. Valid for one hour, single use."""
+    subject = f"Repor a password — {BRAND_NAME}"
+    text_body = (
+        "Recebemos um pedido para repor a password da sua conta.\n\n"
+        "Para escolher uma nova password, abra esta ligação (válida durante 60 minutos):\n"
+        f"{link}\n\n"
+        "Se não fez este pedido, ignore este email: a sua password mantém-se.\n\n"
+        f"{SIGN_OFF_TEXT}"
+    )
+    safe_link = escape(link, quote=True)
+    html_body = (
+        "<p>Recebemos um pedido para repor a password da sua conta.</p>"
+        "<p>Para escolher uma nova password, abra esta ligação (válida durante 60 minutos):</p>"
+        f'<p><a href="{safe_link}">Escolher uma nova password</a></p>'
+        "<p>Se não fez este pedido, ignore este email: a sua password mantém-se.</p>"
+        f"{SIGN_OFF_HTML}"
+    )
+    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+
+
+def set_password_email(*, to: str, link: str) -> EmailMessage:
+    """An account an operator created without a password (G04): the same link,
+    worded as a welcome rather than a recovery."""
+    subject = f"Defina a sua password — {BRAND_NAME}"
+    text_body = (
+        f"Foi criada uma conta {BRAND_NAME} para si com este email.\n\n"
+        "Para definir a sua password e começar a reservar, abra esta ligação "
+        "(válida durante 60 minutos):\n"
+        f"{link}\n\n"
+        "Se a ligação expirar, pode pedir uma nova em "
+        f"{settings.FRONTEND_URL}/forgot-password\n\n"
+        f"{SIGN_OFF_TEXT}"
+    )
+    safe_link = escape(link, quote=True)
+    html_body = (
+        f"<p>Foi criada uma conta {escape(BRAND_NAME)} para si com este email.</p>"
+        "<p>Para definir a sua password e começar a reservar, abra esta ligação "
+        "(válida durante 60 minutos):</p>"
+        f'<p><a href="{safe_link}">Definir a minha password</a></p>'
+        "<p>Se a ligação expirar, pode pedir uma nova em "
+        f'<a href="{escape(settings.FRONTEND_URL, quote=True)}/forgot-password">'
+        f"{escape(settings.FRONTEND_URL)}/forgot-password</a>.</p>"
+        f"{SIGN_OFF_HTML}"
+    )
+    return EmailMessage(to=to, subject=subject, html_body=html_body, text_body=text_body)
+
+
 # ─── Queueing ───────────────────────────────────────────────────────────────
 
 

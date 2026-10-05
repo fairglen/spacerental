@@ -85,7 +85,16 @@ class Space(Base):
     organization: Mapped["Organization"] = relationship(  # noqa: F821
         "Organization", back_populates="spaces", lazy="noload"
     )
-    rooms: Mapped[list["Room"]] = relationship("Room", back_populates="space", lazy="noload")
+    # passive_deletes: the FK's ON DELETE CASCADE removes the rooms when a
+    # space is hard-deleted (G02); without it the ORM would try to null out
+    # `rooms.space_id` first, which is NOT NULL.
+    rooms: Mapped[list["Room"]] = relationship(
+        "Room",
+        back_populates="space",
+        lazy="noload",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class Room(Base):
@@ -141,10 +150,10 @@ class Room(Base):
         "Organization", lazy="noload"
     )
     availability_rules: Mapped[list["AvailabilityRule"]] = relationship(
-        "AvailabilityRule", back_populates="room", lazy="noload"
+        "AvailabilityRule", back_populates="room", lazy="noload", passive_deletes=True
     )
     bookings: Mapped[list["Booking"]] = relationship(  # noqa: F821
-        "Booking", back_populates="room", lazy="noload"
+        "Booking", back_populates="room", lazy="noload", passive_deletes=True
     )
 
 

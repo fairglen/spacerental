@@ -9,8 +9,10 @@ from starlette.types import Scope
 from app.config import settings
 from app.media import LocalMediaStorage, get_media_storage
 from app.ratelimit import RateLimitMiddleware, limiter
+from app.request_id import RequestIdMiddleware
 from app.routers import (
     admin,
+    admin_audit,
     admin_users,
     auth,
     bookings,
@@ -21,6 +23,7 @@ from app.routers import (
     room_blocks,
     spaces,
     support,
+    test_hooks,
     webhooks,
 )
 
@@ -45,6 +48,10 @@ app.add_middleware(
     limiter=limiter,
 )
 
+# Outside the rate limiter: a refused request still gets an id on its
+# response, and every audit row written during a request carries it (G01).
+app.add_middleware(RequestIdMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -67,10 +74,18 @@ app.include_router(support.admin_router, prefix=API_PREFIX)
 app.include_router(room_blocks.router, prefix=API_PREFIX)
 app.include_router(admin_users.router, prefix=API_PREFIX)
 app.include_router(admin_users.purchases_router, prefix=API_PREFIX)
+app.include_router(admin_audit.router, prefix=API_PREFIX)
 app.include_router(webhooks.router, prefix=API_PREFIX)
 # No API_PREFIX: this is a browser-facing HTML page (T10), not a JSON route —
 # see app/routers/checkout_stub.py.
 app.include_router(checkout_stub.router)
+# Local-only (G03): the stub mailbox for browser tests; never in production.
+test_hooks.mount(
+    app,
+    enabled=settings.TEST_HOOKS_ENABLED,
+    email_mode=settings.EMAIL_MODE,
+    app_env=settings.APP_ENV,
+)
 
 
 # python:3.12-slim ships no /etc/mime.types and its built-in table has no WebP,

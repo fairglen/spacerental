@@ -10,12 +10,12 @@ nothing about another tenant can be learned from here.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from app import media
+from app import audit, media
 from app.auth import require_admin
 from app.database import get_db
 from app.media import MediaStorage, get_media_storage
@@ -69,7 +69,9 @@ async def _entity(db: AsyncSession, model, entity_id: uuid.UUID, org_id: uuid.UU
 
 async def _add_photo(
     db: AsyncSession, storage: MediaStorage, entity, kind: str, file: UploadFile
-) -> None:
+) -> tuple[str, str]:
+    """Save the files and put the photo on the row; returns the two keys so
+    the route can take the files back if anything after this fails."""
     if len(entity.photos) >= media.MAX_PHOTOS_PER_ENTITY:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -106,27 +108,36 @@ async def _add_photo(
         await db.flush()
     except Exception:
         # The row did not take the photo, so its files would be orphans.
-        await storage.delete(key)
-        await storage.delete(thumb_key)
+        await _delete_files(storage, (key, thumb_key))
         raise
+    return key, thumb_key
+
+
+async def _delete_files(storage: MediaStorage, keys: tuple[str | None, ...]) -> None:
+    for key in keys:
+        if key:
+            try:
+                await storage.delete(key)
+            except OSError:
+                logger.exception("Could not delete media file %s", key)
 
 
 async def _remove_photo(
-    db: AsyncSession, storage: MediaStorage, entity, image_id: uuid.UUID
+    db: AsyncSession,
+    storage: MediaStorage,
+    entity,
+    image_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
 ) -> None:
     doomed = next((p for p in entity.photos if p["id"] == str(image_id)), None)
     if doomed is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found")
     entity.photos = [p for p in entity.photos if p is not doomed]
     await db.flush()
-    # After the row no longer points at them. A photo carried over from an
-    # external `images` URL has no keys: there is nothing of ours to delete.
-    for key in (doomed.get("key"), doomed.get("thumb_key")):
-        if key:
-            try:
-                await storage.delete(key)
-            except OSError:
-                logger.exception("Could not delete media file %s", key)
+    # The files go after the response, i.e. after the transaction committed
+    # (review on #65): a commit that fails keeps the row AND its files. A
+    # photo carried over from an external `images` URL has no keys.
+    background_tasks.add_task(_delete_files, storage, (doomed.get("key"), doomed.get("thumb_key")))
 
 
 async def _reorder(db: AsyncSession, entity, order: list[uuid.UUID]) -> None:
@@ -141,6 +152,18 @@ async def _reorder(db: AsyncSession, entity, order: list[uuid.UUID]) -> None:
         )
     entity.photos = [by_id[i] for i in wanted]
     await db.flush()
+
+
+async def _audited(db: AsyncSession, admin: User, org_id, entity, action: str, before) -> None:
+    await audit.record(
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=entity,
+        action=action,
+        before=before,
+        after=audit.snapshot(entity),
+    )
 
 
 def _room_out(room: Room) -> dict:
@@ -158,13 +181,20 @@ async def upload_room_image(
     room_id: uuid.UUID,
     file: UploadFile,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ):
     room = await _entity(db, Room, room_id, org_id)
-    await _add_photo(db, storage, room, "rooms", file)
-    await db.refresh(room)
+    before = audit.snapshot(room)
+    keys = await _add_photo(db, storage, room, "rooms", file)
+    try:
+        await db.refresh(room)
+        await _audited(db, admin, org_id, room, "photo.add", before)
+    except Exception:
+        # The request fails and the row rolls back: the files go with it.
+        await _delete_files(storage, keys)
+        raise
     return _room_out(room)
 
 
@@ -174,13 +204,19 @@ async def upload_space_image(
     space_id: uuid.UUID,
     file: UploadFile,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ):
     space = await _entity(db, Space, space_id, org_id)
-    await _add_photo(db, storage, space, "spaces", file)
-    await db.refresh(space)
+    before = audit.snapshot(space)
+    keys = await _add_photo(db, storage, space, "spaces", file)
+    try:
+        await db.refresh(space)
+        await _audited(db, admin, org_id, space, "photo.add", before)
+    except Exception:
+        await _delete_files(storage, keys)
+        raise
     return _space_out(space)
 
 
@@ -190,12 +226,14 @@ async def reorder_room_images(
     room_id: uuid.UUID,
     body: PhotoOrder,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     room = await _entity(db, Room, room_id, org_id)
+    before = audit.snapshot(room)
     await _reorder(db, room, body.order)
     await db.refresh(room)
+    await _audited(db, admin, org_id, room, "photo.reorder", before)
     return _room_out(room)
 
 
@@ -204,12 +242,14 @@ async def reorder_space_images(
     space_id: uuid.UUID,
     body: PhotoOrder,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     space = await _entity(db, Space, space_id, org_id)
+    before = audit.snapshot(space)
     await _reorder(db, space, body.order)
     await db.refresh(space)
+    await _audited(db, admin, org_id, space, "photo.reorder", before)
     return _space_out(space)
 
 
@@ -219,14 +259,17 @@ async def reorder_space_images(
 async def delete_room_image(
     room_id: uuid.UUID,
     image_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ):
     room = await _entity(db, Room, room_id, org_id)
-    await _remove_photo(db, storage, room, image_id)
+    before = audit.snapshot(room)
+    await _remove_photo(db, storage, room, image_id, background_tasks)
     await db.refresh(room)
+    await _audited(db, admin, org_id, room, "photo.remove", before)
     return _room_out(room)
 
 
@@ -234,12 +277,15 @@ async def delete_room_image(
 async def delete_space_image(
     space_id: uuid.UUID,
     image_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     org_id: uuid.UUID = Query(...),
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ):
     space = await _entity(db, Space, space_id, org_id)
-    await _remove_photo(db, storage, space, image_id)
+    before = audit.snapshot(space)
+    await _remove_photo(db, storage, space, image_id, background_tasks)
     await db.refresh(space)
+    await _audited(db, admin, org_id, space, "photo.remove", before)
     return _space_out(space)

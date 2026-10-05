@@ -33,7 +33,7 @@ const PAYMENT_LABELS: Record<Booking['payment_method'], string> = {
  * follows the new length through the hour bank, and `uncovered` is what the
  * bank could not give for a longer booking.
  */
-function moveOutcome(before: Booking, after: Booking, hours?: { before: number; after: number; uncovered?: number }): string {
+export function moveOutcome(before: Booking, after: Booking, hours?: { before: number; after: number; uncovered?: number }): string {
   if (!hours || hours.before === hours.after) return 'Horário alterado. O cliente recebe um email.'
   const change = `Horário alterado. Duração ${formatHours(hours.before)} → ${formatHours(hours.after)}.`
   const usesPack = (before.package_hours_used ?? 0) > 0 || before.payment_method === 'package' || before.payment_method === 'mixed'
@@ -125,7 +125,11 @@ export function BookingSheet({ booking, rooms, onClose, onChanged }: BookingShee
       <div className="flex items-start justify-between border-b border-border p-4">
         <div>
           <h2 id="sheet-title" className="text-lg font-semibold text-foreground">Reserva</h2>
-          <p className="text-xs text-muted-foreground">#{booking.id.slice(0, 8).toUpperCase()}</p>
+          <p className="text-xs text-muted-foreground">
+            #{booking.id.slice(0, 8).toUpperCase()}
+            {' · '}
+            <Link href={`/admin/bookings/${booking.id}`} className="text-primary underline underline-offset-2">Abrir</Link>
+          </p>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fechar"><X className="h-4 w-4" aria-hidden /></Button>
       </div>

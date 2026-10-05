@@ -15,6 +15,8 @@ interface WhereWeAreProps {
   space: SpaceLocationData & { name?: string | null }
   /** The space's rooms, for the hours: the union of their opening windows. */
   rooms?: { availability_rules?: OpeningWindow[] | null }[]
+  /** The organisation's public contact (G04); the constants are the fallback. */
+  contact?: { email?: string | null; phone?: string | null } | null
   /** The heading's element: h2 on the landing page, h2 below the page's h1. */
   headingAs?: ElementType
   className?: string
@@ -29,7 +31,9 @@ interface WhereWeAreProps {
  * render as a lazy, referrer-free OpenStreetMap embed — the privacy page
  * says openstreetmap.org receives that request.
  */
-export function WhereWeAre({ space, rooms = [], headingAs: Heading = 'h2', className }: WhereWeAreProps) {
+export function WhereWeAre({ space, rooms = [], contact, headingAs: Heading = 'h2', className }: WhereWeAreProps) {
+  const email = contact?.email || CONTACT_EMAIL
+  const phone = contact?.phone || CONTACT_PHONE
   const t = useT()
   const frame = useRef<HTMLDivElement>(null)
   // The map's bounding box takes the frame's shape so the pin sits in the
@@ -80,12 +84,12 @@ export function WhereWeAre({ space, rooms = [], headingAs: Heading = 'h2', class
           {/* 2. How to reach it — one address (C09); no phone line until there is a number. */}
           <li className={lineClass}>
             <Mail className={iconClass} aria-hidden />
-            <a href={contactMailto()} className="underline underline-offset-2 hover:text-primary">{CONTACT_EMAIL}</a>
+            <a href={email === CONTACT_EMAIL ? contactMailto() : `mailto:${email}`} className="underline underline-offset-2 hover:text-primary">{email}</a>
           </li>
-          {CONTACT_PHONE && (
+          {phone && (
             <li className={lineClass}>
               <Phone className={iconClass} aria-hidden />
-              <a href={`tel:${CONTACT_PHONE.replace(/\s+/g, '')}`} className="underline underline-offset-2 hover:text-primary">{CONTACT_PHONE}</a>
+              <a href={`tel:${phone.replace(/\s+/g, '')}`} className="underline underline-offset-2 hover:text-primary">{phone}</a>
             </li>
           )}
           {/* 3. Where it is, on two lines, with the directions right under it. */}

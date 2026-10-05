@@ -323,6 +323,30 @@ class TestOrderAndDelete:
         )
         assert again.status_code == 404, again.text
 
+    async def test_an_upload_whose_audit_write_fails_leaves_no_orphan_files(
+        self, client, admin_headers, test_org, test_room, db_session, monkeypatch
+    ):
+        """Review on #65: the files were saved before the audit row; a failure
+        after that must take them back, not leave orphans."""
+        from app.routers import media as media_router
+
+        async def boom(*_args, **_kwargs):
+            raise RuntimeError("audit down")
+
+        monkeypatch.setattr(media_router.audit, "record", boom)
+        before = {p for p in MEDIA_ROOT.rglob("*") if p.is_file()}
+        with pytest.raises(RuntimeError):
+            await _upload(client, _room_url(test_room), admin_headers, test_org, _image_bytes())
+        assert {p for p in MEDIA_ROOT.rglob("*") if p.is_file()} == before
+        room = (
+            await db_session.execute(
+                select(Room)
+                .where(Room.id == test_room.id)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert room.photos == []
+
     async def test_a_photo_backfilled_from_an_old_external_url_can_be_removed(
         self, client, admin_headers, test_org, test_space, db_session
     ):
