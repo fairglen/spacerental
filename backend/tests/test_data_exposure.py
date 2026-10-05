@@ -188,7 +188,9 @@ class TestWhatACustomerSees:
         )
         resp = await client.get(f"{API}/bookings/me", headers=_headers(test_user))
         assert [b["id"] for b in resp.json()["bookings"]] == [str(mine.id)]
-        assert resp.json()["bookings"][0]["user"] is None
+        # P2.2: a list row leaves a null `user` out altogether; either way, nobody
+        # else's identity is nested in a customer's own list.
+        assert resp.json()["bookings"][0].get("user") is None
         for private in (neighbour.email, neighbour.name, str(neighbour.id), "dele"):
             assert private not in resp.text
 
