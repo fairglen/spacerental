@@ -1,4 +1,5 @@
-import { test, expect, type Page } from './fixtures'
+import type { Page } from '@playwright/test'
+import { test, expect } from './fixtures'
 
 // B51: the brand mark is the hero illustration from 1024px and a watermark
 // under it; the header shows the wordmark alone — the same numbers as the

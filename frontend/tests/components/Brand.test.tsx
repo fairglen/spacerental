@@ -31,7 +31,7 @@ describe('brand symbols and their uses', () => {
     expect(host).toHaveAttribute('width', '0')
     expect(host).not.toHaveAttribute('hidden') // WebKit does not draw a <use> of a symbol in a display:none svg
     const symbols = host.querySelectorAll('symbol')
-    expect([...symbols].map((s) => s.id)).toEqual([BRAND_MARK_ID, BRAND_WORDMARK_ID])
+    expect(Array.from(symbols, (s) => s.id)).toEqual([BRAND_MARK_ID, BRAND_WORDMARK_ID])
     expect(symbols[0]).toHaveAttribute('viewBox', brandPaths.mark.viewBox)
     expect(symbols[0].querySelector('path')).toHaveAttribute('fill', 'currentColor')
     expect(symbols[0].querySelector('path')).toHaveAttribute('d', brandPaths.mark.d)
