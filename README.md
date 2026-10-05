@@ -434,6 +434,29 @@ request in the admin inbox) and a copy to the requester (Reply-To the inbox);
 On a laptop, keep it awake for the run (`caffeinate -i npm run test:e2e` on
 macOS): a machine that sleeps mid-run produces timeouts that look like failures.
 
+### Performance harness
+
+Three measurements, all local, none needing credentials (TODO.md P1.1). Every
+performance claim in the P-series is a before/after taken with these.
+```bash
+# Browser: per page TTFB, FCP, LCP, requests by type, bytes on the wire and the
+# API waterfall, median of 3 cold loads (PERF_RUNS). Needs the e2e stack above
+# (production build); writes frontend/perf-results/<page>.json and summary.md.
+cd frontend && npm run perf:web
+# Bundles: gzipped first-load JavaScript per route from the manifests of a build.
+npm run build && npm run perf:sizes          # frontend/perf-results/sizes.json
+npm run analyze                              # @next/bundle-analyzer treemaps in .next/analyze/
+# API: the three key reads on a 10 000-booking organisation — bytes per row,
+# statements per request (and how many write), the planner's choice, in-process
+# latency. Deselected from the default run; writes backend/perf-results/api.json.
+docker compose -f docker-compose.test.yml run --rm backend-tests pytest -m perf
+```
+The Playwright project is `perf` (`playwright.perf.config.ts`), separate from
+the e2e suite so neither runs the other; it honours `E2E_BASE_URL` and
+`E2E_API_URL` like the e2e specs. Budgets live in `frontend/perf-budget.json`
+(asserted when the file exists) and in `BUDGET` in
+`backend/tests/perf/test_read_paths.py`.
+
 ### Pre-commit hooks
 The repo ships with a `.pre-commit-config.yaml` that runs trailing-whitespace fixes, YAML linting, ruff on `backend/`, and frontend `tsc --noEmit` on every commit. Backend pytest and frontend Vitest run on push.
 
