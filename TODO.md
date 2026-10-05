@@ -2006,7 +2006,10 @@ both Dockerfiles pinned by digest, multi-stage, non-root (`app`), with a
 `HEALTHCHECK`; `.dockerignore` for both; `Dockerfile.test` and the Compose
 Postgres images pinned. The e2e stack ran healthy as uid 999 (backend) and
 uid 100 (frontend) with the whole suite green. One-time step on an existing
-dev stack: recreate the root-owned media volume (`docker compose down -v`). **Scope:** both Dockerfiles pin
+dev stack whose media volume a root-running image created: fix its ownership
+in place, keeping the database — `docker compose run --rm --user root backend
+chown -R app:app /var/lib/spacerental/media` (review round 5: an earlier
+version of this line said `down -v`, which also drops `pgdata`). **Scope:** both Dockerfiles pin
 their base image to a digest (tag in a comment), create and switch to a
 non-root user, declare a `HEALTHCHECK`, drop build tooling from the runtime
 stage (multi-stage), and get a `.dockerignore`; the frontend gets a
