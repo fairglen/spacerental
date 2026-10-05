@@ -88,8 +88,10 @@ jobs:
 
           # Required — a missing one is a broken site, so fail rather than ship it.
           SITE_PATHS="index.html privacidade.html assets"
-          # Published when present; these are all optional by nature.
-          OPTIONAL_PATHS="favicon.ico favicon.svg favicon.png apple-touch-icon.png robots.txt sitemap.xml site.webmanifest manifest.json CNAME .nojekyll"
+          # Published when present; these are all optional by nature. llms*.txt and
+          # .well-known/ (security.txt) are the S1.5 crawl files — generated, see
+          # flowspace-site/scripts/render-static.py.
+          OPTIONAL_PATHS="favicon.ico favicon.svg favicon.png apple-touch-icon.png robots.txt sitemap.xml llms.txt llms-full.txt .well-known site.webmanifest manifest.json CNAME .nojekyll"
 
           rm -rf "$PUBLISH_DIR"
           mkdir -p "$PUBLISH_DIR"

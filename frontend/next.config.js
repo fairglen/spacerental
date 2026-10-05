@@ -11,6 +11,7 @@ function appVersion() {
 
 const { securityHeaders } = require('./lib/securityHeaders')
 const { cacheHeaders } = require('./lib/cacheHeaders')
+const { robotsHeaders } = require('./lib/robotsHeaders')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -19,9 +20,9 @@ const nextConfig = {
     domains: ['images.unsplash.com', 'via.placeholder.com'],
   },
   // Q52: static security headers on every route, CSP in report-only mode;
-  // P2.1: the brand set is immutable.
+  // P2.1: the brand set is immutable; S2.1: the private surface is noindex.
   async headers() {
-    return [...securityHeaders(), ...cacheHeaders()]
+    return [...securityHeaders(), ...cacheHeaders(), ...robotsHeaders()]
   },
 }
 

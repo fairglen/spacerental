@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { Providers } from './providers'
 import pt from '@/lib/i18n/pt.json'
+import { ROBOTS_APP, metadataBaseFrom } from '@/lib/seo'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -15,10 +16,12 @@ const DESCRIPTION =
 // B50: the brand set under /brand (a copy of the static site's; see
 // tests/lib/brandParity.test.ts) — favicons, the Open Graph card, a manifest.
 export const metadata: Metadata = {
-  // The app's public URL (NEXTAUTH_URL, required by Compose) makes the Open
+  // The app's public URL (FRONTEND_URL, else NEXTAUTH_URL) makes the Open
   // Graph image absolute; unset — a bare `next build` — Next falls back to
   // localhost and says so.
-  metadataBase: process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL) : undefined,
+  metadataBase: metadataBaseFrom(process.env),
+  // S2.1: the app is not an indexable surface — flowspace.pt is.
+  robots: ROBOTS_APP,
   title: { default: BRAND_LINE, template: `%s · ${pt.brand.name}` },
   description: DESCRIPTION,
   icons: {
@@ -50,7 +53,7 @@ const SITE_ORIGIN = process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL)
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt">
+    <html lang="pt-PT">
       {API_ORIGIN !== SITE_ORIGIN && (
         <head>
           <link rel="preconnect" href={API_ORIGIN} />

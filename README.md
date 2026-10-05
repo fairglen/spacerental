@@ -434,7 +434,20 @@ request in the admin inbox) and a copy to the requester (Reply-To the inbox);
 On a laptop, keep it awake for the run (`caffeinate -i npm run test:e2e` on
 macOS): a machine that sleeps mid-run produces timeouts that look like failures.
 
-### Performance harness
+### Indexing policy (S2.1)
+
+The app is not meant to be found — flowspace.pt (`flowspace-site/`) is. Every
+route renders `<meta name="robots" content="noindex, follow">` (root
+metadata, `lib/seo.ts`); the landing adds `<link rel="canonical"
+href="https://flowspace.pt/">`; the private surface (`/dashboard`, `/admin`,
+`/sign-in`, `/reset-password/**`) says `noindex, nofollow` and also answers
+with an `X-Robots-Tag` header (`lib/robotsHeaders.js`, applied by
+`next.config.js`), which covers the redirects those routes give a crawler.
+`/robots.txt` allows crawling (a `Disallow: /` would hide the noindex and
+kill link previews) and names no sitemap. The Open Graph card stays, so a
+shared app link still unfurls. `tests/e2e/seo-policy.spec.ts` pins all of it.
+
+## Performance harness
 
 Three measurements, all local, none needing credentials (TODO.md P1.1). Every
 performance claim in the P-series is a before/after taken with these.

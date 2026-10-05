@@ -1,0 +1,113 @@
+name: flowspace-site checks
+
+# S1.6 — the static site's own checks, path-filtered like the deploy
+# workflow: the generated files agree with assets/data/business.json, the
+# head/JSON-LD/crawl files are what the tests pin, the Playwright smoke suite
+# passes, no internal link is broken, and Lighthouse (mobile) stays within
+# flowspace-site/seo-budget.json. None of the app's workflows run for these
+# paths, so this is the site's only CI.
+
+on:
+  pull_request:
+    paths:
+      - 'flowspace-site/**'
+      - '.github/workflows/flowspace-site-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'flowspace-site/**'
+      - '.github/workflows/flowspace-site-checks.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flowspace-site-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: site checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: flowspace-site
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # sitemap.xml's <lastmod> comes from git history; a shallow clone
+          # would date every file today (the check ignores lastmod anyway).
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: flowspace-site/tests/package-lock.json
+
+      - name: Generated files agree with business.json
+        run: python3 scripts/render-static.py --check
+
+      - name: Head, JSON-LD, crawl files, no-JS content
+        run: python3 -m unittest discover -s tests -p 'test_static_site.py' -v
+
+      - name: Node tests (copy parity, Apps Script logic)
+        run: node --test tests/copy-parity.test.mjs tests/code-gs.test.mjs
+
+      - name: Install the smoke suite
+        working-directory: flowspace-site/tests
+        run: npm ci
+
+      - name: Playwright version
+        id: pw
+        working-directory: flowspace-site/tests
+        run: echo "version=$(node -e "console.log(require('@playwright/test/package.json').version)")" >> "$GITHUB_OUTPUT"
+      - name: Cache the browser
+        id: browser-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Chromium
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        working-directory: flowspace-site/tests
+        run: npx playwright install --with-deps chromium
+      - name: Install the browser's system packages
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        working-directory: flowspace-site/tests
+        run: npx playwright install-deps chromium
+
+      - name: Smoke suite (Playwright)
+        working-directory: flowspace-site/tests
+        env:
+          CI: 'true'
+        run: npx playwright test
+
+      - name: Serve the site
+        run: |
+          python3 -m http.server 8099 > /tmp/http.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://localhost:8099/ > /dev/null && break; sleep 1; done
+          curl -fsS -o /dev/null http://localhost:8099/
+
+      - name: No broken internal links
+        # External hosts are skipped: the check is about our own anchors, assets and pages.
+        run: npx -y linkinator http://localhost:8099/ --recurse --skip "^(?!http://localhost:8099)" --timeout 10000 --verbosity error
+
+      - name: Lighthouse (mobile) within seo-budget.json
+        run: |
+          npx -y lighthouse http://localhost:8099/ --only-categories=seo,best-practices,accessibility \
+            --output=json --output-path=/tmp/lighthouse.json --quiet \
+            --chrome-flags="--headless=new --no-sandbox"
+          node tests/lighthouse-budget.mjs /tmp/lighthouse.json
+
+      - name: Upload the Lighthouse report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowspace-site-lighthouse
+          path: /tmp/lighthouse.json
+          retention-days: 14
+          if-no-files-found: ignore

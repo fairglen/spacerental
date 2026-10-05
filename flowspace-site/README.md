@@ -14,8 +14,11 @@ and acceptance criteria, and the plan this was built from for full context.
 
 - **Is**: a one-page static site (`index.html`) plus a minimal privacy
   placeholder (`privacidade.html`), hand-written CSS, a small vanilla-JS
-  contact form, a vanilla-JS photo gallery on the room cards, and a Google
-  Apps Script backend that emails submissions to `geral@flowspace.pt`.
+  contact form, a vanilla-JS photo gallery on the room cards, a Google
+  Apps Script backend that emails submissions to `geral@flowspace.pt`, and
+  the crawl files (`robots.txt`, `sitemap.xml`, `llms.txt`,
+  `.well-known/security.txt`) rendered from `assets/data/business.json` —
+  see "Facts, generated files and discoverability".
 - **Isn't**: a Next.js app, a Tailwind build, or anything requiring
   `npm install` to preview. It isn't wired into any of the app's CI workflows,
   and touching it never runs `backend-tests.yml`/`frontend-tests.yml`/`e2e.yml`.
@@ -80,6 +83,90 @@ the HTML changes. The first picture loads eagerly, the rest lazily, all with
 `width`/`height` so the card does not jump. Without JavaScript the card shows
 name, price and tags and no pictures.
 
+## Facts, generated files and discoverability (S1)
+
+One file holds the facts — `assets/data/business.json` (name, address, geo,
+hours, email, prices, packs, rooms with capacity/equipment/price, booking
+URL, logo and OG image) — and `assets/data/faq.json` holds the FAQ, with
+`{placeholders}` the facts fill. Everything that quotes a fact is **rendered
+from them** by `scripts/render-static.py` (Python 3, standard library only):
+
+- in `index.html`, the blocks between `<!-- generated:<name> -->` and
+  `<!-- /generated:<name> -->` — `head-meta` (title, description, canonical,
+  robots, Open Graph, Twitter card), `verification`, `jsonld` (one
+  `application/ld+json` graph: Organization, LocalBusiness, WebSite,
+  BreadcrumbList, FAQPage), `rooms` (the cards, with the first photo as a
+  real `<img>` for crawlers and visitors without JavaScript), `pricing`,
+  `faq` (`<details>/<summary>`) and `where` (hours with `<time>`, email,
+  `<address>`, "Como chegar");
+- the whole of `robots.txt`, `sitemap.xml` (with image entries and
+  `lastmod` from git), `llms.txt`, `llms-full.txt`,
+  `.well-known/security.txt` and `site.webmanifest`.
+
+```bash
+cd flowspace-site
+python3 scripts/render-static.py          # rewrite the generated files
+python3 scripts/render-static.py --check  # what the tests and CI run: exit 1 with a diff if anything differs
+```
+
+**Edit the facts in `business.json` (or the wording in `faq.json`), run the
+script, commit both.** Editing a generated block by hand is undone by the next
+run and fails `--check` until then, so a price, an hour or the address can
+never say two things in two places. The hero, "Como funciona", the form and
+the footer are hand-written and never touched.
+
+### Verification tokens (S1.6)
+
+Search Console and Bing Webmaster verify the site by a `<meta>` tag. The tag
+is rendered into the HTML — nothing is injected by JavaScript — from
+`site.env.json` (gitignored; copy `site.env.example.json`):
+
+```bash
+cp site.env.example.json site.env.json   # fill SEARCH_CONSOLE_TOKEN / BING_TOKEN
+python3 scripts/render-static.py         # renders the <meta> tags into index.html
+git add index.html && git commit -m "site: verification tokens"
+```
+
+Without `site.env.json` the generator leaves the `verification` block exactly
+as committed, so CI (which has no tokens) agrees with the rendered tokens.
+The tokens are public by nature (they are in the HTML of every verified
+site); the file is ignored only so that nobody has to decide what to do
+with it.
+
+### What the owner has to do outside the repo
+
+See TODO.md S0: claim the Google Business Profile and Bing Places with the
+exact name, address and hours in `business.json`; add the Search Console and
+Bing Webmaster tokens as above and submit `https://flowspace.pt/sitemap.xml`;
+add social profiles to `business.json` → `same_as` when they exist (none
+today, so the JSON-LD has no `sameAs`); set `booking.app_url` (and
+`booking.api_url`) once the booking platform has a public address — until
+then the booking entry point in the structured data and in `llms.txt` is the
+site's contact form.
+
+### Checks and CI
+
+`tests/test_static_site.py` (standard library, no browser) pins the head,
+the JSON-LD against `business.json`, the FAQ parity between the page and the
+FAQPage, the crawl files and the no-JavaScript content; the Playwright smoke
+suite below covers the rendered page; `tests/lighthouse-budget.mjs` asserts a
+Lighthouse report against `seo-budget.json` (SEO ≥ 0.95, Best Practices ≥
+0.90 on the mobile preset; accessibility is reported, not gated).
+
+```bash
+python3 tests/test_static_site.py -v
+python3 -m http.server 8099 &
+npx -y lighthouse http://localhost:8099/ --only-categories=seo,best-practices,accessibility --output=json --output-path=/tmp/lh.json --chrome-flags="--headless=new --no-sandbox"
+node tests/lighthouse-budget.mjs /tmp/lh.json
+npx -y linkinator http://localhost:8099/ --recurse --skip "^(?!http://localhost:8099)"
+cd tests && npm run validate:structured-data   # structured-data-testing-tool, Google presets (dev-only)
+```
+
+`.github/workflows/flowspace-site-checks.yml` runs all of that on every pull
+request and push that touches `flowspace-site/**`: the generator's
+`--check`, the Python suite, the node tests, the smoke suite, linkinator and
+Lighthouse against a local `python3 -m http.server`.
+
 ## "Onde estamos" and the map
 
 The location, contact and hours sit in one section (`#localizacao`), the
@@ -106,7 +193,8 @@ workflow itself), and on manual `workflow_dispatch`.
 **Only an explicit allowlist of files is published.** The workflow stages
 `index.html`, `privacidade.html`, `assets/**` (which carries the brand set,
 `assets/img/brand/`, B50) and a short list of optional
-root files (`favicon.*`, `robots.txt`, `sitemap.xml`, `CNAME`, `.nojekyll`, …)
+root files (`favicon.*`, `robots.txt`, `sitemap.xml`, `llms.txt`,
+`llms-full.txt`, `.well-known/`, `site.webmanifest`, `CNAME`, `.nojekyll`, …)
 into a clean directory and uploads *that*. It previously uploaded
 `flowspace-site/` wholesale, which also served `README.md`, `apps-script/Code.gs`
 and `tests/**` at public URLs — and `Code.gs` hands out the honeypot field name
@@ -703,8 +791,9 @@ success banner; the entered values must survive so the visitor can retry)
 
 `tests/smoke.spec.ts` is a standalone Playwright spec with its own tiny
 `tests/package.json` and `tests/playwright.config.ts` — **not** registered in
-`frontend/playwright.config.ts`, not part of any npm workspace, and not run
-by any CI workflow. It's a manual pre-ship check only:
+`frontend/playwright.config.ts` and not part of any npm workspace. Since S1.6
+`.github/workflows/flowspace-site-checks.yml` runs it on every change to
+`flowspace-site/**`; locally:
 
 ```bash
 cd flowspace-site/tests
@@ -715,7 +804,7 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-33 tests, all passing at time of writing. They assert:
+41 tests, all passing at time of writing. They assert:
 
 - the hero renders one headline with its emphasised half, a lede and a support
   line, two CTAs and four benefits with their dots (structure, not prose — the
@@ -767,6 +856,12 @@ The config's `webServer` starts `python3 -m http.server` against
   request;
 - field errors set `aria-invalid` on their controls and clear it once fixed;
 - the menu toggle's `aria-label`/`aria-expanded`/`aria-controls` behave.
+- discoverability (S1): the raw HTML carries the title, one h1, three room
+  photos with alt text, the FAQ and the address; the static first photo gives
+  way to the carousel; the FAQ sits between prices and the location, opens
+  natively and is linked from nav and footer; the skip link is first in the
+  tab order; the JSON-LD parses and quotes the page's prices, hours and FAQ;
+  the privacy page is canonical to itself and `noindex`.
 
 The spec rewrites the `APPS_SCRIPT_URL` constant in the served script via
 `page.route()` — to the stub URL for the configured-form tests and to the
@@ -824,9 +919,11 @@ remain the actual gate.
 
 ## Testing
 
-No pytest/Vitest suite applies here — there's no Python and no framework
-components, just static HTML/CSS/JS. The manual checklist above is the
-actual verification gate, proportionate to what this deliverable is.
+No Vitest suite applies here — there's no framework component, just static
+HTML/CSS/JS plus the generator. `tests/test_static_site.py` (standard
+library `unittest`) is the discoverability gate — see "Facts, generated
+files and discoverability" — and the manual checklist above remains the
+gate for everything the deployed Apps Script does.
 
 One exception: `Code.gs` has its own regression tests (S27). The script
 cannot run locally as a Web App, but its logic can: the tests load the file

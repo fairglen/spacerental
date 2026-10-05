@@ -1,0 +1,73 @@
+# FlowSpace · Gabinetes profissionais
+
+> Gabinetes profissionais à hora em Queluz (Massamã, Sintra, Lisboa) para profissionais de saúde e bem-estar: salas equipadas reservadas apenas pelas horas necessárias, sem contratos nem caução, com reserva e pagamento online.
+
+## Factos
+
+- Morada: Rua 12 de Julho de 1997 5, Loja 1, 2745-841 Queluz (Massamã, Sintra), Portugal — lat 38.755723, lng -9.279799
+- Horário: Todos os dias, 08:00–22:00
+- Email: geral@flowspace.pt (sem telefone)
+- Preço à hora: 12€–18€/hora conforme a sala (Sala Calma 12€/hora; Sala Brisa 15€/hora; Sala Névoa 18€/hora); mínimo 1 hora
+- Packs: Pack 10 horas: 10% de desconto face ao preço à hora, sem expiração
+- Reserva recorrente: a combinar, a partir de 4 horas semanais
+- Cancelamento: até 24 horas antes do início; as horas pagas são creditadas no banco de horas
+- Reservas: https://flowspace.pt/#contacto (a plataforma de reservas online é anunciada aqui quando publicada)
+- Formato de ligação direta para uma sala e hora na plataforma: `<app>/spaces/<space-id>?room=<room-id>&start=<ISO 8601>&end=<ISO 8601>`
+- Disponibilidade legível por máquinas: `/openapi-public.json` na API da plataforma (OpenAPI, só leitura; o endereço é publicado com a plataforma)
+
+## Ligações
+
+- [Perguntas frequentes](https://flowspace.pt/#faq)
+- [Salas e preços](https://flowspace.pt/#salas)
+- [Onde estamos](https://flowspace.pt/#localizacao)
+- [Política de privacidade](https://flowspace.pt/privacidade.html)
+- [Versão completa para assistentes](https://flowspace.pt/llms-full.txt)
+
+## Salas
+
+- Sala Calma: até 2 pessoas; Ar condicionado, Isolamento acústico, Wi-Fi, 2 cadeirões; 12€/hora
+- Sala Brisa: Ar condicionado, Isolamento acústico, Mesa de trabalho, Wi-Fi; 15€/hora
+- Sala Névoa: até 6 pessoas; Ar condicionado, Luz natural, 4–6 lugares, Wi-Fi; 18€/hora
+
+## Perguntas frequentes
+
+### Para quem é o FlowSpace?
+
+Para profissionais de saúde e bem-estar — psicólogos, terapeutas, nutricionistas, coaches e outros profissionais — que precisam de um gabinete profissional em Queluz sem assumir um contrato de arrendamento. Reserva apenas as horas de que precisa.
+
+### Como reservo uma sala?
+
+Crie a sua conta na plataforma de reservas, escolha a sala e a hora no calendário e pague online de forma segura; a confirmação chega por email. Se preferir, envie-nos uma mensagem através do formulário de contacto e tratamos da reserva consigo.
+
+### O que significa reservar «à hora» e qual é o mínimo?
+
+Paga apenas as horas que reserva, sem mensalidade nem caução. A reserva mínima é de 1 hora e pode reservar várias horas seguidas no mesmo dia.
+
+### Como funcionam os packs de horas?
+
+O Pack 10 horas tem 10% de desconto face ao preço à hora; validade: sem expiração. As horas ficam no seu banco de horas e são descontadas a cada reserva; se uma reserva exceder as horas disponíveis, paga apenas a diferença.
+
+### Posso cancelar uma reserva?
+
+Sim, até 24 horas antes do início, na sua área de cliente. As horas já pagas são creditadas no seu banco de horas para uma próxima reserva.
+
+### Como acedo à sala no dia da reserva?
+
+O acesso faz-se com um código de acesso, que fica disponível na sua área de cliente assim que a reserva está confirmada.
+
+### O que está incluído na reserva?
+
+Todas as salas têm ar condicionado e Wi-Fi. Sala Calma: isolamento acústico, 2 cadeirões. Sala Brisa: isolamento acústico, mesa de trabalho. Sala Névoa: luz natural, 4–6 lugares.
+
+### Preciso de uma sala todas as semanas. Têm condições especiais?
+
+Sim. A partir de 4 horas semanais combinamos um horário fixo e um preço à medida — fale connosco através do formulário ou por email para geral@flowspace.pt.
+
+### Como chegar ao FlowSpace?
+
+Estamos na Rua 12 de Julho de 1997 5, Loja 1, 2745-841 Queluz (Massamã). A estação de comboios de Massamá-Barcarena fica a cerca de 600 metros, menos de 10 minutos a pé. Em «Onde estamos» encontra o mapa e as direções no Google Maps.
+
+### Qual é o horário de funcionamento?
+
+Todos os dias, das 08:00 às 22:00.
+

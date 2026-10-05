@@ -153,6 +153,8 @@ ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/checkout/stub/{session_id}/pay"): STUB,
     ("POST", "/checkout/stub/{session_id}/cancel"): STUB,
     ("GET", "/health"): PUBLIC,
+    # S1.5: the read-only OpenAPI card for agents — public by design.
+    ("GET", "/openapi-public.json"): PUBLIC,
     # G03: the stub mailbox for browser tests; mounted only outside production
     # (test_password_reset.py proves the production app has no such route).
     ("GET", "/__test__/emails"): PUBLIC,

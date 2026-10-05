@@ -68,3 +68,6 @@ Thumbs.db
 
 # Uploaded photos when the backend runs without Docker (MEDIA_ROOT=./media)
 backend/media/
+
+# flowspace-site: verification tokens rendered into index.html by scripts/render-static.py (S1.6)
+flowspace-site/site.env.json
