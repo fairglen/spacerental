@@ -5264,6 +5264,11 @@ complimentary` (they defaulted to `purchase`, so "Origem" called them a
 sale); the booking modal forgets a "Comprar um pack" choice when the slot
 changes (it reopened the pack list, or fell through to paying again once
 the bank covered the new block).
+Round 2 (2026-10-05): `reverse_credit` refuses a reinstatement whenever any
+of the credit was spent, even after an operator cancelled the credit's
+purchase row (`PUT /admin/purchases`) — the cancelled status used to read as
+"already reversed" and let the booking come back while its hour was in
+another booking.
 
 ### Q41 — Isolated, parallel Playwright specs
 

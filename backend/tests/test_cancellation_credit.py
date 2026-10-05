@@ -610,3 +610,43 @@ class TestReinstatement:
         (credit,) = await _credits(db_session, booking["id"])
         assert credit.status is PurchaseStatus.active
         assert (credit.hours_remaining, credit.hours_used) == (Decimal(1), Decimal(1))
+
+    async def test_a_cancelled_purchase_row_does_not_hide_the_spent_credit(
+        self,
+        client,
+        auth_headers,
+        admin,
+        test_room,
+        test_org,
+        payments,
+        db_session,
+    ):
+        """Review on #69, round 2: the operator cancels the credit's purchase
+        row (hours_used stays) and then reinstates the booking — the hour
+        already spent elsewhere still refuses the reinstatement."""
+        booking = await _paid(client, payments, auth_headers, test_room, _monday(), hours=2)
+        assert (
+            await client.delete(f"{API}/bookings/{booking['id']}", headers=auth_headers)
+        ).status_code == 204
+        await _book(client, auth_headers, test_room, _monday(21), 1, "package")
+        (credit,) = await _credits(db_session, booking["id"])
+        closed = await client.put(
+            f"{API}/admin/purchases/{credit.id}",
+            params=_org(test_org),
+            json={"status": "cancelled", "reason": "crédito encerrado pelo espaço"},
+            headers=admin,
+        )
+        assert closed.status_code == 200, closed.text
+
+        back = await client.put(
+            f"{API}/admin/bookings/{booking['id']}",
+            params=_org(test_org),
+            json={"status": "confirmed"},
+            headers=admin,
+        )
+        assert back.status_code == 409, back.text
+        assert "already used" in back.json()["detail"]
+        assert (await _db_booking(db_session, booking["id"])).status is BookingStatus.cancelled
+        (credit,) = await _credits(db_session, booking["id"])
+        assert credit.status is PurchaseStatus.cancelled
+        assert credit.hours_used == Decimal(1)

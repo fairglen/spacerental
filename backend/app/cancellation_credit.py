@@ -127,9 +127,17 @@ async def reverse_credit(db: AsyncSession, booking_id: uuid.UUID) -> bool:
         .where(UserPackagePurchase.source_booking_id == booking_id)
         .with_for_update()
     )
-    if credit is None or credit.status is PurchaseStatus.cancelled:
+    if credit is None:
         return False
-    if credit.hours_used > 0 or credit.hours_remaining < credit.hours_total:
+    # Spent hours are spent whatever the row's status: an operator may have
+    # cancelled the purchase row (PUT /admin/purchases) after some of it went
+    # into another booking, and that must not read as "already reversed"
+    # (review on #69, round 2).
+    if credit.hours_used > 0:
+        raise CreditSpentError(str(credit.id))
+    if credit.status is PurchaseStatus.cancelled:
+        return False
+    if credit.hours_remaining < credit.hours_total:
         raise CreditSpentError(str(credit.id))
     credit.status = PurchaseStatus.cancelled
     credit.hours_remaining = Decimal("0.00")
