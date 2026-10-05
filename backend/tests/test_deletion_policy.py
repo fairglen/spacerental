@@ -439,6 +439,9 @@ class TestPayableSessions:
     async def test_deleting_a_pending_purchase_expires_its_session_first(
         self, client, db_session, w, payments
     ):
+        """The real shape of a checkout-created row (review on #65): `pending`
+        with the package's price in `amount_paid` from the start, nothing
+        paid yet — deletable, after its session is closed."""
         pending = UserPackagePurchase(
             user_id=w.member.id,
             package_id=w.package.id,
@@ -446,7 +449,7 @@ class TestPayableSessions:
             hours_total=Decimal("10.00"),
             hours_used=Decimal("0.00"),
             hours_remaining=Decimal("10.00"),
-            amount_paid=Decimal("0.00"),
+            amount_paid=Decimal("100.00"),
             status=PurchaseStatus.pending,
             purchased_at=datetime.now(tz=UTC),
             expires_at=datetime.now(tz=UTC) + timedelta(days=365),

@@ -116,7 +116,8 @@ function PurchaseDetail({ purchaseId }: { purchaseId: string }) {
         } : undefined}
         hard={{
           onDelete: async (confirm) => { await adminApi.deletePurchase(purchaseId, confirm, api); toast({ title: 'Compra eliminada.', variant: 'success' }); await invalidate(); router.push('/admin/purchases') },
-          disabledReason: p.amount_paid !== 0 || debits.length > 0 ? 'Esta compra foi paga ou já foi usada por reservas: cancele-a em vez de a eliminar.' : undefined,
+          // A pending checkout carries the price but nothing was paid yet (review on #65).
+          disabledReason: (p.status !== 'pending' && p.amount_paid !== 0) || debits.length > 0 ? 'Esta compra foi paga ou já foi usada por reservas: cancele-a em vez de a eliminar.' : undefined,
         }}
         onDone={() => undefined}
       />
