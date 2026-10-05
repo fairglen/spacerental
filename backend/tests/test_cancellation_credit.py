@@ -690,3 +690,59 @@ class TestReinstatement:
         (credit,) = await _credits(db_session, booking["id"])
         assert credit.status is PurchaseStatus.cancelled
         assert (credit.hours_used, credit.hours_remaining) == (Decimal(0), Decimal(0))
+
+    async def test_a_reversed_credit_cannot_be_reactivated_while_its_booking_is_back(
+        self,
+        client,
+        auth_headers,
+        admin,
+        test_room,
+        test_org,
+        payments,
+        db_session,
+    ):
+        """Review on #69, round 4: cancel → reinstate → "Reativar o pack" on
+        the credit must be refused, or the customer holds the booking and
+        the hours it was paid with. Once the booking is cancelled again the
+        operator may bring the row back."""
+        booking = await _paid(client, payments, auth_headers, test_room, _monday(), hours=2)
+        assert (
+            await client.delete(f"{API}/bookings/{booking['id']}", headers=auth_headers)
+        ).status_code == 204
+        (credit,) = await _credits(db_session, booking["id"])
+        back = await client.put(
+            f"{API}/admin/bookings/{booking['id']}",
+            params=_org(test_org),
+            json={"status": "confirmed"},
+            headers=admin,
+        )
+        assert back.status_code == 200, back.text
+
+        revive = await client.put(
+            f"{API}/admin/purchases/{credit.id}",
+            params=_org(test_org),
+            json={"status": "active", "reason": "engano"},
+            headers=admin,
+        )
+        assert revive.status_code == 409, revive.text
+        assert "pay for it twice" in revive.json()["detail"]
+        (credit,) = await _credits(db_session, booking["id"])
+        assert credit.status is PurchaseStatus.cancelled
+        assert credit.hours_remaining == Decimal(0)
+
+        # Cancelled again (with credit_hours: false), the row may come back.
+        again = await client.put(
+            f"{API}/admin/bookings/{booking['id']}",
+            params=_org(test_org),
+            json={"status": "cancelled", "credit_hours": False, "reason": "mudança"},
+            headers=admin,
+        )
+        assert again.status_code == 200, again.text
+        revive = await client.put(
+            f"{API}/admin/purchases/{credit.id}",
+            params=_org(test_org),
+            json={"status": "active", "reason": "afinal sim"},
+            headers=admin,
+        )
+        assert revive.status_code == 200, revive.text
+        assert revive.json()["purchase"]["status"] == "active"

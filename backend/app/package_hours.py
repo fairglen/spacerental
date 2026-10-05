@@ -84,11 +84,14 @@ async def _walk(
 ) -> list[Draw]:
     """Debit up to `hours` across the bank, soonest-expiring purchase first.
 
-    `not_for_booking` leaves out the cancellation credit a booking created
+    `not_for_booking` protects the cancellation credit a booking created
     (K01): the booking being reinstated must not pay its pack share with the
     hours its own cancellation put in the bank — those are reversed right
     after, and a draw from them would read as "spent" (review on #69). The
-    walk order over the remaining rows is unchanged.
+    credit stays IN the ordered walk and is locked in its turn like every
+    other row, so the ledger's one lock order holds (a concurrent redemption
+    locking the credit and then a later pack cannot meet this walk coming the
+    other way); it is simply not drawn from.
 
     Candidate ids are read unlocked, then each candidate is re-read under
     `FOR UPDATE` and re-validated *under that lock*. That second check is the
@@ -101,20 +104,15 @@ async def _walk(
     than `hours` (an empty list when the bank is empty); the caller decides
     what that makes of the booking, or reverts it with `_undo`.
     """
-    conditions = [
-        UserPackagePurchase.user_id == user_id,
-        UserPackagePurchase.org_id == org_id,
-        UserPackagePurchase.status == PurchaseStatus.active,
-        UserPackagePurchase.expires_at > now,
-        UserPackagePurchase.hours_remaining >= _ANY_HOURS,
-    ]
-    if not_for_booking is not None:
-        conditions.append(
-            UserPackagePurchase.source_booking_id.is_distinct_from(not_for_booking)
-        )
     candidates = await db.execute(
         select(UserPackagePurchase.id)
-        .where(*conditions)
+        .where(
+            UserPackagePurchase.user_id == user_id,
+            UserPackagePurchase.org_id == org_id,
+            UserPackagePurchase.status == PurchaseStatus.active,
+            UserPackagePurchase.expires_at > now,
+            UserPackagePurchase.hours_remaining >= _ANY_HOURS,
+        )
         # Spend the soonest-expiring hours first so nothing lapses unused.
         .order_by(UserPackagePurchase.expires_at.asc(), UserPackagePurchase.id.asc())
     )
@@ -126,6 +124,9 @@ async def _walk(
             break
         purchase = await _lock(db, purchase_id)
         if purchase is None or not is_spendable(purchase, now):
+            continue
+        # Locked in order, never drawn: this booking's own credit (see above).
+        if not_for_booking is not None and purchase.source_booking_id == not_for_booking:
             continue
         taken = min(purchase.hours_remaining, needed)
         purchase.hours_remaining -= taken

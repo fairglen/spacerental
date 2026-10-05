@@ -5274,6 +5274,10 @@ share before the credit is reversed, and the soonest-expiring walk could
 draw it from the booking's own cancellation credit (a pack that outlives
 the credit), which then read as spent; the re-debit walk now leaves that
 credit out (`not_for_booking`), so the pack pays and the credit is reversed.
+Round 4 (2026-10-05): the credit stays in the lock-ordered bank walk (locked
+in its turn, never drawn) so the ledger's one lock order holds; and `PUT
+/admin/purchases/:id` refuses to reactivate a cancellation credit whose
+booking is no longer cancelled (the customer would hold both).
 
 ### Q41 — Isolated, parallel Playwright specs
 

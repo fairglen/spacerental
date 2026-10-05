@@ -23,7 +23,7 @@ from app.booking_validity import expire_user_holds
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.models.audit import AdminAction
-from app.models.booking import Booking
+from app.models.booking import Booking, BookingStatus
 from app.models.organization import MemberRole, Organization, OrganizationMember
 from app.models.package import (
     BookingPackageDebit,
@@ -977,6 +977,29 @@ async def admin_update_purchase(
             )
         wanted = PurchaseStatus(body.status)
         if wanted is not purchase.status:
+            if (
+                wanted is PurchaseStatus.active
+                and purchase.source is PurchaseSource.cancellation_credit
+                and purchase.source_booking_id is not None
+            ):
+                # K01: a credit is the paid hours of a CANCELLED booking. Once
+                # that booking is back (reverse_credit cancelled the row), the
+                # row must not come back too — the customer would hold the
+                # booking and the hours it was paid with (review on #69). The
+                # reinstatement path locks the booking first and this row
+                # second; this path locks only the row and reads the booking,
+                # so the two cannot wait on each other.
+                booking_status = await db.scalar(
+                    select(Booking.status).where(Booking.id == purchase.source_booking_id)
+                )
+                if booking_status is not BookingStatus.cancelled:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "The booking this credit came from is no longer cancelled; "
+                            "reactivating the credit would pay for it twice"
+                        ),
+                    )
             purchase.status = wanted
             if wanted is PurchaseStatus.cancelled:
                 purchase.hours_remaining = Decimal("0.00")
