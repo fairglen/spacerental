@@ -1,5 +1,5 @@
-import { brandPaths } from '@/components/brand/brandPaths.generated'
-import { BRAND_WORDMARK_ID } from '@/components/brand/BrandSymbols'
+import { brandBoxes } from '@/components/brand/brandBoxes.generated'
+import { BRAND_WORDMARK_ID } from '@/components/brand/brandIds'
 
 interface BrandWordmarkProps {
   /** Rendered height in CSS pixels; the width follows the wordmark's viewBox. */
@@ -13,7 +13,7 @@ interface BrandWordmarkProps {
  * `aria-hidden`. Takes `currentColor`. Needs <BrandSymbols> on the page.
  */
 export function BrandWordmark({ height, className }: BrandWordmarkProps) {
-  const { viewBox, width: w, height: h } = brandPaths.wordmark
+  const { viewBox, width: w, height: h } = brandBoxes.wordmark
   return (
     <svg className={className} width={Math.round((height * w) / h)} height={height} viewBox={viewBox} aria-hidden="true" focusable="false">
       <use href={`#${BRAND_WORDMARK_ID}`} />

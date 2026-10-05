@@ -1,5 +1,5 @@
-import { brandPaths } from '@/components/brand/brandPaths.generated'
-import { BRAND_MARK_ID } from '@/components/brand/BrandSymbols'
+import { brandBoxes } from '@/components/brand/brandBoxes.generated'
+import { BRAND_MARK_ID } from '@/components/brand/brandIds'
 
 interface BrandMarkProps {
   /** Rendered width in CSS pixels; the height follows the mark's viewBox. */
@@ -13,7 +13,7 @@ interface BrandMarkProps {
  * reserve its box before paint (CLS 0). Needs <BrandSymbols> on the page.
  */
 export function BrandMark({ width, className }: BrandMarkProps) {
-  const { viewBox, width: w, height: h } = brandPaths.mark
+  const { viewBox, width: w, height: h } = brandBoxes.mark
   return (
     <svg className={className} width={width} height={Math.round((width * h) / w)} viewBox={viewBox} aria-hidden="true" focusable="false">
       <use href={`#${BRAND_MARK_ID}`} />

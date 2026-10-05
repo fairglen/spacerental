@@ -1355,10 +1355,17 @@ draw a `<use>` whose symbol sits in a `display:none` svg. Alternative: the
 path inline at every use. Reverse: emit `svg_parts()` inline in
 `use_svg()` / inline the paths in `BrandMark`/`BrandWordmark`.
 **DECISION (loop, B51):** the app reads the SVGs through
-`scripts/brand-paths.mjs` → `components/brand/brandPaths.generated.ts`
-(`npm run brand:paths`, `--check` in `Brand.test.tsx`) — the project had no
-raw-SVG import path and a loader would be a new dependency. Reverse: delete
-the generated module and read the files at build time once a loader exists.
+`scripts/brand-paths.mjs` → two generated modules (`npm run brand:paths`,
+`--check` in `Brand.test.tsx`): `brandPaths.generated.ts` (the path data,
+imported only by the server component `BrandSymbols`) and
+`brandBoxes.generated.ts` (viewBox and size, 0.5 KB, for the client-side
+`BrandMark`/`BrandWordmark`, whose ids live in `brandIds.ts`) — the project
+had no raw-SVG import path and a loader would be a new dependency. The split
+is what keeps the path data out of the browser bundle: the first version had
+the drawers import the paths module and CI's `perf-web` caught the landing's
+JS before load at 222.2 KB against the 220 KB budget (209 on `main`); a test
+pins the drawers' imports. Reverse: delete the generated modules and read
+the files at build time once a loader exists.
 **DECISION (loop, B51):** the contrast assertion. The assignment asks for
 ≥ 4.5:1 over the watermark; measured at 390 (worst case: the gradient's
 darkest stop composited with the mark at opacity .08): h1 14.39, filled

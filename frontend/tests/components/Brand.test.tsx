@@ -3,17 +3,32 @@ import { render } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { BrandSymbols, BRAND_MARK_ID, BRAND_WORDMARK_ID } from '@/components/brand/BrandSymbols'
+import { BrandSymbols } from '@/components/brand/BrandSymbols'
+import { BRAND_MARK_ID, BRAND_WORDMARK_ID } from '@/components/brand/brandIds'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { BrandWordmark } from '@/components/brand/BrandWordmark'
 import { brandPaths } from '@/components/brand/brandPaths.generated'
+import { brandBoxes } from '@/components/brand/brandBoxes.generated'
 
 const ROOT = join(__dirname, '..', '..')
 
 // B51: the inline brand — the generated path module is the brand files, the
 // symbols are inlined once, the mark and the wordmark draw them by reference.
 describe('brand symbols and their uses', () => {
-  it('brandPaths.generated.ts is exactly what scripts/brand-paths.mjs renders from public/brand/', () => {
+  it('the drawers ship only the sizes: BrandMark/BrandWordmark import brandBoxes, never the path module (the landing JS budget)', () => {
+    for (const file of ['BrandMark.tsx', 'BrandWordmark.tsx']) {
+      const source = readFileSync(join(ROOT, 'components', 'brand', file), 'utf8')
+      const imports = [...source.matchAll(/from '([^']+)'/g)].map((m) => m[1])
+      expect(imports, file).toContain('@/components/brand/brandBoxes.generated')
+      expect(imports, file).not.toContain('@/components/brand/brandPaths.generated')
+      expect(imports, file).not.toContain('@/components/brand/BrandSymbols') // its import graph carries the paths
+    }
+    expect(JSON.stringify(brandBoxes)).not.toContain('"d"')
+    expect(brandBoxes.mark.viewBox).toBe(brandPaths.mark.viewBox)
+    expect(brandBoxes.wordmark.viewBox).toBe(brandPaths.wordmark.viewBox)
+  })
+
+  it('brandPaths.generated.ts and brandBoxes.generated.ts are exactly what scripts/brand-paths.mjs renders from public/brand/', () => {
     // The script's --check is the drift guard; run it as the test.
     expect(() => execFileSync('node', [join(ROOT, 'scripts', 'brand-paths.mjs'), '--check'], { stdio: 'pipe' })).not.toThrow()
     for (const [key, file] of [['mark', 'logo-mark.svg'], ['wordmark', 'wordmark.svg']] as const) {

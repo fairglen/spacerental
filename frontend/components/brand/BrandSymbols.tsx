@@ -1,12 +1,12 @@
 import { brandPaths } from '@/components/brand/brandPaths.generated'
+import { BRAND_MARK_ID, BRAND_WORDMARK_ID } from '@/components/brand/brandIds'
 
 // B51: the brand mark and the wordmark, inlined once per page as <symbol>s
 // (a server component in the root layout — the path data never reaches the
-// client bundle). <BrandMark> and <BrandWordmark> draw them with
+// client bundle; the drawers import brandBoxes.generated, not this module). <BrandMark> and <BrandWordmark> draw them with
 // `<use href="#brand-…">`: no request, the colour inherited from the parent,
 // the same markup the static site generates (scripts/render-static.py).
-export const BRAND_MARK_ID = 'brand-mark'
-export const BRAND_WORDMARK_ID = 'brand-wordmark'
+export { BRAND_MARK_ID, BRAND_WORDMARK_ID } from '@/components/brand/brandIds'
 
 export function BrandSymbols() {
   const { mark, wordmark } = brandPaths
