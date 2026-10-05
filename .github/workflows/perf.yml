@@ -141,7 +141,7 @@ jobs:
         # The production build's manifests, as the image carries them.
         run: |
           set -euo pipefail
-          cid=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml ps -q frontend)
+          cid=$(docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml ps -q frontend)
           docker cp "$cid:/app/.next" ./.next-image
           NEXT_DIR=./.next-image npm run perf:sizes
       - name: Upload the measurements
