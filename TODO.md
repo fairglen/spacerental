@@ -475,6 +475,13 @@ boundary and meaningful rate-limit tests. Document actual implemented/stub/live
 behavior and required settings. Verify supported Compose configuration forwarding
 without requiring every internal setting to be exposed. Keep explicit required
 check behavior for workflows skipped by path filters.
+**2026-10-05 (Q49, PR #70):** the required-check note is closed — `checks.yml`
+calls every area workflow only where its paths changed and ends in one
+`required-checks` status that passes when each area succeeded or was skipped,
+so branch protection requires that single check (README "CI"). Diagnostics
+also moved on: the e2e job uploads one merged HTML report on every run and
+stack logs + traces on failure (Q44). What remains of C08 is the auth
+error mapping and the README walkthrough.
 
 **Validation:** verify artifacts on a controlled failing local/CI exercise when
 assigned, auth failure tests, full E2E on a fresh stack, and a walkthrough of the
@@ -1643,8 +1650,9 @@ commit body; three failed attempts on an item → blocked and recorded.
 
 ### Q40 — Part 0: repair the PR stack (#65 → #68)
 
-**Priority: P1. State: IN PROGRESS** on `feat/customer-credit-and-brand`.
-**Found:** the assignment describes #65–#68 as open and mis-stacked; when
+**Priority: P1. State: IN PROGRESS** on `feat/customer-credit-and-brand` —
+[PR #69](https://github.com/fairglen/spacerental/pull/69) (→ `main`; four Copilot
+rounds, nine threads, all fixed and resolved). **Found:** the assignment describes #65–#68 as open and mis-stacked; when
 the loop started (2026-10-05 09:00 UTC) all four were MERGED — #66 into
 `feat/admin-crud-backend` (squash `7f49c8d`, 2026-10-01), #68 into
 `feat/customer-credit-pack-upsell-notifications` (`3f9e689`, 2026-10-01),
@@ -1700,7 +1708,7 @@ leave with a pending purchase and a hold at once.
 
 ### Q41 — Isolated, parallel Playwright specs
 
-**Priority: P1. State: IN PROGRESS** — implemented on
+**Priority: P1. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); implemented on
 `ci/fast-e2e-and-workflow-hygiene` (Part 1 PR, below). **Evidence:**
 `frontend/tests/e2e/fixtures.ts` (`createCustomer`, `loginAs`, `createRoom`
 / `removeRoom`, `createBooking` + `payStubCheckout`, `adminBooking`,
@@ -1739,7 +1747,7 @@ ordering. **Validation:** the three runs' wall times in the PR body;
 
 ### Q42 — e2e stack: production build and e2e-only rate limits
 
-**Priority: P1. State: IN PROGRESS** — implemented on
+**Priority: P1. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); implemented on
 `ci/fast-e2e-and-workflow-hygiene`. **Evidence:** `docker-compose.e2e.yml`
 (overlay: `frontend/Dockerfile` target `runner` — multi-stage, `npm ci`,
 non-root, `HEALTHCHECK`, `NEXT_PUBLIC_*` as build args; backend without
@@ -1763,7 +1771,7 @@ unchanged and green.
 
 ### Q43 — Review the three `test.skip` occurrences
 
-**Priority: P2. State: IN PROGRESS** — reviewed on
+**Priority: P2. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); reviewed on
 `ci/fast-e2e-and-workflow-hygiene`; all three stay, each for a reason the
 fixtures cannot remove: (1) `booking.spec.ts` "24h window" — on a Sunday
 before 08:00 UTC no open hour starts within the next 24 h in any room (the
@@ -1782,7 +1790,7 @@ output matches this record.
 
 ### Q44 — The e2e job itself under 6 minutes
 
-**Priority: P1. State: IN PROGRESS** — implemented on
+**Priority: P1. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); implemented on
 `ci/fast-e2e-and-workflow-hygiene` (`.github/workflows/e2e.yml`, called by
 `checks.yml`): two shards × 4 workers, `docker buildx bake` with the Actions
 layer cache (`type=gha`, one scope per image), Chromium cached on the
@@ -1807,7 +1815,7 @@ before/after table in the PR body (three CI runs).
 
 ### Q45 — Workflow hygiene: permissions, concurrency, timeouts, pins, Dependabot
 
-**Priority: P1. State: IN PROGRESS** — implemented on
+**Priority: P1. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); implemented on
 `ci/fast-e2e-and-workflow-hygiene`: every workflow has `permissions:
 contents: read` at the top (Pages deploy keeps `pages`/`id-token` on its
 job; CodeQL `security-events: write` on its job), `concurrency` per
@@ -1829,7 +1837,7 @@ the action) output in the PR body.
 
 ### Q46 — Security scanning workflow
 
-**Priority: P2. State: IN PROGRESS** — `.github/workflows/security.yml` on
+**Priority: P2. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); `.github/workflows/security.yml` on
 `ci/fast-e2e-and-workflow-hygiene`: CodeQL (python, javascript-typescript)
 on push to main and weekly (Monday 05:23 UTC); `pip-audit` and `npm audit
 --audit-level=high` on PRs with `continue-on-error` until **2026-10-19**
@@ -1845,7 +1853,7 @@ recorded here.
 
 ### Q47 — Lint job: formatting, ESLint and the type check
 
-**Priority: P2. State: IN PROGRESS** — `lint.yml` on
+**Priority: P2. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); `lint.yml` on
 `ci/fast-e2e-and-workflow-hygiene` runs `ruff check` + `ruff format
 --check` and, for the frontend, `npx eslint .` (new
 `frontend/.eslintrc.json`: `next/core-web-vitals`) + `npx tsc --noEmit`
@@ -1863,7 +1871,7 @@ workflow run.
 
 ### Q48 — Backend tests in parallel (`pytest-xdist`, one database per worker)
 
-**Priority: P1. State: IN PROGRESS** — on `ci/fast-e2e-and-workflow-hygiene`:
+**Priority: P1. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); on `ci/fast-e2e-and-workflow-hygiene`:
 `pytest-xdist==3.6.1`, `conftest.py` derives `spacerental_test_<worker>`
 from `PYTEST_XDIST_WORKER` before importing the app and a session fixture
 creates/drops it (WITH FORCE) from the maintenance connection;
@@ -1880,7 +1888,7 @@ to make it pass. **Validation:** before/after times in the PR body.
 
 ### Q49 — One required check, CODEOWNERS and the README note (closes C08's note)
 
-**Priority: P1. State: IN PROGRESS** — `.github/workflows/checks.yml` on
+**Priority: P1. State: IN PROGRESS** — [PR #70](https://github.com/fairglen/spacerental/pull/70) (→ `feat/customer-credit-and-brand`, retargets to `main` when #69 merges); `.github/workflows/checks.yml` on
 `ci/fast-e2e-and-workflow-hygiene`: a `changes` job classifies the diff
 against the base (no third-party action), the area workflows are called as
 reusable workflows only where their paths changed, and `required-checks`
@@ -1902,7 +1910,7 @@ the owner's click.
 
 ### Q50 — Admin routers by entity, with an OpenAPI snapshot
 
-**Priority: P1. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`
+**Priority: P1. State: IN PROGRESS** — [PR #71](https://github.com/fairglen/spacerental/pull/71) (→ `ci/fast-e2e-and-workflow-hygiene`, retargets when #70 merges); on `refactor/admin-routers-headers-docker`
 (Part 2 PR): `backend/app/routers/admin/` with `_common.py`, `dashboard.py`,
 `spaces.py`, `rooms.py`, `blocks.py`, `bookings.py`, `users.py`,
 `purchases.py`, `packages.py`, `organization.py`, `audit.py`, `support.py`,
@@ -1928,7 +1936,7 @@ test, the full backend suite.
 
 ### Q51 — Frontend decomposition
 
-**Priority: P2. State: IN PROGRESS (first slice on the Part 2 PR)** —
+**Priority: P2. State: IN PROGRESS (first slice on [PR #71](https://github.com/fairglen/spacerental/pull/71))** —
 `BookingModal.tsx` (483 lines) is now a shell (324) over
 `useBookingPlan.ts` (the bank, the plan, the choices, the method, the pack
 purchase; 95), `PaymentPlan.tsx` (the summary box; 87) and `PackUpsell.tsx`
@@ -1947,7 +1955,7 @@ body.
 
 ### Q52 — Security headers (Next and API), CSP report-only
 
-**Priority: P1. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`:
+**Priority: P1. State: IN PROGRESS** — [PR #71](https://github.com/fairglen/spacerental/pull/71) (→ `ci/fast-e2e-and-workflow-hygiene`, retargets when #70 merges); on `refactor/admin-routers-headers-docker`:
 `frontend/lib/securityHeaders.js` (used by `next.config.js`), `/api/csp-report`
 (logs every violation, both report formats), `backend/app/security_headers.py`
 (outermost middleware; the media mount's own `nosniff` is now its). Tests at
@@ -1973,7 +1981,7 @@ body.
 
 ### Q53 — Hardened container images (closes most of S26)
 
-**Priority: P2. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`:
+**Priority: P2. State: IN PROGRESS** — [PR #71](https://github.com/fairglen/spacerental/pull/71) (→ `ci/fast-e2e-and-workflow-hygiene`, retargets when #70 merges); on `refactor/admin-routers-headers-docker`:
 both Dockerfiles pinned by digest, multi-stage, non-root (`app`), with a
 `HEALTHCHECK`; `.dockerignore` for both; `Dockerfile.test` and the Compose
 Postgres images pinned. The e2e stack ran healthy as uid 999 (backend) and
@@ -1990,7 +1998,7 @@ in the PR body.
 
 ### Q54 — Backlog hygiene: archive DONE/DEFERRED tasks
 
-**Priority: P2. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`:
+**Priority: P2. State: IN PROGRESS** — [PR #71](https://github.com/fairglen/spacerental/pull/71) (→ `ci/fast-e2e-and-workflow-hygiene`, retargets when #70 merges); on `refactor/admin-routers-headers-docker`:
 83 blocks moved verbatim to `docs/backlog-archive/2026-09.md` and
 `2026-10.md` (plus Gate 0, the Deferred-scope and Legacy-IDs tables, the
 boundary's assignment history and the W/H/V intros); the index at the end
@@ -2011,7 +2019,7 @@ TODO.md`; a link check over the index.
 
 ### Q55 — Small fixes found during the audit
 
-**Priority: P2. State: IN PROGRESS** — on `refactor/admin-routers-headers-docker`:
+**Priority: P2. State: IN PROGRESS** — [PR #71](https://github.com/fairglen/spacerental/pull/71) (→ `ci/fast-e2e-and-workflow-hygiene`, retargets when #70 merges); on `refactor/admin-routers-headers-docker`:
 CORS `allow_methods` is the explicit list (asserted on a preflight); the
 limiter is documented as single-replica in `config.py` and README; of the
 eleven `eslint-disable` lines found (the assignment estimated eight), one was
