@@ -18,6 +18,8 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # deploy-pages v4+ reads the artifact by id and needs this (its v4.0.0 notes).
+  actions: read
 
 concurrency:
   group: pages
@@ -140,6 +142,9 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ env.PUBLISH_DIR }}
+          # v4+ leaves dotfiles out of the artifact by default; the site publishes
+          # .well-known/security.txt (S1.5) and, when present, .nojekyll.
+          include-hidden-files: true
 
       - name: Deploy to GitHub Pages
         id: deployment
