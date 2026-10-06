@@ -25,8 +25,13 @@ For local dev you can also just keep the placeholder values from `.env.example` 
 
 ### 2. Run with Docker
 ```bash
-docker-compose up --build
+docker compose up --build -V
 ```
+
+`-V` (`--renew-anon-volumes`) is part of the command because the frontend's
+`node_modules` live in an anonymous volume that a plain `up --build` keeps, so
+after a dependency change the container would otherwise still run the old
+packages.
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
@@ -54,6 +59,129 @@ docker-compose exec backend python -m app.promote_admin YOUR_EMAIL
 This adds `YOUR_EMAIL` as `owner` of the seeded demo org (slug `demo-space`). Pass `--role admin` for a non-owner admin, or `--org-slug` to target a different org. Unlike hand-written SQL, an unknown email or org slug fails loudly with a non-zero exit instead of silently doing nothing.
 
 Then re-login — the Admin link will appear in the navbar.
+
+---
+
+## Access from another device
+
+Compose publishes the ports on every interface, so a phone on the same Wi-Fi
+can already open `http://<your-LAN-IP>:3000` — and then cannot sign in,
+because three browser-facing values are bound to `localhost`: the NextAuth
+session cookie to `NEXTAUTH_URL`, the browser's API calls to
+`NEXT_PUBLIC_API_URL` (on the phone, `localhost:8000` is the phone), and the
+API's allowed origins to `CORS_ORIGINS`. The fix is a second env file layered
+on `.env`. It holds only the overrides and derives them from two lines:
+
+```bash
+# .env.remote — git-ignored; .env.remote.example is the template
+WEB=http://192.168.1.42:3000   # the public URL that reaches port 3000
+API=http://192.168.1.42:8000   # the public URL that reaches port 8000
+```
+
+and the stack is started with both files (later files win):
+
+```bash
+docker compose --env-file .env --env-file .env.remote up -d -V
+```
+
+`scripts/remote-up.sh` writes `.env.remote` from the example and runs that
+command. It never edits `.env` (and refuses to run without one); `--dry-run`
+prints the file it would write and leaves Docker alone. The layer sets
+`NEXTAUTH_URL`, `FRONTEND_URL`, `CORS_ORIGINS` (localhost *and* `WEB`),
+`STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `NEXT_PUBLIC_API_URL`,
+`MEDIA_BASE_URL` and `STRIPE_STUB_CHECKOUT_BASE_URL`; `INTERNAL_API_URL`
+(the frontend container's own calls to `http://backend:8000`) is not part of
+it and cannot be pointed elsewhere.
+
+**The cookie caveat.** The session cookie is bound to `NEXTAUTH_URL`, so once
+the layer is on, *this machine too* must use the `WEB` address — signing in
+at `http://localhost:3000` no longer works. Use a fresh or incognito window
+after every switch; a cookie left from the previous address gets in the way.
+
+### Same Wi-Fi (LAN)
+
+```bash
+./scripts/remote-up.sh lan
+```
+
+Detects the host's IP (`ipconfig getifaddr en0`/`en1` on macOS, `hostname -I`
+on Linux; `REMOTE_HOST_IP=<ip>` overrides the detection), writes
+`.env.remote` with `WEB=http://<ip>:3000` and `API=http://<ip>:8000`, starts
+the stack and prints the URL to open on the other device. By hand:
+
+```bash
+cp .env.remote.example .env.remote   # then set WEB and API to http://<ip>:3000 and http://<ip>:8000
+docker compose --env-file .env --env-file .env.remote up -d -V
+```
+
+If macOS asks whether Docker may accept incoming network connections, allow
+it. Note that the dev stack also publishes PostgreSQL on 5432 with the dev
+credentials (TODO.md S25): on a network you do not control, prefer ngrok,
+which exposes only the two tunnelled ports.
+
+### From anywhere (ngrok)
+
+Needs [ngrok](https://ngrok.com/download) on `PATH`, an account
+(`ngrok config add-authtoken <token>`) and two tunnels in the agent's
+configuration — `"$HOME/Library/Application Support/ngrok/ngrok.yml"` on
+macOS, `~/.config/ngrok/ngrok.yml` on Linux:
+
+```yaml
+tunnels:
+  web:
+    proto: http
+    addr: 3000
+  api:
+    proto: http
+    addr: 8000
+```
+
+```bash
+./scripts/remote-up.sh ngrok
+```
+
+Starts `ngrok start --all` in the background if the agent is not running,
+waits for its local API (`http://127.0.0.1:4040/api/tunnels`), reads the two
+public URLs by their upstream port, writes `.env.remote` with them, starts the
+stack and prints both. Without the two tunnels it prints the YAML above and
+exits 1. By hand: start the tunnels yourself, put the `web` URL in `WEB` and
+the `api` URL in `API`, and run the layered command.
+
+Free-plan caveats — the first two were observed on 2026-10-06 with ngrok
+3.39 and mean the two-tunnel flow needs a paid plan today (TODO.md D19/D20):
+- **One domain per account.** A free account has a single
+  `<name>.ngrok-free.dev` domain, and two tunnels without a `domain:` both
+  come up on it: ngrok pools endpoints that share a URL and spreads requests
+  across them at random, so the stack answers from port 3000 or 8000 by
+  chance. The script refuses that case (`both tunnels came up on the SAME
+  URL`) and writes nothing. A second domain on the account, one per tunnel
+  (`domain:` under `web` and `api`), or the one-origin setup of D20 (a single
+  tunnel) is needed. Hostnames also rotate at every agent start unless they
+  are reserved — the `web` one is the address the session cookie is bound to,
+  so it is the one worth keeping stable; re-running the script rewrites
+  `.env.remote` and recreates the stack with it (the database and the
+  uploaded photos are in named volumes and survive).
+- **Interstitial page** (`ERR_NGROK_6024`): a browser's first visit to a
+  free hostname gets ngrok's "You are about to visit…" page, with HTTP 200
+  and `text/html`. Clicking through sets a cookie for that hostname, which
+  helps the `web` URL — but the browser's calls to the `api` URL are
+  cross-origin requests that carry no cookie, so they get the page every
+  time, and the app sees HTML instead of JSON. Only a plan without the
+  interstitial, or one origin (D20, where the API calls become same-origin),
+  gets past it.
+- **Limits**: the free plan caps the number of simultaneous endpoints and
+  agents and the monthly traffic.
+
+### Going back
+
+```bash
+./scripts/remote-up.sh off
+```
+
+Recreates the stack from plain `.env` (`docker compose up -d -V`), reminds
+you to stop ngrok if it is still running (`pkill -f 'ngrok start'`) and to
+open `http://localhost:3000` in a fresh window. `.env.remote` stays on disk,
+ignored until the layered command runs again.
 
 ---
 

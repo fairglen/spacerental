@@ -1,9 +1,10 @@
 name: Lint
 
-# Called by checks.yml when backend or frontend files change (Q47/Q49). Two
-# jobs, both cheap: Ruff (check + format) for the backend, and ESLint plus
-# the TypeScript type check for the frontend — the type check lives here
-# rather than in frontend-tests so a type error fails in the cheapest job.
+# Called by checks.yml when backend or frontend files change (Q47/Q49). Three
+# jobs, all cheap: Ruff (check + format) for the backend, ESLint plus the
+# TypeScript type check for the frontend — the type check lives here rather
+# than in frontend-tests so a type error fails in the cheapest job — and the
+# Compose render check for the layered remote-access env file (D19).
 # `ruff.toml` lives at the repository root; `.pre-commit-config.yaml` pins
 # the same Ruff version as this file, so a hook bump must run this check too.
 
@@ -47,3 +48,15 @@ jobs:
       # What `next build` lints, made explicit (and run on the tests too).
       - run: npx eslint . --ext .ts,.tsx,.js,.mjs
       - run: npx tsc --noEmit
+
+  compose:
+    # D19: with only .env the rendered Compose environment is today's
+    # localhost one; with .env.remote layered on it every browser-facing
+    # value follows WEB/API and INTERNAL_API_URL does not; the script's
+    # --dry-run prints a working layer. Runs in a scratch copy; needs the
+    # runner's Docker Compose (v2.24+ for several --env-file flags) and jq.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/tests/remote-env.sh

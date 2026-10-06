@@ -2774,7 +2774,7 @@ so shared links keep their previews. Reverse: add sources to
 public OpenAPI card from S1.5. Not started; recorded so the public API card
 has a successor.
 
-## Dependency upgrades (D-series, D10–D19) — owner assignment 2026-10-06
+## Dependency upgrades (D-series, D10–D18) — owner assignment 2026-10-06
 
 Goal: every open Dependabot PR fixed, green and merged in tier order (actions
 → npm minor/patch → pillow → postgres → node image → pip group → pytest /
@@ -2979,6 +2979,130 @@ PyJWT (HS256 only, explicit `algorithms=["HS256"]`, no `ecdsa`), keeping
 `create_access_token`/`decode` behaviour and every auth test. Acceptance:
 `pip-audit` clean, `tests/test_auth.py` and the authz matrix green,
 tokens issued before the switch still verify.
+
+## Local access from another device (D-series, D19–D20) — owner assignment 2026-10-06
+
+Goal: the local stack can be used from another device — a phone on the same
+Wi-Fi via the host's LAN IP, or anything via ngrok — by layering a second env
+file on top of `.env`, with no code path changed for the default localhost
+setup. One branch (`chore/remote-access-env`), one PR, never merged by the
+loop. Decisions not given by the assignment keep today's behaviour and are
+recorded here and in the commit that takes them.
+
+### D19 — Reach the local stack from another device (LAN or ngrok) via a layered env file
+
+**Priority: P2. State: IN PROGRESS (branch `chore/remote-access-env`).**
+`docker-compose.yml` hard-codes the three browser-facing values that decide
+whether another device can use the stack: `CORS_ORIGINS`, `NEXTAUTH_URL` and
+`NEXT_PUBLIC_API_URL` are literal `localhost` there, while the rest of that
+family (`FRONTEND_URL`, `MEDIA_BASE_URL`, `STRIPE_SUCCESS_URL`,
+`STRIPE_CANCEL_URL`, `STRIPE_STUB_CHECKOUT_BASE_URL`) already reads `.env` with
+a localhost default. Opening `http://<LAN-IP>:3000` from a phone therefore
+renders the landing page and then fails at sign-in: the NextAuth cookie is
+bound to `NEXTAUTH_URL`, the browser's API calls go to `localhost:8000` (the
+phone itself), and the API would refuse the origin anyway.
+
+Scope (nothing in `backend/app` or `frontend/` changes):
+- `docker-compose.yml`: the three values become `${VAR:-<today's value>}`,
+  like the rest of the family. `INTERNAL_API_URL` (`http://backend:8000`) is
+  container-to-container (CLAUDE.md §6.3) and stays a literal, outside this
+  mechanism.
+- `.env.remote.example` (committed; `.env.remote` git-ignored): a LAYER for
+  `docker compose --env-file .env --env-file .env.remote up -d -V`, not a
+  full env file — it holds only the overrides and derives every browser-facing
+  URL from two variables, `WEB` (public URL reaching port 3000) and `API`
+  (public URL reaching port 8000), so switching means editing two lines.
+- `scripts/remote-up.sh lan|ngrok|off [--dry-run]`: `lan` detects the host IP
+  (`REMOTE_HOST_IP` overrides it), `ngrok` starts `ngrok start --all` if the
+  agent is not up and reads the two public URLs from its local API
+  (`tunnels` `web` → :3000 and `api` → :8000; without them it prints the YAML
+  to add and exits 1), both write `.env.remote` from the example and run the
+  layered Compose command; `off` returns to plain `.env`. Every mode ends with
+  the URL to open and the cookie caveat. Idempotent; never touches `.env`;
+  refuses to run without one.
+- README: `-V` becomes the documented norm in "Run with Docker"; a new
+  "Access from another device" section (LAN and ngrok, script and manual,
+  the cookie/URL caveat, the ngrok free-plan caveats, how to go back).
+- Tests: `scripts/tests/remote-env.sh`, run by `lint.yml` — the rendered
+  Compose environment equals today's localhost values with only `.env`, equals
+  the derived `WEB`/`API` values with the layer, and `INTERNAL_API_URL` is the
+  same in both; `--dry-run` with `REMOTE_HOST_IP=10.0.0.5` prints the env it
+  would write without touching Docker. A backend test that a comma-separated
+  `CORS_ORIGINS` admits the second origin and still refuses an unlisted one.
+  A local (not CI) Playwright run of the auth spec against
+  `E2E_BASE_URL=http://<LAN-IP>:3000` on the e2e stack with the layer,
+  recorded in the PR body.
+
+Acceptance: `docker compose up --build` on a fresh clone with only
+`.env.example` copied renders the same environment as before (the shell test
+pins the three values); with the layer every browser-facing value follows
+`WEB`/`API` and `INTERNAL_API_URL` does not; the shell test and the CORS test
+are green in CI; the auth spec passes against the LAN IP.
+
+**DECISION (loop, D19):** the frontend's `node_modules` stay in the anonymous
+volume `docker-compose.yml` declares today, and `-V` (`--renew-anon-volumes`)
+becomes the documented `up` flag, because that volume otherwise survives a
+dependency change and the container keeps running the old packages. The
+alternative — a named `frontend_node_modules` volume — was not taken: `-V`
+does not renew named volumes, so a dependency change would then need an
+explicit `docker volume rm` (or `down -v`, which also drops the database),
+which is more to remember, not less; it stays available if the anonymous
+volume ever needs to be shared between Compose projects.
+
+**DECISION (loop, D19):** `.env.remote.example` derives its values with
+Compose interpolation (`${WEB}`, `${API}`) inside the env file, which needs
+Compose v2.24+ (several `--env-file` flags; in-file interpolation is older).
+The alternative — every value written out in full — would be taken only if
+the shell test showed CI's Compose not expanding them; it did not.
+
+**DECISION (loop, D19):** the published ports stay `3000`/`8000`; `WEB`/`API`
+carry the port, so a stack on other ports (the loop's 3100/8100 overlay) is
+reached by writing them into `.env.remote`, and nothing in the layer remaps
+`ports:`. Parameterising the port mappings too was the alternative and is not
+needed for either flow.
+
+**DECISION (loop, D19):** ngrok uses two tunnels (`web` → 3000, `api` → 8000)
+because the browser talks to both services directly today. One tunnel is the
+follow-up D20, not part of this change.
+
+Found while running the ngrok mode for real (2026-10-06, ngrok 3.39, the
+owner's free account, both tunnels already in its config): (1) both tunnels
+came up on the account's single `<name>.ngrok-free.dev` domain — the agent
+log shows the same `url=` for `web` and `api`, and ngrok pooled them, joining
+requests to :3000 and :8000 at random; (2) a browser-shaped request to the
+tunnel without the `ngrok-skip-browser-warning` header gets the
+`ERR_NGROK_6024` interstitial as `text/html` with HTTP 200, and the browser's
+cross-origin API calls carry no cookie, so clicking through on the `web` URL
+does not help them. The script now refuses case (1) ("both tunnels came up
+on the SAME URL", nothing written; the shell test covers it with a canned
+agent API) and README states both. **DECISION (loop, D19):** the ngrok mode
+stays as specified (it is correct on a plan with a second domain and no
+interstitial) and is documented as needing that plan today; the free-plan
+path is D20, which both findings point at — one origin means one domain and
+same-origin API calls. The LAN mode is unaffected.
+
+### D20 — One origin for the browser: a Next.js rewrite from `/api/backend/*` to `INTERNAL_API_URL`
+
+**Priority: P3. State: QUEUED (follow-up to D19; not built there).** With a
+`rewrites()` entry in `frontend/next.config.js` proxying `/api/backend/:path*`
+to `${INTERNAL_API_URL}/:path*`, the browser would reach the API through the
+frontend's own origin: remote access becomes one URL (one ngrok tunnel, one
+LAN address), `CORS_ORIGINS` and the API half of `.env.remote` disappear, and
+`NEXT_PUBLIC_API_URL` becomes a relative path. D19's ngrok run showed this is
+also what the free ngrok plan needs: one domain per account, and an
+interstitial that same-origin calls get past after one click-through and
+cross-origin ones never do. What it touches, found while
+doing D19: `lib/securityHeaders.js` and `app/layout.tsx` build `new URL(...)`
+from `NEXT_PUBLIC_API_URL` (a relative value needs the site origin added);
+`MEDIA_BASE_URL` and the stub Checkout page (`STRIPE_STUB_CHECKOUT_BASE_URL`,
+a full-page navigation to the backend) need the same rewrite or their own;
+`E2E_API_URL` and the e2e overlay's build arg follow; and the API's in-process
+rate limiter would see every browser as the frontend container's address, so
+`RATE_LIMIT_TRUST_FORWARDED_FOR` and Next's forwarded headers must be settled
+first (the dev server adds `x-forwarded-for`; S12 governs which entry is
+trusted). Acceptance: the e2e suite green with `NEXT_PUBLIC_API_URL=/api/backend`,
+D19's shell test extended with the one-URL layer, the rate-limit tests still
+proving per-client budgets.
 
 ## Reusable agent assignments
 

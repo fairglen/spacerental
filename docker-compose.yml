@@ -34,7 +34,10 @@ services:
       CUSTOMER_ENROLLMENT_ENABLED: ${CUSTOMER_ENROLLMENT_ENABLED:-true}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       RECURRING_BOOKINGS_ENABLED: ${RECURRING_BOOKINGS_ENABLED:-false}
-      CORS_ORIGINS: http://localhost:3000
+      # The origins the browser may call the API from, comma-separated. The
+      # default is the frontend's localhost address; `.env.remote` adds the
+      # address another device uses (README "Access from another device", D19).
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       # ── Rate limiting (in-process, per client IP) ────────────────────────
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_AUTH_MAX_REQUESTS: ${RATE_LIMIT_AUTH_MAX_REQUESTS:-10}
@@ -125,14 +128,23 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXTAUTH_URL: http://localhost:3000
+      # The URL the browser reaches this frontend at: the session cookie is
+      # bound to it, so it must be the address actually typed into the browser
+      # — localhost here, the host's LAN IP or the ngrok URL in `.env.remote`
+      # (README "Access from another device", D19).
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required — copy .env.example to .env}
       NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: ${RECURRING_BOOKINGS_ENABLED:-false}
       NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS: ${BOOKING_MAX_ADVANCE_DAYS:-30}
       NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS: ${CANCELLATION_CREDIT_VALIDITY_DAYS:-365}
       # Optional phone line in "Onde estamos" (V06); empty = no line.
       NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      # Where the BROWSER calls the API (handed to it, so localhost is right
+      # on the host; `.env.remote` sets the address another device reaches).
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+      # Where this container calls the API: the Compose service name, never a
+      # browser-facing address (CLAUDE.md §6.3). Deliberately not a variable —
+      # `.env.remote` must not be able to point it anywhere else.
       INTERNAL_API_URL: http://backend:8000/api/v1
       # Browsers reach this frontend directly, so nothing vouches for
       # X-Forwarded-For (see .env.example).
