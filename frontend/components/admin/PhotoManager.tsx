@@ -163,7 +163,7 @@ export function PhotoManager({ kind, entityId, entityName, photos, onChange }: P
                 alt={`Fotografia ${index + 1} de ${entityName}`}
                 width={photo.width ?? 480}
                 height={photo.height ?? 360}
-                className="aspect-[4/3] w-full object-cover"
+                className="aspect-4/3 w-full object-cover"
               />
               {index === 0 && (
                 <span className="absolute left-1.5 top-1.5 rounded bg-primary px-1.5 py-0.5 text-[11px] font-medium text-primary-foreground">

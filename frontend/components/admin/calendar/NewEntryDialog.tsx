@@ -74,7 +74,7 @@ export function NewEntryDialog({ slot, rooms, onClose, onCreated }: NewEntryDial
         <div role="tablist" aria-label="Tipo" className="flex gap-1 rounded-lg bg-accent p-1">
           {(['booking', 'block'] as const).map((t) => (
             <button key={t} role="tab" type="button" aria-selected={tab === t} onClick={() => { setTab(t); setError(null) }}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${tab === t ? 'bg-white text-foreground shadow' : 'text-muted-foreground'}`}>
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${tab === t ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground'}`}>
               {t === 'booking' ? 'Nova reserva' : 'Bloquear horário'}
             </button>
           ))}

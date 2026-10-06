@@ -106,7 +106,7 @@ export default function NewSpacePage() {
             <div>
               <Label htmlFor="description">Descrição</Label>
               <textarea id="description" {...register('description')}
-                className="mt-1 flex min-h-[80px] w-full rounded-lg border border-border bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className="mt-1 flex min-h-[80px] w-full rounded-lg border border-border bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
                 placeholder="Descrição breve do espaço..." />
             </div>
             <div>

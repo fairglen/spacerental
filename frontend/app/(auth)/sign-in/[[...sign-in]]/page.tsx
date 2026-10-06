@@ -67,7 +67,7 @@ export default function SignInPage() {
         <Card>
           <CardHeader className="text-center pb-2">
             <CardTitle>Entrar na conta</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Bem-vindo de volta</p>
+            <p className="text-sm text-muted-foreground">Bem-vindo de volta</p>
           </CardHeader>
           <CardContent className="pt-4">
             {passwordReset && (

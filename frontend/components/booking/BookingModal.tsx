@@ -198,7 +198,7 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
               <input
                 id="repeat-weekly"
                 type="checkbox"
-                className="h-4 w-4 rounded border-[#E5E7EB] text-primary focus:ring-2 focus:ring-[#3D7A5E]"
+                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-[#3D7A5E]"
                 disabled={mutation.isPending}
                 checked={repeatWeekly}
                 onChange={(e) => setRepeatWeekly(e.target.checked)}

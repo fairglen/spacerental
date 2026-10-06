@@ -133,7 +133,7 @@ export function WhereWeAre({ space, rooms = [], contact, headingAs: Heading = 'h
           <div
             ref={frame}
             data-testid="map-frame"
-            className="flex w-full aspect-[16/10] min-h-[240px] overflow-hidden rounded-xl border border-border bg-accent/40 md:aspect-auto md:h-full md:min-h-[280px]"
+            className="flex w-full aspect-16/10 min-h-[240px] overflow-hidden rounded-xl border border-border bg-accent/40 md:aspect-auto md:h-full md:min-h-[280px]"
           >
             {pageLoaded && (
               <iframe

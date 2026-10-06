@@ -24,7 +24,7 @@ function SpacesList({ spaces }: { spaces: Space[] }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {spaces.map((space) => (
             <Card key={space.id} className="hover:shadow-md transition-shadow">
-              <div className="h-48 bg-gradient-to-br from-accent to-primary-light/40 rounded-t-xl flex items-center justify-center text-5xl">
+              <div className="h-48 bg-linear-to-br from-accent to-primary-light/40 rounded-t-xl flex items-center justify-center text-5xl">
                 🏢
               </div>
               <CardHeader className="pb-2">

@@ -26,7 +26,7 @@ export function SpaceModeText({ single, multi, skeletonClassName }: SpaceModeTex
         <span
           data-testid="mode-text-skeleton"
           aria-hidden
-          className={cn('inline-block h-3 w-12 animate-pulse rounded bg-[#E8F4F0] align-middle', skeletonClassName)}
+          className={cn('inline-block h-3 w-12 animate-pulse rounded bg-accent align-middle', skeletonClassName)}
         />
         <span className="sr-only">{t('common.loading')}</span>
       </>

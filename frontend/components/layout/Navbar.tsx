@@ -39,7 +39,7 @@ export function Navbar() {
   const links = hasAnyAdminRole ? [...navLinks, { href: '/admin', label: t('navbar.admin_link') }] : navLinks
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-border bg-white/90 backdrop-blur-sm">
+    <nav className="sticky top-0 z-50 w-full border-b border-border bg-white/90 backdrop-blur-xs">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center text-primary" aria-label={t('brand.name')}>

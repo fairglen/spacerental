@@ -66,7 +66,7 @@ export function DangerZone({ entityLabel, name, shortId, keeps, soft, hard, onDo
             <p className="mt-2 text-sm text-muted-foreground" data-testid="danger-disabled">{hard.disabledReason}</p>
           ) : (
             <div className="mt-3 flex flex-wrap items-end gap-3">
-              <div className="flex-1 min-w-[14rem]">
+              <div className="flex-1 min-w-56">
                 <Label htmlFor="danger-confirm">Escreva <strong>{name}</strong> (ou <code>{shortId}</code>) para confirmar</Label>
                 <Input id="danger-confirm" value={typed} onChange={(e) => setTyped(e.target.value)} className="mt-1" autoComplete="off" />
               </div>

@@ -33,17 +33,19 @@ function PlanCard({ plan, children }: { plan: PlanCopy; children: React.ReactNod
       )}
       <CardHeader className="text-center pb-2">
         <CardTitle className="text-lg">{plan.name}</CardTitle>
-        <div className="mt-2">
+        {/* No own top margins inside the header: its space-y-1.5 spaces the
+            children (on Tailwind 3 that rule overrode mt-*; on 4 both apply). */}
+        <div>
           <span className="text-4xl font-bold text-foreground">{plan.price}</span>
           <span className="text-sm text-muted-foreground ml-1">{plan.unit}</span>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">{plan.desc}</p>
+        <p className="text-xs text-muted-foreground">{plan.desc}</p>
       </CardHeader>
       <CardContent>
         <ul className="space-y-2 mb-6">
           {plan.features.map((f) => (
             <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Check className="h-4 w-4 text-primary flex-shrink-0" />
+              <Check className="h-4 w-4 text-primary shrink-0" />
               {f}
             </li>
           ))}
@@ -59,13 +61,13 @@ function SkeletonCard() {
     <Card>
       <CardHeader className="text-center pb-2">
         <Skeleton className="h-6 w-32 mx-auto" />
-        <Skeleton className="h-10 w-24 mx-auto mt-3" />
-        <Skeleton className="h-3 w-40 mx-auto mt-2" />
+        <Skeleton className="h-10 w-24 mx-auto" />
+        <Skeleton className="h-3 w-40 mx-auto" />
       </CardHeader>
       <CardContent className="space-y-2">
         <Skeleton className="h-4 w-full" />
         <Skeleton className="h-4 w-3/4" />
-        <Skeleton className="h-10 w-full mt-4" />
+        <Skeleton className="h-10 w-full" />
       </CardContent>
     </Card>
   )

@@ -77,7 +77,7 @@ export default function SignUpPage() {
         <Card>
           <CardHeader className="text-center pb-2">
             <CardTitle>Criar conta</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Crie uma conta de cliente para reservar salas e comprar packs de horas</p>
+            <p className="text-sm text-muted-foreground">Crie uma conta de cliente para reservar salas e comprar packs de horas</p>
           </CardHeader>
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
