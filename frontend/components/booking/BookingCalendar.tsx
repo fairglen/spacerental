@@ -182,6 +182,17 @@ const CALENDAR_COMPONENTS = { toolbar: BookingToolbar }
 
 export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReopenDone }: BookingCalendarProps) {
   const [selectedDate, setSelectedDate] = useState(initialDate ?? new Date())
+  // K02: the slot normally arrives before this mounts, through `initialDate`.
+  // It can also land afterwards — React holds the rooms view's reopen state
+  // behind the `router.replace` that strips the query, and the calendar's
+  // chunk may be ready first — in which case the grid would sit on today and
+  // never load the slot's day. Follow a late reopen to its day instead.
+  useEffect(() => {
+    if (!reopen) return
+    setSelectedDate((current) =>
+      format(current, 'yyyy-MM-dd') === format(reopen.start, 'yyyy-MM-dd') ? current : reopen.start,
+    )
+  }, [reopen])
   // Hourly booking on a day or a week: there is no month view (C12).
   const [view, setView] = useCalendarView()
   const [selectionError, setSelectionError] = useState<string | null>(null)
