@@ -667,4 +667,31 @@ describe('BookingCalendar reopen after a pack purchase (K02)', () => {
     expect(onSlotSelect).not.toHaveBeenCalled()
     expect(onReopenDone).toHaveBeenCalledTimes(1)
   })
+
+  // The rooms view's reopen state can land after the calendar mounted (React
+  // holds it behind the router.replace that strips the query): the grid must
+  // still move to the slot's day and select it, not sit on today.
+  it('follows a reopen that arrives after the mount to its day and reselects the slot', async () => {
+    const onSlotSelect = vi.fn()
+    const onReopenDone = vi.fn()
+    vi.mocked(spacesApi.getAvailabilityRange).mockResolvedValue(day)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = (reopen: { start: Date; end: Date } | null) => (
+      <QueryClientProvider client={queryClient}>
+        <BookingCalendar room={room} onSlotSelect={onSlotSelect} reopen={reopen} onReopenDone={onReopenDone} />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree(null))
+    await waitFor(() => expect(spacesApi.getAvailabilityRange).toHaveBeenCalled())
+    expect(format(calendar!.date, 'yyyy-MM-dd')).toBe(format(new Date(), 'yyyy-MM-dd'))
+    expect(onSlotSelect).not.toHaveBeenCalled()
+
+    rerender(tree({ start: parseISO(S), end: parseISO(E) }))
+    await waitFor(() => expect(onSlotSelect).toHaveBeenCalledWith(parseISO(S), parseISO(E)))
+    const dayKey = format(parseISO(S), 'yyyy-MM-dd')
+    expect(format(calendar!.date, 'yyyy-MM-dd')).toBe(dayKey)
+    expect(vi.mocked(spacesApi.getAvailabilityRange).mock.calls.some(([, from, to]) => from <= dayKey && dayKey <= to)).toBe(true)
+    expect(onReopenDone).toHaveBeenCalledTimes(1)
+    expect(onSlotSelect).toHaveBeenCalledTimes(1)
+  })
 })
