@@ -2991,8 +2991,9 @@ recorded here and in the commit that takes them.
 
 ### D19 — Reach the local stack from another device (LAN or ngrok) via a layered env file
 
-**Priority: P2. State: IN PROGRESS (branch `chore/remote-access-env`).**
-`docker-compose.yml` hard-codes the three browser-facing values that decide
+**Priority: P2. State: DONE with #91 (merged 2026-10-06); its two-URL layer
+is superseded by D20's one-URL one.** `docker-compose.yml` hard-coded the
+three browser-facing values that decide
 whether another device can use the stack: `CORS_ORIGINS`, `NEXTAUTH_URL` and
 `NEXT_PUBLIC_API_URL` are literal `localhost` there, while the rest of that
 family (`FRONTEND_URL`, `MEDIA_BASE_URL`, `STRIPE_SUCCESS_URL`,
@@ -3083,15 +3084,120 @@ same-origin API calls. The LAN mode is unaffected.
 
 ### D20 — One origin for the browser: a Next.js rewrite from `/api/backend/*` to `INTERNAL_API_URL`
 
-**Priority: P3. State: QUEUED (follow-up to D19; not built there).** With a
-`rewrites()` entry in `frontend/next.config.js` proxying `/api/backend/:path*`
-to `${INTERNAL_API_URL}/:path*`, the browser would reach the API through the
-frontend's own origin: remote access becomes one URL (one ngrok tunnel, one
-LAN address), `CORS_ORIGINS` and the API half of `.env.remote` disappear, and
-`NEXT_PUBLIC_API_URL` becomes a relative path. D19's ngrok run showed this is
-also what the free ngrok plan needs: one domain per account, and an
-interstitial that same-origin calls get past after one click-through and
-cross-origin ones never do. What it touches, found while
+**Priority: P2. State: IN REVIEW (branch `feat/one-origin-api-proxy`, PR
+opened 2026-10-07; owner assignment 2026-10-06, night).** With a `rewrites()` entry in
+`frontend/next.config.js` proxying `/backend/:path*` to the backend's
+internal origin, the browser reaches the API through the frontend's own
+origin: remote access becomes one URL (one ngrok tunnel, one LAN address),
+the API half of `.env.remote` disappears, and `NEXT_PUBLIC_API_URL` becomes a
+relative path. D19's ngrok run showed this is also what the free ngrok plan
+needs: one domain per account, and an interstitial that same-origin calls get
+past after one click-through and cross-origin ones never do.
+
+Plan (what changes, with today's behaviour kept wherever the assignment
+leaves a choice):
+- **Proxy.** `next.config.js` `rewrites()`: `/backend/:path*` →
+  `<origin of INTERNAL_API_URL>/:path*` (`http://backend:8000` in Compose,
+  `http://localhost:8000` natively; the `/api/v1` suffix stripped by
+  `lib/backendProxy.js`, a CommonJS module like `lib/securityHeaders.js` so
+  the server and Vitest can both load it). `/backend` collides with no app
+  route and not with NextAuth's `/api/auth/*`; a Vitest test walks `app/` to
+  assert it. Verified against an echo server in dev and production mode:
+  the backend's own headers come through untouched (no Next header is added
+  to a proxied response, so no CSP/X-Robots conflict), a 2 MB multipart
+  upload arrives whole, `/backend/media/**` serves the photos.
+- **Relative browser URLs.** `NEXT_PUBLIC_API_URL` defaults to
+  `/backend/api/v1` (`lib/api.ts`, the Dockerfile build arg, Compose, the e2e
+  overlay). Server-side code never inherits it: `lib/auth.ts` and
+  `lib/landing.ts` resolve `INTERNAL_API_URL`, else an absolute
+  `NEXT_PUBLIC_API_URL`, else `http://localhost:8000/api/v1`
+  (`internalApiUrl()` in `lib/backendProxy.js`). `lib/securityHeaders.js`
+  treats a relative API URL as same-origin (`connect-src 'self'`), so a
+  production build no longer needs the variable; `app/layout.tsx` preconnects
+  only to a foreign API origin. Backend-generated browser URLs stay absolute
+  and point at the frontend origin: `MEDIA_BASE_URL` and
+  `STRIPE_STUB_CHECKOUT_BASE_URL` are derived from `FRONTEND_URL` when unset
+  (`<FRONTEND_URL>/backend/media`, `<FRONTEND_URL>/backend`); explicit values
+  still win. The stub Checkout page's forms post to relative actions so they
+  work at `/backend/checkout/stub/<id>` and at `/checkout/stub/<id>` alike.
+  CORS keeps today's default — direct `:8000` access still works for tools.
+- **Rate limiting behind the proxy.** All browser traffic reaches the API
+  from the frontend container's address. Found against the echo server:
+  Next 14's rewrite proxy sets only `x-forwarded-host` and forwards
+  `X-Forwarded-For` exactly as the client sent it — it never appends the
+  socket's address — and a `middleware.ts` cannot do better: `request.ip` is
+  empty when self-hosted, and the `x-forwarded-for` Next hands a middleware
+  is the socket address only when the client sent none (`??=`), so a
+  middleware cannot tell a spoofed header from the real peer. The fix is
+  `frontend/server.js`, Next's standard custom server with one addition: it
+  appends `req.socket.remoteAddress` to `X-Forwarded-For` before handing the
+  request to Next (`lib/backendProxy.js:appendForwardedFor`); `npm run dev`
+  and `npm run start` run it, in the container and natively. The limiter
+  trusts the header only when the peer is a trusted proxy — new
+  `RATE_LIMIT_TRUSTED_PROXIES` (hostnames resolved and cached for a minute,
+  IPs or CIDRs; Compose sets `frontend`) — and then takes the entry that
+  proxy appended (the rightmost), so a client-supplied value on the left is
+  ignored. `RATE_LIMIT_TRUST_FORWARDED_FOR` keeps its meaning and default
+  (off; S12 still describes its first-entry behaviour). Tests: a spoofed
+  header from an untrusted peer is ignored; a trusted peer's appended entry
+  is the identity; the hostname form resolves.
+
+**DECISION (loop, D20):** a custom server (`frontend/server.js`) rather than
+a `middleware.ts`, because only the Node socket knows the client's address
+(the alternatives — a middleware forwarding Next's `x-forwarded-for`, which
+a client can pre-fill, or a custom header set from it — would let a client
+choose its own rate-limit identity, a weakening; identifying all browser
+traffic as the frontend container would be bypass-proof but one shared
+budget for every user). The rewrite in `next.config.js` stays the proxy;
+the server only prepares the header and hands everything to Next.
+
+**DECISION (loop, D20):** the production image bakes the proxy's target at
+build time. Found on the first e2e-stack run: the runner image proxied to
+`localhost:8000` and answered 500 — Next compiles `rewrites()` into the
+routes manifest at `next build`, so the runtime `INTERNAL_API_URL` Compose
+sets moves the server-side fetches but not the proxy. `frontend/Dockerfile`
+now has `ARG INTERNAL_API_URL=http://backend:8000/api/v1` for the builder
+stage (the shell test pins it equal to Compose's runtime value); a
+deployment with another backend address passes its own build arg. The
+alternative — proxying in `server.js` or a middleware so the target is read
+at runtime — would be a second proxy next to the rewrite; not taken while
+every image of this project is built by Compose with the same service name.
+
+**DECISION (loop, D20):** the Playwright baseline is CI's green run on
+`main` `28427f8` (push run 37534739211, both e2e shards) rather than a
+local run: the host was at load avg 50–70 from the pytest baseline and the
+Vitest run alongside, and a local Playwright run there would have measured
+the host, not the code.
+- **Single-URL remote access.** `.env.remote.example` shrinks to `WEB=…`
+  with `NEXTAUTH_URL=${WEB}` and `FRONTEND_URL=${WEB}`; `scripts/remote-up.sh
+  ngrok` needs only the `web` tunnel (found by its upstream port, the
+  `domain:` in ngrok.yml making the URL stable), the two-tunnel logic and
+  the `api` tunnel go; a leftover `api` tunnel on the same URL is refused by
+  name (ngrok pools tunnels that share a URL — the D19 finding — and would
+  send requests to port 8000 at random); `lan` and `off` unchanged. README
+  updated, with the one-off instruction to reserve the free static domain.
+- **Compose.** Ports 8000 and 5432 stay published for local tooling; the
+  browser never needs 8000. Playwright keeps `E2E_API_URL` for API-level
+  fixtures; the specs that watch the browser's own requests match the
+  frontend origin. A new spec walks sign-up → booking → stub Checkout at
+  `<origin>/backend/checkout/stub/…` → confirmed, photos from
+  `<origin>/backend/media/…`, an operator photo upload through the proxy, and
+  asserts the browser made no request to port 8000.
+
+Acceptance: the Vitest, backend, shell and Playwright tests above green;
+`docker compose up --build -V` on a fresh clone unchanged in use; a manual
+`./scripts/remote-up.sh ngrok` on the free account with sign-in and a booking
+from a phone on mobile data, recorded in the PR.
+
+Evidence (2026-10-07, PR body has the detail): Vitest 717/717, backend 943,
+shell test green, Playwright 79/79 (+8 skipped) through the proxy on the e2e
+stack incl. the new `one-origin.spec.ts`; `remote-up.sh ngrok` for real on
+the free account; a scripted Chromium through the ngrok URL against the
+production stack: interstitial clicked once, the API then answering on the
+same origin without it, https sign-in with `__Secure-` cookies, a booking
+paid on `<ngrok>/backend/checkout/stub/…` and confirmed, 0 browser requests
+to port 8000. The phone-on-mobile-data step was done from this machine
+through ngrok's edge (no phone at hand) and is recorded as such. What it touches, found while
 doing D19: `lib/securityHeaders.js` and `app/layout.tsx` build `new URL(...)`
 from `NEXT_PUBLIC_API_URL` (a relative value needs the site origin added);
 `MEDIA_BASE_URL` and the stub Checkout page (`STRIPE_STUB_CHECKOUT_BASE_URL`,

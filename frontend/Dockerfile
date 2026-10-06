@@ -25,10 +25,16 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so
 # they are build arguments here; runtime environment only reaches the server.
-# No default for the API URL: a production build that does not name its real
-# API origin fails in lib/securityHeaders.js rather than shipping a policy
-# for localhost (review round 7). docker-compose.e2e.yml passes it.
-ARG NEXT_PUBLIC_API_URL
+# The API URL is relative by default: the browser calls the API through this
+# app's own origin, which next.config.js proxies to the backend (D20), so a
+# production build names no foreign origin unless one is passed.
+ARG NEXT_PUBLIC_API_URL=/backend/api/v1
+# Where the /backend proxy forwards to (D20). Next compiles `rewrites()` into
+# the build's routes manifest, so a production image carries the target it was
+# built with — a runtime INTERNAL_API_URL moves the server-side fetches, not
+# the proxy. The default is the Compose service name, as docker-compose.yml
+# sets at runtime; a deployment with another backend address passes its own.
+ARG INTERNAL_API_URL=http://backend:8000/api/v1
 ARG NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED=false
 ARG NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS=30
 ARG NEXT_PUBLIC_CONTACT_PHONE=
@@ -37,6 +43,7 @@ ARG NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS=365
 ARG NEXT_PUBLIC_MEDIA_ORIGIN=
 ARG NEXT_PUBLIC_APP_VERSION=docker
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    INTERNAL_API_URL=$INTERNAL_API_URL \
     NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED=$NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED \
     NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS=$NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS \
     NEXT_PUBLIC_CONTACT_PHONE=$NEXT_PUBLIC_CONTACT_PHONE \
@@ -61,9 +68,10 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 # Next's Data Cache under .next/cache, which `next start` writes at runtime.
 COPY --from=builder --chown=app:app /app/.next ./.next
 COPY --from=builder /app/public ./public
-# next.config.js runs again under `next start`, with what it requires (Q52).
-COPY package.json next.config.js ./
-COPY lib/securityHeaders.js lib/cacheHeaders.js lib/robotsHeaders.js ./lib/
+# next.config.js runs again under `npm run start`, with what it requires (Q52,
+# and the /backend proxy's target, D20); server.js is the process itself.
+COPY package.json next.config.js server.js ./
+COPY lib/securityHeaders.js lib/cacheHeaders.js lib/robotsHeaders.js lib/backendProxy.js ./lib/
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \

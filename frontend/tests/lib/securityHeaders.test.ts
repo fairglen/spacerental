@@ -34,11 +34,18 @@ describe('securityHeaders (Q52)', () => {
     expect(headerMap(dev, '/:path*')['Content-Security-Policy-Report-Only']).toContain("frame-ancestors 'none'")
   })
 
-  it('refuses a production build without the API URL, and only falls back to localhost in development', () => {
-    // Round 7: a policy naming the wrong origin would fail every browser call quietly once deployed.
-    expect(() => securityHeaders({ nodeEnv: 'production', apiUrl: undefined })).toThrow(/NEXT_PUBLIC_API_URL/)
-    const fallback = securityHeaders({ nodeEnv: 'development', apiUrl: undefined }) as Rule[]
-    expect(headerMap(fallback, '/:path*')['Content-Security-Policy-Report-Only']).toContain('connect-src \'self\' http://localhost:8000')
+  it('names only this origin when the API URL is unset or relative — the /backend proxy (D20) — in every build', () => {
+    // Round 7 wanted a production build never to ship a policy for the wrong
+    // origin; with the API on this origin by default there is no other origin
+    // to name, in production or development, and no localhost anywhere.
+    for (const nodeEnv of ['production', 'development'] as const) {
+      for (const apiUrl of [undefined, '/backend/api/v1']) {
+        const csp = headerMap(securityHeaders({ nodeEnv, apiUrl }) as Rule[], '/:path*')['Content-Security-Policy-Report-Only']
+        expect(csp, `${nodeEnv} ${apiUrl}`).toContain("connect-src 'self';")
+        expect(csp, `${nodeEnv} ${apiUrl}`).toContain("img-src 'self' data: blob:;")
+        expect(csp, `${nodeEnv} ${apiUrl}`).not.toContain('localhost')
+      }
+    }
   })
 
   it('sends HSTS in a production build only', () => {

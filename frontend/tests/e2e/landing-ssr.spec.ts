@@ -2,7 +2,7 @@
 // no catalog request to paint it. The perf harness (tests/perf) measures the
 // same thing with numbers; this spec is the pass/fail guard.
 import { test, expect } from '@playwright/test'
-import { API_ORIGIN, SEEDED_ROOMS } from './fixtures'
+import { SEEDED_ROOMS } from './fixtures'
 
 test.describe('landing page, server-rendered data', () => {
   test('the HTML already names the seeded rooms and the packs', async ({ request }) => {
@@ -14,9 +14,11 @@ test.describe('landing page, server-rendered data', () => {
 
   test('a cold load makes no catalog request from the browser', async ({ page }) => {
     const catalog: string[] = []
+    // Wherever the browser would reach the API — the frontend's own origin
+    // through /backend (D20) or a foreign one — a catalog call is a failure.
     page.on('request', (req) => {
       const url = req.url()
-      if (url.startsWith(API_ORIGIN) && /\/api\/v1\/(spaces|packages)(\/|\?|$)/.test(url)) catalog.push(url)
+      if (/\/api\/v1\/(spaces|packages)(\/|\?|$)/.test(url)) catalog.push(url)
     })
     await page.goto('/')
     await expect(page.getByRole('heading', { name: SEEDED_ROOMS[0] })).toBeVisible()

@@ -7,6 +7,7 @@
 import axios from 'axios'
 import { unstable_cache } from 'next/cache'
 import { spacesApi } from '@/lib/api'
+import { internalApiUrl } from '@/lib/backendProxy'
 import type { Package, PublicContact, Room, Space } from '@/types'
 
 export type SpaceDetail = { space: Space; rooms: Room[]; contact?: PublicContact }
@@ -16,9 +17,10 @@ export type LandingData = {
   detail: (SpaceDetail & { packages: Package[] }) | null
 }
 
-// Same resolution as lib/auth.ts: the service name inside Docker, the public
-// URL when the frontend runs outside it.
-const INTERNAL_API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+// Same resolution as lib/auth.ts: the service name inside Docker, an absolute
+// public URL when the frontend runs outside it — never the browser's relative
+// default (lib/backendProxy.js).
+const INTERNAL_API_URL = internalApiUrl()
 
 /** What the landing renders from, through the same wrappers the browser uses; `api` is injectable for tests. */
 export async function fetchLandingData(api = axios.create({ baseURL: INTERNAL_API_URL, timeout: 5_000 })): Promise<LandingData> {

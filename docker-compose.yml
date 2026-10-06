@@ -45,6 +45,11 @@ services:
       RATE_LIMIT_PUBLIC_MAX_REQUESTS: ${RATE_LIMIT_PUBLIC_MAX_REQUESTS:-120}
       RATE_LIMIT_PUBLIC_WINDOW_SECONDS: ${RATE_LIMIT_PUBLIC_WINDOW_SECONDS:-60}
       RATE_LIMIT_TRUST_FORWARDED_FOR: ${RATE_LIMIT_TRUST_FORWARDED_FOR:-false}
+      # D20: browser traffic arrives through the frontend's proxy, which
+      # appends the real client to X-Forwarded-For. The header is trusted only
+      # when the peer is this service (resolved by name), and then the entry
+      # it appended is the client — see app/ratelimit.py:client_identity.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-frontend}
       RATE_LIMIT_UPLOAD_MAX_REQUESTS: ${RATE_LIMIT_UPLOAD_MAX_REQUESTS:-30}
       RATE_LIMIT_UPLOAD_WINDOW_SECONDS: ${RATE_LIMIT_UPLOAD_WINDOW_SECONDS:-60}
       # The public help form (C17): every accepted request emails a person.
@@ -56,9 +61,11 @@ services:
       # value stops the backend at boot instead of silently writing locally.
       MEDIA_STORAGE: ${MEDIA_STORAGE:-local}
       MEDIA_ROOT: /var/lib/spacerental/media
-      # Handed to the visitor's browser inside API responses, so localhost is
-      # correct here (same reasoning as STRIPE_STUB_CHECKOUT_BASE_URL).
-      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-http://localhost:8000/media}
+      # Handed to the visitor's browser inside API responses. Empty = derived
+      # from FRONTEND_URL as <FRONTEND_URL>/backend/media (D20: the browser
+      # reaches the API through the frontend's origin); set it only for
+      # photos served from somewhere else (object storage).
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
       SEED_PHOTOS_DIR: /app/seed-photos
       # Defaults mirror app/config.py so a fresh clone comes up in stub mode
       # with nothing set. The keys are forwarded empty rather than omitted:
@@ -69,15 +76,15 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_CURRENCY: ${STRIPE_CURRENCY:-eur}
-      # Browser redirect targets, so localhost is correct here (CLAUDE.md §6.3
-      # governs container-to-container calls, not URLs handed to the user).
-      STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-http://localhost:3000/dashboard?pagamento=sucesso}
-      STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-http://localhost:3000/dashboard?pagamento=cancelado}
+      # Browser redirect targets (CLAUDE.md §6.3 governs container-to-container
+      # calls, not URLs handed to the user). Empty = derived from FRONTEND_URL
+      # as <FRONTEND_URL>/dashboard?pagamento=sucesso|cancelado (D20).
+      STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-}
+      STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-}
       # Stub mode only (T10): browser-facing base URL of this backend, used to
-      # build the walkable /checkout/stub/{id} page's URL. Same reasoning as
-      # STRIPE_SUCCESS_URL/CANCEL_URL above — handed to the browser, so
-      # localhost is correct here even inside docker-compose.
-      STRIPE_STUB_CHECKOUT_BASE_URL: ${STRIPE_STUB_CHECKOUT_BASE_URL:-http://localhost:8000}
+      # build the walkable /checkout/stub/{id} page's URL. Empty = derived
+      # from FRONTEND_URL as <FRONTEND_URL>/backend (D20), the proxied path.
+      STRIPE_STUB_CHECKOUT_BASE_URL: ${STRIPE_STUB_CHECKOUT_BASE_URL:-}
       # Minutes an unpaid hourly booking holds its slot while on Checkout (C03).
       BOOKING_HOLD_MINUTES: ${BOOKING_HOLD_MINUTES:-15}
       # Days ahead a customer may book (H01); operators have no horizon. The
@@ -139,12 +146,15 @@ services:
       NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS: ${CANCELLATION_CREDIT_VALIDITY_DAYS:-365}
       # Optional phone line in "Onde estamos" (V06); empty = no line.
       NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}
-      # Where the BROWSER calls the API (handed to it, so localhost is right
-      # on the host; `.env.remote` sets the address another device reaches).
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
-      # Where this container calls the API: the Compose service name, never a
-      # browser-facing address (CLAUDE.md §6.3). Deliberately not a variable —
-      # `.env.remote` must not be able to point it anywhere else.
+      # Where the BROWSER calls the API: relative, on this frontend's own
+      # origin — next.config.js proxies /backend/* to the backend container
+      # (D20), so another device needs only the frontend's address. An
+      # absolute URL here points the browser at the API directly instead.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/backend/api/v1}
+      # Where this container calls the API, and where the /backend proxy
+      # forwards to: the Compose service name, never a browser-facing address
+      # (CLAUDE.md §6.3). Deliberately not a variable — `.env.remote` must not
+      # be able to point it anywhere else.
       INTERNAL_API_URL: http://backend:8000/api/v1
       # Browsers reach this frontend directly, so nothing vouches for
       # X-Forwarded-For (see .env.example).

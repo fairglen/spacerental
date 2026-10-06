@@ -42,8 +42,9 @@ services:
       context: ./frontend
       target: runner
       args:
-        # Inlined into the bundle at build time (see frontend/Dockerfile).
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+        # Inlined into the bundle at build time (see frontend/Dockerfile); the
+        # relative default goes through the /backend proxy (D20).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/backend/api/v1}
         NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: "true"
         NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS: ${BOOKING_MAX_ADVANCE_DAYS:-30}
         NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}

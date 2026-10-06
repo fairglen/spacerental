@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { publicApiUrl } from '@/lib/backendProxy'
 import { sessionRevoked } from '@/lib/sessionRevoked'
 import type {
   Space, Room, Booking, Package, UserPackagePurchase, Photo,
@@ -13,7 +14,12 @@ import type {
   OrganizationSettings, OrganizationSettingsPatch, PublicContact,
 } from '@/types'
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+// Relative by default (/backend/api/v1): the browser calls the API through
+// this site's own origin, which next.config.js proxies to the backend (D20),
+// so whatever address the page was opened at — localhost, a LAN IP, an ngrok
+// domain — is the one the API is reached at. Server-side code never uses
+// this value: lib/auth.ts and lib/landing.ts resolve INTERNAL_API_URL.
+export const baseURL = publicApiUrl()
 
 export const apiClient = axios.create({ baseURL })
 
