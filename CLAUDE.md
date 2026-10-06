@@ -54,7 +54,7 @@ The two are linked: `authorize()` in `lib/auth.ts`, shared by `app/api/auth/[...
 | ORM | **SQLAlchemy 2.0 async** + asyncpg | Mature, declarative, supports complex multi-tenant queries. |
 | Password hashing | **Argon2id** via `argon2-cffi` | OWASP #1 recommendation, no length limit (unlike bcrypt). Parameters: `m=64MB, t=3, p=4`. |
 | JWT | **python-jose** HS256 | Stateless, easy to verify, shared `SECRET_KEY`. |
-| DB | **PostgreSQL 16** | Required (uses `uuid-ossp`, `ARRAY`, `JSONB`, `TIMESTAMPTZ`). Not SQLite-compatible. |
+| DB | **PostgreSQL 18** | Required (uses `uuid-ossp`, `ARRAY`, `JSONB`, `TIMESTAMPTZ`). Not SQLite-compatible. |
 | Tests (backend) | **pytest + pytest-asyncio + httpx** | Real PostgreSQL fixtures, no mocks for the DB layer. |
 | Tests (frontend) | **Vitest + Testing Library** | Faster than Jest, native ESM. |
 | E2E | **Playwright** | Best browser automation, single tool for all browsers. |
@@ -158,7 +158,7 @@ Fix, and the rule going forward:
 - **Anything that belongs in the schema belongs in `Base.metadata`** — including indexes, via `__table_args__`. An index that exists only in a migration will be emitted as a `drop_index` by the next `--autogenerate`.
 - The one deliberate exception is the `bookings_no_overlap` EXCLUDE constraint, which lives only in the migration because applying it needs conflict-free data. It is documented in the baseline migration and is invisible to `alembic check`, which does not compare EXCLUDE constraints.
 
-`.github/workflows/migrations.yml` runs upgrade → check → downgrade → upgrade against an empty PostgreSQL 16 so this cannot regress silently again.
+`.github/workflows/migrations.yml` runs upgrade → check → downgrade → upgrade against an empty PostgreSQL 18 so this cannot regress silently again.
 
 ---
 
