@@ -2824,6 +2824,20 @@ bump: npm 11.19 (bundled with 24 and 26) does not run the install scripts of
 esbuild, msw and unrs-resolver unless approved; builds and tests pass without
 them, so nothing is approved until something needs it.
 
+### D12 — SQLAlchemy 2.1 deprecates `lazy="noload"` (follow-up to #79)
+
+**Priority: P2. State: QUEUED.** The pip group (#79) brings SQLAlchemy 2.1.3,
+which warns at mapper configuration that the `noload` loader strategy "is
+deprecated and will be removed in a future release" because it "produces
+incorrect results by returning `None` for related items". The models use it
+deliberately (CLAUDE.md §4: no surprise N+1s) on `Booking.room/user/
+recurrence/package_debits/…` and `AdminAction.actor`; every route that needs
+a relationship loads it explicitly. Replacing it is a semantic change (the
+candidate is `lazy="raise"`, which makes an unloaded access an error instead
+of `None`, and needs every `None`-tolerant reader audited), so it is not done
+inside a dependency PR. Acceptance: no `SADeprecationWarning` for `noload` in
+the suite, every route still loads what it reads, suite green.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are

@@ -15,6 +15,7 @@ from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
+import httpx
 import pytest
 import pytest_asyncio
 from app import audit
@@ -28,7 +29,7 @@ from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.space import AvailabilityRule, Room, Space
 from app.models.support import SupportCategory, SupportRequest, SupportStatus
 from app.models.user import User
-from fastapi.routing import APIRoute
+from app.routing_inventory import iter_api_routes
 from PIL import Image
 from sqlalchemy import func, select
 
@@ -303,10 +304,13 @@ async def _granted_purchase(client, w):
 
 def _json(method: str, path: Callable, body: Callable | dict | None = None) -> Act:
     async def act(client, w):
-        kwargs = {"params": w.params, "headers": w.headers}
+        # httpx 0.28: `params=` replaces the URL's own query instead of
+        # merging with it, so a `?confirm=` in the path is folded in here.
+        url = httpx.URL(path(w))
+        kwargs = {"params": {**dict(url.params), **w.params}, "headers": w.headers}
         if body is not None:
             kwargs["json"] = body(w) if callable(body) else body
-        return await client.request(method, path(w), **kwargs)
+        return await client.request(method, url.copy_with(query=None), **kwargs)
 
     return act
 
@@ -561,11 +565,10 @@ SCENARIOS: dict[tuple[str, str], Scenario] = {
 
 def _mutation_routes() -> set[tuple[str, str]]:
     found = set()
-    for route in app.routes:
-        if isinstance(route, APIRoute):
-            for method in route.methods & MUTATING:
-                if ROUTES.get((method, route.path)) == OPERATOR:
-                    found.add((method, route.path))
+    for route in iter_api_routes(app.routes):
+        for method in (route.methods or set()) & MUTATING:
+            if ROUTES.get((method, route.path or "")) == OPERATOR:
+                found.add((method, route.path or ""))
     return found
 
 

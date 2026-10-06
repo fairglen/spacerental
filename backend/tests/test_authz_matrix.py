@@ -28,7 +28,8 @@ from app.models.space import AvailabilityRule, Room, Space
 from app.models.user import User
 from app.payments import CheckoutKind, StubPaymentGateway
 from app.routers import recurrences
-from fastapi.routing import APIRoute
+from app.routing_inventory import iter_api_routes
+from fastapi.routing import RouteContext
 from sqlalchemy import func, select
 
 from tests.conftest import checkout_completed_event
@@ -403,12 +404,11 @@ async def world(db_session) -> SimpleNamespace:
 
 
 class TestClassification:
-    def _api_routes(self) -> dict[tuple[str, str], APIRoute]:
-        found: dict[tuple[str, str], APIRoute] = {}
-        for route in app.routes:
-            if isinstance(route, APIRoute):
-                for method in route.methods - {"HEAD", "OPTIONS"}:
-                    found[(method, route.path)] = route
+    def _api_routes(self) -> dict[tuple[str, str], RouteContext]:
+        found: dict[tuple[str, str], RouteContext] = {}
+        for route in iter_api_routes(app.routes):
+            for method in (route.methods or set()) - {"HEAD", "OPTIONS"}:
+                found[(method, route.path or "")] = route
         return found
 
     def test_every_route_is_classified(self):
