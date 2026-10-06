@@ -65,7 +65,7 @@ export function PhotoMosaic({ photos, label, placeholder, className }: PhotoMosa
       <div
         data-testid="photo-mosaic"
         data-layout={layout}
-        className="hidden lg:grid aspect-[2/1] w-full grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-xl bg-accent"
+        className="hidden lg:grid aspect-2/1 w-full grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-xl bg-accent"
       >
         {tiles.map((photo, i) => (
           <div key={photo.id} data-tile={i === 0 ? 'big' : 'small'} className={cn('relative overflow-hidden', CELLS[layout][i])}>
@@ -94,7 +94,7 @@ export function PhotoMosaic({ photos, label, placeholder, className }: PhotoMosa
         <button
           type="button"
           onClick={() => openAt(0)}
-          className="absolute bottom-3 right-3 z-10 hidden lg:inline-flex items-center gap-2 rounded-lg border border-border bg-white/95 px-3 py-1.5 text-sm font-medium text-foreground shadow hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="absolute bottom-3 right-3 z-10 hidden lg:inline-flex items-center gap-2 rounded-lg border border-border bg-white/95 px-3 py-1.5 text-sm font-medium text-foreground shadow-sm hover:bg-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary"
         >
           <LayoutGrid className="h-4 w-4" aria-hidden="true" /> Mostrar todas as fotos
         </button>
@@ -146,7 +146,7 @@ function PhotoGallery({ photos, label, open, onOpenChange, start }: PhotoGallery
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/95" />
         <DialogPrimitive.Content
           aria-label={`${label} — fotografias`}
-          className="fixed inset-0 z-50 flex flex-col focus:outline-none"
+          className="fixed inset-0 z-50 flex flex-col focus:outline-hidden"
         >
           <DialogPrimitive.Title className="sr-only">{label} — fotografias</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
@@ -154,7 +154,7 @@ function PhotoGallery({ photos, label, open, onOpenChange, start }: PhotoGallery
           </DialogPrimitive.Description>
           <DialogPrimitive.Close
             aria-label="Fechar"
-            className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-foreground shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </DialogPrimitive.Close>
@@ -181,7 +181,7 @@ function PhotoGallery({ photos, label, open, onOpenChange, start }: PhotoGallery
                 tabIndex={i === index ? 0 : -1}
                 onClick={() => setIndex(i)}
                 className={cn(
-                  'h-16 w-[5.33rem] shrink-0 overflow-hidden rounded-md border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                  'h-16 w-[5.33rem] shrink-0 overflow-hidden rounded-md border-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary',
                   i === index ? 'border-white' : 'border-transparent opacity-60 hover:opacity-100',
                 )}
               >

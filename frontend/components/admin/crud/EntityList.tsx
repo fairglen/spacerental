@@ -118,7 +118,7 @@ export function EntityList<T>({
       {(search || filters || sort || toolbarExtra) && (
         <div className="flex flex-wrap items-center gap-2" role="search">
           {search && (
-            <label className="relative flex-1 min-w-[12rem]">
+            <label className="relative flex-1 min-w-48">
               <span className="sr-only">Pesquisar</span>
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input
@@ -222,7 +222,7 @@ export function EntityList<T>({
                       open(row)
                     }}
                     className={cn(
-                      'border-t border-border h-11 focus:outline-none focus-visible:bg-[#E8F4F0]',
+                      'border-t border-border h-11 focus:outline-hidden focus-visible:bg-accent',
                       rowHref && 'cursor-pointer hover:bg-[#F8FAF9]',
                     )}
                   >
@@ -239,7 +239,7 @@ export function EntityList<T>({
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                             {menuFor === key && (
-                              <div role="menu" className="absolute right-2 z-20 mt-1 min-w-[10rem] rounded-lg border border-border bg-white py-1 shadow-lg text-left">
+                              <div role="menu" className="absolute right-2 z-20 mt-1 min-w-40 rounded-lg border border-border bg-white py-1 shadow-lg text-left">
                                 {actions.map((a) => (
                                   <button
                                     key={a.label} role="menuitem" type="button"

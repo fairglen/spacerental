@@ -59,7 +59,7 @@ export default function ResetPasswordPage({ params }: { params: { token: string 
         <Card>
           <CardHeader className="text-center pb-2">
             <CardTitle>Escolher uma nova password</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Pelo menos 8 caracteres.</p>
+            <p className="text-sm text-muted-foreground">Pelo menos 8 caracteres.</p>
           </CardHeader>
           <CardContent className="pt-4">
             {invalid ? (

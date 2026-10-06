@@ -66,7 +66,7 @@ function OrgInbox({ currentOrgId }: { currentOrgId: string | null }) {
             id="support-status"
             value={status}
             onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1) }}
-            className="mt-1 flex h-9 rounded-lg border border-border bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="mt-1 flex h-9 rounded-lg border border-border bg-white px-3 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
           >
             <option value="">Todos</option>
             <option value="new">Novos</option>

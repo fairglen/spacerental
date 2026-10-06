@@ -98,7 +98,7 @@ export function EntityForm<T extends FieldValues>({
           )}
         </div>
       )}
-      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-white/95 backdrop-blur px-4 py-3 md:left-64">
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-white/95 backdrop-blur-sm px-4 py-3 md:left-64">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div>{extra}</div>
           <div className="flex items-center gap-2">

@@ -40,12 +40,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <ToastPrimitive.Title className={cn('text-sm font-semibold', t.variant === 'error' ? 'text-red-700' : 'text-foreground')}>{t.title}</ToastPrimitive.Title>
               {t.description && <ToastPrimitive.Description className="text-sm text-muted-foreground mt-0.5">{t.description}</ToastPrimitive.Description>}
             </div>
-            <ToastPrimitive.Close aria-label="Fechar" className="rounded-sm opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary">
+            <ToastPrimitive.Close aria-label="Fechar" className="rounded-sm opacity-70 hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-primary">
               <X className="h-4 w-4" />
             </ToastPrimitive.Close>
           </ToastPrimitive.Root>
         ))}
-        <ToastPrimitive.Viewport className="fixed bottom-4 right-4 z-[60] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 outline-none" />
+        <ToastPrimitive.Viewport className="fixed bottom-4 right-4 z-60 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 outline-hidden" />
       </ToastPrimitive.Provider>
     </ToastContext.Provider>
   )

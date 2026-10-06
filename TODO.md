@@ -2896,6 +2896,90 @@ room fixture tolerates (or explains) the 404, the single-space spec asserts
 on its own space or waits for a quiet window, and ten consecutive sharded
 CI runs stay green.
 
+### D16 — Tailwind CSS 3 → 4 with tailwind-merge 3, behind a pixel gate (#88; #86 merged by the owner)
+
+**Priority: P1. State: DONE with #88.** tailwind-merge 3 (#86, merged by
+the owner first) officially drops Tailwind 3, so the two belong together.
+The migration ran `npx @tailwindcss/upgrade@4.3.3` from main's Tailwind 3
+`package.json` (with `tailwindcss ^4` already in it the tool treats the
+project as v4 and skips the migration, then crashes on `@apply
+border-border`): `tailwind.config.ts` became `@theme` tokens in
+`app/globals.css`, `postcss.config.js` uses `@tailwindcss/postcss` (no
+autoprefixer), 32 templates got the v4 names (`outline-hidden`,
+`shadow-xs`, `rounded-sm`, `bg-linear-to-br`, `opacity-(--var)`,
+`aspect-16/10`, `data-disabled:`…). Two tool mistakes were undone: it
+rewrote the Button `variant` prop value `'outline'` to `'outline-solid'`
+(a string, not a class) in four files, and it dropped the
+`tailwindcss-animate` JS plugin without a replacement while the dialog,
+select, dropdown and toast primitives use its `animate-in`/`fade-in-0`/
+`zoom-in-95`/`slide-in-from-*` utilities — `tw-animate-css` 1.4.0, the
+CSS-only port with the same names, is imported after `@import
+'tailwindcss'`.
+
+**The gate:** `tests/e2e/visual-gate.spec.ts` screenshots landing, space +
+booking calendar, dashboard, admin calendar and admin bookings at 1280 and
+390 (animations disabled) and compares them to snapshots taken on main
+(Tailwind 3 + tailwind-merge 3) with `maxDiffPixelRatio: 0.005`; it is
+opt-in (`VISUAL_GATE=1`) because the snapshots belong to the machine that
+captures them (chromium-darwin here) and CI's Linux runners have none.
+Round 1: 8 of 10 identical, landing +34 px / +36 px. Measuring both builds
+element by element found three v4 semantics changes, each fixed by
+spelling out what v3 had rendered: (1) v3's responsive `md:text-6xl` was
+emitted after `.leading-tight` and reset the hero `h1` line-height to 1;
+v4's `--tw-leading` lets `leading-tight` win → `md:leading-none`; (2) v3's
+`space-y-*` rule (`> :not([hidden]) ~ :not([hidden]) { margin-top }`)
+overrode the children's own `mt-*`, v4's (`> :not(:last-child) {
+margin-bottom }`) adds to them → the dead `mt-*` inside `CardHeader`
+(pricing cards, the four auth pages, the pricing skeleton) removed; (3)
+the dialog's `slide-in-from-left-1/2 / top-[48%]` classes compensated v3's
+enter keyframe replacing the centring `transform`; v4 centres with the
+`translate` property, which the keyframe leaves alone, so the same classes
+started the dialog half a screen higher (the short-screen e2e caught it at
+y = −181) → dropped, as shadcn's v4 dialog does. Two e2e assertions pinned
+v3 computed strings (`rounded-full` = `9999px`, now `calc(infinity * 1px)`;
+the `--hero-watermark-opacity` token `0.08`, now minified to `.08`) and
+compare the values instead. Round 2 (baseline retaken on main `858c89b`
+with the calendars' moving "now" line masked): **10 of 10 identical**,
+full Playwright 75/75 on the Tailwind 4 image, Vitest 710/710, tsc and
+ESLint clean; `flowspace-site/assets/css/tokens.css` untouched.
+
+**DECISION (loop, D16):** the bump keeps the rendered pages pixel-identical
+to Tailwind 3 by making v3's implicit cascade explicit, rather than
+accepting v4's (arguably intended) rendering; any visual re-tuning is a
+separate, owner-driven change. `space-y-*` containers whose children carry
+their own margins are the one pattern worth a sweep outside the gated
+screens (admin forms); the gated screens are clean.
+
+### D17 — Next.js major: the only remaining `npm audit` findings live in Next 14's bundled PostCSS
+
+**Priority: P2. State: QUEUED.** With every Dependabot PR of this assignment
+merged, `npm audit --audit-level=high` on the frontend lock reports 5
+findings (4 high, 1 critical), all in `node_modules/next/node_modules/postcss`
+— the PostCSS copy Next 14.2 bundles for its own CSS pipeline
+(GHSA-qx2v-qp2m-jg93, GHSA-6g55-p6wh-862q, GHSA-fxqj-rqcc-2cmp,
+GHSA-r28c-9q8g-f849). The project's own `postcss` ^8 is current; the fix
+npm offers is `next@16`, a major that changes the App Router, caching
+defaults, `next lint`, the Node floor and the image pipeline — not a
+dependency bump but a migration with its own gate (the visual gate from
+D16 is reusable). `pip-audit -r backend/requirements.txt` is recorded in
+the closing report. Acceptance: Next on a supported major with the audit
+clean at `--audit-level=high`, the visual gate 10/10, Playwright green.
+
+### D18 — `pip-audit`: python-jose 3.5.0 and its `ecdsa` dependency carry unfixed advisories
+
+**Priority: P2. State: QUEUED.** With the pip group (#79) merged,
+`pip-audit -r backend/requirements.txt` reports 3 known vulnerabilities in
+2 packages and no fixed versions: `python-jose 3.5.0` (CVE-2026-85394) and
+`ecdsa 0.19.2` (PYSEC-2026-1325, twice), `ecdsa` being python-jose's
+transitive dependency. The app signs and verifies HS256 JWTs only
+(CLAUDE.md §2–3), so neither the ECDSA code paths nor python-jose's
+algorithm negotiation is exercised, but an unfixable advisory on the auth
+library is not something to carry. Candidate: replace python-jose with
+PyJWT (HS256 only, explicit `algorithms=["HS256"]`, no `ecdsa`), keeping
+`create_access_token`/`decode` behaviour and every auth test. Acceptance:
+`pip-audit` clean, `tests/test_auth.py` and the authz matrix green,
+tokens issued before the switch still verify.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are

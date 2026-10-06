@@ -24,7 +24,7 @@ export function OrgSwitcher({ className }: { className?: string }) {
   return (
     <div className={className}>
       <Select value={currentOrgId ?? undefined} onValueChange={setCurrentOrgId}>
-        <SelectTrigger aria-label={t('navbar.org_selector_label')} className="h-9 min-w-[12rem]">
+        <SelectTrigger aria-label={t('navbar.org_selector_label')} className="h-9 min-w-48">
           <SelectValue placeholder={t('navbar.org_selector_placeholder')} />
         </SelectTrigger>
         <SelectContent>

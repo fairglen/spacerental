@@ -145,7 +145,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
                 id="help-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value as SupportCategory)}
-                className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
               >
                 {(Object.keys(SUPPORT_CATEGORY_LABELS) as SupportCategory[]).map((value) => (
                   <option key={value} value={value}>{SUPPORT_CATEGORY_LABELS[value]}</option>
@@ -160,7 +160,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
                   id="help-booking"
                   value={bookingId}
                   onChange={(e) => setBookingId(e.target.value)}
-                  className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 >
                   <option value="">Não é sobre uma reserva</option>
                   {upcoming.map((b) => (
@@ -210,7 +210,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
             </div>
 
             {/* Honeypot: invisible to people and to screen readers, filled by bots. */}
-            <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+            <div aria-hidden="true" className="absolute left-[-9999px] h-px w-px overflow-hidden">
               <label htmlFor="help-website">Website</label>
               <input id="help-website" name="website" type="text" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
             </div>

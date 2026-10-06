@@ -125,7 +125,7 @@ describe('WhereWeAre', () => {
       expect(screen.queryByText(/só é carregado quando o pedir/i)).toBeNull()
       // 16:10 with a floor of 240px on a phone; the column's height from md.
       const frame = screen.getByTestId('map-frame')
-      expect(frame.className).toMatch(/aspect-\[16\/10\]/)
+      expect(frame.className).toMatch(/aspect-16\/10/)
       expect(frame.className).toMatch(/min-h-\[240px\]/)
       expect(frame.className).toMatch(/md:min-h-\[280px\]/)
     })

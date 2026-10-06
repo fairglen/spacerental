@@ -239,7 +239,7 @@ export default function DashboardPage() {
                               Cancelar
                             </Button>
                             {!eligibility.eligible && eligibility.reason && (
-                              <span className="text-[11px] text-muted-foreground text-right max-w-[11rem]">{eligibility.reason}</span>
+                              <span className="text-[11px] text-muted-foreground text-right max-w-44">{eligibility.reason}</span>
                             )}
                             {/* Inside the 24h window the rule still holds; a person can make an exception (C18). */}
                             {!eligibility.eligible && b.status === 'confirmed' && !isPast(parseISO(b.start_time)) && (

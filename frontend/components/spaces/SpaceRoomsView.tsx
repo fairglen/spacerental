@@ -188,7 +188,7 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
                 placeholder={
                   <div
                     data-testid="photo-placeholder"
-                    className="mb-6 flex aspect-[2/1] w-full items-center justify-center rounded-xl text-5xl"
+                    className="mb-6 flex aspect-2/1 w-full items-center justify-center rounded-xl text-5xl"
                     style={{ backgroundColor: calendarRoom.color + '33' }}
                     aria-hidden="true"
                   >
@@ -196,7 +196,7 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
                   </div>
                 }
               />
-              <h3 ref={calendarHeadingRef} tabIndex={-1} className="text-lg font-semibold text-foreground mb-2 outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
+              <h3 ref={calendarHeadingRef} tabIndex={-1} className="text-lg font-semibold text-foreground mb-2 outline-hidden focus-visible:ring-2 focus-visible:ring-primary rounded">
                 Disponibilidade — {calendarRoom.name}
               </h3>
               <p data-testid="calendar-help" className="text-sm text-muted-foreground mb-3">

@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
         <Card>
           <CardHeader className="text-center pb-2">
             <CardTitle>Recuperar a password</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground">
               Indique o email da sua conta e enviamos-lhe uma ligação para escolher uma nova password.
             </p>
           </CardHeader>

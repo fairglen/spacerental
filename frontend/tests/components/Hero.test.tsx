@@ -90,7 +90,7 @@ describe('Hero brand mark (B51)', () => {
     expect(watermark).toHaveAttribute('width', '440')
     expect(watermark).toHaveAttribute('height', '401')
     expect(watermark).toHaveAttribute('aria-hidden', 'true')
-    for (const cls of ['lg:hidden', 'absolute', '-right-28', '-bottom-12', 'w-[440px]', 'opacity-[var(--hero-watermark-opacity)]', 'pointer-events-none', 'text-primary']) {
+    for (const cls of ['lg:hidden', 'absolute', '-right-28', '-bottom-12', 'w-[440px]', 'opacity-(--hero-watermark-opacity)', 'pointer-events-none', 'text-primary']) {
       expect(watermark.className.baseVal, cls).toContain(cls)
     }
     // Painted before the content box, which is positioned — so the words stay on top.

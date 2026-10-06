@@ -126,9 +126,9 @@ export function PhotoCarousel({
     // 44px hit area; visible on hover, and always while anything inside the
     // frame — or the frame itself — has keyboard focus.
     'absolute top-1/2 -translate-y-1/2 z-10 flex h-11 w-11 items-center justify-center rounded-full',
-    'bg-white/90 text-foreground shadow transition-opacity',
+    'bg-white/90 text-foreground shadow-sm transition-opacity',
     'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-focus-visible:opacity-100 focus-visible:opacity-100',
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:hidden',
+    'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary disabled:hidden',
   )
 
   return (
@@ -140,8 +140,8 @@ export function PhotoCarousel({
       onKeyDown={multiple ? onKeyDown : undefined}
       className={cn(
         'group relative w-full overflow-hidden bg-accent',
-        size === 'full' ? 'h-full' : 'aspect-[4/3]',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
+        size === 'full' ? 'h-full' : 'aspect-4/3',
+        'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
         className,
       )}
     >
@@ -154,7 +154,7 @@ export function PhotoCarousel({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onClickCapture={onClickCapture}
-        className="flex h-full w-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex h-full w-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none [&::-webkit-scrollbar]:hidden"
       >
         {photos.map((photo, i) => (
           <div
@@ -212,7 +212,7 @@ export function PhotoCarousel({
                   tabIndex={i === index ? 0 : -1}
                   onClick={(e) => act(e, i)}
                   // The visible dot is small; the button around it is not.
-                  className="group/dot flex h-6 w-5 items-center justify-center focus-visible:outline-none"
+                  className="group/dot flex h-6 w-5 items-center justify-center focus-visible:outline-hidden"
                 >
                   <span className={cn(
                     'h-1.5 w-1.5 rounded-full bg-white/70 transition-all group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-primary',

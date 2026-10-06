@@ -57,7 +57,10 @@ test.describe('hero brand mark', () => {
     expect(await grid.evaluate((el) => getComputedStyle(el).columnGap)).toBe('32px')
     expect((await grid.locator('> :first-child').boundingBox())!.width).toBe(768)
     const disc = await column.evaluate((el) => { const s = getComputedStyle(el, '::before'); return [s.width, s.height, s.borderRadius, s.pointerEvents, s.backgroundImage] })
-    expect(disc.slice(0, 4)).toEqual(['460px', '460px', '9999px', 'none'])
+    // `rounded-full`: 9999px on Tailwind 3, `calc(infinity * 1px)` on 4 — a circle either way.
+    expect(disc.slice(0, 2)).toEqual(['460px', '460px'])
+    expect(parseFloat(disc[2] as string)).toBeGreaterThanOrEqual(230)
+    expect(disc[3]).toBe('none')
     expect(disc[4]).toContain('radial-gradient')
     expect(disc[4]).toContain('rgba(168, 213, 186, 0.55)')
     await expect(watermark(page)).toBeHidden()
@@ -73,7 +76,8 @@ test.describe('hero brand mark', () => {
     await expect(wm.locator('use')).toHaveAttribute('href', '#brand-mark')
     const style = await wm.evaluate((el) => { const s = getComputedStyle(el); return [s.display, s.position, s.right, s.bottom, s.width, s.opacity, s.pointerEvents, s.color] })
     expect(style).toEqual(['block', 'absolute', '-112px', '-48px', '440px', '0.08', 'none', 'rgb(61, 122, 94)'])
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--hero-watermark-opacity').trim())).toBe('0.08')
+    // The token's value, however the CSS pipeline spells it (`0.08`, or `.08` once minified).
+    expect(parseFloat(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--hero-watermark-opacity').trim()))).toBe(0.08)
     const [heroBox, wmBox] = [(await hero(page).boundingBox())!, (await wm.boundingBox())!]
     expect(wmBox.x + wmBox.width).toBeGreaterThan(heroBox.x + heroBox.width)
     expect(wmBox.y + wmBox.height).toBeGreaterThan(heroBox.y + heroBox.height)

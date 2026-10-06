@@ -9,13 +9,13 @@ import { BrandMark } from '@/components/brand/BrandMark'
 export function Hero() {
   const t = useT()
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-white via-accent to-primary-light/30 py-20 md:py-32">
+    <section className="relative overflow-hidden bg-linear-to-br from-white via-accent to-primary-light/30 py-20 md:py-32">
       {/* B51: under 1024px the mark is a watermark bleeding off the bottom-right,
           behind the buttons and benefits (the content box below is `relative`,
           so it paints above). The static site's `.hero-watermark`. */}
       <BrandMark
         width={440}
-        className="lg:hidden absolute -right-28 -bottom-12 w-[440px] h-auto text-primary opacity-[var(--hero-watermark-opacity)] pointer-events-none"
+        className="lg:hidden absolute -right-28 -bottom-12 w-[440px] h-auto text-primary opacity-(--hero-watermark-opacity) pointer-events-none"
       />
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* B51: from 1024px, two columns — the text at its 48rem, the mark centred
@@ -27,7 +27,10 @@ export function Hero() {
               (tailwindcss-animate) — P1.3 dropped framer-motion, 34 KB of
               gzipped JavaScript on every landing load, for this one effect. */}
           <div className="animate-in fade-in slide-in-from-bottom-5 duration-700 fill-mode-both motion-reduce:animate-none">
-            <h1 className="text-5xl md:text-6xl font-bold text-foreground leading-tight mb-6">
+            {/* md:leading-none keeps what Tailwind 3 rendered: its responsive
+                md:text-6xl came after .leading-tight in the stylesheet and reset
+                the line-height to 1 from md up; v4 lets leading-tight win. */}
+            <h1 className="text-5xl md:text-6xl font-bold text-foreground leading-tight md:leading-none mb-6">
               {t('hero.headline_start')}{' '}
               <span className="text-primary italic">{t('hero.headline_highlight')}</span>
             </h1>
