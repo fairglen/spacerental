@@ -1,6 +1,6 @@
 -r requirements.txt
 pytest==8.3.2
-pytest-asyncio==0.23.8
+pytest-asyncio==1.4.0
 # Parallel workers, one database each (tests/conftest.py, Q48).
 pytest-xdist==3.8.0
 httpx==0.28.1
