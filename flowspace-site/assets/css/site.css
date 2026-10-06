@@ -166,6 +166,15 @@ a {
   display: block;
   flex: none;
 }
+/* B51: the header shows the wordmark alone, 22px tall (the app's
+ * `<BrandWordmark height={22} />` in a `text-primary` link); the mark on its
+ * own never appears under 36px. */
+.brand-wordmark {
+  display: block;
+  flex: none;
+  height: 22px;
+  width: auto;
+}
 
 .nav-links {
   display: flex;
@@ -242,6 +251,79 @@ a {
 .hero-content {
   position: relative;
   max-width: 48rem;
+}
+/* B51: the brand mark as the hero illustration from 1024px, a watermark
+ * under it. The app's Hero.tsx carries the same numbers as Tailwind
+ * utilities; the opacity is one custom property so the owner can tune it. */
+.hero {
+  --hero-watermark-opacity: 0.08;
+}
+/* The app's `lg:grid lg:grid-cols-[minmax(0,48rem)_1fr] lg:gap-8 lg:items-center`:
+ * one column until 1024px, then the text at its 48rem and the mark centred in
+ * whatever is left (closer at 1440, further at 1920 — intended). */
+.hero-grid {
+  display: block;
+}
+/* The app's `hidden lg:flex relative min-h-[420px] items-center justify-center text-primary`. */
+.hero-mark {
+  display: none;
+  position: relative;
+  min-height: 420px;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+}
+/* The soft disc behind the mark: the app's `before:` pseudo — 460px,
+ * `radial-gradient(circle at 30% 30%, rgba(168,213,186,.55), rgba(232,244,240,0) 70%)`,
+ * centred on the mark, no layout, no pointer. */
+.hero-mark::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 460px;
+  height: 460px;
+  margin: -230px 0 0 -230px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(168, 213, 186, 0.55), rgba(232, 244, 240, 0) 70%);
+  pointer-events: none;
+}
+/* The app's `relative w-[min(100%,400px)] h-auto`: explicit width/height
+ * attributes on the svg reserve the box, so nothing shifts (CLS 0). */
+.hero-mark-svg {
+  position: relative;
+  display: block;
+  width: min(100%, 400px);
+  height: auto;
+}
+/* The watermark under 1024px: the app's `lg:hidden absolute -right-28 -bottom-12
+ * w-[440px] opacity-[var(--hero-watermark-opacity)] pointer-events-none
+ * text-primary` — bleeding off the bottom-right of the hero's overflow box,
+ * behind the buttons and benefits (`.hero-content` is relative, so it stays
+ * above). */
+.hero-watermark {
+  position: absolute;
+  right: -7rem;
+  bottom: -3rem;
+  width: 440px;
+  height: auto;
+  color: var(--color-primary);
+  opacity: var(--hero-watermark-opacity);
+  pointer-events: none;
+}
+@media (min-width: 1024px) {
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 48rem) 1fr;
+    gap: 2rem;
+    align-items: center;
+  }
+  .hero-mark {
+    display: flex;
+  }
+  .hero-watermark {
+    display: none;
+  }
 }
 
 /* `text-5xl md:text-6xl font-bold leading-tight mb-6`. */

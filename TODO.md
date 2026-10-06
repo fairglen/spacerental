@@ -1285,6 +1285,130 @@ independent of which URL is committed. Test-only; no production file changes.
 new needle test), and the needle still throws on a
 file without the constant.
 
+### B51 — Brand mark as the hero illustration (desktop) and watermark (mobile); wordmark header — both sites
+
+**Priority: P2. State: DONE 2026-10-05** on `feat/hero-logo` (from `main`
+`20ca568`; no open chain — #74–#76 merged on 2026-10-05); the implementation
+commit follows the docs commit `108d035`. Owner assignment
+2026-10-05: one visual change on BOTH the static site (F01, `flowspace-site/`)
+and the app landing (`frontend/`), pixel-equivalent, no copy change, no new
+dependency, the static-vs-app parity tests (`copy-parity.test.mjs`,
+`brandParity.test.ts`) kept green. Builds on the brand set from B50.
+
+**Scope (measurements from the approved render):**
+- Hero ≥ 1024px: a two-column grid `minmax(0, 48rem) 1fr`, gap 2rem,
+  `align-items: center`; the text column unchanged; the right column
+  (`min-height: 420px`) centres the brand mark (`logo-mark.svg`, inline,
+  `fill: currentColor`, `--color-primary`, `width: min(100%, 400px)`,
+  explicit width/height, `aria-hidden`) over a soft disc (a 460×460 px
+  pseudo-element, `radial-gradient(circle at 30% 30%, rgba(168,213,186,.55),
+  rgba(232,244,240,0) 70%)`, `pointer-events: none`). `.hero-glow` stays.
+- Hero < 1024px: single column, the right column hidden; a watermark — the
+  same mark, `position: absolute; right: -7rem; bottom: -3rem; width: 440px;
+  opacity: var(--hero-watermark-opacity, .08); pointer-events: none;
+  aria-hidden` — bleeding off the bottom-right behind the buttons and
+  benefits inside the hero's `position: relative; overflow: hidden` box;
+  text contrast over it ≥ 4.5:1 (asserted). Nothing animates; CLS 0.
+- Header (both sites): the lockup gives way to `wordmark.svg` alone, inline,
+  22px tall, `--color-primary`, inside the existing link to "/" with
+  `aria-label="FlowSpace"`. The mark alone never appears below 36px. Footer
+  unchanged (white lockup, B50).
+- Static site: the SVGs are emitted by `scripts/render-static.py` inside
+  `brand-*` generated fences (no JavaScript); `site.css` gains `.hero-grid`,
+  `.hero-mark`, `.hero-mark::before`, `.hero-watermark` and the 1024px media
+  query next to the `.hero*` rules, in the "the app's …" comment style.
+- App: `BrandMark` / `BrandWordmark` components rendering the same inline
+  SVG from the brand files (no loader dependency); `Hero.tsx` with the
+  Tailwind equivalents (`lg:grid lg:grid-cols-[minmax(0,48rem)_1fr] lg:gap-8
+  lg:items-center`, `hidden lg:flex`, `lg:hidden absolute -right-28 -bottom-12
+  w-[440px] opacity-[var(--hero-watermark-opacity)] pointer-events-none`);
+  the Navbar uses `BrandWordmark`. No i18n change.
+
+**Acceptance:** static smoke — at 1440 the mark is in the right column and no
+watermark is displayed; at 390 the watermark is present and the right column
+is not; the header link has `aria-label="FlowSpace"` and contains an svg; no
+horizontal scroll at 390; text contrast over the watermark ≥ 4.5:1; CLS 0.
+App — Hero component test for both branches, Navbar test for the wordmark
+link, Playwright at 1440 and 390 with the same assertions, CLS 0, parity
+tests green. Evidence: before/after screenshots of both heroes at 1920,
+1440, 1024, 768 and 390 (`.pr-evidence/hero/`), and a side-by-side sheet
+(static vs app at 1920 and 390).
+
+**Evidence (2026-10-05):** static smoke 45/45 (+5: wordmark header, hero at
+1440, watermark at 390 with no sideways scroll and the words above it,
+contrast, CLS 0 at both widths); stdlib suite 26 (+2: the symbols are the
+brand files' drawings, the three uses and their sizes); node tests 44;
+app Vitest 708 (+7: Brand 4, Hero 3; Navbar's lockup test became the
+wordmark test); Playwright `hero-logo.spec.ts` 5 on the rebuilt e2e stack;
+tsc/eslint clean; `brandParity` and `copy-parity` untouched and green.
+Screenshots before/after at 1920/1440/1024/768/390 for both sites and the
+side-by-side sheet in `.pr-evidence/hero/`.
+**DECISION (loop, B51):** the mark and the wordmark are inlined once per page
+as `<symbol>`s (static: the `brand-symbols` fence after `<body>`, from the
+brand files; app: `<BrandSymbols>` in the root layout from a generated path
+module) and drawn with `<use href="#brand-…">` in the header, the hero and
+the watermark — inline SVG with no request and `currentColor`, but the
+27 KB mark path once instead of three times, and in the app nothing of it
+in the client bundle (the landing JS budget stays at 209 KB). The symbol
+host is `width/height 0, position:absolute`, not `hidden`: WebKit does not
+draw a `<use>` whose symbol sits in a `display:none` svg. Alternative: the
+path inline at every use. Reverse: emit `svg_parts()` inline in
+`use_svg()` / inline the paths in `BrandMark`/`BrandWordmark`.
+**DECISION (loop, B51):** the app reads the SVGs through
+`scripts/brand-paths.mjs` → two generated modules (`npm run brand:paths`,
+`--check` in `Brand.test.tsx`): `brandPaths.generated.ts` (the path data,
+imported only by the server component `BrandSymbols`) and
+`brandBoxes.generated.ts` (viewBox and size, 0.5 KB, for the client-side
+`BrandMark`/`BrandWordmark`, whose ids live in `brandIds.ts`) — the project
+had no raw-SVG import path and a loader would be a new dependency. The split
+is what keeps the path data out of the browser bundle: the first version had
+the drawers import the paths module and CI's `perf-web` caught the landing's
+JS before load at 222.2 KB against the 220 KB budget (209 on `main`); a test
+pins the drawers' imports. Reverse: delete the generated modules and read
+the files at build time once a loader exists.
+**DECISION (loop, B51):** the contrast assertion. The assignment asks for
+≥ 4.5:1 over the watermark; measured at 390 (worst case: the gradient's
+darkest stop composited with the mark at opacity .08): h1 14.39, filled
+button 5.07, lede/support/benefits **4.08 → 3.72**, outline button **4.27 →
+3.90**. The three muted elements and the outline button are under AA
+*without* the watermark — the owner's palette on the hero gradient, the
+Lighthouse `color-contrast` finding reported in S1 — so a literal ≥ 4.5
+assertion cannot pass without changing colours the assignment keeps. The
+test asserts the strongest true statement: h1 and the filled button ≥ 4.5
+over the watermark; no element loses ≥ 0.5; nothing that clears AA without
+the watermark falls under it; and prints every value. Recorded as B52.
+Reverse: once B52 is decided, assert ≥ 4.5 for every element.
+
+### B52 — Hero text contrast under AA on the gradient (pre-existing)
+
+**Priority: P3. State: QUEUED — owner decision.** Measured in B51 (static
+smoke "at 390 the text over the watermark keeps its contrast"): the muted
+grey `#6B7280` (lede, support line, benefits) over the hero gradient's
+darkest stop is **4.08:1** and the outline button's primary text **4.27:1** —
+both under WCAG AA's 4.5:1 before any watermark; Lighthouse reports it as
+`color-contrast` on both sites. Fix options (design): a darker muted
+(`#5B6270` ≈ 4.9:1) for hero text only, a lighter gradient end, or AA-large
+sizing. Not changed here (B51 keeps the palette); when decided, tighten the
+B51 contrast assertion to ≥ 4.5 for every element.
+
+### B53 — Photo carousel: the counter follows intermediate scroll events during a programmatic move
+
+**Priority: P2. State: QUEUED** (found by B51's CI, 2026-10-06). In
+`frontend/components/spaces/PhotoCarousel.tsx`, `goTo()` sets the index and
+starts a smooth `scrollTo`; `onScroll` then recomputes the index from the
+live `scrollLeft`, so the first scroll event of the animation (near 0) sets
+it back and the counter/dots flicker 2 → 1 → 2 on every "Fotografia
+seguinte". On a starved CI runner the smooth scroll can stall after that
+first event and the counter stays at the old number: `photos.spec.ts:48`
+("the room being booked shows its photos … and a gallery") failed on two
+#90 runs (each with a retry) while passing 6/6 locally on the same code —
+the page is untouched by B51. **Fix:** make the programmatic move
+authoritative — keep the target in a ref while the scroll is in flight,
+have `onScroll` ignore positions until it lands (±2px), and clear the ref on
+`pointerdown`/`wheel` so a swipe takes over; then the test is deterministic
+without being weakened. Not done in B51 (three CI rounds spent; the change is
+to a component outside the assignment).
+
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
 Delivered and archived (see the index); the assignment text and decisions are in [docs/backlog-archive/2026-09.md](docs/backlog-archive/2026-09.md#brand-and-copy-revision-w-series-owner-assignment-2026-09-22). Still open here: W06/W07.

@@ -6,7 +6,7 @@ import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { SpaceModeText } from '@/components/spaces/SpaceModeText'
 import { LogOut, User, Menu, X, LifeBuoy } from 'lucide-react'
-import { BrandLogo } from '@/components/layout/BrandLogo'
+import { BrandWordmark } from '@/components/brand/BrandWordmark'
 import { useHelp } from '@/components/help/HelpProvider'
 import { useOrg } from '@/contexts/OrgContext'
 import { useT } from '@/lib/i18n'
@@ -43,7 +43,8 @@ export function Navbar() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center text-primary" aria-label={t('brand.name')}>
-            <BrandLogo height={28} />
+            {/* B51: the wordmark alone — the mark on its own never appears under 36px. */}
+            <BrandWordmark height={22} />
           </Link>
 
           {/* Desktop nav */}

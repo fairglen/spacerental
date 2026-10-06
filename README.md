@@ -434,7 +434,27 @@ request in the admin inbox) and a copy to the requester (Reply-To the inbox);
 On a laptop, keep it awake for the run (`caffeinate -i npm run test:e2e` on
 macOS): a machine that sleeps mid-run produces timeouts that look like failures.
 
-### Indexing policy (S2.1)
+### Brand mark and wordmark in the app (B51)
+
+`public/brand/` is the static site's brand set, byte for byte
+(`tests/lib/brandParity.test.ts`). `scripts/brand-paths.mjs` turns
+`logo-mark.svg` and `wordmark.svg` into two generated modules (`npm run
+brand:paths`; `Brand.test.tsx` fails when they are stale):
+`brandPaths.generated.ts` — the path data, imported only by `<BrandSymbols>`,
+a server component in the root layout that inlines them once as `<symbol>`s
+— and `brandBoxes.generated.ts` — viewBox and size, for `<BrandMark width>` /
+`<BrandWordmark height>`, client components that draw them with `<use>`.
+Inline SVG, no request, `currentColor`, and no path data in the browser
+bundle: a test pins that the drawers import the boxes, never the paths or
+`BrandSymbols` (the landing's JS budget caught the first version at +13 KB). The hero
+(`components/landing/Hero.tsx`) shows the mark as the illustration from
+1024px and as a watermark under it (`--hero-watermark-opacity` in
+`globals.css`); the Navbar shows the wordmark alone at 22px; the Footer keeps
+the white lockup (`BrandLogo`). The static site renders the same markup from
+its generator — `tests/e2e/hero-logo.spec.ts` and the site's smoke suite
+assert the same numbers.
+
+## Indexing policy (S2.1)
 
 The app is not meant to be found — flowspace.pt (`flowspace-site/`) is. Every
 route renders `<meta name="robots" content="noindex, follow">` (root

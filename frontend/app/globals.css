@@ -5,6 +5,8 @@
 @layer base {
   :root {
     --background: 0 0% 98%;
+    /* B51: the hero watermark under 1024px (the static site's --hero-watermark-opacity). */
+    --hero-watermark-opacity: 0.08;
     --foreground: 240 10% 11%;
     --card: 0 0% 100%;
     --card-foreground: 240 10% 11%;

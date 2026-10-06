@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "perf:web": "playwright test -c playwright.perf.config.ts",
     "perf:sizes": "node scripts/perf-sizes.mjs",
-    "analyze": "ANALYZE=1 next build"
+    "analyze": "ANALYZE=1 next build",
+    "brand:paths": "node scripts/brand-paths.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

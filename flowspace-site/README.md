@@ -102,6 +102,13 @@ from them** by `scripts/render-static.py` (Python 3, standard library only):
 - the whole of `robots.txt`, `sitemap.xml` (with image entries and
   `lastmod` from git), `llms.txt`, `llms-full.txt`,
   `.well-known/security.txt` and `site.webmanifest`.
+- the brand (B51): `brand-symbols` inlines `assets/img/brand/logo-mark.svg`
+  and `wordmark.svg` once as `<symbol>`s right after `<body>`, and
+  `brand-header` (the 22px wordmark in the header link), `brand-hero-mark`
+  (the 400px mark in the hero's right column) and `brand-hero-watermark`
+  (the 440px watermark under 1024px) draw them with `<use href="#brand-…">`
+  — no request, no JavaScript, the colour inherited. A changed brand file is
+  a `render-static.py` run away from the page.
 
 ```bash
 cd flowspace-site
@@ -804,7 +811,7 @@ npx playwright test
 
 The config's `webServer` starts `python3 -m http.server` against
 `flowspace-site/` automatically, so no separate preview server is needed.
-41 tests, all passing at time of writing. They assert:
+45 tests, all passing at time of writing. They assert:
 
 - the hero renders one headline with its emphasised half, a lede and a support
   line, two CTAs and four benefits with their dots (structure, not prose — the
@@ -862,6 +869,13 @@ The config's `webServer` starts `python3 -m http.server` against
   natively and is linked from nav and footer; the skip link is first in the
   tab order; the JSON-LD parses and quotes the page's prices, hours and FAQ;
   the privacy page is canonical to itself and `noindex`.
+- the brand mark in the hero (B51): at 1440 the mark (400px, decorative)
+  is centred in the right column over its 460px disc and no watermark shows;
+  at 390 the watermark (440px, opacity .08, no pointer) bleeds off the
+  bottom-right behind the words, the column is gone and nothing scrolls
+  sideways; the header link is named and carries the 22px wordmark alone;
+  the hero's text keeps its contrast over the watermark (values printed);
+  the hero shifts nothing while loading (CLS 0) at both widths.
 
 The spec rewrites the `APPS_SCRIPT_URL` constant in the served script via
 `page.route()` — to the stub URL for the configured-form tests and to the

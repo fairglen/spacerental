@@ -272,6 +272,32 @@ class ContentWithoutJavaScript(unittest.TestCase):
         self.assertNotRegex(text_of(INDEX), r"\bvocê\b", "customer-facing Portuguese never says 'você'")
 
 
+class BrandInline(unittest.TestCase):
+    # B51: the mark and the wordmark are inlined once as symbols from the brand
+    # files and drawn by reference in the header, the hero and the watermark.
+    def test_the_symbols_are_the_brand_files_drawings(self):
+        for symbol, file in (("brand-mark", "logo-mark.svg"), ("brand-wordmark", "wordmark.svg")):
+            svg = (SITE / "assets" / "img" / "brand" / file).read_text(encoding="utf-8")
+            m = re.search(rf'<symbol id="{symbol}" viewBox="([^"]+)">(.*?)</symbol>', INDEX, re.S)
+            self.assertIsNotNone(m, symbol)
+            self.assertIn(f'viewBox="{m.group(1)}"', svg)
+            self.assertIn(m.group(2).strip(), svg)
+            self.assertIn('fill="currentColor"', m.group(2))
+        self.assertEqual(INDEX.count("<symbol "), 2)
+
+    def test_the_three_uses_have_their_sizes_and_are_decorative(self):
+        uses = re.findall(r'<svg class="([^"]+)" width="(\d+)" height="(\d+)" viewBox="[^"]+" aria-hidden="true" focusable="false"><use href="#(brand-[a-z]+)"></use></svg>', INDEX)
+        self.assertEqual(uses, [
+            ("brand-wordmark", "103", "22", "brand-wordmark"),
+            ("hero-watermark", "440", "401", "brand-mark"),
+            ("hero-mark-svg", "400", "365", "brand-mark"),
+        ])
+        self.assertIn('<a href="#top" class="wordmark" aria-label="FlowSpace">', INDEX)
+        self.assertIn('<div class="hero-mark" aria-hidden="true">', INDEX)
+        # The footer keeps the white lockup from the brand set (B50).
+        self.assertIn('assets/img/brand/logo-horizontal.svg#lockup', INDEX)
+
+
 class CrawlFiles(unittest.TestCase):
     def test_robots_allows_everyone_including_ai_crawlers_and_hides_only_tests(self):
         robots = (SITE / "robots.txt").read_text(encoding="utf-8")

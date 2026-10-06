@@ -37,16 +37,19 @@ describe('Navbar component i18n refactor (9.1)', () => {
     expect(screen.queryByText(/espa[cç]ohora/i)).not.toBeInTheDocument()
   })
 
-  it('the brand link carries the lockup, 28px tall with an explicit width, taking the primary colour (B50)', () => {
+  it('the brand link carries the wordmark alone, 22px tall, decorative inside the named link, taking the primary colour (B51)', () => {
     render(<Navbar />)
     const link = screen.getByRole('link', { name: t('brand.name') })
-    const logo = within(link).getByRole('img', { name: 'FlowSpace' })
-    expect(logo.tagName).toBe('svg')
-    expect(logo).toHaveAttribute('height', '28')
-    expect(Number(logo.getAttribute('width'))).toBeCloseTo(28 * 3058.4 / 749.2, 0)
-    expect(logo.querySelector('use')).toHaveAttribute('href', '/brand/logo-horizontal.svg#lockup')
+    const logo = link.querySelector('svg')!
+    expect(logo).not.toBeNull()
+    expect(logo).toHaveAttribute('aria-hidden', 'true')
+    expect(logo).toHaveAttribute('height', '22')
+    expect(Number(logo.getAttribute('width'))).toBeCloseTo(22 * 1018.5 / 216.5, 0)
+    expect(logo.querySelector('use')).toHaveAttribute('href', '#brand-wordmark')
+    // The mark on its own never appears under 36px: the header has no mark at all.
+    expect(link.querySelector('use[href="#brand-mark"], use[href*="lockup"]')).toBeNull()
     expect(link.className).toContain('text-primary')
-    // No text wordmark or icon next to it any more.
+    // No text wordmark or icon next to it.
     expect(link.textContent).toBe('')
   })
 
