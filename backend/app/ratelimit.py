@@ -24,6 +24,7 @@ from starlette.routing import BaseRoute, Match
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import settings
+from app.routing_inventory import iter_api_routes, route_matcher
 
 AUTH_TIER = "auth"
 PUBLIC_TIER = "public"
@@ -178,11 +179,12 @@ class RateLimitMiddleware:
         self.limiter = limiter
 
     def _tier_for(self, scope: Scope) -> str | None:
-        for route in self.routes:
-            match, _ = route.matches(scope)
+        # Walked through FastAPI's route contexts: since 0.142 the included
+        # routers are nested nodes and only their contexts know the full path.
+        for context in iter_api_routes(self.routes):
+            match, _ = route_matcher(context).matches(scope)
             if match is Match.FULL:
-                endpoint = getattr(route, "endpoint", None)
-                return getattr(endpoint, _TIER_ATTR, None)
+                return getattr(context.endpoint, _TIER_ATTR, None)
         return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:

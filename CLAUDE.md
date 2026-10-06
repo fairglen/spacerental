@@ -51,7 +51,7 @@ The two are linked: `authorize()` in `lib/auth.ts`, shared by `app/api/auth/[...
 | Styling | **Tailwind + shadcn-style primitives** | Fast iteration, no CSS-in-JS overhead, components live in our repo (not a dependency). |
 | Frontend auth | **NextAuth.js v4** + CredentialsProvider | Self-hosted, SOC2-compatible, no external dependency. v4 (stable) chosen over v5 (beta) for now. |
 | Backend framework | **FastAPI** (async) | Type hints, auto-generated OpenAPI docs, async-first. |
-| ORM | **SQLAlchemy 2.0 async** + asyncpg | Mature, declarative, supports complex multi-tenant queries. |
+| ORM | **SQLAlchemy 2.1 async** + asyncpg | Mature, declarative, supports complex multi-tenant queries. |
 | Password hashing | **Argon2id** via `argon2-cffi` | OWASP #1 recommendation, no length limit (unlike bcrypt). Parameters: `m=64MB, t=3, p=4`. |
 | JWT | **python-jose** HS256 | Stateless, easy to verify, shared `SECRET_KEY`. |
 | DB | **PostgreSQL 18** | Required (uses `uuid-ossp`, `ARRAY`, `JSONB`, `TIMESTAMPTZ`). Not SQLite-compatible. |

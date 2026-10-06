@@ -14,6 +14,7 @@ from app.models.audit import AdminAction
 from app.models.password_reset import PasswordResetToken
 from app.models.user import User
 from app.routers import test_hooks
+from app.routing_inventory import iter_api_routes
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -382,7 +383,9 @@ class TestEmailHook:
                 assert (await c.get("/__test__/emails")).status_code == 404
         development = FastAPI()
         assert test_hooks.mount(development, enabled=True, email_mode="stub", app_env="development")
-        assert any(getattr(r, "path", "") == "/__test__/emails" for r in development.routes)
+        assert any(
+            context.path == "/__test__/emails" for context in iter_api_routes(development.routes)
+        )
 
 
 class TestReviewRoundThree:
