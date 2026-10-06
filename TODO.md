@@ -2858,6 +2858,44 @@ connection, as before. Evidence: full suite 915 passed three times on the
 pytest-9 image before the rebase (2 workers ×2, serial ×1) and again on the
 rebased tree, with the "event_loop fixture redefined" deprecation gone.
 
+### D14 — Vitest 2 → 5 with its companions, on top of jsdom 30 (#85; #87 merged by the owner)
+
+**Priority: P1. State: DONE with #85.** Vitest 5 lists `vite` as a peer only
+(≥ 6.4) and pins `@vitest/ui` to its own version; `@vitejs/plugin-react` 4
+knows vite ≤ 5; jsdom 30 wants Node ≥ 22.22 / 24.15 (we run 24.21, D11).
+So the bump is one lock refresh: `vitest` 5.0.3, `@vitest/ui` 5.0.3, `vite`
+7.3.7 (explicit devDependency), `@vitejs/plugin-react` 5.2.0, `jsdom`
+30.1.x, `@types/node` ^24 (Vitest 5's peer range; matches the runtime).
+Two things changed behaviour: Vitest 5 no longer inherits `jest.Matchers`,
+so jest-dom's jest-side augmentation stopped reaching `expect` and `tsc`
+lost every `toBeInTheDocument`/`toHaveAttribute` (591 errors) —
+`tests/setup.ts` imports `@testing-library/jest-dom/vitest` now, the entry
+that augments Vitest's own `Assertion`; and the `--poolOptions.*` CLI flags
+are gone (`--maxWorkers`). Nothing in the suite hit the other breaking
+changes (`clearMocks` default, top-level `vi.mock`, unawaited async
+assertions, `toThrow('')`, reporter paths).
+
+**DECISION (loop, D14):** the companions above are part of the same change
+because the peer ranges leave no other working combination. jsdom 30 was
+meant to ship here with #87 closed as superseded; the owner merged #87 (and
+#86, tailwind-merge 3) directly meanwhile, so #85 carries the Vitest side and
+rebases on top of them.
+
+### D15 — e2e cross-worker interference (two flake signatures from the dependency CI runs)
+
+**Priority: P2. State: QUEUED.** Seen on #82's `e2e (2/2)` shard (4 workers,
+nothing in the PR touches the frontend or the backend code): (1)
+`pack-upsell.spec.ts:127` died in the `room` fixture — `POST
+/admin/rooms/{id}/availability` answered 404 "Room not found" right after
+`createRoom` had returned the room — and (2) `single-space.spec.ts:79`
+expected the first "Onde estamos" line to be "Todos os dias 08:00–22:00" and
+got it with "Horário por sala no calendário." appended, i.e. another
+worker's room with different hours was alive in the shared seeded space at
+that moment. Both are ordering-dependent; a rerun passed. Acceptance: the
+room fixture tolerates (or explains) the 404, the single-space spec asserts
+on its own space or waits for a quiet window, and ten consecutive sharded
+CI runs stay green.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are
