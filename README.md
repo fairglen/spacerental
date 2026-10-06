@@ -669,3 +669,21 @@ header, white in the footer) with one asset; HTML emails open with
 `<FRONTEND_URL>/brand/logo-email.png`. `metadataBase` comes from
 `NEXTAUTH_URL`, so Open Graph image URLs are absolute on a deployed app
 (Next 14 always uses `localhost` in `next dev`).
+
+### Postgres major upgrade (16 → 18, 2026-10-06)
+
+The Compose files, the CI service containers and the docs track **one**
+Postgres major, 18 as of this note; whatever production uses later must match
+it. A local `pgdata` volume written by 16 **will not start on 18** — the
+container exits with a data-directory version error — and the 18 image
+keeps its data in a version-specific subdirectory, so the named volume is
+now mounted at `/var/lib/postgresql` (not `…/data`). Local data is
+disposable, so reset and reseed:
+
+```bash
+docker compose down -v                                   # drops pgdata and media
+docker compose up -d --build
+docker compose exec -T backend python -m app.seed
+# the test stack's database is an anonymous volume; recreate it the same way:
+docker compose -f docker-compose.test.yml down -v
+```

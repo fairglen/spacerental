@@ -91,7 +91,7 @@ isolated ports and matching frontend/backend URLs.
 # Create local configuration only when absent:
 if [ ! -e .env ]; then cp .env.example .env; fi
 
-# Full backend suite, isolated PostgreSQL 16:
+# Full backend suite, isolated PostgreSQL 18:
 docker compose -p spacerental-delivery-tests -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests
 
 # Install before Compose bind-mounts frontend, avoiding root-owned dependencies:
@@ -2773,6 +2773,36 @@ so shared links keep their previews. Reverse: add sources to
 (read) and booking (write, authenticated) for assistants, on top of the
 public OpenAPI card from S1.5. Not started; recorded so the public API card
 has a successor.
+
+## Dependency upgrades (D-series, D10–D19) — owner assignment 2026-10-06
+
+Goal: every open Dependabot PR fixed, green and merged in tier order (actions
+→ npm minor/patch → pillow → postgres → node image → pip group → pytest /
+pytest-asyncio → stripe → vitest + jsdom → tailwind), each one tested locally
+before it is pushed, with the decisions a major bump forces recorded here and
+in the commit that takes them. The IDs start at D10: D01–D06 were an earlier
+series, now archived. Merging is authorised for Dependabot PRs only (squash,
+delete branch); no other PR is merged by the loop. Never a weakened, skipped
+or deleted test, rate limit or budget to get green. Progress and the per-PR
+outcome table live in PROGRESS.md (git-excluded) until the final report.
+
+### D10 — Postgres major: one version everywhere (#77, 16 → 18)
+
+**Priority: P1. State: DONE with #77.** Dependabot bumped the two Compose
+files only. The 18 image keeps its data in a version-specific subdirectory
+(`PGDATA=/var/lib/postgresql/18/docker`) and declares `/var/lib/postgresql`
+as its volume: our `pgdata:/var/lib/postgresql/data` mount made the container
+exit at start ("in 18+, these Docker images are configured to store database
+data in a version-specific subdirectory"), which is what the PR's red e2e and
+perf-web jobs were. The named volume is now mounted at `/var/lib/postgresql`;
+the three CI service containers (backend-tests, migrations, perf) and the docs
+follow the bump; README has a "Postgres major upgrade" note (a 16-era
+`pgdata` volume will not start on 18 — `docker compose down -v` and reseed).
+
+**DECISION (loop, D10):** dev Compose, the test Compose, CI service containers
+and the docs track **one** Postgres major (18 as of this task); a production
+database on a different major is a configuration mismatch to fix there, not
+a reason to keep two versions in the repo.
 
 ## Reusable agent assignments
 
