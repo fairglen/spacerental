@@ -13,15 +13,14 @@
 // - Content-Security-Policy-REPORT-ONLY: nothing is blocked yet. Violations
 //   are posted to /api/csp-report (app/api/csp-report/route.ts logs them) so
 //   the policy can be tightened from what is really seen before it enforces
-//   (TODO.md Q56). What it allows: this origin, the API origin (XHR and the
-//   photos it serves), an optional separate media origin, the OpenStreetMap
-//   frame in "Onde estamos", inline styles/scripts (Next.js hydration), and
-//   `unsafe-eval` only outside production (the dev server's HMR).
+//   (TODO.md Q56). What it allows: this origin — which is where the API and
+//   the photos it serves are reached by default, through the /backend proxy
+//   (D20) — the API origin when NEXT_PUBLIC_API_URL names a foreign one, an
+//   optional separate media origin, the OpenStreetMap frame in "Onde
+//   estamos", inline styles/scripts (Next.js hydration), and `unsafe-eval`
+//   only outside production (the dev server's HMR).
 
-// Development only. A production build must name the real API origin, or
-// the policy would allow the wrong one and every browser call would fail
-// quietly once deployed (review on #71, round 7): it throws instead.
-const DEV_API_FALLBACK = 'http://localhost:8000/api/v1'
+const { publicApiOrigin } = require('./backendProxy')
 
 function originOf(url) {
   return new URL(url).origin
@@ -36,7 +35,7 @@ function contentSecurityPolicy({ production, apiOrigin, mediaOrigin }) {
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${sources.join(' ')}`.trim(),
     "font-src 'self' data:",
-    `connect-src 'self' ${apiOrigin}`,
+    `connect-src 'self' ${apiOrigin || ''}`.trim(),
     'frame-src https://www.openstreetmap.org',
     "frame-ancestors 'none'",
     "base-uri 'self'",
@@ -48,7 +47,8 @@ function contentSecurityPolicy({ production, apiOrigin, mediaOrigin }) {
 
 /**
  * The `headers()` rules. Arguments default to the process environment; the
- * tests pass them explicitly.
+ * tests pass them explicitly. `apiUrl` unset or relative (the default,
+ * /backend/api/v1) means the API is this origin: nothing to add.
  */
 function securityHeaders({
   nodeEnv = process.env.NODE_ENV,
@@ -56,13 +56,7 @@ function securityHeaders({
   mediaOrigin = process.env.NEXT_PUBLIC_MEDIA_ORIGIN || '',
 } = {}) {
   const production = nodeEnv === 'production'
-  if (!apiUrl) {
-    if (production) {
-      throw new Error('NEXT_PUBLIC_API_URL is required for a production build: the security policy must name the real API origin')
-    }
-    apiUrl = DEV_API_FALLBACK
-  }
-  const apiOrigin = originOf(apiUrl)
+  const apiOrigin = publicApiOrigin({ NEXT_PUBLIC_API_URL: apiUrl })
   const everywhere = [
     { key: 'X-Content-Type-Options', value: 'nosniff' },
     { key: 'X-Frame-Options', value: 'DENY' },

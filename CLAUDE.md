@@ -140,7 +140,7 @@ Symptom: NextAuth server-side code calls `http://localhost:8000` and gets connec
 
 Cause: `localhost` inside the frontend container points to the container itself, not the backend container.
 
-Fix: the NextAuth handler uses `INTERNAL_API_URL=http://backend:8000/api/v1` for server-side fetches and `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1` for browser-side fetches. **Never use `localhost` for cross-service Docker calls.** The same split is why `.env.remote` (README "Access from another device", D19) may replace every browser-facing URL with the host's LAN IP or an ngrok URL and never touches `INTERNAL_API_URL`.
+Fix: the NextAuth handler uses `INTERNAL_API_URL=http://backend:8000/api/v1` for server-side fetches, and the browser calls the API at the relative `NEXT_PUBLIC_API_URL=/backend/api/v1` — the frontend's own origin, which `next.config.js` proxies to the origin of `INTERNAL_API_URL` (D20; `frontend/lib/backendProxy.js`). **Never use `localhost` for cross-service Docker calls.** The same split is why `.env.remote` (README "Access from another device", D19) may move the one browser-facing address (`NEXTAUTH_URL`/`FRONTEND_URL`) to the host's LAN IP or an ngrok URL and never touches `INTERNAL_API_URL`. Server-side code resolves the API through `internalApiUrl()` and never inherits the browser's relative value — Node cannot fetch a path.
 
 ### 6.4 bcrypt has a 72-byte password limit
 We don't use bcrypt anymore — we use Argon2id. If anyone tries to "simplify" by switching to bcrypt, they'll truncate or reject long passwords. Don't.

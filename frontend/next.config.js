@@ -12,6 +12,7 @@ function appVersion() {
 const { securityHeaders } = require('./lib/securityHeaders')
 const { cacheHeaders } = require('./lib/cacheHeaders')
 const { robotsHeaders } = require('./lib/robotsHeaders')
+const { backendRewrites } = require('./lib/backendProxy')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -23,6 +24,12 @@ const nextConfig = {
   // P2.1: the brand set is immutable; S2.1: the private surface is noindex.
   async headers() {
     return [...securityHeaders(), ...cacheHeaders(), ...robotsHeaders()]
+  },
+  // D20: the browser reaches the backend through this origin — /backend/*
+  // is proxied to the backend container (lib/backendProxy.js), so the stack
+  // is one URL and the API needs no CORS for the app.
+  async rewrites() {
+    return backendRewrites()
   },
 }
 

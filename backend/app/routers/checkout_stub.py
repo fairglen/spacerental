@@ -144,10 +144,13 @@ def _render_page(session_id: str, session: dict) -> str:
       <dt>Valor</dt>
       <dd>{amount_label}</dd>
     </dl>
-    <form method="post" action="/checkout/stub/{session_id}/pay">
+    <!-- Relative on purpose (D20): the page is reached through the frontend's
+         proxy at /backend/checkout/stub/{{id}} as well as directly at
+         /checkout/stub/{{id}}, and `{{id}}/pay` resolves under either. -->
+    <form method="post" action="{session_id}/pay">
       <button type="submit" class="pay">Pagar</button>
     </form>
-    <form method="post" action="/checkout/stub/{session_id}/cancel">
+    <form method="post" action="{session_id}/cancel">
       <button type="submit" class="cancel">Cancelar</button>
     </form>
   </main>

@@ -1,9 +1,14 @@
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 # The name people see (emails, the stub checkout page). Formerly EspaçoHora;
 # internal identifiers (package, DB, env vars, service names) keep their names.
 BRAND_NAME = "FlowSpace"
+
+# Where the frontend proxies this API on its own origin (D20): the browser
+# reaches `<FRONTEND_URL>/backend/...` and Next.js forwards it here. Every
+# browser-facing URL this app builds for itself goes through it by default.
+PROXY_PREFIX = "/backend"
 
 
 class Settings(BaseSettings):
@@ -58,6 +63,12 @@ class Settings(BaseSettings):
     # Only enable behind a proxy that overwrites X-Forwarded-For; see the
     # trust note in app/ratelimit.py:client_identity.
     RATE_LIMIT_TRUST_FORWARDED_FOR: bool = False
+    # The proxies whose X-Forwarded-For IS trusted (D20): hostnames, IPs or
+    # CIDRs, comma-separated. A request from one of them is identified by the
+    # entry that proxy appended (the rightmost); from anyone else, by its
+    # peer address. Compose sets `frontend` — the Next.js proxy the browser
+    # reaches the API through. Empty = no peer is trusted (app/trusted_proxies.py).
+    RATE_LIMIT_TRUSTED_PROXIES: str = ""
     # Upload tier: operator photo uploads (C14). Each accepted request decodes
     # and re-encodes an image of up to 8 MB.
     RATE_LIMIT_UPLOAD_MAX_REQUESTS: int = 30
@@ -73,10 +84,12 @@ class Settings(BaseSettings):
     # stops the app at startup (see app.media.build_media_storage).
     MEDIA_STORAGE: str = "local"
     MEDIA_ROOT: str = "./media"
-    # Browser-facing URL that maps to MEDIA_ROOT. Handed to the visitor's
-    # browser inside API responses, so `localhost` is correct here even under
-    # docker-compose (same reasoning as STRIPE_STUB_CHECKOUT_BASE_URL).
-    MEDIA_BASE_URL: str = "http://localhost:8000/media"
+    # Browser-facing URL that maps to MEDIA_ROOT, handed to the visitor's
+    # browser inside API responses. Empty (the default) = derived from
+    # FRONTEND_URL as `<FRONTEND_URL>/backend/media` — the API's /media reached
+    # through the frontend's proxy (D20), which follows FRONTEND_URL wherever
+    # it points. Set only when the photos live elsewhere (object storage).
+    MEDIA_BASE_URL: str = ""
     # Where `python -m app.seed` finds the four room illustrations (V01).
     # Empty = the repo's own `flowspace-site/assets/img/room-photos`, which a
     # native run sees and the backend container does not — Compose mounts the
@@ -92,15 +105,19 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str | None = None
     STRIPE_WEBHOOK_SECRET: str | None = None
     STRIPE_CURRENCY: str = "eur"
-    STRIPE_SUCCESS_URL: str = "http://localhost:3000/dashboard?pagamento=sucesso"
-    STRIPE_CANCEL_URL: str = "http://localhost:3000/dashboard?pagamento=cancelado"
+    # Where the browser lands after Checkout. Empty (the default) = derived
+    # from FRONTEND_URL (`<FRONTEND_URL>/dashboard?pagamento=sucesso|cancelado`),
+    # so one variable moves the whole flow to another address (D20).
+    STRIPE_SUCCESS_URL: str = ""
+    STRIPE_CANCEL_URL: str = ""
     # Browser-facing base URL of THIS backend, used only to build the stub
-    # Checkout page's URL (app.routers.checkout_stub). Like NEXT_PUBLIC_API_URL,
-    # this is handed to the user's browser, not called container-to-container,
-    # so `localhost` is correct here even under docker-compose (CLAUDE.md §6.3
-    # governs backend-to-backend calls, not browser redirect targets). Unused
-    # in live mode — real Stripe Checkout URLs live on Stripe's own domain.
-    STRIPE_STUB_CHECKOUT_BASE_URL: str = "http://localhost:8000"
+    # Checkout page's URL (app.routers.checkout_stub). Empty (the default) =
+    # derived from FRONTEND_URL as `<FRONTEND_URL>/backend`, the proxied path
+    # (D20); an absolute value sends the browser to the API directly. Handed
+    # to the user's browser, never called container-to-container (CLAUDE.md
+    # §6.3 governs backend-to-backend calls, not browser redirect targets).
+    # Unused in live mode — real Stripe Checkout URLs live on Stripe's domain.
+    STRIPE_STUB_CHECKOUT_BASE_URL: str = ""
 
     # ── Email ────────────────────────────────────────────────────────────
     # "stub" (default) records what would be sent (log + in-memory list) with
@@ -134,6 +151,21 @@ class Settings(BaseSettings):
     # P2.2: how often the lifespan task reconciles lapsed unpaid holds
     # (app/holds.py); 0 disables it (the reads still reconcile their own).
     HOLD_SWEEP_INTERVAL_SECONDS: int = 60
+
+    @model_validator(mode="after")
+    def _derive_browser_urls(self) -> "Settings":
+        """One variable drives every browser-facing URL (D20): FRONTEND_URL —
+        localhost, a LAN IP or an ngrok domain — unless a value is explicit."""
+        base = self.FRONTEND_URL.rstrip("/")
+        if not self.MEDIA_BASE_URL.strip():
+            self.MEDIA_BASE_URL = f"{base}{PROXY_PREFIX}/media"
+        if not self.STRIPE_STUB_CHECKOUT_BASE_URL.strip():
+            self.STRIPE_STUB_CHECKOUT_BASE_URL = f"{base}{PROXY_PREFIX}"
+        if not self.STRIPE_SUCCESS_URL.strip():
+            self.STRIPE_SUCCESS_URL = f"{base}/dashboard?pagamento=sucesso"
+        if not self.STRIPE_CANCEL_URL.strip():
+            self.STRIPE_CANCEL_URL = f"{base}/dashboard?pagamento=cancelado"
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:

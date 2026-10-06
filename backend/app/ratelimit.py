@@ -25,6 +25,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import settings
 from app.routing_inventory import iter_api_routes, route_matcher
+from app.trusted_proxies import trusted_proxies_for
 
 AUTH_TIER = "auth"
 PUBLIC_TIER = "public"
@@ -137,26 +138,43 @@ class RateLimiter:
 limiter = RateLimiter()
 
 
+def _forwarded_chain(scope: Scope) -> list[str]:
+    """The non-empty entries of `X-Forwarded-For`, left to right."""
+    for name, value in scope.get("headers", []):
+        if name.lower() == b"x-forwarded-for":
+            return [entry.strip() for entry in value.decode("latin-1").split(",") if entry.strip()]
+    return []
+
+
 def client_identity(scope: Scope) -> str:
     """Best available identifier for the caller.
 
-    Trusting `X-Forwarded-For` is opt-in via RATE_LIMIT_TRUST_FORWARDED_FOR: the
-    header is client-supplied, so trusting it when nothing strips or overwrites
-    it lets anyone bypass the limiter by rotating a fake value. Enable it only
-    when a proxy the deployment controls (nginx/Traefik/ALB) sets the header.
-    Inside the docker-compose stack the frontend talks to `backend` directly,
-    so the peer address is the real client and the default stays off.
-    """
-    if settings.RATE_LIMIT_TRUST_FORWARDED_FOR:
-        for name, value in scope.get("headers", []):
-            if name.lower() == b"x-forwarded-for":
-                forwarded = value.decode("latin-1").split(",")[0].strip()
-                if forwarded:
-                    return forwarded
+    `X-Forwarded-For` is client-supplied, so believing it when nothing strips
+    or overwrites it lets anyone bypass the limiter by rotating a fake value.
+    Two ways in, both off by default:
 
+    - RATE_LIMIT_TRUSTED_PROXIES (D20): the browser reaches the API through the
+      frontend's Next.js proxy, so the peer is the frontend container and the
+      real client is the entry that proxy APPENDED — the rightmost. Only a
+      request whose peer is one of the named proxies is identified that way;
+      whatever a client wrote into the header itself sits further left and is
+      ignored. Compose names `frontend` (app/trusted_proxies.py).
+    - RATE_LIMIT_TRUST_FORWARDED_FOR: for a deployment behind a reverse proxy
+      the operator controls (nginx/Traefik/ALB) that OVERWRITES the header —
+      the first entry is taken from any peer (S12 describes why that is only
+      safe behind an overwriting proxy).
+    """
     client = scope.get("client")
-    if client:
-        return client[0]
+    peer = client[0] if client else None
+    chain = _forwarded_chain(scope)
+
+    if settings.RATE_LIMIT_TRUST_FORWARDED_FOR and chain:
+        return chain[0]
+    if chain and trusted_proxies_for(settings.RATE_LIMIT_TRUSTED_PROXIES).is_trusted(peer):
+        return chain[-1]
+
+    if peer:
+        return peer
     # No peer address (e.g. a unix socket): bucket these together rather than
     # letting them through unthrottled.
     return "unknown"

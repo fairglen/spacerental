@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import { Providers } from './providers'
 import pt from '@/lib/i18n/pt.json'
 import { ROBOTS_APP, metadataBaseFrom } from '@/lib/seo'
+import { publicApiOrigin } from '@/lib/backendProxy'
 import { BrandSymbols } from '@/components/brand/BrandSymbols'
 import './globals.css'
 
@@ -47,15 +48,16 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: '#3D7A5E' }
 
 // P1.2: the origin the browser's API calls go to, when it is not this site's
-// own — the first fetch then skips DNS, TCP and TLS. Both values are fixed at
-// build time (NEXT_PUBLIC_API_URL is inlined; NEXTAUTH_URL is Compose's).
-const API_ORIGIN = new URL(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1').origin
+// own — the first fetch then skips DNS, TCP and TLS. Null by default: the
+// calls go through this origin's /backend proxy (D20). Both values are fixed
+// at build time (NEXT_PUBLIC_API_URL is inlined; NEXTAUTH_URL is Compose's).
+const API_ORIGIN = publicApiOrigin()
 const SITE_ORIGIN = process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL).origin : null
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-PT">
-      {API_ORIGIN !== SITE_ORIGIN && (
+      {API_ORIGIN && API_ORIGIN !== SITE_ORIGIN && (
         <head>
           <link rel="preconnect" href={API_ORIGIN} />
         </head>

@@ -36,7 +36,9 @@ test.describe('Authentication', () => {
     await page.getByLabel('Email').fill(email)
     await page.getByLabel('Password', { exact: true }).fill('password123')
     await page.getByLabel('Confirmar password').fill('password123')
-    const registered = page.waitForResponse(r => r.url() === `${API_URL}/auth/register` && r.request().method() === 'POST')
+    // The browser's own call goes through the frontend origin (/backend, D20),
+    // so it is matched by path, not by API_URL (which the API-level calls below use).
+    const registered = page.waitForResponse(r => r.url().endsWith('/api/v1/auth/register') && r.request().method() === 'POST')
     await page.getByRole('button', { name: /Criar Conta/i }).click()
     await page.waitForURL('**/dashboard', { timeout: 15000 })
     await expect(page.getByText(/Olá/i)).toBeVisible()

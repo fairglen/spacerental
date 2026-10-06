@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Reach the local stack from another device (README "Access from another
-# device", TODO.md D19): writes .env.remote from .env.remote.example and starts
-# the stack with that file layered on .env.
+# device", TODO.md D19/D20): writes .env.remote from .env.remote.example and
+# starts the stack with that file layered on .env. The stack is ONE URL — the
+# browser reaches the API through the frontend's own origin (/backend/*).
 #
 #   scripts/remote-up.sh lan   [--dry-run]   same Wi-Fi, via this host's LAN IP
-#   scripts/remote-up.sh ngrok [--dry-run]   from anywhere, via two ngrok tunnels
+#   scripts/remote-up.sh ngrok [--dry-run]   from anywhere, via one ngrok tunnel
 #   scripts/remote-up.sh off                 back to localhost (plain .env)
 #
 # --dry-run prints the .env.remote it would write and touches neither that
@@ -16,14 +17,13 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 
 WEB_PORT=3000
-API_PORT=8000
 # The agent's local API; overridable so scripts/tests/remote-env.sh can serve a
 # canned tunnel list instead of running ngrok.
 NGROK_API=${NGROK_API:-http://127.0.0.1:4040/api/tunnels}
 NGROK_LOG=${TMPDIR:-/tmp}/spacerental-ngrok.log
 
 die() { echo "remote-up: $*" >&2; exit 1; }
-usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; }
 
 mode=${1:-}
 [ $# -eq 0 ] || shift
@@ -57,23 +57,22 @@ host_ip() {
   echo "$ip"
 }
 
-# The .env.remote for a WEB/API pair: the template with its two lines replaced,
-# so every derived value stays the template's (one source of truth).
+# The .env.remote for a WEB URL: the template with its one line replaced, so
+# every derived value stays the template's (one source of truth).
 render_env() {
-  local web api
+  local web
   web=$(printf '%s' "$1" | sed 's/[&|\\]/\\&/g')
-  api=$(printf '%s' "$2" | sed 's/[&|\\]/\\&/g')
-  sed -e "s|^WEB=.*|WEB=$web|" -e "s|^API=.*|API=$api|" .env.remote.example
+  sed -e "s|^WEB=.*|WEB=$web|" .env.remote.example
 }
 
-start_layered() { # WEB API
+start_layered() { # WEB
   if $dry_run; then
     echo "# --dry-run: .env.remote would be written as follows; Docker not touched."
-    render_env "$1" "$2"
+    render_env "$1"
     return
   fi
-  render_env "$1" "$2" > .env.remote
-  echo "Wrote .env.remote (WEB=$1, API=$2)."
+  render_env "$1" > .env.remote
+  echo "Wrote .env.remote (WEB=$1)."
   docker compose --env-file .env --env-file .env.remote up -d -V
   print_next_steps "$1"
 }
@@ -101,28 +100,26 @@ ngrok_config_path() {
 
 print_tunnel_yaml() {
   cat >&2 <<EOF
-remote-up: the ngrok configuration needs two tunnels, \`web\` (port $WEB_PORT) and
-\`api\` (port $API_PORT). Add this to "$(ngrok_config_path)" (keep the existing
-\`version\` and authtoken lines) and run again:
+remote-up: the ngrok configuration needs one tunnel, \`web\`, to port $WEB_PORT.
+Add this to "$(ngrok_config_path)" (keep the existing \`version\` and authtoken
+lines) and run again:
 
 tunnels:
   web:
     proto: http
     addr: $WEB_PORT
-  api:
-    proto: http
-    addr: $API_PORT
-
-A free account gives one static domain (https://dashboard.ngrok.com/domains);
-put it on \`web\` as \`domain: <name>.ngrok-free.app\` so the address the
-session cookie is bound to stops changing between runs.
+    # One-off: reserve the free static domain at
+    # https://dashboard.ngrok.com/domains and name it here, so the address
+    # (the one the session cookie is bound to) is the same on every run.
+    domain: <your-domain>.ngrok-free.dev
 EOF
 }
 
 ngrok_api_up() { curl -sf "$NGROK_API" > /dev/null 2>&1; }
 
 # The public URL of the tunnel whose upstream is the given local port, from the
-# agent's local API (config.addr is "http://localhost:3000" or "3000").
+# agent's local API (config.addr is "http://localhost:3000" or "3000"). With a
+# `domain:` in ngrok.yml this is that domain, so the URL is stable across runs.
 tunnel_url() { # PORT
   local json
   json=$(curl -sf "$NGROK_API") || return 1
@@ -144,6 +141,27 @@ for t in json.load(sys.stdin).get("tunnels", []):
   fi
 }
 
+# "name (addr)" of every tunnel on URL that is not the one to PORT.
+tunnels_sharing() { # URL PORT
+  local json
+  json=$(curl -sf "$NGROK_API") || return 0
+  if command -v jq > /dev/null; then
+    printf '%s' "$json" | jq -r --arg url "$1" --arg port "$2" \
+      '[.tunnels[] | select(.public_url == $url) | select((.config.addr | tostring) | test(":" + $port + "$|^" + $port + "$") | not) | "\(.name) (\(.config.addr))"] | join(", ")'
+  else
+    printf '%s' "$json" | python3 -c '
+import json, sys
+url, port = sys.argv[1], sys.argv[2]
+names = []
+for t in json.load(sys.stdin).get("tunnels", []):
+    addr = str(t.get("config", {}).get("addr", ""))
+    if t.get("public_url") == url and not (addr == port or addr.endswith(":" + port)):
+        names.append(f"{t.get(\"name\")} ({addr})")
+print(", ".join(names))
+' "$1" "$2"
+  fi
+}
+
 ngrok_mode() {
   command -v ngrok > /dev/null || die "ngrok is not on PATH — https://ngrok.com/download, then \`ngrok config add-authtoken <token>\`"
   local cfg
@@ -153,9 +171,12 @@ ngrok_mode() {
     print_tunnel_yaml
     exit 1
   fi
-  if ! grep -Eq '^[[:space:]]+web:' "$cfg" || ! grep -Eq '^[[:space:]]+api:' "$cfg"; then
+  if ! grep -Eq '^[[:space:]]+web:' "$cfg"; then
     print_tunnel_yaml
     exit 1
+  fi
+  if ! grep -Eq '^[[:space:]]+domain:' "$cfg"; then
+    echo "note: no \`domain:\` in $cfg — the URL changes at every ngrok start. Reserve the free static domain (https://dashboard.ngrok.com/domains) and set it on the \`web\` tunnel to keep it." >&2
   fi
 
   local started=false
@@ -171,43 +192,45 @@ ngrok_mode() {
     ngrok_api_up || die "ngrok did not answer on $NGROK_API within 30 s — see $NGROK_LOG"
   fi
 
-  # The tunnels register a moment after the agent's API is up.
-  local web="" api="" i
+  # The tunnel registers a moment after the agent's API is up.
+  local web="" i
   for i in $(seq 1 30); do
     web=$(tunnel_url "$WEB_PORT")
-    api=$(tunnel_url "$API_PORT")
-    [ -n "$web" ] && [ -n "$api" ] && break
+    [ -n "$web" ] && break
     sleep 1
   done
-  if [ -z "$web" ] || [ -z "$api" ]; then
-    echo "remote-up: ngrok is running but has no tunnel to port $WEB_PORT and/or $API_PORT (web='$web', api='$api')." >&2
+  if [ -z "$web" ]; then
+    echo "remote-up: ngrok is running but has no tunnel to port $WEB_PORT." >&2
     $started && echo "remote-up: it was started by this script — stop it with: pkill -f 'ngrok start'" >&2
     print_tunnel_yaml
     exit 1
   fi
-  echo "ngrok tunnels: web=$web  api=$api"
-  if [ "$web" = "$api" ]; then
+  echo "ngrok tunnel: web=$web"
+  # A free account has one domain: a second tunnel without its own `domain:`
+  # (the `api` tunnel the two-URL setup of D19 needed) comes up on the SAME
+  # URL, and ngrok pools them — requests would reach port 3000 or 8000 at
+  # random. One tunnel is all the stack needs now.
+  local others
+  others=$(tunnels_sharing "$web" "$WEB_PORT")
+  if [ -n "$others" ]; then
     cat >&2 <<EOF
-remote-up: both tunnels came up on the SAME URL ($web).
-ngrok pools endpoints that share a URL and spreads requests across them at
-random, so the stack would answer from port $WEB_PORT or $API_PORT by chance. This is
-what a free account does with two tunnels and no \`domain:\` — it has one
-domain. The two-tunnel flow needs a second domain on the account (put each on
-its tunnel as \`domain:\`), or the one-origin setup of TODO.md D20.
+remote-up: another tunnel shares the URL $web: $others
+ngrok pools tunnels on one URL and spreads requests across them at random, so
+the stack would answer from the wrong port by chance. Remove that tunnel from
+"$cfg" (the stack needs only \`web\`, to port $WEB_PORT) and run again.
 .env.remote was not written.
 EOF
     $started && echo "remote-up: ngrok was started by this script — stop it with: pkill -f 'ngrok start'" >&2
     exit 1
   fi
-  start_layered "$web" "$api"
+  start_layered "$web"
 }
 
 # ── modes ────────────────────────────────────────────────────────────────────
 
 case "$mode" in
   lan)
-    ip=$(host_ip)
-    start_layered "http://$ip:$WEB_PORT" "http://$ip:$API_PORT"
+    start_layered "http://$(host_ip):$WEB_PORT"
     ;;
   ngrok)
     ngrok_mode

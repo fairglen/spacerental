@@ -1,5 +1,6 @@
 import CredentialsProvider from 'next-auth/providers/credentials'
 import type { NextAuthOptions } from 'next-auth'
+import { internalApiUrl } from '@/lib/backendProxy'
 
 type SessionMembership = { org_id: string; role: 'owner' | 'admin' | 'member' }
 
@@ -8,9 +9,10 @@ if (!secret?.trim()) {
   throw new Error('NEXTAUTH_SECRET is required; configure it before starting or building the frontend')
 }
 
-// Server-side calls (this file runs in Next.js server/container, not the browser).
-// INTERNAL_API_URL uses the Docker service name; falls back to localhost for local dev without Docker.
-const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+// Server-side calls (this file runs in Next.js server/container, not the
+// browser): INTERNAL_API_URL, the Docker service name — never the browser's
+// relative NEXT_PUBLIC_API_URL (lib/backendProxy.js).
+const API_URL = internalApiUrl()
 
 // Decodes the payload of a base64url-encoded JWT without verifying the signature.
 // The FastAPI-issued JWT embeds `memberships` for the switcher; we only read it,
