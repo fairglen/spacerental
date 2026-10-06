@@ -2804,6 +2804,26 @@ and the docs track **one** Postgres major (18 as of this task); a production
 database on a different major is a configuration mismatch to fix there, not
 a reason to keep two versions in the repo.
 
+### D11 — Node major: LTS 24 for the image and CI, not 26 (#78)
+
+**Priority: P1. State: DONE with #78.** Dependabot proposed `node:26-alpine`
+for the frontend image while every workflow still ran `setup-node` 20. Checked
+on the current lock (Next 14.2, Vitest 2 + jsdom 24, Playwright 1.63): on Node
+26.10 Vitest fails in 25 files — Node 26 ships the Web Storage globals, which
+shadow jsdom's `localStorage`/`sessionStorage` in every component test that
+touches them (`undefined.getItem`); `next build` and `tsc` were fine. On Node
+24.21 (LTS): Vitest 709/709, `next build`, `tsc`, the image build on
+`node:24-alpine` and Playwright 75/75 with the host runner on 24 all pass.
+
+**DECISION (loop, D11):** the frontend image and every `setup-node` step
+(lint, frontend-tests, e2e ×2, flowspace-site-checks, perf, security) move to
+**Node 24 LTS** together, pinned by digest in the Dockerfile; CI and the image
+always run the same major. Node 26 is revisited when jsdom 30 / Vitest 5 (D-series,
+#85/#87) are in, which own the storage globals properly. Note for the next
+bump: npm 11.19 (bundled with 24 and 26) does not run the install scripts of
+esbuild, msw and unrs-resolver unless approved; builds and tests pass without
+them, so nothing is approved until something needs it.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are
