@@ -2838,6 +2838,26 @@ of `None`, and needs every `None`-tolerant reader audited), so it is not done
 inside a dependency PR. Acceptance: no `SADeprecationWarning` for `noload` in
 the suite, every route still loads what it reads, suite green.
 
+### D13 — pytest 9 and pytest-asyncio 1.4 together; one session loop by configuration (#81, #80 superseded)
+
+**Priority: P1. State: DONE with #81.** Dependabot opened pytest 8.3 → 9.1
+(#80) and pytest-asyncio 0.23 → 1.4 (#81) separately, and each was red on
+its own: pytest-asyncio 1.4 needs pytest ≥ 8.4, so #81 could not even
+install (`ResolutionImpossible`), and #80 alone left pytest-asyncio 0.23.8
+pinned to pytest < 9. pytest-asyncio 1.x also removed the overridable
+`event_loop` fixture that `tests/conftest.py` used to give the whole session
+one loop (the asyncpg rule in CLAUDE.md §6.1).
+
+**DECISION (loop, D13):** both bumps land on #81 — `pytest==9.1.1` next to
+`pytest-asyncio==1.4.0` — and #80 is closed as superseded. The session
+fixture is gone; `pytest.ini` sets `asyncio_default_fixture_loop_scope =
+session` and `asyncio_default_test_loop_scope = session`, which is the same
+one-loop-per-session (per xdist worker) behaviour expressed the way 1.x
+expects. `worker_database` keeps its own private loop for the maintenance
+connection, as before. Evidence: full suite 915 passed three times on the
+pytest-9 image before the rebase (2 workers ×2, serial ×1) and again on the
+rebased tree, with the "event_loop fixture redefined" deprecation gone.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are

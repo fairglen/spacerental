@@ -87,14 +87,6 @@ def checkout_completed_event(
     ).encode()
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Single event loop for the whole test session."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest.fixture(scope="session", autouse=True)
 def worker_database():
     """This xdist worker's own database: created before its first test,
@@ -118,7 +110,8 @@ def worker_database():
         finally:
             await conn.close()
 
-    # Its own loop: the session `event_loop` fixture above belongs to the tests.
+    # Its own loop: the session loop pytest-asyncio runs the tests on
+    # (pytest.ini, `asyncio_default_*_loop_scope`) belongs to the tests.
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(run(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
