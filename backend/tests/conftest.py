@@ -31,6 +31,10 @@ os.environ["SECRET_KEY"] = "test-secret-key-32-chars-min-test-test"
 os.environ["TEST_HOOKS_ENABLED"] = "true"
 # Uploaded photos go to a throwaway directory, never into the checkout (C14).
 os.environ["MEDIA_ROOT"] = tempfile.mkdtemp(prefix="spacerental-test-media-")
+# Two origins, as `.env.remote` sets them (D19): tests/test_cors.py proves the
+# second one is admitted and an unlisted one is not; the space after the comma
+# is deliberate (the list is stripped).
+os.environ["CORS_ORIGINS"] = "http://localhost:3000, http://192.168.1.42:3000"
 
 from app.auth import create_access_token, hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402

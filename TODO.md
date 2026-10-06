@@ -3065,6 +3065,22 @@ needed for either flow.
 because the browser talks to both services directly today. One tunnel is the
 follow-up D20, not part of this change.
 
+Found while running the ngrok mode for real (2026-10-06, ngrok 3.39, the
+owner's free account, both tunnels already in its config): (1) both tunnels
+came up on the account's single `<name>.ngrok-free.dev` domain — the agent
+log shows the same `url=` for `web` and `api`, and ngrok pooled them, joining
+requests to :3000 and :8000 at random; (2) a browser-shaped request to the
+tunnel without the `ngrok-skip-browser-warning` header gets the
+`ERR_NGROK_6024` interstitial as `text/html` with HTTP 200, and the browser's
+cross-origin API calls carry no cookie, so clicking through on the `web` URL
+does not help them. The script now refuses case (1) ("both tunnels came up
+on the SAME URL", nothing written; the shell test covers it with a canned
+agent API) and README states both. **DECISION (loop, D19):** the ngrok mode
+stays as specified (it is correct on a plan with a second domain and no
+interstitial) and is documented as needing that plan today; the free-plan
+path is D20, which both findings point at — one origin means one domain and
+same-origin API calls. The LAN mode is unaffected.
+
 ### D20 — One origin for the browser: a Next.js rewrite from `/api/backend/*` to `INTERNAL_API_URL`
 
 **Priority: P3. State: QUEUED (follow-up to D19; not built there).** With a
@@ -3072,7 +3088,10 @@ follow-up D20, not part of this change.
 to `${INTERNAL_API_URL}/:path*`, the browser would reach the API through the
 frontend's own origin: remote access becomes one URL (one ngrok tunnel, one
 LAN address), `CORS_ORIGINS` and the API half of `.env.remote` disappear, and
-`NEXT_PUBLIC_API_URL` becomes a relative path. What it touches, found while
+`NEXT_PUBLIC_API_URL` becomes a relative path. D19's ngrok run showed this is
+also what the free ngrok plan needs: one domain per account, and an
+interstitial that same-origin calls get past after one click-through and
+cross-origin ones never do. What it touches, found while
 doing D19: `lib/securityHeaders.js` and `app/layout.tsx` build `new URL(...)`
 from `NEXT_PUBLIC_API_URL` (a relative value needs the site origin added);
 `MEDIA_BASE_URL` and the stub Checkout page (`STRIPE_STUB_CHECKOUT_BASE_URL`,

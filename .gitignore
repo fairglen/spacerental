@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+# The layer scripts/remote-up.sh writes (D19); .env.remote.example is the template
+.env.remote
 *.pem
 *.key
 
