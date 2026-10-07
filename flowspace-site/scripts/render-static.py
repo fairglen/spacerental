@@ -418,7 +418,8 @@ BRAND_DIR = SITE / "assets" / "img" / "brand"
 # phone watermark; the wordmark 22px tall in the header.
 HERO_MARK_WIDTH = 400
 WATERMARK_WIDTH = 440
-WORDMARK_HEIGHT = 22
+# B58: the header shows the mark alone, 40px tall (the 36px floor of B51 holds).
+HEADER_MARK_HEIGHT = 40
 
 
 def svg_parts(name: str) -> tuple[str, str, float, float]:
@@ -466,7 +467,7 @@ def use_svg(symbol: str, width: int | None, height: int | None, cls: str, indent
 
 
 def block_brand_header() -> str:
-    return use_svg("brand-wordmark", None, WORDMARK_HEIGHT, "brand-wordmark", "      ")
+    return use_svg("brand-mark", None, HEADER_MARK_HEIGHT, "brand-mark", "      ")
 
 
 def block_brand_hero_mark() -> str:

@@ -166,10 +166,11 @@ a {
   display: block;
   flex: none;
 }
-/* B51: the header shows the wordmark alone, 22px tall (the app's
- * `<BrandWordmark height={22} />` in a `text-primary` link); the mark on its
- * own never appears under 36px. */
-.brand-wordmark {
+/* B58: the header shows the mark alone, 40px tall (the app's
+ * `<BrandMark width={44} />` in a `text-primary` link) — over the 36px floor
+ * B51 set for the mark on its own. It stays in the bar at every width; the
+ * hamburger sits to its right under 768px. */
+.brand-mark {
   display: block;
   flex: none;
   height: 22px;

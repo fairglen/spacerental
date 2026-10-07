@@ -678,7 +678,7 @@ test('the menu toggle announces the action it will perform', async ({ page }) =>
 });
 
 // B50: the brand set replaces the text wordmark and the old favicon.
-test('the header carries the wordmark alone (22px, decorative inside the named link), the footer the white lockup, and the head has the icons', async ({ page }) => {
+test('the header carries the mark alone (40px, decorative inside the named link), the footer the white lockup, and the head has the icons', async ({ page }) => {
   await page.goto('/');
   // B51: the link is named; the drawing inside it is decorative.
   const link = page.locator('.site-nav a.wordmark');

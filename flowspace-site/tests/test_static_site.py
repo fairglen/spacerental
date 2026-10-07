@@ -288,9 +288,10 @@ class BrandInline(unittest.TestCase):
     def test_the_three_uses_have_their_sizes_and_are_decorative(self):
         uses = re.findall(r'<svg class="([^"]+)" width="(\d+)" height="(\d+)" viewBox="[^"]+" aria-hidden="true" focusable="false"><use href="#(brand-[a-z]+)"></use></svg>', INDEX)
         self.assertEqual(uses, [
-            ("brand-wordmark", "103", "22", "brand-wordmark"),
-            ("hero-watermark", "440", "401", "brand-mark"),
-            ("hero-mark-svg", "400", "365", "brand-mark"),
+            # B58: the header shows the mark alone, 40px tall (44 wide at its ratio).
+            ("brand-mark", "44", "40", "0 0 735.5 670.5", "brand-mark"),
+            ("hero-watermark", "440", "401", "0 0 735.5 670.5", "brand-mark"),
+            ("hero-mark-svg", "400", "365", "0 0 735.5 670.5", "brand-mark"),
         ])
         self.assertIn('<a href="#top" class="wordmark" aria-label="FlowSpace">', INDEX)
         self.assertIn('<div class="hero-mark" aria-hidden="true">', INDEX)

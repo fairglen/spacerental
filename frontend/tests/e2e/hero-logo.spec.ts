@@ -49,16 +49,32 @@ async function expectDrawnInsideItsBox(svg: import('@playwright/test').Locator, 
 const centre = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
 
 test.describe('hero brand mark', () => {
-  test('the header link is named and carries the wordmark alone, 22px tall', async ({ page }) => {
-    await page.goto('/')
-    const link = page.locator('nav a[aria-label="FlowSpace"]').first()
-    const svg = link.locator('svg')
-    await expect(svg).toHaveCount(1)
-    await expect(svg).toHaveAttribute('aria-hidden', 'true')
-    await expect(svg).toHaveAttribute('height', '22')
-    await expect(svg.locator('use')).toHaveAttribute('href', '#brand-wordmark')
-    expect((await svg.boundingBox())!.height).toBe(22)
-    await expect(link.locator('use[href="#brand-mark"], use[href*="lockup"]')).toHaveCount(0)
+  test('the header link is named and carries the mark alone, 40px tall, in the bar at every width (B58)', async ({ page }) => {
+    for (const width of [390, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      const link = headerLink(page)
+      const svg = link.locator('svg')
+      await expect(svg).toHaveCount(1)
+      await expect(svg).toHaveAttribute('aria-hidden', 'true')
+      await expect(svg).toHaveAttribute('height', '40')
+      await expect(svg).toHaveAttribute('width', '44')
+      await expect(svg.locator('use')).toHaveAttribute('href', '#brand-mark')
+      const box = (await svg.boundingBox())!
+      expect(box.height, `${width}px`).toBe(40)
+      expect(box.width, `${width}px`).toBeGreaterThan(0)
+      // B57: the drawing fills its box — nothing is shifted out of the viewport.
+      await expectDrawnInsideItsBox(svg, `${width}px header`)
+      await expect(link.locator('use[href="#brand-wordmark"], use[href*="lockup"]')).toHaveCount(0)
+      // In the bar, on the left, never inside the collapsed menu; the hamburger to its right under md.
+      const bar = (await link.locator('xpath=..').boundingBox())!
+      expect(box.y).toBeGreaterThanOrEqual(bar.y)
+      expect(box.y + box.height).toBeLessThanOrEqual(bar.y + bar.height + 1)
+      if (width < 768) {
+        const toggle = (await page.locator('nav button[aria-label]').first().boundingBox())!
+        expect(toggle.x).toBeGreaterThan(box.x + box.width)
+      }
+    }
     // The symbols are inlined once, first thing in the body.
     await expect(page.locator('body > svg[aria-hidden="true"] symbol')).toHaveCount(2)
   })
