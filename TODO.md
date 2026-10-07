@@ -1598,6 +1598,12 @@ production), the rule the hook mounts by. No new Playwright spec: the card
 is Vitest-covered, the endpoints pytest-covered, and the unchanged
 `password-reset.spec.ts` proves the stub path through the proxy.
 
+**Round 1 (Copilot, 2026-10-07):** PR #94 (base `fix/brand-header-hero`).
+No review within 6 min of the push nor 4 min after an explicit request —
+as on #93, the repository has no Copilot code review to answer; recorded
+as "no Copilot review", no threads. CI round 1: 17 checks, every area
+green on the first run (`required-checks` pass).
+
 **Round 1 (Copilot, 2026-10-07):** PR #93. No review arrived within 6 min of
 the push nor within 4 min of an explicit request (`POST
 …/pulls/93/requested_reviewers` with `copilot-pull-request-reviewer[bot]`
