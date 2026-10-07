@@ -11,7 +11,7 @@ import type {
   AdminAction, PaginatedActions, AuditFilters, AdminSpaceDetail, AdminRoomDetail,
   AdminBookingDetail, AdminPackageDetail, AdminUserCreateBody, AdminUserPatch, AnonymisedUser,
   PaginatedPurchases, AdminPurchaseDetail, PurchaseFilters, SupportRequestDetail,
-  OrganizationSettings, OrganizationSettingsPatch, PublicContact,
+  OrganizationSettings, OrganizationSettingsPatch, PublicContact, EmailStatus, EmailTestResult,
 } from '@/types'
 
 // Relative by default (/backend/api/v1): the browser calls the API through
@@ -50,7 +50,7 @@ export function withSessionRevocation(instance: Api): Api {
   return instance
 }
 
-type Api = ReturnType<typeof createAuthenticatedApi>
+export type Api = ReturnType<typeof createAuthenticatedApi>
 
 // ─── Decimal normalization ───────────────────────────────────────────────
 // Pydantic v2 serializes Decimal as a JSON string. Our TS types declare these
@@ -546,6 +546,12 @@ export const adminApi = {
     api.get<{ organization: OrganizationSettings }>('/admin/organization').then(r => r.data.organization),
   updateOrganization: (body: OrganizationSettingsPatch, api: Api): Promise<OrganizationSettings> =>
     api.put<{ organization: OrganizationSettings }>('/admin/organization', body).then(r => r.data.organization),
+  // ── Email (B61) ─────────────────────────────────────────────────────────
+  getEmailStatus: (api: Api): Promise<EmailStatus> =>
+    api.get<{ email: EmailStatus }>('/admin/email/status').then(r => r.data.email),
+  // No recipient: the API sends to the calling admin's own address only.
+  sendTestEmail: (api: Api): Promise<EmailTestResult> =>
+    api.post<EmailTestResult>('/admin/email/test').then(r => r.data),
 
   setAvailability: (
     roomId: string,

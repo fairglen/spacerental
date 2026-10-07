@@ -1570,6 +1570,34 @@ path (mocked `httpx` 403) → 502 body and the failure in the ring buffer; the
 rate limit; the logging configuration. Vitest for the card.
 `password-reset.spec.ts` still green. Copy in the formal register.
 
+**Outcome (2026-10-07, PR `fix/email-delivery-visibility`):** one commit.
+Built as scoped: `app/logging_config.py` (one INFO handler on a bare root
+logger, idempotent; an existing configuration is kept and only opened to
+INFO) called from the lifespan with the startup line `Email mode=… from=…`;
+`app/email.py` ring buffer (`recent_failures`, 20, filled by `_deliver` on
+any exception), `sanitise_provider_error`, `test_email()`, `email_status()`,
+`describe_mode()`; `routers/admin/email.py` (status; test send under the
+`support` tier, audited as `email.test` on the admin — on a 502 the row is
+committed before the error so it survives the rollback); `schemas/email.py`;
+the authz matrix and the audit scenario table classify the two routes; the
+OpenAPI snapshot gains them; `EmailStatusCard` on `/admin/settings`
+(`adminApi.getEmailStatus`/`sendTestEmail`, types, query key); README "Pôr
+os emails a funcionar (Resend)"; `.env.example`. Verified on the loop e2e
+stack: the startup line prints, "STUB EMAIL" lines now appear in `docker
+compose logs backend`, the status and the test send answer through
+`/backend`, the test message lands in `/__test__/emails`.
+Counts: backend 960 (+17: `test_admin_email.py` ×11 incl. the 502 audit row,
+`test_logging_config.py` ×2, the audit scenario, the authz entries, the
+snapshot), Vitest 725 (+6: the card ×5, the api shape), `tsc`/`next
+build`/ESLint clean, `password-reset.spec.ts` 2/2 on the rebuilt stack.
+**DECISION:** the buffer records any exception from a background delivery,
+not only the provider's. **DECISION:** the test send shares the `support`
+tier (5/h per client), as asked, instead of a tier of its own.
+**DECISION:** `test_hooks_enabled` is the effective value (flag ∧ stub ∧ not
+production), the rule the hook mounts by. No new Playwright spec: the card
+is Vitest-covered, the endpoints pytest-covered, and the unchanged
+`password-reset.spec.ts` proves the stub path through the proxy.
+
 **Round 1 (Copilot, 2026-10-07):** PR #93. No review arrived within 6 min of
 the push nor within 4 min of an explicit request (`POST
 …/pulls/93/requested_reviewers` with `copilot-pull-request-reviewer[bot]`

@@ -56,6 +56,16 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/admin/email/status",
+    "operation_id": "admin_email_status_api_v1_admin_email_status_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/email/test",
+    "operation_id": "admin_send_test_email_api_v1_admin_email_test_post"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/admin/organization",
     "operation_id": "admin_get_organization_api_v1_admin_organization_get"
   },

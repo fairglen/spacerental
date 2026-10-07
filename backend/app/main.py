@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import mimetypes
 from contextlib import asynccontextmanager, suppress
 
@@ -8,10 +9,12 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 from starlette.staticfiles import StaticFiles
 
+from app import email
 from app.cache_headers import CacheControlMiddleware
 from app.config import settings
 from app.database import async_session_factory
 from app.holds import run_hold_sweeper
+from app.logging_config import configure_logging
 from app.media import LocalMediaStorage, get_media_storage
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.request_id import RequestIdMiddleware
@@ -34,6 +37,10 @@ from app.security_headers import SECURITY_HEADERS, SecurityHeadersMiddleware
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # B61: one line saying which email gateway this process runs, so a reset
+    # email "that never arrives" is explained by the first line of the log.
+    configure_logging()
+    logging.getLogger("app").info(email.describe_mode())
     # P2.2: lapsed unpaid holds are reconciled on a timer (app/holds.py), so
     # the reads only read. One replica is enough; 0 turns it off.
     sweeper = None
