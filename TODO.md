@@ -1522,6 +1522,54 @@ and a 14.4:1 headline losing 1.26 is unharmed; the AA rule (≥ 4.5 wherever
 the plain ratio is ≥ 4.5) is unchanged. The `.hero-content > :first-child`
 is-H1 assertions (V04) became "the brand line, then the H1".
 
+### B61 (assignment B56) — "Reset email never arrives": make the email mode and delivery failures visible; document going live
+
+**Priority: P1. State: IN PROGRESS (PR `fix/email-delivery-visibility`,
+stacked on #93).** Owner's symptom: the password-reset email never arrives.
+**Diagnosis (2026-10-07, on the loop e2e stack):** `backend/app/email.py`
+selects `StubEmailGateway` when `EMAIL_MODE=stub` — the default in
+`config.py`, `.env.example` and `docker-compose.yml`; the stub only records
+the message and fills `GET /__test__/emails`. Reproduced: `POST
+/backend/api/v1/auth/password-reset/request` → 202 and the message ("Repor a
+password — FlowSpace", one link) is in `/__test__/emails`; the admin
+"enviar email de reposição" (`POST /admin/users/{id}/password-reset`) takes
+the same `enqueue_email` path. The flow works; the symptom is the mode, not
+a defect. **One defect found:** nothing configures Python logging, so the
+`app.*` INFO records — the stub's "STUB EMAIL …" line and anything else at
+INFO — never reach `docker compose logs backend` (only uvicorn's access log
+prints; the root logger has no handler and drops INFO). The README's "logged
+and visible in the logs" was false. Also, `ResendEmailGateway` failures are
+only logged by `_deliver`; nothing tells an operator.
+
+**Scope (small, no queue — O01 stays HOLD):**
+1. `app/email.py`: a bounded, process-local ring buffer (last 20) of delivery
+   failures `{at, to, subject, error}` filled by `_deliver`; `app/main.py`
+   configures logging (INFO for the app, once, when nothing has) and logs one
+   INFO line at startup with the mode and the from-address.
+2. `GET /admin/email/status?org_id` (admin) → `{"email": {mode, from_address,
+   support_inbox, test_hooks_enabled, recent_failures: [...]}}`. Never the
+   API key.
+3. `POST /admin/email/test?org_id` (admin) → a short Portuguese test email
+   sent **synchronously** (not `BackgroundTasks`) **to the calling admin's
+   own address only** (no recipient parameter — no relay) → `{"delivered":
+   true, "to": …}` or `502` with the provider's message sanitised. Rate
+   limit: the existing per-client `support` tier (5/h) on this route.
+4. Admin UI (`/admin/settings`): an "Email" card — mode badge (`stub` =
+   "Modo de teste: os emails não saem desta máquina", with the two places to
+   read them; `live` = the from-address), "Enviar email de teste" with its
+   result, "Últimas falhas".
+5. Docs: README "Pôr os emails a funcionar (Resend)" — account, domain
+   `flowspace.pt`, the DNS records Resend gives (SPF/DKIM/DMARC), "Verified",
+   API key, `EMAIL_MODE=live`, `RESEND_API_KEY`, `EMAIL_FROM_ADDRESS`,
+   restart, the test button; how to read stub emails locally. `.env.example`
+   comments in sync.
+
+**Validation:** pytest — status admin-only, cross-org 403, key never in the
+body; test-send happy path on the stub (`gateway.sent`); provider-failure
+path (mocked `httpx` 403) → 502 body and the failure in the ring buffer; the
+rate limit; the logging configuration. Vitest for the card.
+`password-reset.spec.ts` still green. Copy in the formal register.
+
 **Round 1 (Copilot, 2026-10-07):** PR #93. No review arrived within 6 min of
 the push nor within 4 min of an explicit request (`POST
 …/pulls/93/requested_reviewers` with `copilot-pull-request-reviewer[bot]`
