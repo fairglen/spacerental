@@ -1409,6 +1409,98 @@ have `onScroll` ignore positions until it lands (±2px), and clear the ref on
 without being weakened. Not done in B51 (three CI rounds spent; the change is
 to a component outside the assignment).
 
+### Brand header and hero fixes — owner assignment 2026-10-07 (PR `fix/brand-header-hero`)
+
+Context: the owner's screenshot review of the landing page. The header is
+blank where the brand should be; the hero mark is clipped and off-centre on
+its disc; the owner wants the brand lettering back in the hero and the mobile
+watermark centred. Both sites (`frontend/` and `flowspace-site/`), one PR,
+one commit per item, nothing merged by the loop.
+
+**DECISION (IDs):** the assignment numbered these B52–B55 (and the email item
+of the next PR B56). B52 and B53 are already taken above (the hero contrast
+finding and the carousel counter), so this delivery uses **B57–B60** (and B61
+for the email item), with the assignment's number in each title. Rewriting
+the existing entries' IDs would have broken the references to them.
+
+### B57 (assignment B52) — Brand drawings are shifted out of their viewport
+
+**Priority: P1. State: IN PROGRESS.** Root cause of the blank header and of
+the off-centre, clipped hero mark. `frontend/components/brand/BrandMark.tsx`
+and `BrandWordmark.tsx` set the outer `<svg viewBox>` to the *symbol's*
+viewBox (`282.0 162.0 735.5 670.5` / `147.0 874.0 1018.5 216.5`). A
+`<use href="#symbol">` draws the symbol at the outer svg's origin (0,0), so
+the content is displaced by (−282,−162) / (−147,−874) user units: the
+wordmark is entirely outside the viewport (the blank header on both sites)
+and the mark loses its left chair and part of the spiral, leaving the drawing
+in the top-left 62 % × 76 % of its box — which is why it reads as "left of
+the oval". `flowspace-site/scripts/render-static.py::use_svg` does the same
+for the three static `generated:brand-*` blocks.
+
+**Fix:** the outer svg gets `viewBox="0 0 {w} {h}"` (the `<symbol viewBox>`
+keeps handling the offset) in `BrandMark`, `BrandWordmark` and `use_svg`;
+`flowspace-site/index.html` regenerated; `test_static_site.py::BrandInline`
+pins `viewBox="0 0 …"` on every use, `Brand.test.tsx` likewise.
+**Acceptance:** on both sites, at 1280/1440/1920, the drawn content's bbox
+(`use.getBBox()` via Playwright) is within 1 user unit of `[0,0,w,h]`; the
+hero mark's centre and the `::before` disc's centre coincide within 2 px;
+the header brand has a non-zero bounding box.
+**Validation:** `frontend/tests/e2e/hero-logo.spec.ts` and
+`flowspace-site/tests/smoke.spec.ts` extended with those measurements
+(behaviour, not pixel snapshots).
+
+### B58 (assignment B53) — The brand mark in the header, on every breakpoint, both sites
+
+**Priority: P1. State: IN PROGRESS.** **DECISION:** the header shows the
+brand **mark alone** (`#brand-mark`), 40 px tall (≥ the 36 px floor recorded
+in B51), linking to `/` (app) / `#top` (static), `aria-label="FlowSpace"` on
+the link, svg `aria-hidden`. It replaces the 22 px wordmark. On < 768 px it
+stays in the bar, left, with the hamburger on the right — never inside the
+collapsed menu. The footer lockup is unchanged.
+Files: `frontend/components/layout/Navbar.tsx`;
+`render-static.py::block_brand_header` + `.brand-wordmark` → `.brand-mark`
+in `site.css`; tests `Navbar.test.tsx`, `test_static_site.py` (the
+three-uses expectation), `smoke.spec.ts`, `hero-logo.spec.ts`.
+**Acceptance:** header mark visible and 40 px tall at 390, 768, 1280 on both
+sites; no layout shift (explicit width/height attributes).
+
+### B59 (assignment B54) — "FlowSpace" lettering above the headline, both sites
+
+**Priority: P2. State: IN PROGRESS.** The pre-B50 dual-colour word
+(`Flow<span>Space</span>`, weight 800, `Flow` in `--color-foreground`,
+`Space` in `--color-primary`) returns as a line **above** the H1 inside the
+hero content box. **DECISION:** it is a `<p class="hero-brand">` (app:
+`text-4xl md:text-5xl font-extrabold tracking-tight mb-3`, static: the
+equivalent CSS — `tracking-tight` is −0.025em, used on both sites so they
+match; the pre-B50 header word had −0.01em), not part of the `<h1>`; the
+H1/lede/support/benefit copy stays byte-identical (copy-parity). The word is
+a brand name — not translated, not in the i18n catalogs; the two spans carry
+no `aria-hidden`. The V04 assertion "the headline is the first thing in the
+hero" becomes "the brand line, then the headline" in both suites.
+Files: `frontend/components/landing/Hero.tsx`, `site.css`, `index.html`
+(the hero markup is hand-written, outside the generated fences),
+`Hero.test.tsx`, `smoke.spec.ts`.
+**Acceptance:** at 390/768/1280/1440 the line sits above the H1, never wraps
+(a single word), H1 unchanged; `copy-parity` green.
+
+### B60 (assignment B55) — Watermark centred when the mark drops behind the content (< 1024 px), both sites
+
+**Priority: P2. State: IN PROGRESS.** `-right-28 -bottom-12` /
+`.hero-watermark{right:-7rem;bottom:-3rem}` give way to centring:
+`left:50%; top:50%; transform:translate(-50%,-50%)`, `width:min(440px, 90vw)`,
+the same `--hero-watermark-opacity` (0.08), still `pointer-events:none`,
+still painted **behind** the content (`.hero-content` / the content div stay
+`relative`).
+**Acceptance:** at 390 and 768 the watermark's centre is within 2 px of the
+hero section's centre and under the text; at ≥ 1024 it is `display:none` and
+the disc mark shows. Buttons remain clickable (Playwright click on "Ver
+salas" at 390).
+
+**PR evidence:** WebP screenshots (≤ 150 KB each) of both sites at 390, 768,
+1024, 1280, 1440, 1920 in `docs/ui-evidence/B57-B60/`, referenced in the PR
+body with the measured centre offsets; the full baseline and `perf:sizes`
+(the landing JS must not grow).
+
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
 Delivered and archived (see the index); the assignment text and decisions are in [docs/backlog-archive/2026-09.md](docs/backlog-archive/2026-09.md#brand-and-copy-revision-w-series-owner-assignment-2026-09-22). Still open here: W06/W07.
