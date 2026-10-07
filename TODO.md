@@ -1522,6 +1522,16 @@ and a 14.4:1 headline losing 1.26 is unharmed; the AA rule (≥ 4.5 wherever
 the plain ratio is ≥ 4.5) is unchanged. The `.hero-content > :first-child`
 is-H1 assertions (V04) became "the brand line, then the H1".
 
+**Round 1 (Copilot, 2026-10-07):** PR #93. No review arrived within 6 min of
+the push nor within 4 min of an explicit request (`POST
+…/pulls/93/requested_reviewers` with `copilot-pull-request-reviewer[bot]`
+answers 200 but registers no reviewer; #91 and #92 had no Copilot review
+either — the repository has no Copilot code review to answer). Recorded as
+"no Copilot review"; no threads to triage. CI round 1: e2e shard 2/2 red on
+the two D15 cross-worker flakes (`single-space.spec.ts:79` where-line
+suffix; packages room fixture 404), nothing from the changed specs; the
+failed jobs re-run → green, `required-checks` pass.
+
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
 Delivered and archived (see the index); the assignment text and decisions are in [docs/backlog-archive/2026-09.md](docs/backlog-archive/2026-09.md#brand-and-copy-revision-w-series-owner-assignment-2026-09-22). Still open here: W06/W07.
