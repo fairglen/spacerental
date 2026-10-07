@@ -1501,6 +1501,27 @@ salas" at 390).
 body with the measured centre offsets; the full baseline and `perf:sizes`
 (the landing JS must not grow).
 
+**Outcome (2026-10-07, PR `fix/brand-header-hero`):** four commits, one per
+item. Measured on both sites at 390/768/1024/1280/1440/1920: header mark
+44×40 px; the drawn content's bbox is `{8, 8, 719.5, 654.5}` inside the
+735.5×670.5 box — the brand file's own viewBox carries 8 units of padding on
+every side, so the suites assert containment and ≥ 95 % fill rather than the
+acceptance's "within 1 unit" (before the fix the box started at −274); hero
+mark vs disc centre Δ(0.0, 0.0) at every width ≥ 1024; watermark vs hero
+centre Δ(0.0, 0.0) at 390 (width 351 = 90vw) and 768 (440); the brand line is
+one line everywhere. Counts: backend 943 (unchanged; nothing of the
+backend's touched), Vitest 719 (+2), `next build` and ESLint clean, app
+Playwright 82 passed + 8 skipped on the e2e stack (hero-logo 8/8: +3),
+static unittest 28 (+2), copy-parity 4/4, render `--check` clean, static
+smoke 48 (+3). `perf:sizes`: the landing's first-load JS is 186.0 KB (the
+CI perf job keeps the budget). **DECISION (B60):** the watermark now sits
+under the headline too, so the contrast assertion's "drop ≤ 0.5 absolute"
+(B51, measured on the ~4:1 texts it then touched) became "≥ 90 % of the plain
+ratio" on both suites — the 8 % primary takes the same share off every ratio
+and a 14.4:1 headline losing 1.26 is unharmed; the AA rule (≥ 4.5 wherever
+the plain ratio is ≥ 4.5) is unchanged. The `.hero-content > :first-child`
+is-H1 assertions (V04) became "the brand line, then the H1".
+
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
 Delivered and archived (see the index); the assignment text and decisions are in [docs/backlog-archive/2026-09.md](docs/backlog-archive/2026-09.md#brand-and-copy-revision-w-series-owner-assignment-2026-09-22). Still open here: W06/W07.

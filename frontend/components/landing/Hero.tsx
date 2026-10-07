@@ -10,12 +10,12 @@ export function Hero() {
   const t = useT()
   return (
     <section className="relative overflow-hidden bg-linear-to-br from-white via-accent to-primary-light/30 py-20 md:py-32">
-      {/* B51: under 1024px the mark is a watermark bleeding off the bottom-right,
-          behind the buttons and benefits (the content box below is `relative`,
-          so it paints above). The static site's `.hero-watermark`. */}
+      {/* B51/B60: under 1024px the mark is a watermark centred on the hero,
+          behind the words, buttons and benefits (the content box below is
+          `relative`, so it paints above). The static site's `.hero-watermark`. */}
       <BrandMark
         width={440}
-        className="lg:hidden absolute -right-28 -bottom-12 w-[440px] h-auto text-primary opacity-(--hero-watermark-opacity) pointer-events-none"
+        className="lg:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(440px,90vw)] h-auto text-primary opacity-(--hero-watermark-opacity) pointer-events-none"
       />
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* B51: from 1024px, two columns — the text at its 48rem, the mark centred

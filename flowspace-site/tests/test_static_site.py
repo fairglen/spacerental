@@ -286,7 +286,7 @@ class BrandInline(unittest.TestCase):
         self.assertEqual(INDEX.count("<symbol "), 2)
 
     def test_the_three_uses_have_their_sizes_and_are_decorative(self):
-        uses = re.findall(r'<svg class="([^"]+)" width="(\d+)" height="(\d+)" viewBox="[^"]+" aria-hidden="true" focusable="false"><use href="#(brand-[a-z]+)"></use></svg>', INDEX)
+        uses = re.findall(r'<svg class="([^"]+)" width="(\d+)" height="(\d+)" viewBox="([^"]+)" aria-hidden="true" focusable="false"><use href="#(brand-[a-z]+)"></use></svg>', INDEX)
         self.assertEqual(uses, [
             # B58: the header shows the mark alone, 40px tall (44 wide at its ratio).
             ("brand-mark", "44", "40", "0 0 735.5 670.5", "brand-mark"),
@@ -297,7 +297,6 @@ class BrandInline(unittest.TestCase):
         self.assertIn('<div class="hero-mark" aria-hidden="true">', INDEX)
         # The footer keeps the white lockup from the brand set (B50).
         self.assertIn('assets/img/brand/logo-horizontal.svg#lockup', INDEX)
-
 
     def test_every_use_starts_its_viewbox_at_the_origin(self):
         # B57: a <use> draws the symbol at (0,0) of the outer svg; the symbol's
@@ -319,6 +318,7 @@ class BrandInline(unittest.TestCase):
         content = re.search(r'<div class="hero-content">(.*?)<h1>', INDEX, re.S).group(1)
         self.assertEqual(content.strip(), '<p class="hero-brand">Flow<span>Space</span></p>')
         self.assertNotIn("FlowSpace", re.search(r"<h1>(.*?)</h1>", INDEX, re.S).group(1))
+
 
 class CrawlFiles(unittest.TestCase):
     def test_robots_allows_everyone_including_ai_crawlers_and_hides_only_tests(self):

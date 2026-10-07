@@ -451,16 +451,16 @@ def block_brand_symbols() -> str:
 
 def use_svg(symbol: str, width: int | None, height: int | None, cls: str, indent: str) -> str:
     name = "logo-mark.svg" if symbol == "brand-mark" else "wordmark.svg"
-    vb, _, w, h = svg_parts(name)
+    _, _, w, h = svg_parts(name)
     if width is None:
         width = round(height * w / h)
     if height is None:
         height = round(width * h / w)
-    return (
     # B57: the outer viewBox starts at the origin. A <use> draws the symbol at
     # (0,0) of THIS svg, and the symbol's own viewBox already maps the file's
     # offset drawing (282,162… / 147,874…) onto it; repeating that offset here
     # pushed the drawing out of the viewport (blank header, clipped mark).
+    return (
         f'{indent}<svg class="{cls}" width="{width}" height="{height}" viewBox="0 0 {w} {h}" aria-hidden="true" focusable="false">'
         f'<use href="#{symbol}"></use></svg>'
     )

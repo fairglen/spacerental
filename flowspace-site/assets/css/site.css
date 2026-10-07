@@ -173,7 +173,7 @@ a {
 .brand-mark {
   display: block;
   flex: none;
-  height: 22px;
+  height: 40px;
   width: auto;
 }
 
@@ -297,16 +297,17 @@ a {
   width: min(100%, 400px);
   height: auto;
 }
-/* The watermark under 1024px: the app's `lg:hidden absolute -right-28 -bottom-12
- * w-[440px] opacity-[var(--hero-watermark-opacity)] pointer-events-none
- * text-primary` — bleeding off the bottom-right of the hero's overflow box,
- * behind the buttons and benefits (`.hero-content` is relative, so it stays
- * above). */
+/* The watermark under 1024px (B60): the app's `lg:hidden absolute left-1/2
+ * top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(440px,90vw)]
+ * opacity-(--hero-watermark-opacity) pointer-events-none text-primary` —
+ * centred on the hero, behind the words, buttons and benefits
+ * (`.hero-content` is relative, so it stays above). */
 .hero-watermark {
   position: absolute;
-  right: -7rem;
-  bottom: -3rem;
-  width: 440px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, 90vw);
   height: auto;
   color: var(--color-primary);
   opacity: var(--hero-watermark-opacity);
@@ -327,7 +328,6 @@ a {
   }
 }
 
-/* `text-5xl md:text-6xl font-bold leading-tight mb-6`. */
 /* B59: the brand word above the headline — the app's `text-4xl md:text-5xl
  * font-extrabold tracking-tight mb-3`, `Flow` in the foreground colour,
  * `Space` in the primary. A name, not copy: not part of the h1. */
@@ -350,6 +350,7 @@ a {
   }
 }
 
+/* `text-5xl md:text-6xl font-bold leading-tight mb-6`. */
 .hero h1 {
   font-size: 3rem;
   line-height: 1.25;

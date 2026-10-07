@@ -34,7 +34,7 @@ describe('Hero structure', () => {
   it('opens with the brand word and then the headline: no pill above them (V04, B59)', () => {
     const { container } = render(<Hero />)
     const h1 = screen.getByRole('heading', { level: 1 })
-    // The first text the hero renders is the headline itself.
+    // The first text the hero renders is the brand name, immediately followed by the headline.
     const firstText = container.textContent!.trim()
     expect(firstText.startsWith(`FlowSpace${h1.textContent!.trim()}`)).toBe(true)
     expect(container.querySelector('.rounded-full.bg-accent')).toBeNull()
@@ -101,7 +101,7 @@ describe('Hero brand mark (B51)', () => {
     expect(mark.querySelector('use')).toHaveAttribute('href', '#brand-mark')
   })
 
-  it('the watermark is the same mark, 440px, bleeding off the bottom-right at the tunable opacity, hidden from lg, behind the text', () => {
+  it('the watermark is the same mark, centred on the hero (B60) at the tunable opacity, hidden from lg, behind the text', () => {
     const { container } = render(<Hero />)
     const uses = container.querySelectorAll('use[href="#brand-mark"]')
     expect(uses).toHaveLength(2)
@@ -109,9 +109,10 @@ describe('Hero brand mark (B51)', () => {
     expect(watermark).toHaveAttribute('width', '440')
     expect(watermark).toHaveAttribute('height', '401')
     expect(watermark).toHaveAttribute('aria-hidden', 'true')
-    for (const cls of ['lg:hidden', 'absolute', '-right-28', '-bottom-12', 'w-[440px]', 'opacity-(--hero-watermark-opacity)', 'pointer-events-none', 'text-primary']) {
+    for (const cls of ['lg:hidden', 'absolute', 'left-1/2', 'top-1/2', '-translate-x-1/2', '-translate-y-1/2', 'w-[min(440px,90vw)]', 'opacity-(--hero-watermark-opacity)', 'pointer-events-none', 'text-primary']) {
       expect(watermark.className.baseVal, cls).toContain(cls)
     }
+    for (const cls of ['-right-28', '-bottom-12']) expect(watermark.className.baseVal, cls).not.toContain(cls)
     // Painted before the content box, which is positioned — so the words stay on top.
     const content = watermark.nextElementSibling!
     expect(content.className).toContain('relative')
