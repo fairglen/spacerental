@@ -27,6 +27,12 @@ export function Hero() {
               (tailwindcss-animate) — P1.3 dropped framer-motion, 34 KB of
               gzipped JavaScript on every landing load, for this one effect. */}
           <div className="animate-in fade-in slide-in-from-bottom-5 duration-700 fill-mode-both motion-reduce:animate-none">
+            {/* B59: the brand word above the headline — a name, not copy, so
+                it is not in the catalogs and not part of the h1. The static
+                site's `.hero-brand`. */}
+            <p className="hero-brand text-4xl md:text-5xl font-extrabold tracking-tight text-foreground whitespace-nowrap mb-3">
+              Flow<span className="text-primary">Space</span>
+            </p>
             {/* md:leading-none keeps what Tailwind 3 rendered: its responsive
                 md:text-6xl came after .leading-tight in the stylesheet and reset
                 the line-height to 1 from md up; v4 lets leading-tight win. */}

@@ -328,6 +328,28 @@ a {
 }
 
 /* `text-5xl md:text-6xl font-bold leading-tight mb-6`. */
+/* B59: the brand word above the headline — the app's `text-4xl md:text-5xl
+ * font-extrabold tracking-tight mb-3`, `Flow` in the foreground colour,
+ * `Space` in the primary. A name, not copy: not part of the h1. */
+.hero-brand {
+  margin: 0 0 0.75rem;
+  font-size: 2.25rem;
+  line-height: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--color-foreground);
+  white-space: nowrap;
+}
+.hero-brand span {
+  color: var(--color-primary);
+}
+@media (min-width: 768px) {
+  .hero-brand {
+    font-size: 3rem;
+    line-height: 1;
+  }
+}
+
 .hero h1 {
   font-size: 3rem;
   line-height: 1.25;

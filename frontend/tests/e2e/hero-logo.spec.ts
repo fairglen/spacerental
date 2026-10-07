@@ -147,7 +147,39 @@ test.describe('hero brand mark', () => {
     await expect(watermark(page)).toBeHidden()
   })
 
-  test('at 390 the watermark bleeds off the bottom-right behind the text; the column is gone; nothing scrolls sideways', async ({ page }) => {
+  test('at 390 and 768 the watermark is centred on the hero behind the text (B60); the column is gone; nothing scrolls sideways', async ({ page }) => {
+    for (const width of [390, 768]) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.goto('/')
+      await expect(markColumn(page)).toBeHidden()
+      const wm = watermark(page)
+      await expect(wm).toHaveAttribute('aria-hidden', 'true')
+      await expect(wm).toHaveAttribute('width', '440')
+      await expect(wm.locator('use')).toHaveAttribute('href', '#brand-mark')
+      const style = await wm.evaluate((el) => { const s = getComputedStyle(el); return [s.display, s.position, s.left, s.top, s.width, s.opacity, s.pointerEvents, s.color] })
+      const heroBox = (await hero(page).boundingBox())!
+      // `left:50%; top:50%` of the hero, `width: min(440px, 90vw)`.
+      expect(style, `${width}px`).toEqual(['block', 'absolute', `${heroBox.width / 2}px`, `${heroBox.height / 2}px`, `${Math.min(440, 0.9 * width)}px`, '0.08', 'none', 'rgb(61, 122, 94)'])
+      // Tailwind 4 centres with the `translate` property (-50% -50%); the static site with `transform`.
+      const moved = await wm.evaluate((el) => { const s = getComputedStyle(el); return [s.translate, s.transform] })
+      expect(moved[0] === '-50% -50%' || moved[1] !== 'none', `${width}px translate ${moved}`).toBe(true)
+      // The token's value, however the CSS pipeline spells it (`0.08`, or `.08` once minified).
+      expect(parseFloat(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--hero-watermark-opacity').trim()))).toBe(0.08)
+      const [wmBox] = [(await wm.boundingBox())!]
+      const [hc, wc] = [centre(heroBox), centre(wmBox)]
+      expect(Math.abs(hc.x - wc.x), `${width}px centre x`).toBeLessThan(2)
+      expect(Math.abs(hc.y - wc.y), `${width}px centre y`).toBeLessThan(2)
+      await expectDrawnInsideItsBox(wm, `${width}px watermark`)
+      expect(await hero(page).evaluate((el) => getComputedStyle(el).overflow)).toBe('hidden')
+      expect(await page.evaluate(() => document.scrollingElement!.scrollWidth)).toBe(width)
+      // Under the text: the words, buttons and benefits answer to the pointer, not the watermark.
+      for (const el of await hero(page).locator('a, h1, p.hero-brand').all()) {
+        const box = (await el.boundingBox())!
+        const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('svg.lg\\:hidden') !== null, [box.x + box.width / 2, box.y + box.height / 2])
+        expect(hit, `${width}px`).toBe(false)
+      }
+    }
+    // At 390 the primary button still works through the centred watermark.
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
     await expect(markColumn(page)).toBeHidden()
