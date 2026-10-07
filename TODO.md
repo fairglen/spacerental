@@ -802,6 +802,16 @@ real-route totals/denial tests, wrapper shape tests, and operator walkthrough.
 showed 22,00 € when 122,00 € had been collected — a 100 € pack sale is not
 counted. State unchanged (HOLD); recorded only.
 
+**Scope delivered by the I-series (2026-10-07, PR
+`feat/billing-statement-invoices`):** money counted on a `paid_at` basis
+(I01), pack sales included once (I02/I03), scoped period totals in Lisbon
+calendar days reconciled with `Decimal` arithmetic against a fixture ledger
+(I02), the dashboard's "Receita Total" on the same basis (I03). **Residual,
+still HOLD:** refunds and partial refunds (there are none — K01 credits
+hours), failed/refunded transaction rules, admin confirmation without
+payment as a distinct category (today a `manual` booking with
+`total_amount > 0` counts as money received).
+
 ### O04 — Durable and recoverable room access
 
 **Depends on:** O03 and disposition of Q28. **Scope:** `locks.py`, persisted device
@@ -1613,6 +1623,160 @@ either — the repository has no Copilot code review to answer). Recorded as
 the two D15 cross-worker flakes (`single-space.spec.ts:79` where-line
 suffix; packages room fixture 404), nothing from the changed specs; the
 failed jobs re-run → green, `required-checks` pass.
+
+## Billing statement and invoice records (I-series) — owner assignment 2026-10-07 (PR `feat/billing-statement-invoices`, stacked on #94)
+
+Owner's ask: see, for the past month or a custom range, how much money was
+received (and on the dashboard how many transactions of which pack type); a
+line per client with the amount paid in the period and the hours it
+corresponds to, so invoices can be issued; keep track of invoices and let
+clients see theirs in their account. One PR, one commit per item, nothing
+merged by the loop; links O03 (its smoke finding closes here, the refund
+rules stay HOLD).
+
+**DECISION (I05):** Portuguese faturas must be issued by AT-certified
+software; this app **records** invoices the operator issues elsewhere
+(number, date, amount, PDF) and links them to the transactions they cover.
+UI wording: "Registar fatura emitida", never "Emitir fatura".
+
+**DECISION (I01):** money is counted by a new `paid_at` timestamp (the
+moment money was received), independent of the row's later status — there
+are no refunds (K01: cancellations credit hours). Period bounds are Lisbon
+calendar days (`[from 00:00, to 24:00)` Europe/Lisbon → UTC).
+
+### I01 — `paid_at` on bookings and purchases (migration 0018)
+
+**Priority: P1. State: IN PROGRESS. Depends on:** nothing. `bookings.paid_at`
+and `user_package_purchases.paid_at` (`DateTime(timezone=True)`, nullable,
+indexed with `org_id`). Set exactly once on every money-receiving
+transition: `routers/webhooks.py` (booking → `confirmed`/`paid_unfulfilled`;
+purchase → `active`; the stub Checkout page runs the same
+`apply_checkout_completion`), `routers/admin/bookings.py` `mark-paid` and
+admin-created `manual` bookings with `total_amount > 0`, complimentary
+grants (`amount_paid = 0` → `paid_at` set too, so counts work; money sums
+ignore 0). A duplicate webhook does not move it. Backfill in the migration
+(documented as approximate): purchases `source='purchase' AND status <>
+'pending'` → `purchased_at`; bookings with `payment_method IN
+('hourly','mixed')` and `status IN ('confirmed','completed',
+'paid_unfulfilled')` → `created_at`; `cancelled` ones with a
+`cancellation_credit` purchase row whose `source_booking_id` is the booking
+→ `created_at`; `manual` with `total_amount > 0` and status
+confirmed/completed → `created_at`.
+**Validation:** each transition sets `paid_at` exactly once; the migration
+round trip (upgrade → check → downgrade → upgrade → check) on a disposable
+database; backfill assertions on a fixture ledger.
+
+### I02 — Billing service and the admin statement API
+
+**Priority: P1. State: IN PROGRESS. Depends on:** I01. `app/billing.py`:
+pure functions over SQLAlchemy selects, `Decimal` only. Transaction kinds —
+`pack`: purchase `source='purchase'`, amount `amount_paid`, hours
+`hours_total`, label the package name; `hourly`: booking, amount
+`total_amount`, hours `duration_hours`; `mixed`: amount `total_amount` (the
+card part), hours `duration_hours − package_hours_used`; `manual`: amount
+`total_amount` (> 0), the same hours rule, channel `manual`; everything else
+channel `online`. Endpoints (admin, `org_id`, wrapped):
+`GET /admin/billing/summary?from&to` → `received_total`,
+`by_channel{online,manual}`, `pack_sales[{package_id,name,count,amount,
+hours}]`, `hourly{count,amount,hours}`, `mixed{…}`, `transactions_count`,
+`invoiced_amount`, `pending_amount`; `GET /admin/billing/statement?from&to&
+invoiced=all|pending|done` → `lines[]` per customer: `user{id,name,email,
+tax_id,billing_name,billing_address}`, `amount`, `hours`,
+`transactions_count`, `breakdown{packs[{name,count}],hourly_hours,
+mixed_hours}`, `invoiced_amount`, `pending_amount`, `transactions[{kind,id,
+paid_at,label,amount,hours,invoice_id}]`, sorted by amount desc;
+`GET /admin/billing/statement.csv`, same filters. **DECISION:** the CSV is
+UTF-8 with BOM, `;` separated, decimal comma, ISO dates (Excel PT opens it
+directly); columns cliente, email, NIF, transações, horas, valor, faturado,
+por faturar.
+**Validation:** a real-PostgreSQL fixture ledger (hourly, mixed, manual,
+pack, complimentary, cancellation credit, a cancelled-after-payment booking,
+a pending hold) with hand-computed expected totals; cross-org 403; an
+invalid range 422; the CSV's shape.
+
+### I03 — Dashboard: this month's money, by type (closes the O03 smoke finding)
+
+**Priority: P1. State: IN PROGRESS. Depends on:** I02. `routers/admin/
+dashboard.py` + `frontend/app/admin/page.tsx`: an "Este mês" row from the
+I02 service — received, pack sales by pack (count), hourly bookings (count,
+hours), "por faturar" — with a link to `/admin/billing`. "Receita Total"
+moves to the `paid_at` basis **including pack sales** (today it ignores
+them: 22 € shown for 122 € collected). O03 updated above.
+**Validation:** the dashboard test with the fixture ledger; the Vitest page
+test.
+
+### I04 — Customer billing details (NIF)
+
+**Priority: P2. State: IN PROGRESS. Depends on:** I01 (same migration).
+`users.tax_id` (9 chars), `billing_name`, `billing_address` (nullable).
+Portuguese NIF check-digit validation (mod 11; rejected otherwise; empty
+allowed). `GET/PUT /auth/me/billing` for the customer; the admin edits them
+on the customer page (`/admin/users/[id]`), audited. Shown on the statement
+and the CSV.
+**Validation:** a validator table; 403 for another user's details; the
+audit row.
+
+### I05 — Invoice records (metadata + private PDF)
+
+**Priority: P1. State: IN PROGRESS. Depends on:** I02, I04. Tables
+`invoices` (`id, org_id, user_id, number, issued_at, period_from,
+period_to, amount Numeric(10,2), hours Numeric(6,2), currency 'EUR', note,
+pdf_key, created_by_admin_id, created_at, updated_at`, unique `(org_id,
+number)`) and `invoice_items` (`invoice_id`, exactly one of
+`booking_id`/`purchase_id` — CHECK — each unique: a transaction is invoiced
+once). Endpoints (admin, audited): `POST /admin/billing/invoices`
+(multipart: the fields + `transaction_ids[]` as `kind:id` + optional `pdf` +
+`notify`), `GET /admin/billing/invoices?user_id&from&to`, `GET
+/admin/billing/invoices/{id}`, `PUT` (number, issued_at, note, replace the
+PDF), `DELETE` (unlinks the items), `GET /admin/billing/invoices/{id}/pdf`.
+**DECISION:** `amount` and `hours` must equal the `Decimal` sums of the
+selected transactions, else 422 — the statement is the source of truth.
+The PDF: `%PDF-` magic, ≤ 10 MB, stored by `app/media.py` under a
+**private** root (`MEDIA_ROOT/private/invoices/<org>/<invoice>.pdf`) that
+the public `/media` mount never serves; streamed only by the endpoints
+above with `Content-Disposition: attachment` and `nosniff`.
+**Validation:** create/list/get/update/delete, double invoicing 409, an
+amount mismatch 422, PDF magic/size rejections, cross-org 403, the private
+path never under `/media` (requesting it → 404).
+
+### I06 — Admin UI `/admin/billing` ("Faturação")
+
+**Priority: P1. State: IN PROGRESS. Depends on:** I02, I05. Nav entry in
+`AdminShell.tsx` (icon `Receipt`, after "Banco de horas"). Period presets
+(Este mês, Mês passado, Últimos 30 dias, Personalizado with two date
+inputs) → summary cards → the per-client table (expandable transactions;
+filter Por faturar / Faturadas / Todas) → per line "Registar fatura
+emitida" (prefilled with the pending transactions, amount and hours
+read-only; nº, data, PDF, nota, "Avisar o cliente por email" default on) →
+"Exportar CSV". Second tab "Faturas registadas": list, download, edit,
+delete (confirm). All data via `lib/api.ts` + `queryKeys.ts`.
+**Validation:** Vitest for the page's states and the dialog; Playwright
+`admin-billing.spec.ts` (isolated, own fixtures): seed a pack sale and an
+hourly booking, see the totals, register an invoice with a tiny PDF, see
+"Faturada".
+
+### I07 — Customer UI `/dashboard/billing` ("Faturação")
+
+**Priority: P2. State: IN PROGRESS. Depends on:** I04, I05. The billing
+details form (NIF, nome de faturação, morada) with inline NIF validation,
+and "As minhas faturas" (number, date, amount, period, download). Linked
+next to the existing "Os meus packs" entry points (the signed-in menus,
+desktop and mobile).
+**Validation:** Playwright — the customer from I06's spec sees and downloads
+the invoice; another customer gets nothing (404 on the PDF).
+
+### I08 — "Fatura disponível" email
+
+**Priority: P2. State: IN PROGRESS. Depends on:** I05. `invoice_available_
+email(to, number, issued_at, amount, link)` in `app/email.py` (formal PT,
+branded header, link to `/dashboard/billing`), enqueued when `notify` is on.
+**Validation:** the stub's `sent` has it; off → nothing.
+
+**PR evidence:** the backend and frontend suites, the migration round trip,
+the two Playwright specs, the OpenAPI snapshot, screenshots of
+`/admin/billing` and `/dashboard/billing` under `docs/ui-evidence/I-series/`,
+and a worked example in the PR body: the fixture ledger with its expected
+totals and the CSV excerpt.
 
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
