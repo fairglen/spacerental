@@ -697,6 +697,8 @@ async def admin_grant_hours(
         amount_paid=0,
         admin_note=body.reason,
         purchased_at=now,
+        # I01: granted hours count as a transaction (amount 0 sums to nothing).
+        paid_at=now,
         expires_at=expires_at,
         status=PurchaseStatus.active,
         # What "Origem" shows (K01): a grant, not a sale — the column's
