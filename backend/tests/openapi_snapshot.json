@@ -11,6 +11,21 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/admin/billing/statement",
+    "operation_id": "billing_statement_api_v1_admin_billing_statement_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/statement.csv",
+    "operation_id": "billing_statement_csv_api_v1_admin_billing_statement_csv_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/summary",
+    "operation_id": "billing_summary_api_v1_admin_billing_summary_get"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/admin/bookings",
     "operation_id": "admin_list_bookings_api_v1_admin_bookings_get"
   },
