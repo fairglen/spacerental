@@ -456,7 +456,11 @@ def use_svg(symbol: str, width: int | None, height: int | None, cls: str, indent
     if height is None:
         height = round(width * h / w)
     return (
-        f'{indent}<svg class="{cls}" width="{width}" height="{height}" viewBox="{vb}" aria-hidden="true" focusable="false">'
+    # B57: the outer viewBox starts at the origin. A <use> draws the symbol at
+    # (0,0) of THIS svg, and the symbol's own viewBox already maps the file's
+    # offset drawing (282,162… / 147,874…) onto it; repeating that offset here
+    # pushed the drawing out of the viewport (blank header, clipped mark).
+        f'{indent}<svg class="{cls}" width="{width}" height="{height}" viewBox="0 0 {w} {h}" aria-hidden="true" focusable="false">'
         f'<use href="#{symbol}"></use></svg>'
     )
 

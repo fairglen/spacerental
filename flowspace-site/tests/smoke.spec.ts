@@ -718,12 +718,83 @@ test('the header carries the wordmark alone (22px, decorative inside the named l
   }
 });
 
-test('at 390px the wordmark fits well under 60% of the header', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
-  const box = (await page.locator('.site-nav .wordmark svg.brand-wordmark').boundingBox())!;
-  expect(box.width).toBeLessThan(390 * 0.6);
-  expect(box.height).toBe(22);
+test('at 390 and 768 the header mark is 40px tall, in the bar, left of the hamburger (B58)', async ({ page }) => {
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/');
+    const svg = page.locator('.site-nav .wordmark svg.brand-mark');
+    const box = (await svg.boundingBox())!;
+    expect(box.width, `${width}px`).toBeLessThan(width * 0.6);
+    expect(box.height, `${width}px`).toBe(40);
+    expect(box.width, `${width}px`).toBeGreaterThan(0);
+    const bar = (await page.locator('.site-nav .container').boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(bar.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(bar.y + bar.height + 1);
+    if (width < 768) {
+      const toggle = (await page.locator('.nav-toggle').boundingBox())!;
+      expect(toggle.x).toBeGreaterThan(box.x + box.width);
+    }
+  }
+});
+
+/** The drawn content's box in the svg's user units, from the <use> itself. */
+const drawnBox = (svg: import('@playwright/test').Locator) =>
+  svg.evaluate((el) => {
+    const b = (el.querySelector('use') as SVGGraphicsElement).getBBox();
+    const [, , w, h] = el.getAttribute('viewBox')!.split(' ').map(Number);
+    return { x: b.x, y: b.y, w: b.width, h: b.height, vw: w, vh: h };
+  });
+/**
+ * B57: the drawing lies inside the viewBox and fills it. The brand files'
+ * own viewBoxes carry a few units of padding around the path (8 on the
+ * mark), so "fills" is ≥ 95 % of each side; before the fix the mark's box
+ * started at −274 and the wordmark's at −147 — entirely outside.
+ */
+async function expectDrawnInsideItsBox(svg: import('@playwright/test').Locator, label: string) {
+  const d = await drawnBox(svg);
+  expect(d.x, `${label} bbox x`).toBeGreaterThanOrEqual(-1);
+  expect(d.y, `${label} bbox y`).toBeGreaterThanOrEqual(-1);
+  expect(d.x + d.w, `${label} bbox right`).toBeLessThanOrEqual(d.vw + 1);
+  expect(d.y + d.h, `${label} bbox bottom`).toBeLessThanOrEqual(d.vh + 1);
+  expect(d.w, `${label} bbox w`).toBeGreaterThanOrEqual(0.95 * d.vw);
+  expect(d.h, `${label} bbox h`).toBeGreaterThanOrEqual(0.95 * d.vh);
+}
+const centre = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+
+test('B57: at 1280/1440/1920 every brand drawing fills its viewBox and the hero mark sits on the centre of its disc', async ({ page }) => {
+  for (const width of [1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    for (const [name, svg] of [['header', page.locator('.site-nav svg.brand-mark')], ['hero mark', page.locator('svg.hero-mark-svg')]] as const) {
+      await expectDrawnInsideItsBox(svg, `${width}px ${name}`);
+    }
+    const column = page.locator('.hero-mark');
+    const mark = centre((await column.locator('svg').boundingBox())!);
+    const disc = await column.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const s = getComputedStyle(el, '::before');
+      return { w: parseFloat(s.width), cx: r.left + r.width / 2, cy: r.top + r.height / 2 + window.scrollY };
+    });
+    expect(disc.w).toBe(460);
+    expect(Math.abs(mark.x - disc.cx), `${width}px mark/disc x`).toBeLessThan(2);
+    expect(Math.abs(mark.y - disc.cy), `${width}px mark/disc y`).toBeLessThan(2);
+  }
+});
+
+test('B59: "FlowSpace" sits above the headline on one line at 390/768/1280/1440; the headline is unchanged', async ({ page }) => {
+  for (const width of [390, 768, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    const brand = page.locator('.hero-content > p.hero-brand');
+    await expect(brand).toHaveText('FlowSpace');
+    const h1 = page.locator('.hero h1');
+    const [b, h] = [(await brand.boundingBox())!, (await h1.boundingBox())!];
+    expect(b.y + b.height, `${width}px above the h1`).toBeLessThanOrEqual(h.y + 1);
+    expect(await brand.evaluate((el) => el.getClientRects().length), `${width}px one line`).toBe(1);
+    expect(await brand.evaluate((el) => getComputedStyle(el).fontWeight)).toBe('800');
+    expect(await brand.locator('span').evaluate((el) => getComputedStyle(el).color)).toBe('rgb(61, 122, 94)');
+    await expect(h1).not.toContainText('FlowSpace');
+  }
 });
 
 // B51: the brand mark is the hero illustration from 1024px and a watermark

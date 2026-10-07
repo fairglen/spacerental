@@ -20,6 +20,33 @@ const WCAG = {
 const hero = (page: Page) => page.locator('main section').first()
 const markColumn = (page: Page) => page.getByTestId('hero-mark')
 const watermark = (page: Page) => hero(page).locator('svg.lg\\:hidden')
+const headerLink = (page: Page) => page.locator('nav a[aria-label="FlowSpace"]').first()
+
+/** The drawn content's box in the svg's user units, from the <use> itself. */
+const drawnBox = (svg: import('@playwright/test').Locator) =>
+  svg.evaluate((el) => {
+    const b = (el.querySelector('use') as SVGGraphicsElement).getBBox()
+    const [, , w, h] = el.getAttribute('viewBox')!.split(' ').map(Number)
+    return { x: b.x, y: b.y, w: b.width, h: b.height, vw: w, vh: h }
+  })
+
+/**
+ * B57: the drawing lies inside the viewBox and fills it. The brand files'
+ * own viewBoxes carry a few units of padding around the path (8 on the
+ * mark), so "fills" is ≥ 95 % of each side; before the fix the mark's box
+ * started at −274 and the wordmark's at −147 — entirely outside.
+ */
+async function expectDrawnInsideItsBox(svg: import('@playwright/test').Locator, label: string) {
+  const d = await drawnBox(svg)
+  expect(d.x, `${label} bbox x`).toBeGreaterThanOrEqual(-1)
+  expect(d.y, `${label} bbox y`).toBeGreaterThanOrEqual(-1)
+  expect(d.x + d.w, `${label} bbox right`).toBeLessThanOrEqual(d.vw + 1)
+  expect(d.y + d.h, `${label} bbox bottom`).toBeLessThanOrEqual(d.vh + 1)
+  expect(d.w, `${label} bbox w`).toBeGreaterThanOrEqual(0.95 * d.vw)
+  expect(d.h, `${label} bbox h`).toBeGreaterThanOrEqual(0.95 * d.vh)
+}
+
+const centre = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
 
 test.describe('hero brand mark', () => {
   test('the header link is named and carries the wordmark alone, 22px tall', async ({ page }) => {
@@ -52,6 +79,44 @@ test.describe('hero brand mark', () => {
     expect(Math.abs(columnBox.x + columnBox.width / 2 - (markBox.x + markBox.width / 2))).toBeLessThan(1)
     expect(Math.abs(columnBox.y + columnBox.height / 2 - (markBox.y + markBox.height / 2))).toBeLessThan(1)
     expect(await mark.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(61, 122, 94)')
+  test('B57: at 1280/1440/1920 every brand drawing fills its viewBox and the hero mark sits on the centre of its disc', async ({ page }) => {
+    for (const width of [1280, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      for (const [name, svg] of [['header', headerLink(page).locator('svg')], ['hero mark', markColumn(page).locator('svg')]] as const) {
+        await expectDrawnInsideItsBox(svg, `${width}px ${name}`)
+      }
+      const column = markColumn(page)
+      const mark = centre((await column.locator('svg').boundingBox())!)
+      // The disc is the column's ::before, 460px, centred on the column.
+      const disc = await column.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        const s = getComputedStyle(el, '::before')
+        return { w: parseFloat(s.width), cx: r.left + r.width / 2, cy: r.top + r.height / 2 + window.scrollY }
+      })
+      expect(disc.w).toBe(460)
+      expect(Math.abs(mark.x - disc.cx), `${width}px mark/disc x`).toBeLessThan(2)
+      expect(Math.abs(mark.y - disc.cy), `${width}px mark/disc y`).toBeLessThan(2)
+    }
+  })
+
+  test('B59: "FlowSpace" sits above the headline on one line at 390/768/1280/1440; the headline is unchanged', async ({ page }) => {
+    for (const width of [390, 768, 1280, 1440]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      const brand = hero(page).locator('p.hero-brand')
+      await expect(brand).toHaveText('FlowSpace')
+      const h1 = hero(page).locator('h1')
+      const [b, h] = [(await brand.boundingBox())!, (await h1.boundingBox())!]
+      expect(b.y + b.height, `${width}px above the h1`).toBeLessThanOrEqual(h.y + 1)
+      const lines = await brand.evaluate((el) => el.getClientRects().length)
+      expect(lines, `${width}px one line`).toBe(1)
+      expect(await brand.evaluate((el) => getComputedStyle(el).fontWeight)).toBe('800')
+      expect(await brand.locator('span').evaluate((el) => getComputedStyle(el).color)).toBe('rgb(61, 122, 94)')
+      await expect(h1).not.toContainText('FlowSpace')
+    }
+  })
+
     const grid = column.locator('xpath=..')
     expect((await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns)).split(' ')).toHaveLength(2)
     expect(await grid.evaluate((el) => getComputedStyle(el).columnGap)).toBe('32px')
