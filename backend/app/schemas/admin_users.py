@@ -13,9 +13,11 @@ from pydantic import (
     model_validator,
 )
 
+from app import nif
 from app.models.organization import MemberRole
 from app.schemas.booking import _require_timezone
 from app.schemas.bounds import PersonName
+from app.schemas.user import BillingAddress, BillingName
 
 # A reason someone will read later: whitespace alone is not one.
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
@@ -35,6 +37,10 @@ class OrgUserOut(BaseModel):
     # "Suspender" (G02): set while the account cannot sign in.
     disabled_at: datetime | None = None
     created_at: datetime
+    # Billing details (I04).
+    tax_id: str | None = None
+    billing_name: str | None = None
+    billing_address: str | None = None
 
 
 class AdminUserCreate(BaseModel):
@@ -54,11 +60,25 @@ class AdminUserUpdate(BaseModel):
     email: EmailStr | None = None
     name: PersonName | None = None
     disabled_at: datetime | None = None
+    # Billing details (I04); an explicit null clears one.
+    tax_id: str | None = Field(default=None, max_length=32)
+    billing_name: BillingName | None = None
+    billing_address: BillingAddress | None = None
 
     @field_validator("disabled_at")
     @classmethod
     def _tz(cls, value: datetime | None) -> datetime | None:
         return None if value is None else _require_timezone(value)
+
+    @field_validator("tax_id")
+    @classmethod
+    def _nif(cls, value: str | None) -> str | None:
+        return nif.validate(value)
+
+    @field_validator("billing_name", "billing_address")
+    @classmethod
+    def _blank(cls, value: str | None) -> str | None:
+        return value or None
 
     @model_validator(mode="after")
     def _something_to_do(self):
@@ -113,6 +133,10 @@ class AuditUserOut(BaseModel):
     avatar_url: str | None
     disabled_at: datetime | None = None
     created_at: datetime
+    # Billing details (I04): an operator's edit of a NIF is visible in history.
+    tax_id: str | None = None
+    billing_name: str | None = None
+    billing_address: str | None = None
 
 
 class ConfirmBody(BaseModel):

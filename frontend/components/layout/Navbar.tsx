@@ -72,6 +72,9 @@ export function Navbar() {
                 <Link href="/dashboard/packages" className="text-sm text-muted-foreground hover:text-primary transition-colors">
                   {t('navbar.my_packages')}
                 </Link>
+                <Link href="/dashboard/billing" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                  {t('navbar.billing')}
+                </Link>
                 <Link href="/dashboard">
                   <Button variant="outline" size="sm">{t('navbar.my_bookings')}</Button>
                 </Link>
@@ -141,6 +144,13 @@ export function Navbar() {
                   className="block py-2 text-sm text-muted-foreground hover:text-primary transition-colors"
                 >
                   {t('navbar.my_packages')}
+                </Link>
+                <Link
+                  href="/dashboard/billing"
+                  onClick={() => setMobileOpen(false)}
+                  className="block py-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  {t('navbar.billing')}
                 </Link>
                 <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
                   <Button variant="outline" size="sm" className="w-full">{t('navbar.my_bookings')}</Button>

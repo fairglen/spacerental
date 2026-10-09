@@ -81,6 +81,9 @@ class UserPackagePurchase(Base):
     __table_args__ = (
         # One credit per booking, ever (K01).
         UniqueConstraint("source_booking_id", name="uq_user_package_purchases_source_booking_id"),
+        # I01: the statement reads one organisation's pack sales by the moment
+        # the money arrived (migration 0018).
+        Index("ix_user_package_purchases_org_id_paid_at", "org_id", "paid_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -146,6 +149,11 @@ class UserPackagePurchase(Base):
     purchased_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # I01: when the money for a bought pack arrived (the Checkout completion);
+    # a complimentary grant carries it too (amount 0, so it counts and sums
+    # to nothing); a cancellation credit never does — its money is the
+    # booking's. Set once; NULL while a purchase is still an unpaid hold.
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="package_purchases", lazy="noload")  # noqa: F821

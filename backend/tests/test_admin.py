@@ -32,8 +32,35 @@ class TestAdminDashboard:
         for key in ("total_bookings", "total_revenue", "occupancy_rate", "active_users"):
             assert key in body
         assert body["total_bookings"] == 0
-        assert body["total_revenue"] == 0
+        assert body["total_revenue"] == "0.00"
         assert body["active_users"] == 0
+        assert body["this_month"]["transactions_count"] == 0
+        assert body["this_month"]["received_total"] == "0.00"
+
+    async def test_money_is_counted_at_paid_at_and_pack_sales_once(
+        self, client, admin_headers, ledger, monkeypatch
+    ):
+        # I03 (closes the O03 smoke finding: 100 € of pack sales were not
+        # counted). All-time is September plus the booking paid on 30
+        # September 23:30 UTC — 1 October in Lisbon, so not "this month".
+        from app import clock
+
+        monkeypatch.setattr(clock, "utcnow", lambda: datetime(2026, 9, 25, 12, tzinfo=UTC))
+        resp = await client.get(
+            "/api/v1/admin/dashboard",
+            params={"org_id": str(ledger.org.id)},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total_revenue"] == "232.00"
+        month = body["this_month"]
+        assert (month["from"], month["to"]) == ("2026-09-01", "2026-09-30")
+        assert month["received_total"] == ledger.expected["received_total"]
+        assert month["pack_sales"] == ledger.expected["pack_sales"]
+        assert month["hourly"] == ledger.expected["hourly"]
+        assert month["pending_amount"] == ledger.expected["received_total"]
+        assert month["transactions_count"] == ledger.expected["transactions_count"]
 
 
 class TestAdminSpaces:

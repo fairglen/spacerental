@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AdminAction
 from app.models.booking import Booking
+from app.models.invoice import Invoice
 from app.models.organization import Organization
 from app.models.package import Package, UserPackagePurchase
 from app.models.room_block import RoomBlock
@@ -26,6 +27,7 @@ from app.models.support import SupportRequest
 from app.models.user import User
 from app.schemas.admin_users import AuditUserOut
 from app.schemas.booking import AdminBookingOut
+from app.schemas.invoice import InvoiceOut
 from app.schemas.organization import OrganizationOut
 from app.schemas.package import AdminPurchaseOut, PackageOut
 from app.schemas.room_block import RoomBlockOut
@@ -49,6 +51,7 @@ _ENTITIES: dict[type, tuple[str, type[BaseModel]]] = {
     UserPackagePurchase: ("purchase", AdminPurchaseOut),
     SupportRequest: ("support_request", SupportRequestDetailOut),
     Organization: ("organization", OrganizationOut),
+    Invoice: ("invoice", InvoiceOut),
 }
 ENTITY_TYPES = frozenset(name for name, _ in _ENTITIES.values())
 

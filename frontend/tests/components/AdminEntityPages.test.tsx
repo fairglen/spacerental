@@ -67,7 +67,7 @@ const booking: Booking & { stripe_checkout_session_id: string | null } = {
   access_code: '4321', room, user: { id: 'u-1', email: 'ana@x.pt', name: 'Ana' }, created_at: '2030-01-01T00:00:00Z',
   stripe_checkout_session_id: 'cs_test_abc', package_debits: [],
 }
-const orgUser: OrgUser = { id: 'u-1', email: 'ana@x.pt', name: 'Ana', role: 'member', joined_at: '2030-01-01T00:00:00Z', bookings_count: 1, created_at: '', disabled_at: null }
+const orgUser: OrgUser = { id: 'u-1', email: 'ana@x.pt', name: 'Ana', role: 'member', joined_at: '2030-01-01T00:00:00Z', bookings_count: 1, tax_id: null, billing_name: null, billing_address: null, created_at: '', disabled_at: null }
 const action: AdminAction = { id: 'a-1', org_id: 'org-1', actor: { id: 'admin-1', name: 'Admin', email: 'admin@x.pt' }, entity_type: 'booking', entity_id: booking.id, action: 'price.override', before: { id: booking.id, total_amount: '22.00' }, after: { id: booking.id, total_amount: '20.00' }, reason: 'Desconto', request_id: 'q', created_at: '2030-01-02T10:00:00Z' }
 
 beforeEach(() => {
@@ -445,7 +445,26 @@ describe('Review on #65 — clearing fields and the space clock', () => {
     await user.clear(screen.getByLabelText('Email'))
     await user.type(screen.getByLabelText('Email'), 'nova@x.pt')
     await user.click(screen.getByRole('button', { name: 'Guardar' }))
-    await waitFor(() => expect(adminApi.updateUser).toHaveBeenCalledWith('u-1', { name: null, email: 'nova@x.pt' }, expect.anything()))
+    await waitFor(() => expect(adminApi.updateUser).toHaveBeenCalledWith('u-1', { name: null, email: 'nova@x.pt', tax_id: null, billing_name: null, billing_address: null }, expect.anything()))
+  })
+
+  it('billing details (I04): a NIF is checked before the request and sent without spaces', async () => {
+    nav.params = { id: 'u-1' }
+    vi.mocked(adminApi.getUser).mockResolvedValue({ user: orgUser, bookings: [], purchases: [], balance: { hours_available: 0, hours_expiring_next: null }, support_requests: [] })
+    vi.mocked(adminApi.updateUser).mockResolvedValue({ ...orgUser, tax_id: '123456789', billing_name: 'Ana Silva, Lda.' })
+    const user = userEvent.setup()
+    renderPage(<AdminUserPage />)
+    await screen.findByRole('heading', { level: 1 })
+    await waitFor(() => expect(screen.getByLabelText('Email')).toHaveValue('ana@x.pt'))
+    await user.type(screen.getByLabelText('NIF'), '123 456 780')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    expect(await screen.findByText('NIF inválido')).toBeInTheDocument()
+    expect(adminApi.updateUser).not.toHaveBeenCalled()
+    await user.clear(screen.getByLabelText('NIF'))
+    await user.type(screen.getByLabelText('NIF'), '123 456 789')
+    await user.type(screen.getByLabelText('Nome de faturação'), 'Ana Silva, Lda.')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(adminApi.updateUser).toHaveBeenCalledWith('u-1', { name: 'Ana', email: 'ana@x.pt', tax_id: '123456789', billing_name: 'Ana Silva, Lda.', billing_address: null }, expect.anything()))
   })
 
   it('the move form shows and sends the room\'s space clock, not the browser\'s', async () => {

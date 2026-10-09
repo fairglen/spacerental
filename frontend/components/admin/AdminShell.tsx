@@ -3,7 +3,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 import Link from 'next/link'
-import { LayoutDashboard, Building2, Calendar, CalendarDays, Package, LogOut, LifeBuoy, Users, DoorOpen, Clock, History, Settings } from 'lucide-react'
+import { LayoutDashboard, Building2, Calendar, CalendarDays, Package, LogOut, LifeBuoy, Users, DoorOpen, Clock, History, Settings, Receipt } from 'lucide-react'
 import { BrandLogo } from '@/components/layout/BrandLogo'
 import { ToastProvider } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
@@ -20,6 +20,7 @@ const navItems = [
   { href: '/admin/spaces', label: 'Espaços', icon: Building2 },
   { href: '/admin/packages', label: 'Pacotes', icon: Package },
   { href: '/admin/purchases', label: 'Banco de horas', icon: Clock },
+  { href: '/admin/billing', label: 'Faturação', icon: Receipt },
   { href: '/admin/support', label: 'Pedidos de ajuda', icon: LifeBuoy },
   { href: '/admin/audit', label: 'Histórico', icon: History },
   { href: '/admin/settings', label: 'Definições', icon: Settings },

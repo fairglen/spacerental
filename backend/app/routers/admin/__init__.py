@@ -9,10 +9,13 @@ from fastapi import APIRouter
 
 from . import (
     audit,
+    billing,
     blocks,
     bookings,
     calendar,
     dashboard,
+    email,
+    invoices,
     organization,
     packages,
     purchases,
@@ -39,6 +42,9 @@ for module in (
     purchases,
     audit,
     support,
+    email,
+    billing,
+    invoices,
 ):
     router.include_router(module.router)
 
