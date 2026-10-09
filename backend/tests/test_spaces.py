@@ -262,7 +262,12 @@ class TestAvailabilityRange:
 
     @staticmethod
     def _days(offset: int, count: int) -> list[str]:
+        # From the first Monday on or after `offset` days out: the fixture
+        # room opens Monday to Saturday, so a range that crossed a Sunday
+        # (every Friday run, for "the day after tomorrow") had no slot to
+        # mark as blocked.
         first = (datetime.now(UTC) + timedelta(days=offset)).date()
+        first += timedelta(days=(7 - first.weekday()) % 7)
         return [(first + timedelta(days=i)).isoformat() for i in range(count)]
 
     async def test_a_range_equals_the_days_asked_one_by_one(self, client, test_room):

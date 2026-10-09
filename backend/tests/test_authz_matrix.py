@@ -98,6 +98,15 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/admin/billing/summary"): OPERATOR,
     ("GET", f"{API}/admin/billing/statement"): OPERATOR,
     ("GET", f"{API}/admin/billing/statement.csv"): OPERATOR,
+    # I05: invoice records (metadata + private PDF).
+    ("POST", f"{API}/admin/billing/invoices"): OPERATOR,
+    ("GET", f"{API}/admin/billing/invoices"): OPERATOR,
+    ("GET", f"{API}/admin/billing/invoices/{{invoice_id}}"): OPERATOR,
+    ("PUT", f"{API}/admin/billing/invoices/{{invoice_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/billing/invoices/{{invoice_id}}"): OPERATOR,
+    ("GET", f"{API}/admin/billing/invoices/{{invoice_id}}/pdf"): OPERATOR,
+    ("GET", f"{API}/invoices/me"): CUSTOMER,
+    ("GET", f"{API}/invoices/{{invoice_id}}/pdf"): CUSTOMER,
     # G02 deletion policy; guards and cross-org cases in test_deletion_policy.py.
     ("DELETE", f"{API}/admin/rooms/{{room_id}}"): OPERATOR,
     ("DELETE", f"{API}/admin/rooms/{{room_id}}/availability/{{rule_id}}"): OPERATOR,
@@ -238,6 +247,8 @@ CUSTOMER_ISOLATION: dict[tuple[str, str], str] = {
     ("GET", f"{API}/auth/me"): "test_my_lists_contain_only_my_rows",
     ("GET", f"{API}/auth/me/billing"): "test_billing_details_are_only_my_own",
     ("PUT", f"{API}/auth/me/billing"): "test_billing_details_are_only_my_own",
+    ("GET", f"{API}/invoices/me"): "test_invoices_are_only_my_own",
+    ("GET", f"{API}/invoices/{{invoice_id}}/pdf"): "test_invoices_are_only_my_own",
     ("GET", f"{API}/auth/memberships"): "test_my_lists_contain_only_my_rows",
     ("GET", f"{API}/bookings/me"): "test_my_lists_contain_only_my_rows",
     ("POST", f"{API}/bookings"): (
@@ -780,6 +791,42 @@ class TestOperatorListsAreScoped:
 
 
 class TestCustomerIsolation:
+    async def test_invoices_are_only_my_own(self, client, world, db_session):
+        # I05: an invoice issued to A is listed and downloadable by A alone;
+        # for B, and for A's operator on the customer route, it is a 404.
+        from datetime import date
+        from decimal import Decimal
+
+        from app.media import get_media_storage, invoice_pdf_key
+        from app.models.invoice import Invoice
+
+        invoice = Invoice(
+            org_id=world.org_a.id,
+            user_id=world.cust_a.id,
+            number="FT 2026/1",
+            issued_at=date(2026, 10, 1),
+            period_from=date(2026, 9, 1),
+            period_to=date(2026, 9, 30),
+            amount=Decimal("11.00"),
+            hours=Decimal("1.00"),
+        )
+        db_session.add(invoice)
+        await db_session.flush()
+        invoice.pdf_key = invoice_pdf_key(world.org_a.id, invoice.id)
+        await get_media_storage().save(invoice.pdf_key, b"%PDF-1.4\n%%EOF\n")
+        await db_session.commit()
+
+        mine = await client.get(f"{API}/invoices/me", headers=_as(world.cust_a))
+        assert [i["number"] for i in mine.json()["invoices"]] == ["FT 2026/1"]
+        resp = await client.get(f"{API}/invoices/{invoice.id}/pdf", headers=_as(world.cust_a))
+        assert resp.status_code == 200 and resp.content.startswith(b"%PDF-")
+        for other in (world.cust_b, world.op_a):
+            assert (await client.get(f"{API}/invoices/me", headers=_as(other))).json() == {
+                "invoices": []
+            }
+            resp = await client.get(f"{API}/invoices/{invoice.id}/pdf", headers=_as(other))
+            assert resp.status_code == 404
+
     async def test_billing_details_are_only_my_own(self, client, world):
         # I04: the route addresses the caller and nobody else — a customer
         # of another org, and an operator, read and write only their own.

@@ -324,6 +324,56 @@ async def _upload_room(client, w):
     )
 
 
+async def _paid_booking(client, w) -> dict:
+    """A manual booking with an amount: paid at creation (I01), so it is a
+    transaction an invoice can cover (I05)."""
+    start = _monday(3, 10)
+    resp = await client.post(
+        f"{API}/admin/bookings",
+        params=w.params,
+        json={
+            "room_id": str(w.room.id),
+            "user_id": str(w.member.id),
+            "start_time": start.isoformat(),
+            "end_time": (start + timedelta(hours=1)).isoformat(),
+            "reason": "Pago em numerário",
+        },
+        headers=w.headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["booking"]
+
+
+async def _with_paid_booking(client, w):
+    w.paid_booking = await _paid_booking(client, w)
+
+
+async def _create_invoice(client, w):
+    booking = w.paid_booking
+    return await client.post(
+        f"{API}/admin/billing/invoices",
+        params=w.params,
+        data={
+            "user_id": str(w.member.id),
+            "number": "FT 2026/1",
+            "issued_at": "2026-10-01",
+            "period_from": "2026-09-01",
+            "period_to": "2026-12-31",
+            "amount": str(booking["total_amount"]),
+            "hours": str(booking["duration_hours"]),
+            "transaction_ids": [f"manual:{booking['id']}"],
+        },
+        headers=w.headers,
+    )
+
+
+async def _existing_invoice(client, w):
+    await _with_paid_booking(client, w)
+    resp = await _create_invoice(client, w)
+    assert resp.status_code == 201, resp.text
+    w.invoice_id = resp.json()["invoice"]["id"]
+
+
 async def _upload_space(client, w):
     return await client.post(
         f"{API}/admin/spaces/{w.space.id}/images",
@@ -425,6 +475,23 @@ SCENARIOS: dict[tuple[str, str], Scenario] = {
             lambda w: f"{API}/admin/users",
             {"email": "invited@test.com", "name": "Convidada"},
         )
+    ),
+    # I05: invoice records.
+    ("POST", f"{API}/admin/billing/invoices"): Scenario(_create_invoice, setup=_with_paid_booking),
+    ("PUT", f"{API}/admin/billing/invoices/{{invoice_id}}"): Scenario(
+        lambda client, w: client.put(
+            f"{API}/admin/billing/invoices/{w.invoice_id}",
+            params=w.params,
+            data={"note": "Enviada por email"},
+            headers=w.headers,
+        ),
+        setup=_existing_invoice,
+    ),
+    ("DELETE", f"{API}/admin/billing/invoices/{{invoice_id}}"): Scenario(
+        lambda client, w: client.delete(
+            f"{API}/admin/billing/invoices/{w.invoice_id}", params=w.params, headers=w.headers
+        ),
+        setup=_existing_invoice,
     ),
     ("PUT", f"{API}/admin/users/{{user_id}}"): Scenario(
         _json("PUT", lambda w: f"{API}/admin/users/{w.member.id}", {"name": "Renamed"})

@@ -20,17 +20,18 @@ import csv
 import io
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.booking import Booking, PaymentMethod
+from app.models.invoice import Invoice, InvoiceItem
 from app.models.package import PurchaseSource, UserPackagePurchase
 from app.models.user import User
 
@@ -130,7 +131,7 @@ def _booking_label(booking: Booking) -> str:
     return f"{room} · {start:%d/%m/%Y %H:%M}–{end:%H:%M}"  # noqa: RUF001
 
 
-def _booking_transaction(booking: Booking) -> Transaction:
+def booking_transaction(booking: Booking) -> Transaction:
     if booking.payment_method is PaymentMethod.hourly:
         kind, hours = Kind.hourly, booking.duration_hours
     else:
@@ -148,7 +149,7 @@ def _booking_transaction(booking: Booking) -> Transaction:
     )
 
 
-def _purchase_transaction(purchase: UserPackagePurchase) -> Transaction:
+def purchase_transaction(purchase: UserPackagePurchase) -> Transaction:
     name = purchase.package.name if purchase.package is not None else "Pack"
     return Transaction(
         kind=Kind.pack,
@@ -194,11 +195,41 @@ async def load_transactions(
             UserPackagePurchase.source == PurchaseSource.purchase,
         )
     )
-    transactions = [_booking_transaction(b) for b in bookings] + [
-        _purchase_transaction(p) for p in purchases
+    transactions = [booking_transaction(b) for b in bookings] + [
+        purchase_transaction(p) for p in purchases
     ]
     transactions.sort(key=lambda t: (t.paid_at, t.id))
-    return transactions
+    return await with_invoices(db, org_id, transactions)
+
+
+async def with_invoices(
+    db: AsyncSession, org_id: uuid.UUID, transactions: list[Transaction]
+) -> list[Transaction]:
+    """The same transactions with `invoice_id` filled from the invoice
+    records (I05): a transaction is on at most one invoice."""
+    if not transactions:
+        return transactions
+    booking_ids = [t.id for t in transactions if t.kind is not Kind.pack]
+    purchase_ids = [t.id for t in transactions if t.kind is Kind.pack]
+    rows = await db.execute(
+        select(InvoiceItem.booking_id, InvoiceItem.purchase_id, InvoiceItem.invoice_id)
+        .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
+        .where(
+            Invoice.org_id == org_id,
+            or_(InvoiceItem.booking_id.in_(booking_ids), InvoiceItem.purchase_id.in_(purchase_ids)),
+        )
+    )
+    by_booking: dict[uuid.UUID, uuid.UUID] = {}
+    by_purchase: dict[uuid.UUID, uuid.UUID] = {}
+    for booking_id, purchase_id, invoice_id in rows:
+        if booking_id is not None:
+            by_booking[booking_id] = invoice_id
+        else:
+            by_purchase[purchase_id] = invoice_id
+    return [
+        replace(t, invoice_id=(by_purchase if t.kind is Kind.pack else by_booking).get(t.id))
+        for t in transactions
+    ]
 
 
 @dataclass
