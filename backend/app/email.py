@@ -24,10 +24,12 @@ router that sends an email.
 """
 
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
+from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from functools import cache
 from html import escape
@@ -470,16 +472,108 @@ def set_password_email(*, to: str, link: str) -> EmailMessage:
     return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 
 
+def test_email(*, to: str) -> EmailMessage:
+    """The operator's own test message (B61): short, formal, and saying
+    which gateway sent it, so a stub-mode send is recognisable as such."""
+    if settings.EMAIL_MODE == STUB_MODE:
+        mode_line = (
+            "Este envio foi feito em modo de teste: o email ficou registado nesta "
+            "máquina e não saiu para a Internet."
+        )
+    else:
+        mode_line = "Este envio foi feito pelo fornecedor de email configurado."
+    subject = f"Email de teste — {BRAND_NAME}"
+    text_body = (
+        f"Este é um email de teste enviado a partir do painel de administração do "
+        f"{BRAND_NAME}.\n\n"
+        f"{mode_line}\n\n"
+        "Se recebeu esta mensagem na sua caixa de correio, o envio de emails está a funcionar."
+    )
+    html_body = (
+        f"<p>Este é um email de teste enviado a partir do painel de administração do "
+        f"{escape(BRAND_NAME)}.</p>"
+        f"<p>{escape(mode_line)}</p>"
+        "<p>Se recebeu esta mensagem na sua caixa de correio, o envio de emails está a "
+        "funcionar.</p>"
+    )
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
+
+
+# ─── Delivery failures, visible to the operator (B61) ───────────────────────
+
+
+@dataclass(frozen=True)
+class DeliveryFailure:
+    at: datetime
+    to: str
+    subject: str
+    error: str
+
+
+# Process-local and bounded: the last 20 failures, newest last. No queue means
+# no durable record either (O01); this is what an operator can see today.
+RECENT_FAILURES_KEPT = 20
+recent_failures: deque[DeliveryFailure] = deque(maxlen=RECENT_FAILURES_KEPT)
+
+_SECRET = re.compile(r"(?i)(bearer\s+)\S+|re_[A-Za-z0-9_]+")
+
+
+def sanitise_provider_error(text: str) -> str:
+    """A provider's message without anything that looks like a credential."""
+    return _SECRET.sub(r"\1[redacted]", text).strip() or "sem detalhe"
+
+
+def record_failure(message: EmailMessage, error: Exception) -> DeliveryFailure:
+    failure = DeliveryFailure(
+        at=datetime.now(UTC),
+        to=message.to,
+        subject=message.subject,
+        error=sanitise_provider_error(str(error) or error.__class__.__name__),
+    )
+    recent_failures.append(failure)
+    return failure
+
+
+def email_status() -> dict:
+    """The gateway's state for `GET /admin/email/status`: never the key."""
+    return {
+        "mode": settings.EMAIL_MODE,
+        "from_address": settings.EMAIL_FROM_ADDRESS,
+        "support_inbox": settings.SUPPORT_INBOX_EMAIL,
+        "test_hooks_enabled": settings.TEST_HOOKS_ENABLED
+        and settings.EMAIL_MODE == STUB_MODE
+        and settings.APP_ENV != "production",
+        "recent_failures": [
+            {"at": f.at, "to": f.to, "subject": f.subject, "error": f.error}
+            for f in reversed(recent_failures)
+        ],
+    }
+
+
+def describe_mode() -> str:
+    """The one startup line (B61): which gateway, from whom."""
+    if settings.EMAIL_MODE == STUB_MODE:
+        return (
+            f"Email mode=stub from={settings.EMAIL_FROM_ADDRESS!r}: messages are kept on "
+            "this machine (STUB EMAIL lines below; GET /__test__/emails when the test "
+            "hooks are on) and never leave it"
+        )
+    return f"Email mode=live from={settings.EMAIL_FROM_ADDRESS!r}: sending through Resend"
+
+
 # ─── Queueing ───────────────────────────────────────────────────────────────
 
 
 async def _deliver(gateway: EmailGateway, message: EmailMessage) -> None:
     try:
         await gateway.send(message)
-    except EmailProviderError:
+    except Exception as exc:
         # No real queue means no retry either — a real broker would redrive
         # this. Logging is the honest floor for a "queue" that is a single
-        # in-process background task.
+        # in-process background task; the ring buffer (B61) is what the
+        # operator sees of it. Any exception, not only the provider's: a
+        # failure of ours must not vanish into the task either.
+        record_failure(message, exc)
         logger.exception("Failed to deliver email to %s (%s)", message.to, message.subject)
 
 

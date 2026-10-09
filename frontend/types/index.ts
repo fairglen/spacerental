@@ -488,3 +488,14 @@ export type OrganizationSettingsPatch = {
   contact_phone?: string | null
   timezone?: string
 }
+
+// B61: the email gateway as the operator sees it — never the provider key.
+export type EmailFailure = { at: string; to: string; subject: string; error: string }
+export type EmailStatus = {
+  mode: 'stub' | 'live'
+  from_address: string
+  support_inbox: string
+  test_hooks_enabled: boolean
+  recent_failures: EmailFailure[]
+}
+export type EmailTestResult = { delivered: boolean; to: string }

@@ -88,6 +88,9 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/admin/support/requests/{{request_id}}"): OPERATOR,
     ("GET", f"{API}/admin/organization"): OPERATOR,
     ("PUT", f"{API}/admin/organization"): OPERATOR,
+    # B61: the email gateway's state and a self-addressed test send.
+    ("GET", f"{API}/admin/email/status"): OPERATOR,
+    ("POST", f"{API}/admin/email/test"): OPERATOR,
     # G02 deletion policy; guards and cross-org cases in test_deletion_policy.py.
     ("DELETE", f"{API}/admin/rooms/{{room_id}}"): OPERATOR,
     ("DELETE", f"{API}/admin/rooms/{{room_id}}/availability/{{rule_id}}"): OPERATOR,

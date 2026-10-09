@@ -525,6 +525,11 @@ SCENARIOS: dict[tuple[str, str], Scenario] = {
     ("POST", f"{API}/admin/users/{{user_id}}/password-reset"): Scenario(
         _json("POST", lambda w: f"{API}/admin/users/{w.member.id}/password-reset")
     ),
+    # B61: the self-addressed test email is an operator action like the
+    # password-reset send above — one row, the admin as the entity.
+    ("POST", f"{API}/admin/email/test"): Scenario(
+        _json("POST", lambda w: f"{API}/admin/email/test")
+    ),
     ("POST", f"{API}/admin/users/{{user_id}}/set-password"): Scenario(
         _json(
             "POST",

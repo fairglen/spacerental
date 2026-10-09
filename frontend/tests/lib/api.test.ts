@@ -963,4 +963,17 @@ describe('Part A1 admin endpoints (G01–G04): every wrapper unwraps its envelop
     expect((await adminApi.updateOrganization({ name: 'Novo' }, put as any)).name).toBe('Novo')
     expect(put.fn).toHaveBeenCalledWith('/admin/organization', { name: 'Novo' })
   })
+
+  // B61: the email gateway's state is wrapped under `email`; the test send answers bare.
+  it('email status and the self-addressed test send', async () => {
+    const status = api({ email: { mode: 'stub', from_address: 'FlowSpace <no-reply@flowspace.pt>', support_inbox: 'geral+support@flowspace.pt', test_hooks_enabled: true, recent_failures: [] } })
+    const got = await adminApi.getEmailStatus(status as any)
+    expect(got.mode).toBe('stub')
+    expect(got.recent_failures).toEqual([])
+    expect(status.fn).toHaveBeenCalledWith('/admin/email/status')
+    const sent = api({ delivered: true, to: 'admin@demo.com' }, 'post')
+    expect(await adminApi.sendTestEmail(sent as any)).toEqual({ delivered: true, to: 'admin@demo.com' })
+    // No body, no recipient: the API sends to the caller.
+    expect(sent.fn).toHaveBeenCalledWith('/admin/email/test')
+  })
 })

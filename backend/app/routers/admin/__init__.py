@@ -13,6 +13,7 @@ from . import (
     bookings,
     calendar,
     dashboard,
+    email,
     organization,
     packages,
     purchases,
@@ -39,6 +40,7 @@ for module in (
     purchases,
     audit,
     support,
+    email,
 ):
     router.include_router(module.router)
 
