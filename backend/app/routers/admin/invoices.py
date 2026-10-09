@@ -32,9 +32,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import audit, billing, media
+from app import audit, billing, email, media
 from app.auth import require_admin
 from app.database import get_db
+from app.email import EmailGateway, get_email_gateway
 from app.media import MediaStorage, get_media_storage
 from app.models.booking import Booking, PaymentMethod
 from app.models.invoice import Invoice, InvoiceItem
@@ -217,6 +218,7 @@ async def admin_create_invoice(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
+    email_gateway: EmailGateway = Depends(get_email_gateway),
 ):
     """Register an invoice issued elsewhere ("Registar fatura emitida").
     Multipart: the fields, `transaction_ids[]` as `kind:id`, an optional
@@ -279,6 +281,19 @@ async def admin_create_invoice(
         action="create",
         after=audit.snapshot(invoice),
     )
+    if notify:
+        # I08: "Fatura disponível", after the commit like every other email.
+        email.enqueue_email(
+            background_tasks,
+            email_gateway,
+            email.invoice_available_email(
+                to=invoice.user.email,
+                number=invoice.number,
+                issued_at=invoice.issued_at,
+                amount=invoice.amount,
+                has_pdf=invoice.pdf_key is not None,
+            ),
+        )
     return {"invoice": _detail(invoice)}
 
 

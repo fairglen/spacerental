@@ -29,7 +29,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from functools import cache
 from html import escape
@@ -468,6 +468,36 @@ def set_password_email(*, to: str, link: str) -> EmailMessage:
         f'<a href="{escape(settings.FRONTEND_URL, quote=True)}/forgot-password">'
         f"{escape(settings.FRONTEND_URL)}/forgot-password</a>.</p>"
         f"{SIGN_OFF_HTML}"
+    )
+    return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
+
+
+def invoice_available_email(
+    *, to: str, number: str, issued_at: date, amount: Decimal, has_pdf: bool
+) -> EmailMessage:
+    """ "Fatura disponível" (I08): the operator registered an invoice issued
+    to the customer; the customer finds it — and the PDF, when there is
+    one — on their billing page. No attachment: the PDF stays behind the
+    sign-in."""
+    link = f"{settings.FRONTEND_URL}/dashboard/billing"
+    when = issued_at.strftime("%d/%m/%Y")
+    amount_str = f"{amount:.2f}".replace(".", ",") + " €"
+    where = (
+        "Pode consultar e transferir o PDF na sua área de faturação"
+        if has_pdf
+        else "Pode consultá-la na sua área de faturação"
+    )
+    subject = f"Fatura {number} disponível — {BRAND_NAME}"
+    text_body = (
+        f"Foi emitida a fatura {number}, de {when}, no valor de {amount_str}.\n\n"
+        f"{where}: {link}\n\n"
+        f"Obrigado por escolher o {BRAND_NAME}.\n\n" + SIGN_OFF_TEXT
+    )
+    html_body = (
+        f"<p>Foi emitida a fatura <strong>{escape(number)}</strong>, de {when}, "
+        f"no valor de <strong>{escape(amount_str)}</strong>.</p>"
+        f'<p>{escape(where)}: <a href="{escape(link)}">{escape(link)}</a></p>'
+        f"<p>Obrigado por escolher o {escape(BRAND_NAME)}.</p>" + SIGN_OFF_HTML
     )
     return EmailMessage(to=to, subject=subject, html_body=_branded(html_body), text_body=text_body)
 

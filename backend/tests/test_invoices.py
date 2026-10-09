@@ -443,3 +443,50 @@ class TestPdf:
             headers=auth_headers,
         )
         assert resp.status_code == 403
+
+
+class TestNotify:
+    """I08: "Fatura disponível" goes out when the operator asks, never otherwise."""
+
+    async def test_notify_sends_the_customer_one_email_with_the_link(
+        self, client, admin_headers, ledger, emails
+    ):
+        resp = await _register(client, admin_headers, ledger, notify="true")
+        assert resp.status_code == 201, resp.text
+        assert len(emails.sent) == 1
+        message = emails.sent[0]
+        assert message.to == "user@test.com"
+        assert message.subject.startswith("Fatura FT 2026/12 disponível")
+        assert "88,00 €" in message.text_body
+        assert "02/10/2026" in message.text_body
+        assert "/dashboard/billing" in message.text_body
+        assert "transferir o PDF" in message.text_body
+        assert "você" not in message.text_body.lower()
+
+    async def test_without_notify_nothing_is_sent(self, client, admin_headers, ledger, emails):
+        resp = await _register(client, admin_headers, ledger, pdf=None)
+        assert resp.status_code == 201, resp.text
+        assert emails.sent == []
+        resp = await _register(
+            client,
+            admin_headers,
+            ledger,
+            pdf=None,
+            notify="false",
+            number="FT 2026/13",
+            user_id=str(ledger.bruno.id),
+            transaction_ids=[f"manual:{ledger.manual_bruno.id}"],
+            amount="22.00",
+            hours="2.00",
+        )
+        assert resp.status_code == 201, resp.text
+        assert emails.sent == []
+
+    async def test_a_refused_registration_sends_nothing(
+        self, client, admin_headers, ledger, emails
+    ):
+        resp = await _register(
+            client, admin_headers, ledger, pdf=None, notify="true", amount="1.00"
+        )
+        assert resp.status_code == 422
+        assert emails.sent == []
