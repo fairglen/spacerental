@@ -26,7 +26,7 @@ from decimal import Decimal
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -326,6 +326,28 @@ async def statement(
     lines = [line for line in lines if _keep(line, invoiced)]
     lines.sort(key=lambda line: (-line.amount, line.user.name.lower(), line.user.id))
     return lines
+
+
+async def received_all_time(db: AsyncSession, org_id: uuid.UUID) -> Decimal:
+    """Every euro the org ever received, on the same basis as a period."""
+    bookings = await db.scalar(
+        select(func.coalesce(func.sum(Booking.total_amount), 0)).where(
+            Booking.org_id == org_id,
+            Booking.paid_at.is_not(None),
+            Booking.payment_method.in_(
+                (PaymentMethod.hourly, PaymentMethod.mixed, PaymentMethod.manual)
+            ),
+            Booking.total_amount > 0,
+        )
+    )
+    purchases = await db.scalar(
+        select(func.coalesce(func.sum(UserPackagePurchase.amount_paid), 0)).where(
+            UserPackagePurchase.org_id == org_id,
+            UserPackagePurchase.paid_at.is_not(None),
+            UserPackagePurchase.source == PurchaseSource.purchase,
+        )
+    )
+    return _quantised(Decimal(bookings) + Decimal(purchases))
 
 
 def decimal_pt(value: Decimal) -> str:

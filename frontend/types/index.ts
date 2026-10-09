@@ -327,13 +327,46 @@ export type PaginatedSupportRequests = {
 
 export type AdminStats = {
   total_bookings: number
-  total_revenue: number
+  // All-time money received (I03): card bookings, manual amounts and pack
+  // sales, counted once at `paid_at`.
+  total_revenue: string
   occupancy_rate: number
+// Money on the billing statement (I02) travels as the API's `Decimal`
+// strings ("221.00"); `formatCurrency(Number(x))` renders them.
+export type BillingKind = 'pack' | 'hourly' | 'mixed' | 'manual'
+export type BillingChannel = 'online' | 'manual'
+
+export type BillingKindTotals = {
+  count: number
+  amount: string
+  hours: string
+}
+
+export type BillingPackSales = BillingKindTotals & {
+  package_id: string | null
+  name: string
+}
+
+export type BillingSummary = {
+  from: string
+  to: string
+  received_total: string
+  by_channel: { online: string; manual: string }
+  pack_sales: BillingPackSales[]
+  hourly: BillingKindTotals
+  mixed: BillingKindTotals
+  manual: BillingKindTotals
+  transactions_count: number
+  invoiced_amount: string
+  pending_amount: string
+}
+
   active_users: number
 }
 
 export type OrgMembership = {
   org_id: string
+  this_month: BillingSummary
   role: 'owner' | 'admin' | 'member'
 }
 

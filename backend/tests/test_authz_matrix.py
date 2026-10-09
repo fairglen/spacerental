@@ -753,9 +753,19 @@ class TestOperatorListsAreScoped:
             str(world.op_a.id),
             str(world.dual.id),
         }
-        assert await get("dashboard") == {
+        # I03: money is counted at `paid_at`; A's booking was paid just now,
+        # B's cancelled one too (its 22 € must stay in B).
+        now = datetime.now(tz=UTC)
+        for row in await db_session.scalars(
+            select(Booking).where(Booking.room_id.in_([world.room_a.id, world.room_b.id]))
+        ):
+            row.paid_at = now
+        await db_session.commit()
+        dashboard = await get("dashboard")
+        month = dashboard.pop("this_month")
+        assert dashboard == {
             "total_bookings": 1,
-            "total_revenue": 11.0,
+            "total_revenue": "11.00",
             "occupancy_rate": 100.0,
             "active_users": 1,
         }
