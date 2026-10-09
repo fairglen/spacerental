@@ -100,6 +100,26 @@ def public_url(key: str) -> str:
     return f"{settings.MEDIA_BASE_URL.rstrip('/')}/{key}"
 
 
+# Everything under this prefix is for the API to stream after an
+# authorisation check (I05: invoice PDFs); the public `/media` mount refuses
+# it (`app.main.PublicMediaFiles`).
+PRIVATE_PREFIX = "private"
+MAX_INVOICE_PDF_BYTES = 10 * 1024 * 1024
+_PDF_MAGIC = b"%PDF-"
+
+
+def invoice_pdf_key(org_id: uuid.UUID, invoice_id: uuid.UUID) -> str:
+    return f"{PRIVATE_PREFIX}/invoices/{org_id}/{invoice_id}.pdf"
+
+
+def is_private_key(key: str) -> bool:
+    return key == PRIVATE_PREFIX or key.startswith(f"{PRIVATE_PREFIX}/")
+
+
+def is_pdf(data: bytes) -> bool:
+    return data.startswith(_PDF_MAGIC)
+
+
 class MediaStorage(ABC):
     """Where processed photos live. Keys are relative paths we generate."""
 
@@ -109,6 +129,11 @@ class MediaStorage(ABC):
     @abstractmethod
     async def delete(self, key: str) -> None:
         """Remove `key`; a key that is already gone is not an error."""
+
+    @abstractmethod
+    async def read(self, key: str) -> bytes:
+        """The bytes under `key` (a private file the API streams itself, I05);
+        `FileNotFoundError` when there are none."""
 
 
 class LocalMediaStorage(MediaStorage):
@@ -133,6 +158,9 @@ class LocalMediaStorage(MediaStorage):
 
     async def delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
+
+    async def read(self, key: str) -> bytes:
+        return self._path(key).read_bytes()
 
 
 def build_media_storage() -> MediaStorage:

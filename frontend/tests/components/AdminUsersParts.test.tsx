@@ -6,7 +6,7 @@ import { GrantHoursDialog } from '@/components/admin/users/GrantHoursDialog'
 import { ExtendValidityDialog } from '@/components/admin/users/ExtendValidityDialog'
 import type { AdminPurchase, OrgUser, Package } from '@/types'
 
-const ana: OrgUser = { id: 'u1', email: 'ana@example.com', name: 'Ana', role: 'member', joined_at: '2026-01-01T00:00:00Z', bookings_count: 2, created_at: '2026-01-01T00:00:00Z' }
+const ana: OrgUser = { id: 'u1', email: 'ana@example.com', name: 'Ana', role: 'member', joined_at: '2026-01-01T00:00:00Z', bookings_count: 2, tax_id: null, billing_name: null, billing_address: null, created_at: '2026-01-01T00:00:00Z' }
 const packages: Package[] = [
   { id: 'k10', org_id: 'o', name: 'Pack 10h', hours: 10, price: 100, validity_days: 90, is_active: true },
   { id: 'k20', org_id: 'o', name: 'Pack 20h', hours: 20, price: 180, validity_days: 180, is_active: true },

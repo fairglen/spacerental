@@ -11,6 +11,51 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/admin/billing/invoices",
+    "operation_id": "admin_list_invoices_api_v1_admin_billing_invoices_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/billing/invoices",
+    "operation_id": "admin_create_invoice_api_v1_admin_billing_invoices_post"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/billing/invoices/{invoice_id}",
+    "operation_id": "admin_delete_invoice_api_v1_admin_billing_invoices__invoice_id__delete"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/invoices/{invoice_id}",
+    "operation_id": "admin_get_invoice_api_v1_admin_billing_invoices__invoice_id__get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/billing/invoices/{invoice_id}",
+    "operation_id": "admin_update_invoice_api_v1_admin_billing_invoices__invoice_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/invoices/{invoice_id}/pdf",
+    "operation_id": "admin_invoice_pdf_api_v1_admin_billing_invoices__invoice_id__pdf_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/statement",
+    "operation_id": "billing_statement_api_v1_admin_billing_statement_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/statement.csv",
+    "operation_id": "billing_statement_csv_api_v1_admin_billing_statement_csv_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/summary",
+    "operation_id": "billing_summary_api_v1_admin_billing_summary_get"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/admin/bookings",
     "operation_id": "admin_list_bookings_api_v1_admin_bookings_get"
   },
@@ -53,6 +98,16 @@
     "method": "GET",
     "path": "/api/v1/admin/dashboard",
     "operation_id": "dashboard_api_v1_admin_dashboard_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/email/status",
+    "operation_id": "admin_email_status_api_v1_admin_email_status_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/email/test",
+    "operation_id": "admin_send_test_email_api_v1_admin_email_test_post"
   },
   {
     "method": "GET",
@@ -361,6 +416,16 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/auth/me/billing",
+    "operation_id": "my_billing_details_api_v1_auth_me_billing_get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/auth/me/billing",
+    "operation_id": "update_my_billing_details_api_v1_auth_me_billing_put"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/auth/memberships",
     "operation_id": "memberships_api_v1_auth_memberships_get"
   },
@@ -403,6 +468,16 @@
     "method": "POST",
     "path": "/api/v1/bookings/{booking_id}/checkout",
     "operation_id": "resume_checkout_api_v1_bookings__booking_id__checkout_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/invoices/me",
+    "operation_id": "my_invoices_api_v1_invoices_me_get"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/invoices/{invoice_id}/pdf",
+    "operation_id": "my_invoice_pdf_api_v1_invoices__invoice_id__pdf_get"
   },
   {
     "method": "GET",

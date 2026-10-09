@@ -390,6 +390,56 @@ link from the customer's page or set a password directly (`/admin/users/
 {id}/password-reset`, `/set-password`); a suspended account
 (`users.disabled_at`) can do none of it.
 
+### Pôr os emails a funcionar (Resend)
+
+Em modo de teste (`EMAIL_MODE=stub`, o valor por omissão em todo o lado) **nenhum
+email sai da máquina**: a mensagem de reposição de password, as confirmações
+de reserva e os pedidos de ajuda ficam registados no processo da API. É
+este o motivo mais frequente para "o email nunca chega". O painel de
+administração mostra o modo em **Definições → Email** (B61), com um botão
+"Enviar email de teste" que envia uma mensagem curta para o endereço do
+próprio administrador, de forma síncrona, e devolve o erro do fornecedor
+quando o envio falha; a mesma secção lista as últimas falhas de entrega.
+
+Para ler os emails em modo de teste:
+
+```bash
+docker compose logs backend | grep "STUB EMAIL"      # cada mensagem, com o texto
+curl -s http://localhost:8000/__test__/emails | jq    # as últimas 20, com as ligações
+```
+
+(A segunda rota existe apenas com `TEST_HOOKS_ENABLED=true` — ligado no
+Compose de desenvolvimento — fora de `APP_ENV=production`.)
+
+Para enviar emails a sério, pelo Resend:
+
+1. Crie uma conta em https://resend.com e, em **Domains → Add domain**,
+   adicione `flowspace.pt`.
+2. Acrescente no DNS do domínio os registos que o Resend apresenta — o SPF
+   (TXT), o DKIM (TXT ou CNAME, com o nome que ele indica) e o DMARC (TXT em
+   `_dmarc`) — e espere até o domínio aparecer como **Verified** (minutos a
+   algumas horas, consoante o DNS).
+3. Em **API Keys**, crie uma chave com permissão de envio e guarde-a: só é
+   mostrada uma vez.
+4. No `.env`:
+   ```
+   EMAIL_MODE=live
+   RESEND_API_KEY=re_...
+   EMAIL_FROM_ADDRESS=FlowSpace <no-reply@flowspace.pt>
+   ```
+   (`EMAIL_FROM_ADDRESS` tem de ser do domínio verificado; `SUPPORT_INBOX_EMAIL`
+   é para onde vão os pedidos de ajuda.)
+5. Reinicie a API — `docker compose up -d backend` — e confirme no arranque a
+   linha `Email mode=live from='FlowSpace <no-reply@flowspace.pt>'` em
+   `docker compose logs backend`. Em modo `live` sem `RESEND_API_KEY` a API
+   recusa-se a arrancar em vez de voltar silenciosamente ao modo de teste.
+6. Em **Definições → Email**, carregue em "Enviar email de teste" e confirme a
+   receção na sua caixa de correio. Uma recusa do Resend (domínio por
+   verificar, chave inválida) aparece ali mesmo e em "Últimas falhas".
+
+Sem fila nem repetição: um envio que falha é registado (log e "Últimas
+falhas") e não é tentado de novo — O01 no `TODO.md`.
+
 **Smart locks** (`backend/app/locks.py`): webhook/stub checkout confirmation,
 admin confirmation and prepaid pack redemption issue an access code. Individual,
 admin and recurring-series cancellations revoke it. Failed revocations retain

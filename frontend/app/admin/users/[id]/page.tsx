@@ -26,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatBookingCost, formatCurrency, formatHours, packSplitLines, STATUS_LABELS } from '@/lib/utils'
 import { purchaseLabel } from '@/lib/cancellationCredit'
+import { nifError } from '@/lib/nif'
 import { SUPPORT_CATEGORY_LABELS } from '@/components/help/HelpDialog'
 import { ROLE_LABELS, RoleDialog } from '@/components/admin/users/RoleDialog'
 import { GrantHoursDialog } from '@/components/admin/users/GrantHoursDialog'
@@ -36,6 +37,10 @@ import type { AdminPurchase, ComplimentaryHoursBody, OrgUser } from '@/types'
 const schema = z.object({
   name: z.string(),
   email: z.string().email('Email inválido'),
+  // Billing details (I04): blank clears; a NIF must pass the check digit.
+  tax_id: z.string().refine((v) => nifError(v) === null, { message: 'NIF inválido' }),
+  billing_name: z.string(),
+  billing_address: z.string(),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -68,7 +73,9 @@ function UserDetail({ userId }: { userId: string }) {
   const lastReset = history?.actions.find((a) => a.action === 'password_reset.send')
 
   const form = useForm<FormValues>({ resolver: zodResolver(schema) })
-  useEffect(() => { if (data) form.reset({ name: data.user.name ?? '', email: data.user.email }) }, [data, form])
+  useEffect(() => {
+    if (data) form.reset({ name: data.user.name ?? '', email: data.user.email, tax_id: data.user.tax_id ?? '', billing_name: data.user.billing_name ?? '', billing_address: data.user.billing_address ?? '' })
+  }, [data, form])
 
   const [roleTarget, setRoleTarget] = useState<OrgUser | null>(null)
   const [granting, setGranting] = useState(false)
@@ -138,7 +145,13 @@ function UserDetail({ userId }: { userId: string }) {
         form={form}
         successMessage="Conta guardada."
         onCancel={() => router.push('/admin/users')}
-        onSubmit={(values) => adminApi.updateUser(userId, { name: values.name.trim() || null, email: values.email }, api)}
+        onSubmit={(values) => adminApi.updateUser(userId, {
+          name: values.name.trim() || null,
+          email: values.email,
+          tax_id: values.tax_id.replace(/\s+/g, '') || null,
+          billing_name: values.billing_name.trim() || null,
+          billing_address: values.billing_address.trim() || null,
+        }, api)}
         onSaved={() => invalidate(userId)}
         extra={!isSelf && (
           <Button type="button" variant={suspended ? 'outline' : 'destructive'} size="sm" onClick={() => suspend.mutate(!suspended)} disabled={suspend.isPending}>
@@ -149,6 +162,11 @@ function UserDetail({ userId }: { userId: string }) {
         <FormSection title="Conta" description={suspended ? `Suspensa desde ${format(parseISO(user.disabled_at!), "d MMM yyyy, HH:mm", { locale: pt })}: não consegue iniciar sessão nem reservar.` : 'A pessoa consegue iniciar sessão e reservar.'}>
           <FormField id="name" label="Nome" error={form.formState.errors.name?.message}><Input id="name" {...form.register('name')} /></FormField>
           <FormField id="email" label="Email" error={form.formState.errors.email?.message}><Input id="email" type="email" {...form.register('email')} /></FormField>
+        </FormSection>
+        <FormSection title="Faturação" description="O que a fatura emitida nomeia. O NIF é validado pelo dígito de controlo; em branco, a fatura é passada sem NIF.">
+          <FormField id="tax_id" label="NIF" error={form.formState.errors.tax_id?.message}><Input id="tax_id" inputMode="numeric" placeholder="123456789" {...form.register('tax_id')} /></FormField>
+          <FormField id="billing_name" label="Nome de faturação" error={form.formState.errors.billing_name?.message}><Input id="billing_name" placeholder="Se diferente do nome da conta" {...form.register('billing_name')} /></FormField>
+          <FormField id="billing_address" label="Morada de faturação" error={form.formState.errors.billing_address?.message}><Input id="billing_address" {...form.register('billing_address')} /></FormField>
         </FormSection>
       </EntityForm>
 

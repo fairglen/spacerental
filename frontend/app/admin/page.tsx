@@ -10,6 +10,7 @@ import { useApi } from '@/lib/hooks/useApi'
 import { useOrg } from '@/contexts/OrgContext'
 import { formatCurrency, STATUS_COLORS, STATUS_LABELS } from '@/lib/utils'
 import { StatsCard } from '@/components/admin/StatsCard'
+import { ThisMonthCard } from '@/components/admin/ThisMonthCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -49,11 +50,15 @@ export default function AdminDashboard() {
           ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
           : <>
               <StatsCard title="Total de Reservas" value={stats?.total_bookings ?? 0} icon={BarChart3} />
-              <StatsCard title="Receita Total" value={formatCurrency(stats?.total_revenue ?? 0)} icon={Euro} />
+              <StatsCard title="Receita Total" value={formatCurrency(Number(stats?.total_revenue ?? 0))} icon={Euro} />
               <StatsCard title="Taxa de Ocupação" value={`${stats?.occupancy_rate ?? 0}%`} icon={Building2} />
               <StatsCard title="Utilizadores Ativos" value={stats?.active_users ?? 0} icon={Users} />
             </>
         }
+      </div>
+
+      <div className="mb-8">
+        {statsLoading || !stats ? <Skeleton className="h-40 rounded-xl" /> : <ThisMonthCard summary={stats.this_month} />}
       </div>
 
       <Card>

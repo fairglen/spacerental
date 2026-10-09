@@ -4,6 +4,8 @@ import os
 import shutil
 import tempfile
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -391,3 +393,268 @@ async def test_room(db_session, test_org, test_space) -> Room:
     await db_session.commit()
     await db_session.refresh(r)
     return r
+
+
+@pytest_asyncio.fixture
+async def ledger(db_session, test_org, test_user, test_member, test_room) -> SimpleNamespace:
+    """September 2026 as a small operator saw it (I02); the dashboard (I03)
+    and the invoice records (I05) read the same month.
+
+    Lisbon is UTC+1 all month. Two customers: `ana` (test_user) and `bruno`.
+    What counts, by `paid_at` (I01): an hourly booking, a mixed one (card
+    part 11 € for 1 of 2 hours), a manual booking with an amount, a bought
+    pack each, a booking cancelled after it was paid (the money stayed), and
+    an hourly booking paid at 2026-08-31 23:30 UTC — 1 September 00:30 in
+    Lisbon. What does not: a pending hold, a pack-paid booking, a
+    complimentary grant, a cancellation credit, a pending pack purchase, a
+    booking paid at 2026-09-30 23:30 UTC (1 October in Lisbon), and another
+    organisation's pack sale. `expected` holds the hand-computed totals.
+    """
+    from decimal import Decimal
+
+    from app.auth import hash_password
+    from app.models.booking import Booking, BookingStatus, PaymentMethod
+    from app.models.organization import MemberRole, OrganizationMember, OrgPlan
+    from app.models.package import Package, PurchaseSource, PurchaseStatus, UserPackagePurchase
+
+    def at(day: int, hour: int = 10, month: int = 9, minute: int = 0) -> datetime:
+        return datetime(2026, month, day, hour, minute, tzinfo=UTC)
+
+    w = SimpleNamespace(org=test_org, ana=test_user, room=test_room)
+    w.bruno = User(
+        email="bruno@test.com", name="Bruno Costa", password_hash=hash_password("password123")
+    )
+    w.other_org = Organization(name="Outra", slug="outra-ledger", plan=OrgPlan.starter, settings={})
+    db_session.add_all([w.bruno, w.other_org])
+    await db_session.flush()
+    db_session.add(
+        OrganizationMember(org_id=test_org.id, user_id=w.bruno.id, role=MemberRole.member)
+    )
+    w.pack10 = Package(
+        org_id=test_org.id, name="Pack 10h", hours=10, price=Decimal("100.00"), validity_days=365
+    )
+    w.pack5 = Package(
+        org_id=test_org.id, name="Pack 5h", hours=5, price=Decimal("55.00"), validity_days=365
+    )
+    w.other_pack = Package(
+        org_id=w.other_org.id,
+        name="Outro pack",
+        hours=10,
+        price=Decimal("90.00"),
+        validity_days=365,
+    )
+    db_session.add_all([w.pack10, w.pack5, w.other_pack])
+    await db_session.flush()
+
+    def booking(user, *, day, hours, amount, status, method, paid_at, used="0.00", **extra):
+        start = at(day, 9, month=10)
+        return Booking(
+            org_id=test_org.id,
+            room_id=test_room.id,
+            user_id=user.id,
+            start_time=start,
+            end_time=start + timedelta(hours=hours),
+            duration_hours=Decimal(f"{hours}.00"),
+            total_amount=Decimal(amount),
+            package_hours_used=Decimal(used),
+            status=status,
+            payment_method=method,
+            paid_at=paid_at,
+            **extra,
+        )
+
+    confirmed, cancelled, pending = (
+        BookingStatus.confirmed,
+        BookingStatus.cancelled,
+        BookingStatus.pending,
+    )
+    w.hourly_ana = booking(
+        w.ana,
+        day=1,
+        hours=1,
+        amount="11.00",
+        status=confirmed,
+        method=PaymentMethod.hourly,
+        paid_at=at(5),
+    )
+    w.mixed_ana = booking(
+        w.ana,
+        day=2,
+        hours=2,
+        amount="11.00",
+        status=confirmed,
+        method=PaymentMethod.mixed,
+        paid_at=at(10),
+        used="1.00",
+    )
+    w.manual_bruno = booking(
+        w.bruno,
+        day=3,
+        hours=2,
+        amount="22.00",
+        status=confirmed,
+        method=PaymentMethod.manual,
+        paid_at=at(12),
+    )
+    w.cancelled_paid_bruno = booking(
+        w.bruno,
+        day=4,
+        hours=1,
+        amount="11.00",
+        status=cancelled,
+        method=PaymentMethod.hourly,
+        paid_at=at(22),
+    )
+    w.pending_ana = booking(
+        w.ana,
+        day=5,
+        hours=1,
+        amount="11.00",
+        status=pending,
+        method=PaymentMethod.hourly,
+        paid_at=None,
+        hold_expires_at=at(28, month=10),
+    )
+    w.package_ana = booking(
+        w.ana,
+        day=6,
+        hours=2,
+        amount="22.00",
+        status=confirmed,
+        method=PaymentMethod.package,
+        paid_at=None,
+        used="2.00",
+    )
+    w.edge_in_ana = booking(
+        w.ana,
+        day=7,
+        hours=1,
+        amount="11.00",
+        status=confirmed,
+        method=PaymentMethod.hourly,
+        paid_at=at(31, 23, month=8, minute=30),
+    )
+    w.edge_out_ana = booking(
+        w.ana,
+        day=8,
+        hours=1,
+        amount="11.00",
+        status=confirmed,
+        method=PaymentMethod.hourly,
+        paid_at=at(30, 23, minute=30),
+    )
+    db_session.add_all(
+        [
+            w.hourly_ana,
+            w.mixed_ana,
+            w.manual_bruno,
+            w.cancelled_paid_bruno,
+            w.pending_ana,
+            w.package_ana,
+            w.edge_in_ana,
+            w.edge_out_ana,
+        ]
+    )
+    await db_session.flush()
+
+    def purchase(user, package, *, org=None, hours, amount, source, status, paid_at, **extra):
+        return UserPackagePurchase(
+            user_id=user.id,
+            package_id=package.id if package is not None else None,
+            org_id=(org or test_org).id,
+            hours_total=Decimal(hours),
+            hours_used=Decimal("0.00"),
+            hours_remaining=Decimal(hours),
+            amount_paid=Decimal(amount),
+            source=source,
+            status=status,
+            purchased_at=paid_at or at(1),
+            paid_at=paid_at,
+            expires_at=at(1, month=12),
+            **extra,
+        )
+
+    bought, active = PurchaseSource.purchase, PurchaseStatus.active
+    w.pack_bruno = purchase(
+        w.bruno,
+        w.pack10,
+        hours="10.00",
+        amount="100.00",
+        source=bought,
+        status=active,
+        paid_at=at(15),
+    )
+    w.pack_ana = purchase(
+        w.ana, w.pack5, hours="5.00", amount="55.00", source=bought, status=active, paid_at=at(20)
+    )
+    w.gift_ana = purchase(
+        w.ana,
+        w.pack5,
+        hours="2.00",
+        amount="0.00",
+        source=PurchaseSource.complimentary,
+        status=active,
+        paid_at=at(21),
+    )
+    w.credit_bruno = purchase(
+        w.bruno,
+        None,
+        hours="1.00",
+        amount="11.00",
+        source=PurchaseSource.cancellation_credit,
+        status=active,
+        paid_at=None,
+        source_booking_id=w.cancelled_paid_bruno.id,
+    )
+    w.pending_pack_ana = purchase(
+        w.ana,
+        w.pack10,
+        hours="10.00",
+        amount="100.00",
+        source=bought,
+        status=PurchaseStatus.pending,
+        paid_at=None,
+    )
+    w.other_org_pack = purchase(
+        w.ana,
+        w.other_pack,
+        org=w.other_org,
+        hours="10.00",
+        amount="90.00",
+        source=bought,
+        status=active,
+        paid_at=at(16),
+    )
+    db_session.add_all(
+        [w.pack_bruno, w.pack_ana, w.gift_ana, w.credit_bruno, w.pending_pack_ana, w.other_org_pack]
+    )
+    await db_session.commit()
+
+    w.params = {"org_id": str(test_org.id), "from": "2026-09-01", "to": "2026-09-30"}
+    w.expected = {
+        "received_total": "221.00",
+        "by_channel": {"online": "199.00", "manual": "22.00"},
+        "pack_sales": [
+            {
+                "package_id": str(w.pack10.id),
+                "name": "Pack 10h",
+                "count": 1,
+                "amount": "100.00",
+                "hours": "10.00",
+            },
+            {
+                "package_id": str(w.pack5.id),
+                "name": "Pack 5h",
+                "count": 1,
+                "amount": "55.00",
+                "hours": "5.00",
+            },
+        ],
+        "hourly": {"count": 3, "amount": "33.00", "hours": "3.00"},
+        "mixed": {"count": 1, "amount": "11.00", "hours": "1.00"},
+        "manual": {"count": 1, "amount": "22.00", "hours": "2.00"},
+        "transactions_count": 7,
+        "ana": {"amount": "88.00", "hours": "8.00", "transactions_count": 4},
+        "bruno": {"amount": "133.00", "hours": "13.00", "transactions_count": 3},
+    }
+    return w

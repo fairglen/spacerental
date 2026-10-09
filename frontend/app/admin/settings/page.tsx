@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/admin/crud/PageHeader'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CONTACT_EMAIL } from '@/lib/contact'
+import { EmailStatusCard } from '@/components/admin/EmailStatusCard'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obrigatório'),
@@ -72,6 +73,8 @@ function Settings() {
         </FormSection>
       </EntityForm>
       <p className="mt-8 text-sm"><Link href="/admin/audit?entity_type=organization" className="text-primary underline">Ver o histórico das definições</Link></p>
+      {/* B61: the email gateway's state and a test send — admins and the owner alike. */}
+      <EmailStatusCard api={api} enabled={enabled} orgId={currentOrgId} />
     </div>
   )
 }

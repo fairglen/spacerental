@@ -67,6 +67,9 @@ class Booking(Base):
         # bookings in start-time order (migration 0017).
         Index("ix_bookings_org_id_start_time", "org_id", "start_time"),
         Index("ix_bookings_recurrence_rule_id", "recurrence_rule_id"),
+        # I01: the statement reads one organisation's money by the moment it
+        # was received (migration 0018).
+        Index("ix_bookings_org_id_paid_at", "org_id", "paid_at"),
         CheckConstraint(
             "package_hours_used >= 0 AND package_hours_used <= duration_hours",
             name="ck_bookings_package_hours_used_within_duration",
@@ -98,6 +101,11 @@ class Booking(Base):
     package_hours_used: Mapped[decimal.Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=decimal.Decimal(0), server_default="0"
     )
+    # I01: when money was received for this booking — the Checkout completion
+    # (hourly/mixed), the operator's "mark as paid" or a manual booking with an
+    # amount. Set once and never moved; a later cancellation credits hours
+    # (K01) and does not touch it. NULL = no money received (package, unpaid).
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[BookingStatus] = mapped_column(
         SAEnum(BookingStatus, name="booking_status"),
         nullable=False,

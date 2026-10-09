@@ -88,6 +88,25 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/admin/support/requests/{{request_id}}"): OPERATOR,
     ("GET", f"{API}/admin/organization"): OPERATOR,
     ("PUT", f"{API}/admin/organization"): OPERATOR,
+    # B61: the email gateway's state and a self-addressed test send.
+    ("GET", f"{API}/admin/email/status"): OPERATOR,
+    ("POST", f"{API}/admin/email/test"): OPERATOR,
+    # I04: the caller's own billing details (NIF, name, address).
+    ("GET", f"{API}/auth/me/billing"): CUSTOMER,
+    ("PUT", f"{API}/auth/me/billing"): CUSTOMER,
+    # I02: the billing statement, read by `paid_at` over Lisbon days.
+    ("GET", f"{API}/admin/billing/summary"): OPERATOR,
+    ("GET", f"{API}/admin/billing/statement"): OPERATOR,
+    ("GET", f"{API}/admin/billing/statement.csv"): OPERATOR,
+    # I05: invoice records (metadata + private PDF).
+    ("POST", f"{API}/admin/billing/invoices"): OPERATOR,
+    ("GET", f"{API}/admin/billing/invoices"): OPERATOR,
+    ("GET", f"{API}/admin/billing/invoices/{{invoice_id}}"): OPERATOR,
+    ("PUT", f"{API}/admin/billing/invoices/{{invoice_id}}"): OPERATOR,
+    ("DELETE", f"{API}/admin/billing/invoices/{{invoice_id}}"): OPERATOR,
+    ("GET", f"{API}/admin/billing/invoices/{{invoice_id}}/pdf"): OPERATOR,
+    ("GET", f"{API}/invoices/me"): CUSTOMER,
+    ("GET", f"{API}/invoices/{{invoice_id}}/pdf"): CUSTOMER,
     # G02 deletion policy; guards and cross-org cases in test_deletion_policy.py.
     ("DELETE", f"{API}/admin/rooms/{{room_id}}"): OPERATOR,
     ("DELETE", f"{API}/admin/rooms/{{room_id}}/availability/{{rule_id}}"): OPERATOR,
@@ -164,6 +183,7 @@ ROUTES: dict[tuple[str, str], str] = {
 # Minimal valid bodies, so a sweep's 401/403/404 is the authorization answer and
 # a positive control is not a 422 in disguise.
 BODIES: dict[tuple[str, str], dict] = {
+    ("PUT", f"{API}/auth/me/billing"): {"tax_id": "123456789"},
     ("POST", f"{API}/admin/spaces"): {"name": "Sweep space"},
     ("PUT", f"{API}/admin/spaces/{{space_id}}"): {"name": "Renamed"},
     ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"): {"name": "Sala", "hourly_rate": "10.00"},
@@ -225,6 +245,10 @@ def _password_hash() -> str:
 CUSTOMER_ISOLATION: dict[tuple[str, str], str] = {
     ("POST", f"{API}/auth/enroll"): "test_enrolling_joins_only_the_configured_org_as_a_member",
     ("GET", f"{API}/auth/me"): "test_my_lists_contain_only_my_rows",
+    ("GET", f"{API}/auth/me/billing"): "test_billing_details_are_only_my_own",
+    ("PUT", f"{API}/auth/me/billing"): "test_billing_details_are_only_my_own",
+    ("GET", f"{API}/invoices/me"): "test_invoices_are_only_my_own",
+    ("GET", f"{API}/invoices/{{invoice_id}}/pdf"): "test_invoices_are_only_my_own",
     ("GET", f"{API}/auth/memberships"): "test_my_lists_contain_only_my_rows",
     ("GET", f"{API}/bookings/me"): "test_my_lists_contain_only_my_rows",
     ("POST", f"{API}/bookings"): (
@@ -746,15 +770,83 @@ class TestOperatorListsAreScoped:
             str(world.op_a.id),
             str(world.dual.id),
         }
-        assert await get("dashboard") == {
+        # I03: money is counted at `paid_at`; A's booking was paid just now,
+        # B's cancelled one too (its 22 € must stay in B).
+        now = datetime.now(tz=UTC)
+        for row in await db_session.scalars(
+            select(Booking).where(Booking.room_id.in_([world.room_a.id, world.room_b.id]))
+        ):
+            row.paid_at = now
+        await db_session.commit()
+        dashboard = await get("dashboard")
+        month = dashboard.pop("this_month")
+        assert dashboard == {
             "total_bookings": 1,
-            "total_revenue": 11.0,
+            "total_revenue": "11.00",
             "occupancy_rate": 100.0,
             "active_users": 1,
         }
+        assert month["received_total"] == "11.00"
+        assert month["hourly"] == {"count": 1, "amount": "11.00", "hours": "1.00"}
 
 
 class TestCustomerIsolation:
+    async def test_invoices_are_only_my_own(self, client, world, db_session):
+        # I05: an invoice issued to A is listed and downloadable by A alone;
+        # for B, and for A's operator on the customer route, it is a 404.
+        from datetime import date
+        from decimal import Decimal
+
+        from app.media import get_media_storage, invoice_pdf_key
+        from app.models.invoice import Invoice
+
+        invoice = Invoice(
+            org_id=world.org_a.id,
+            user_id=world.cust_a.id,
+            number="FT 2026/1",
+            issued_at=date(2026, 10, 1),
+            period_from=date(2026, 9, 1),
+            period_to=date(2026, 9, 30),
+            amount=Decimal("11.00"),
+            hours=Decimal("1.00"),
+        )
+        db_session.add(invoice)
+        await db_session.flush()
+        invoice.pdf_key = invoice_pdf_key(world.org_a.id, invoice.id)
+        await get_media_storage().save(invoice.pdf_key, b"%PDF-1.4\n%%EOF\n")
+        await db_session.commit()
+
+        mine = await client.get(f"{API}/invoices/me", headers=_as(world.cust_a))
+        assert [i["number"] for i in mine.json()["invoices"]] == ["FT 2026/1"]
+        resp = await client.get(f"{API}/invoices/{invoice.id}/pdf", headers=_as(world.cust_a))
+        assert resp.status_code == 200 and resp.content.startswith(b"%PDF-")
+        for other in (world.cust_b, world.op_a):
+            assert (await client.get(f"{API}/invoices/me", headers=_as(other))).json() == {
+                "invoices": []
+            }
+            resp = await client.get(f"{API}/invoices/{invoice.id}/pdf", headers=_as(other))
+            assert resp.status_code == 404
+
+    async def test_billing_details_are_only_my_own(self, client, world):
+        # I04: the route addresses the caller and nobody else — a customer
+        # of another org, and an operator, read and write only their own.
+        resp = await client.put(
+            f"{API}/auth/me/billing",
+            json={"tax_id": "123456789", "billing_name": "A", "billing_address": "R. 1"},
+            headers=_as(world.cust_a),
+        )
+        assert resp.status_code == 200, resp.text
+        for other in (world.cust_b, world.op_a):
+            resp = await client.get(f"{API}/auth/me/billing", headers=_as(other))
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["billing"]["tax_id"] is None
+        resp = await client.put(
+            f"{API}/auth/me/billing", json={"tax_id": "999999990"}, headers=_as(world.cust_b)
+        )
+        assert resp.status_code == 200, resp.text
+        mine = await client.get(f"{API}/auth/me/billing", headers=_as(world.cust_a))
+        assert mine.json()["billing"]["tax_id"] == "123456789"
+
     async def test_nobody_else_can_cancel_or_pay_a_customers_booking(
         self, client, world, db_session, payments
     ):

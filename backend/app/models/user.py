@@ -20,6 +20,11 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # What an issued invoice names (I04): the NIF and, when they differ from
+    # the account's, the name and address to bill.
+    tax_id: Mapped[str | None] = mapped_column(String(9), nullable=True)
+    billing_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    billing_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Every JWT carries the version it was issued under (`tv`); bumping this
     # revokes them all at once — after a password reset, an admin-set
     # password or anonymisation (G02/G03). Never in a public schema.

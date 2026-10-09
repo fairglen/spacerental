@@ -806,7 +806,7 @@ class TestRevenueAccounting:
         )
         assert stats.status_code == 200, stats.text
         body = stats.json()
-        assert body["total_revenue"] == 0
+        assert body["total_revenue"] == "0.00"
         # The booking itself still counts — it occupies the room.
         assert body["total_bookings"] == 1
 
@@ -834,22 +834,29 @@ class TestRevenueAccounting:
         )
         assert created.status_code == 201, created.text
 
-        # Only a confirmed booking counts, so walk it through the admin path.
-        confirmed = await client.put(
-            f"/api/v1/admin/bookings/{created.json()['booking']['id']}",
+        # Money counts when it is received (I01/I03): an unpaid hold is
+        # nothing yet, mark-paid is the payment.
+        stats = await client.get(
+            "/api/v1/admin/dashboard",
             params={"org_id": str(test_org.id)},
-            json={"status": "confirmed"},
             headers=admin_headers,
         )
-        assert confirmed.status_code == 200, confirmed.text
+        assert stats.json()["total_revenue"] == "0.00"
 
+        paid = await client.post(
+            f"/api/v1/admin/bookings/{created.json()['booking']['id']}/mark-paid",
+            params={"org_id": str(test_org.id)},
+            json={"reason": "Transferência recebida"},
+            headers=admin_headers,
+        )
+        assert paid.status_code == 200, paid.text
         stats = await client.get(
             "/api/v1/admin/dashboard",
             params={"org_id": str(test_org.id)},
             headers=admin_headers,
         )
         # 2h at the seeded 11.00/h.
-        assert stats.json()["total_revenue"] == 22.0
+        assert stats.json()["total_revenue"] == "22.00"
 
 
 @pytest.mark.parametrize(

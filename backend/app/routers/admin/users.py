@@ -74,6 +74,9 @@ def _row(member: OrganizationMember, bookings_count: int) -> OrgUserOut:
         bookings_count=bookings_count,
         disabled_at=member.user.disabled_at,
         created_at=member.user.created_at,
+        tax_id=member.user.tax_id,
+        billing_name=member.user.billing_name,
+        billing_address=member.user.billing_address,
     )
 
 
@@ -697,6 +700,8 @@ async def admin_grant_hours(
         amount_paid=0,
         admin_note=body.reason,
         purchased_at=now,
+        # I01: granted hours count as a transaction (amount 0 sums to nothing).
+        paid_at=now,
         expires_at=expires_at,
         status=PurchaseStatus.active,
         # What "Origem" shows (K01): a grant, not a sale — the column's

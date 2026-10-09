@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import mimetypes
 from contextlib import asynccontextmanager, suppress
 
@@ -6,13 +7,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.staticfiles import StaticFiles
 
+from app import email
 from app.cache_headers import CacheControlMiddleware
 from app.config import settings
 from app.database import async_session_factory
 from app.holds import run_hold_sweeper
-from app.media import LocalMediaStorage, get_media_storage
+from app.logging_config import configure_logging
+from app.media import LocalMediaStorage, get_media_storage, is_private_key
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.request_id import RequestIdMiddleware
 from app.routers import (
@@ -20,6 +24,7 @@ from app.routers import (
     auth,
     bookings,
     checkout_stub,
+    invoices,
     media,
     openapi_public,
     packages,
@@ -34,6 +39,10 @@ from app.security_headers import SECURITY_HEADERS, SecurityHeadersMiddleware
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # B61: one line saying which email gateway this process runs, so a reset
+    # email "that never arrives" is explained by the first line of the log.
+    configure_logging()
+    logging.getLogger("app").info(email.describe_mode())
     # P2.2: lapsed unpaid holds are reconciled on a timer (app/holds.py), so
     # the reads only read. One replica is enough; 0 turns it off.
     sweeper = None
@@ -124,6 +133,7 @@ app.include_router(spaces.router, prefix=API_PREFIX)
 app.include_router(bookings.router, prefix=API_PREFIX)
 app.include_router(recurrences.router, prefix=API_PREFIX)
 app.include_router(packages.router, prefix=API_PREFIX)
+app.include_router(invoices.router, prefix=API_PREFIX)
 # Every /admin route: one package, one router (Q50).
 app.include_router(admin.router, prefix=API_PREFIX)
 app.include_router(media.router, prefix=API_PREFIX)
@@ -149,12 +159,24 @@ test_hooks.mount(
 # an image.
 mimetypes.add_type("image/webp", ".webp")
 
+
 # Local storage only: the API itself serves what it stored (C14), read-only
 # and re-encoded by `app.media`. With object storage, MEDIA_BASE_URL points at
 # the bucket and nothing is mounted here.
+class PublicMediaFiles(StaticFiles):
+    """The media root minus `private/` (I05): invoice PDFs live under the
+    same root but are streamed only by the invoice routes, after the org or
+    ownership check. The mount answers 404 for them, as for any missing file."""
+
+    async def get_response(self, path: str, scope):
+        if is_private_key(path):
+            raise StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
 _storage = get_media_storage()
 if isinstance(_storage, LocalMediaStorage):
-    app.mount("/media", StaticFiles(directory=_storage.root), name="media")
+    app.mount("/media", PublicMediaFiles(directory=_storage.root), name="media")
 
 
 @app.get("/health", tags=["health"])
