@@ -286,16 +286,38 @@ class BrandInline(unittest.TestCase):
         self.assertEqual(INDEX.count("<symbol "), 2)
 
     def test_the_three_uses_have_their_sizes_and_are_decorative(self):
-        uses = re.findall(r'<svg class="([^"]+)" width="(\d+)" height="(\d+)" viewBox="[^"]+" aria-hidden="true" focusable="false"><use href="#(brand-[a-z]+)"></use></svg>', INDEX)
+        uses = re.findall(r'<svg class="([^"]+)" width="(\d+)" height="(\d+)" viewBox="([^"]+)" aria-hidden="true" focusable="false"><use href="#(brand-[a-z]+)"></use></svg>', INDEX)
         self.assertEqual(uses, [
-            ("brand-wordmark", "103", "22", "brand-wordmark"),
-            ("hero-watermark", "440", "401", "brand-mark"),
-            ("hero-mark-svg", "400", "365", "brand-mark"),
+            # B58: the header shows the mark alone, 40px tall (44 wide at its ratio).
+            ("brand-mark", "44", "40", "0 0 735.5 670.5", "brand-mark"),
+            ("hero-watermark", "440", "401", "0 0 735.5 670.5", "brand-mark"),
+            ("hero-mark-svg", "400", "365", "0 0 735.5 670.5", "brand-mark"),
         ])
         self.assertIn('<a href="#top" class="wordmark" aria-label="FlowSpace">', INDEX)
         self.assertIn('<div class="hero-mark" aria-hidden="true">', INDEX)
         # The footer keeps the white lockup from the brand set (B50).
         self.assertIn('assets/img/brand/logo-horizontal.svg#lockup', INDEX)
+
+    def test_every_use_starts_its_viewbox_at_the_origin(self):
+        # B57: a <use> draws the symbol at (0,0) of the outer svg; the symbol's
+        # own viewBox maps the file's offset drawing onto it. The outer viewBox
+        # must therefore be `0 0 w h` — the file's `282.0 162.0 …` here pushed
+        # the drawing out of the viewport (blank header, clipped hero mark).
+        boxes = re.findall(r'<svg class="[^"]+"[^>]*viewBox="([^"]+)"[^>]*><use href="#brand-', INDEX)
+        self.assertEqual(len(boxes), 3)
+        for box in boxes:
+            self.assertTrue(box.startswith("0 0 "), box)
+        mark = (SITE / "assets" / "img" / "brand" / "logo-mark.svg").read_text(encoding="utf-8")
+        file_box = re.search(r'viewBox="([^"]+)"', mark).group(1)
+        self.assertFalse(file_box.startswith("0 0 "))  # the trap: the file's own box is offset
+        _, _, w, h = file_box.split()
+        self.assertEqual(set(boxes), {f"0 0 {w} {h}"})
+
+    def test_the_brand_word_sits_above_the_headline(self):
+        # B59: a dual-colour "FlowSpace" line before the h1, outside it, no aria-hidden.
+        content = re.search(r'<div class="hero-content">(.*?)<h1>', INDEX, re.S).group(1)
+        self.assertEqual(content.strip(), '<p class="hero-brand">Flow<span>Space</span></p>')
+        self.assertNotIn("FlowSpace", re.search(r"<h1>(.*?)</h1>", INDEX, re.S).group(1))
 
 
 class CrawlFiles(unittest.TestCase):

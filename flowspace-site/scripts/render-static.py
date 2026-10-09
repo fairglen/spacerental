@@ -418,7 +418,8 @@ BRAND_DIR = SITE / "assets" / "img" / "brand"
 # phone watermark; the wordmark 22px tall in the header.
 HERO_MARK_WIDTH = 400
 WATERMARK_WIDTH = 440
-WORDMARK_HEIGHT = 22
+# B58: the header shows the mark alone, 40px tall (the 36px floor of B51 holds).
+HEADER_MARK_HEIGHT = 40
 
 
 def svg_parts(name: str) -> tuple[str, str, float, float]:
@@ -450,19 +451,23 @@ def block_brand_symbols() -> str:
 
 def use_svg(symbol: str, width: int | None, height: int | None, cls: str, indent: str) -> str:
     name = "logo-mark.svg" if symbol == "brand-mark" else "wordmark.svg"
-    vb, _, w, h = svg_parts(name)
+    _, _, w, h = svg_parts(name)
     if width is None:
         width = round(height * w / h)
     if height is None:
         height = round(width * h / w)
+    # B57: the outer viewBox starts at the origin. A <use> draws the symbol at
+    # (0,0) of THIS svg, and the symbol's own viewBox already maps the file's
+    # offset drawing (282,162… / 147,874…) onto it; repeating that offset here
+    # pushed the drawing out of the viewport (blank header, clipped mark).
     return (
-        f'{indent}<svg class="{cls}" width="{width}" height="{height}" viewBox="{vb}" aria-hidden="true" focusable="false">'
+        f'{indent}<svg class="{cls}" width="{width}" height="{height}" viewBox="0 0 {w} {h}" aria-hidden="true" focusable="false">'
         f'<use href="#{symbol}"></use></svg>'
     )
 
 
 def block_brand_header() -> str:
-    return use_svg("brand-wordmark", None, WORDMARK_HEIGHT, "brand-wordmark", "      ")
+    return use_svg("brand-mark", None, HEADER_MARK_HEIGHT, "brand-mark", "      ")
 
 
 def block_brand_hero_mark() -> str:

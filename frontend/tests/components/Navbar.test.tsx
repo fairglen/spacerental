@@ -37,20 +37,25 @@ describe('Navbar component i18n refactor (9.1)', () => {
     expect(screen.queryByText(/espa[cç]ohora/i)).not.toBeInTheDocument()
   })
 
-  it('the brand link carries the wordmark alone, 22px tall, decorative inside the named link, taking the primary colour (B51)', () => {
+  it('the brand link carries the mark alone, 40px tall, decorative inside the named link, taking the primary colour (B58)', () => {
     render(<Navbar />)
     const link = screen.getByRole('link', { name: t('brand.name') })
     const logo = link.querySelector('svg')!
     expect(logo).not.toBeNull()
     expect(logo).toHaveAttribute('aria-hidden', 'true')
-    expect(logo).toHaveAttribute('height', '22')
-    expect(Number(logo.getAttribute('width'))).toBeCloseTo(22 * 1018.5 / 216.5, 0)
-    expect(logo.querySelector('use')).toHaveAttribute('href', '#brand-wordmark')
-    // The mark on its own never appears under 36px: the header has no mark at all.
-    expect(link.querySelector('use[href="#brand-mark"], use[href*="lockup"]')).toBeNull()
+    // 40px tall — over the 36px floor B51 set for the mark on its own — with
+    // explicit attributes so the bar reserves its box (no shift).
+    expect(logo).toHaveAttribute('height', '40')
+    expect(logo).toHaveAttribute('width', '44')
+    expect(Number(logo.getAttribute('width'))).toBeCloseTo(40 * 735.5 / 670.5, 0)
+    expect(logo.querySelector('use')).toHaveAttribute('href', '#brand-mark')
+    // The wordmark and the lockup are gone from the header.
+    expect(link.querySelector('use[href="#brand-wordmark"], use[href*="lockup"]')).toBeNull()
     expect(link.className).toContain('text-primary')
     // No text wordmark or icon next to it.
     expect(link.textContent).toBe('')
+    // It lives in the bar itself, not in the collapsible mobile menu.
+    expect(link.closest('.h-16')).not.toBeNull()
   })
 
   it('renders nav links in Portuguese', () => {

@@ -8,14 +8,17 @@ interface BrandWordmarkProps {
 }
 
 /**
- * B51: the "FlowSpace" lettering alone as inline SVG, for the header — the
- * link around it carries the accessible name, so the drawing is
- * `aria-hidden`. Takes `currentColor`. Needs <BrandSymbols> on the page.
+ * B51: the "FlowSpace" lettering alone as inline SVG — the link around it
+ * carries the accessible name, so the drawing is `aria-hidden`. Takes
+ * `currentColor`. Needs <BrandSymbols> on the page. (The header shows the
+ * mark since B58; this stays for any lockup that wants the lettering.)
+ *
+ * B57: the outer viewBox starts at the origin — see BrandMark.
  */
 export function BrandWordmark({ height, className }: BrandWordmarkProps) {
-  const { viewBox, width: w, height: h } = brandBoxes.wordmark
+  const { width: w, height: h } = brandBoxes.wordmark
   return (
-    <svg className={className} width={Math.round((height * w) / h)} height={height} viewBox={viewBox} aria-hidden="true" focusable="false">
+    <svg className={className} width={Math.round((height * w) / h)} height={height} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" focusable="false">
       <use href={`#${BRAND_WORDMARK_ID}`} />
     </svg>
   )

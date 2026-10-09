@@ -166,13 +166,14 @@ a {
   display: block;
   flex: none;
 }
-/* B51: the header shows the wordmark alone, 22px tall (the app's
- * `<BrandWordmark height={22} />` in a `text-primary` link); the mark on its
- * own never appears under 36px. */
-.brand-wordmark {
+/* B58: the header shows the mark alone, 40px tall (the app's
+ * `<BrandMark width={44} />` in a `text-primary` link) — over the 36px floor
+ * B51 set for the mark on its own. It stays in the bar at every width; the
+ * hamburger sits to its right under 768px. */
+.brand-mark {
   display: block;
   flex: none;
-  height: 22px;
+  height: 40px;
   width: auto;
 }
 
@@ -296,16 +297,17 @@ a {
   width: min(100%, 400px);
   height: auto;
 }
-/* The watermark under 1024px: the app's `lg:hidden absolute -right-28 -bottom-12
- * w-[440px] opacity-[var(--hero-watermark-opacity)] pointer-events-none
- * text-primary` — bleeding off the bottom-right of the hero's overflow box,
- * behind the buttons and benefits (`.hero-content` is relative, so it stays
- * above). */
+/* The watermark under 1024px (B60): the app's `lg:hidden absolute left-1/2
+ * top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(440px,90vw)]
+ * opacity-(--hero-watermark-opacity) pointer-events-none text-primary` —
+ * centred on the hero, behind the words, buttons and benefits
+ * (`.hero-content` is relative, so it stays above). */
 .hero-watermark {
   position: absolute;
-  right: -7rem;
-  bottom: -3rem;
-  width: 440px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, 90vw);
   height: auto;
   color: var(--color-primary);
   opacity: var(--hero-watermark-opacity);
@@ -323,6 +325,28 @@ a {
   }
   .hero-watermark {
     display: none;
+  }
+}
+
+/* B59: the brand word above the headline — the app's `text-4xl md:text-5xl
+ * font-extrabold tracking-tight mb-3`, `Flow` in the foreground colour,
+ * `Space` in the primary. A name, not copy: not part of the h1. */
+.hero-brand {
+  margin: 0 0 0.75rem;
+  font-size: 2.25rem;
+  line-height: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--color-foreground);
+  white-space: nowrap;
+}
+.hero-brand span {
+  color: var(--color-primary);
+}
+@media (min-width: 768px) {
+  .hero-brand {
+    font-size: 3rem;
+    line-height: 1;
   }
 }
 

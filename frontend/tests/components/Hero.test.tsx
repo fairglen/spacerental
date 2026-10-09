@@ -31,12 +31,12 @@ describe('Hero structure', () => {
     expect(Object.keys(pt)).not.toContain('theSpace')
   })
 
-  it('opens with the headline: nothing sits above it any more (V04)', () => {
+  it('opens with the brand word and then the headline: no pill above them (V04, B59)', () => {
     const { container } = render(<Hero />)
     const h1 = screen.getByRole('heading', { level: 1 })
-    // The first text the hero renders is the headline itself.
+    // The first text the hero renders is the brand name, immediately followed by the headline.
     const firstText = container.textContent!.trim()
-    expect(firstText.startsWith(h1.textContent!.trim())).toBe(true)
+    expect(firstText.startsWith(`FlowSpace${h1.textContent!.trim()}`)).toBe(true)
     expect(container.querySelector('.rounded-full.bg-accent')).toBeNull()
   })
 })
@@ -61,8 +61,27 @@ describe('Hero brand mark (B51)', () => {
     expect(grid.className).toContain('lg:items-center')
     const text = grid.firstElementChild!
     expect(text.className).toContain('max-w-3xl')
-    // The headline is still the first thing in the text column (V04).
-    expect(text.firstElementChild!.firstElementChild).toBe(text.querySelector('h1'))
+    // B59: the brand word comes first, then the headline (V04's "nothing
+    // above the headline" meant no pill; the name is not a pill).
+    const [brand, h1] = Array.from(text.firstElementChild!.children)
+    expect(brand).toBe(text.querySelector('p.hero-brand'))
+    expect(h1).toBe(text.querySelector('h1'))
+  })
+
+  it('B59: "FlowSpace" sits above the headline as a dual-colour brand line, outside the h1 and the catalogs', () => {
+    const { container } = render(<Hero />)
+    const brand = container.querySelector('p.hero-brand')!
+    expect(brand.textContent).toBe('FlowSpace')
+    expect(brand.nextElementSibling!.tagName).toBe('H1')
+    expect(container.querySelector('h1')!.textContent).not.toContain('FlowSpace')
+    for (const cls of ['text-4xl', 'md:text-5xl', 'font-extrabold', 'tracking-tight', 'text-foreground', 'whitespace-nowrap', 'mb-3']) {
+      expect(brand.className, cls).toContain(cls)
+    }
+    const space = brand.querySelector('span')!
+    expect(space.textContent).toBe('Space')
+    expect(space.className).toContain('text-primary')
+    expect(space).not.toHaveAttribute('aria-hidden')
+    expect(brand).not.toHaveAttribute('aria-hidden')
   })
 
   it('the mark column is hidden until lg, decorative, 420px tall, with the disc as a before: pseudo and the 400px mark', () => {
@@ -82,7 +101,7 @@ describe('Hero brand mark (B51)', () => {
     expect(mark.querySelector('use')).toHaveAttribute('href', '#brand-mark')
   })
 
-  it('the watermark is the same mark, 440px, bleeding off the bottom-right at the tunable opacity, hidden from lg, behind the text', () => {
+  it('the watermark is the same mark, centred on the hero (B60) at the tunable opacity, hidden from lg, behind the text', () => {
     const { container } = render(<Hero />)
     const uses = container.querySelectorAll('use[href="#brand-mark"]')
     expect(uses).toHaveLength(2)
@@ -90,9 +109,10 @@ describe('Hero brand mark (B51)', () => {
     expect(watermark).toHaveAttribute('width', '440')
     expect(watermark).toHaveAttribute('height', '401')
     expect(watermark).toHaveAttribute('aria-hidden', 'true')
-    for (const cls of ['lg:hidden', 'absolute', '-right-28', '-bottom-12', 'w-[440px]', 'opacity-(--hero-watermark-opacity)', 'pointer-events-none', 'text-primary']) {
+    for (const cls of ['lg:hidden', 'absolute', 'left-1/2', 'top-1/2', '-translate-x-1/2', '-translate-y-1/2', 'w-[min(440px,90vw)]', 'opacity-(--hero-watermark-opacity)', 'pointer-events-none', 'text-primary']) {
       expect(watermark.className.baseVal, cls).toContain(cls)
     }
+    for (const cls of ['-right-28', '-bottom-12']) expect(watermark.className.baseVal, cls).not.toContain(cls)
     // Painted before the content box, which is positioned — so the words stay on top.
     const content = watermark.nextElementSibling!
     expect(content.className).toContain('relative')

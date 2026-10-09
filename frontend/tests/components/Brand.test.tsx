@@ -59,7 +59,6 @@ describe('brand symbols and their uses', () => {
     expect(svg).toHaveAttribute('aria-hidden', 'true')
     expect(svg).toHaveAttribute('width', '400')
     expect(svg).toHaveAttribute('height', String(Math.round((400 * 670.5) / 735.5))) // 365
-    expect(svg).toHaveAttribute('viewBox', brandPaths.mark.viewBox)
     expect(svg.querySelector('use')).toHaveAttribute('href', `#${BRAND_MARK_ID}`)
     expect(svg).toHaveClass('x')
   })
@@ -71,5 +70,22 @@ describe('brand symbols and their uses', () => {
     expect(svg).toHaveAttribute('width', String(Math.round((22 * 1018.5) / 216.5))) // 103
     expect(svg).toHaveAttribute('aria-hidden', 'true')
     expect(svg.querySelector('use')).toHaveAttribute('href', `#${BRAND_WORDMARK_ID}`)
+  })
+
+  // B57: a <use> draws the symbol at (0,0) of the outer svg, and the symbol's
+  // own viewBox maps the file's offset drawing (282,162… / 147,874…) onto it.
+  // Repeating that offset on the outer viewBox pushed the drawing out of the
+  // viewport: a blank header, a clipped and off-centre hero mark.
+  it('the outer viewBox starts at the origin with the symbol’s size, never at the file’s offset', () => {
+    const mark = render(<BrandMark width={400} />).container.querySelector('svg')!
+    expect(mark).toHaveAttribute('viewBox', `0 0 ${brandBoxes.mark.width} ${brandBoxes.mark.height}`) // 0 0 735.5 670.5
+    const wordmark = render(<BrandWordmark height={22} />).container.querySelector('svg')!
+    expect(wordmark).toHaveAttribute('viewBox', `0 0 ${brandBoxes.wordmark.width} ${brandBoxes.wordmark.height}`) // 0 0 1018.5 216.5
+    // The files' own viewBoxes do not start at the origin — that is the trap.
+    expect(brandPaths.mark.viewBox.startsWith('0 0 ')).toBe(false)
+    expect(brandPaths.wordmark.viewBox.startsWith('0 0 ')).toBe(false)
+    // …and they stay on the symbols, where the offset belongs.
+    const { container } = render(<BrandSymbols />)
+    expect(container.querySelector(`#${BRAND_MARK_ID}`)).toHaveAttribute('viewBox', brandPaths.mark.viewBox)
   })
 })

@@ -36,9 +36,12 @@ test('hero renders one headline with its emphasised half, a lede, two CTAs and f
     await expect(item).not.toBeEmpty();
     expect(await item.evaluate((el) => getComputedStyle(el, '::before').width)).toBe('8px');
   }
-  // V04: the headline is the first thing in the hero; no pill above it.
+  // V04: no pill above the headline. B59: the brand word is the one line
+  // before it — a name, not copy — then the headline.
   await expect(page.locator('.hero .hero-badge')).toHaveCount(0);
-  await expect(page.locator('.hero-content > :first-child')).toHaveJSProperty('tagName', 'H1');
+  await expect(page.locator('.hero-content > :first-child')).toHaveClass('hero-brand');
+  await expect(page.locator('.hero-content > :first-child')).toHaveText('FlowSpace');
+  await expect(page.locator('.hero-content > :nth-child(2)')).toHaveJSProperty('tagName', 'H1');
 });
 
 // L02: the hero carries the whole message; no "O espaço" section, and every
@@ -678,19 +681,19 @@ test('the menu toggle announces the action it will perform', async ({ page }) =>
 });
 
 // B50: the brand set replaces the text wordmark and the old favicon.
-test('the header carries the wordmark alone (22px, decorative inside the named link), the footer the white lockup, and the head has the icons', async ({ page }) => {
+test('the header carries the mark alone (40px, decorative inside the named link), the footer the white lockup, and the head has the icons', async ({ page }) => {
   await page.goto('/');
-  // B51: the link is named; the drawing inside it is decorative.
+  // B51: the link is named; the drawing inside it is decorative. B58: it is the mark, 40px.
   const link = page.locator('.site-nav a.wordmark');
   await expect(link).toHaveAttribute('aria-label', 'FlowSpace');
-  const header = link.locator('svg.brand-wordmark');
+  const header = link.locator('svg.brand-mark');
   await expect(header).toHaveCount(1);
   await expect(header).toHaveAttribute('aria-hidden', 'true');
-  expect(await header.evaluate((el) => [el.getAttribute('width'), el.getAttribute('height')])).toEqual(['103', '22']);
-  expect(await header.evaluate((el) => el.querySelector('use')?.getAttribute('href'))).toBe('#brand-wordmark');
-  expect((await header.boundingBox())!.height).toBe(22);
-  // The mark on its own never appears under 36px: there is no mark in the header.
-  await expect(link.locator('use[href="#brand-mark"], use[href*="lockup"]')).toHaveCount(0);
+  expect(await header.evaluate((el) => [el.getAttribute('width'), el.getAttribute('height')])).toEqual(['44', '40']);
+  expect(await header.evaluate((el) => el.querySelector('use')?.getAttribute('href'))).toBe('#brand-mark');
+  expect((await header.boundingBox())!.height).toBe(40);
+  // Over the 36px floor B51 set for the mark on its own; the wordmark and the lockup are gone from the header.
+  await expect(link.locator('use[href="#brand-wordmark"], use[href*="lockup"]')).toHaveCount(0);
   // The symbols the <use>s reference are inlined once, from the brand files.
   const symbols = page.locator('body > svg[aria-hidden="true"] symbol');
   await expect(symbols).toHaveCount(2);
@@ -718,12 +721,83 @@ test('the header carries the wordmark alone (22px, decorative inside the named l
   }
 });
 
-test('at 390px the wordmark fits well under 60% of the header', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
-  const box = (await page.locator('.site-nav .wordmark svg.brand-wordmark').boundingBox())!;
-  expect(box.width).toBeLessThan(390 * 0.6);
-  expect(box.height).toBe(22);
+test('at 390 and 768 the header mark is 40px tall, in the bar, left of the hamburger (B58)', async ({ page }) => {
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/');
+    const svg = page.locator('.site-nav .wordmark svg.brand-mark');
+    const box = (await svg.boundingBox())!;
+    expect(box.width, `${width}px`).toBeLessThan(width * 0.6);
+    expect(box.height, `${width}px`).toBe(40);
+    expect(box.width, `${width}px`).toBeGreaterThan(0);
+    const bar = (await page.locator('.site-nav .container').boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(bar.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(bar.y + bar.height + 1);
+    if (width < 768) {
+      const toggle = (await page.locator('.nav-toggle').boundingBox())!;
+      expect(toggle.x).toBeGreaterThan(box.x + box.width);
+    }
+  }
+});
+
+/** The drawn content's box in the svg's user units, from the <use> itself. */
+const drawnBox = (svg: import('@playwright/test').Locator) =>
+  svg.evaluate((el) => {
+    const b = (el.querySelector('use') as SVGGraphicsElement).getBBox();
+    const [, , w, h] = el.getAttribute('viewBox')!.split(' ').map(Number);
+    return { x: b.x, y: b.y, w: b.width, h: b.height, vw: w, vh: h };
+  });
+/**
+ * B57: the drawing lies inside the viewBox and fills it. The brand files'
+ * own viewBoxes carry a few units of padding around the path (8 on the
+ * mark), so "fills" is ≥ 95 % of each side; before the fix the mark's box
+ * started at −274 and the wordmark's at −147 — entirely outside.
+ */
+async function expectDrawnInsideItsBox(svg: import('@playwright/test').Locator, label: string) {
+  const d = await drawnBox(svg);
+  expect(d.x, `${label} bbox x`).toBeGreaterThanOrEqual(-1);
+  expect(d.y, `${label} bbox y`).toBeGreaterThanOrEqual(-1);
+  expect(d.x + d.w, `${label} bbox right`).toBeLessThanOrEqual(d.vw + 1);
+  expect(d.y + d.h, `${label} bbox bottom`).toBeLessThanOrEqual(d.vh + 1);
+  expect(d.w, `${label} bbox w`).toBeGreaterThanOrEqual(0.95 * d.vw);
+  expect(d.h, `${label} bbox h`).toBeGreaterThanOrEqual(0.95 * d.vh);
+}
+const centre = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+
+test('B57: at 1280/1440/1920 every brand drawing fills its viewBox and the hero mark sits on the centre of its disc', async ({ page }) => {
+  for (const width of [1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    for (const [name, svg] of [['header', page.locator('.site-nav svg.brand-mark')], ['hero mark', page.locator('svg.hero-mark-svg')]] as const) {
+      await expectDrawnInsideItsBox(svg, `${width}px ${name}`);
+    }
+    const column = page.locator('.hero-mark');
+    const mark = centre((await column.locator('svg').boundingBox())!);
+    const disc = await column.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const s = getComputedStyle(el, '::before');
+      return { w: parseFloat(s.width), cx: r.left + r.width / 2, cy: r.top + r.height / 2 + window.scrollY };
+    });
+    expect(disc.w).toBe(460);
+    expect(Math.abs(mark.x - disc.cx), `${width}px mark/disc x`).toBeLessThan(2);
+    expect(Math.abs(mark.y - disc.cy), `${width}px mark/disc y`).toBeLessThan(2);
+  }
+});
+
+test('B59: "FlowSpace" sits above the headline on one line at 390/768/1280/1440; the headline is unchanged', async ({ page }) => {
+  for (const width of [390, 768, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    const brand = page.locator('.hero-content > p.hero-brand');
+    await expect(brand).toHaveText('FlowSpace');
+    const h1 = page.locator('.hero h1');
+    const [b, h] = [(await brand.boundingBox())!, (await h1.boundingBox())!];
+    expect(b.y + b.height, `${width}px above the h1`).toBeLessThanOrEqual(h.y + 1);
+    expect(await brand.evaluate((el) => el.getClientRects().length), `${width}px one line`).toBe(1);
+    expect(await brand.evaluate((el) => getComputedStyle(el).fontWeight)).toBe('800');
+    expect(await brand.locator('span').evaluate((el) => getComputedStyle(el).color)).toBe('rgb(61, 122, 94)');
+    await expect(h1).not.toContainText('FlowSpace');
+  }
 });
 
 // B51: the brand mark is the hero illustration from 1024px and a watermark
@@ -748,9 +822,10 @@ test('at 1440 the hero shows the mark centred in the right column over its disc,
   const grid = page.locator('.hero-grid');
   expect((await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns)).split(' ')).toHaveLength(2);
   expect(await grid.evaluate((el) => getComputedStyle(el).columnGap)).toBe('32px');
-  // The text column keeps its 48rem; the headline is still first in it.
+  // The text column keeps its 48rem; the brand line, then the headline, open it (B59).
   expect((await page.locator('.hero-content').boundingBox())!.width).toBe(768);
-  await expect(page.locator('.hero-content > :first-child')).toHaveJSProperty('tagName', 'H1');
+  await expect(page.locator('.hero-content > :first-child')).toHaveClass('hero-brand');
+  await expect(page.locator('.hero-content > :nth-child(2)')).toHaveJSProperty('tagName', 'H1');
   const column = page.locator('.hero-mark');
   await expect(column).toBeVisible();
   await expect(column).toHaveAttribute('aria-hidden', 'true');
@@ -773,30 +848,49 @@ test('at 1440 the hero shows the mark centred in the right column over its disc,
   await expect(page.locator('.hero-glow')).toHaveCount(1);
 });
 
-test('at 390 the watermark bleeds off the bottom-right behind the text, the mark column is gone and nothing scrolls sideways', async ({ page }) => {
+test('at 390 and 768 the watermark is centred on the hero behind the text (B60), the mark column is gone and nothing scrolls sideways', async ({ page }) => {
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/');
+    await expect(page.locator('.hero-mark')).toBeHidden();
+    const watermark = page.locator('.hero-watermark');
+    await expect(watermark).toHaveAttribute('aria-hidden', 'true');
+    await expect(watermark).toHaveAttribute('width', '440');
+    await expect(watermark.locator('use')).toHaveAttribute('href', '#brand-mark');
+    const hero = (await page.locator('.hero').boundingBox())!;
+    const style = await watermark.evaluate((el) => { const s = getComputedStyle(el); return [s.display, s.position, s.left, s.top, s.width, s.opacity, s.pointerEvents, s.color]; });
+    // `left:50%; top:50%` of the hero, `width: min(440px, 90vw)`.
+    expect(style, `${width}px`).toEqual(['block', 'absolute', `${hero.width / 2}px`, `${hero.height / 2}px`, `${Math.min(440, 0.9 * width)}px`, '0.08', 'none', 'rgb(61, 122, 94)']);
+    expect(await watermark.evaluate((el) => getComputedStyle(el).transform)).not.toBe('none');
+    expect(await page.locator('.hero').evaluate((el) => getComputedStyle(el).getPropertyValue('--hero-watermark-opacity').trim())).toBe('0.08');
+    // Centred on the hero, within 2px; the words are positioned above it.
+    const wm = (await watermark.boundingBox())!;
+    const [hc, wc] = [centre(hero), centre(wm)];
+    expect(Math.abs(hc.x - wc.x), `${width}px centre x`).toBeLessThan(2);
+    expect(Math.abs(hc.y - wc.y), `${width}px centre y`).toBeLessThan(2);
+    await expectDrawnInsideItsBox(watermark, `${width}px watermark`);
+    expect(await page.locator('.hero').evaluate((el) => getComputedStyle(el).overflow)).toBe('hidden');
+    expect(await page.locator('.hero-content').evaluate((el) => getComputedStyle(el).position)).toBe('relative');
+    expect(await page.evaluate(() => document.scrollingElement!.scrollWidth)).toBe(width);
+    // Everything in the hero still answers to the pointer, not the watermark.
+    for (const el of await page.locator('.hero-brand, .hero h1, .hero-actions a.btn, .hero-benefits li').all()) {
+      const box = (await el.boundingBox())!;
+      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.hero-watermark') !== null, [box.x + box.width / 2, box.y + box.height / 2]);
+      expect(hit, `${width}px`).toBe(false);
+    }
+  }
+  // At 390 the primary button still works through the centred watermark.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await expect(page.locator('.hero-mark')).toBeHidden();
-  const watermark = page.locator('.hero-watermark');
-  await expect(watermark).toHaveAttribute('aria-hidden', 'true');
-  await expect(watermark).toHaveAttribute('width', '440');
-  await expect(watermark.locator('use')).toHaveAttribute('href', '#brand-mark');
-  const style = await watermark.evaluate((el) => { const s = getComputedStyle(el); return [s.display, s.position, s.right, s.bottom, s.width, s.opacity, s.pointerEvents, s.color]; });
-  expect(style).toEqual(['block', 'absolute', '-112px', '-48px', '440px', '0.08', 'none', 'rgb(61, 122, 94)']);
-  expect(await page.locator('.hero').evaluate((el) => getComputedStyle(el).getPropertyValue('--hero-watermark-opacity').trim())).toBe('0.08');
-  // It bleeds past the hero's box and the hero clips it; the words are positioned above it.
-  const [hero, wm] = [(await page.locator('.hero').boundingBox())!, (await watermark.boundingBox())!];
-  expect(wm.x + wm.width).toBeGreaterThan(hero.x + hero.width);
-  expect(wm.y + wm.height).toBeGreaterThan(hero.y + hero.height);
-  expect(await page.locator('.hero').evaluate((el) => getComputedStyle(el).overflow)).toBe('hidden');
-  expect(await page.locator('.hero-content').evaluate((el) => getComputedStyle(el).position)).toBe('relative');
-  expect(await page.evaluate(() => document.scrollingElement!.scrollWidth)).toBe(390);
-  // Everything in the hero still answers to the pointer, not the watermark.
-  for (const el of await page.locator('.hero-actions a.btn, .hero-benefits li').all()) {
-    const box = (await el.boundingBox())!;
-    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.hero-watermark') !== null, [box.x + box.width / 2, box.y + box.height / 2]);
-    expect(hit).toBe(false);
-  }
+  await page.locator('.hero-actions a.btn-primary').click();
+  await expect(page).toHaveURL(/#salas$/);
+});
+
+test('from 1024 the watermark is display:none and the disc mark shows', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await page.goto('/');
+  expect(await page.locator('.hero-watermark').evaluate((el) => getComputedStyle(el).display)).toBe('none');
+  await expect(page.locator('.hero-mark')).toBeVisible();
 });
 
 test('at 390 the text over the watermark keeps its contrast', async ({ page }) => {
@@ -829,7 +923,11 @@ test('at 390 the text over the watermark keeps its contrast', async ({ page }) =
   // The watermark costs no element more than a fraction of a step, and
   // nothing that clears AA without it falls under AA with it.
   for (const [name, r] of Object.entries(results)) {
-    expect(r.plain - r.watermark, name).toBeLessThan(0.5);
+    // B60: the watermark now sits under the headline too. Its 8% of primary
+    // takes the same share off every ratio, so the bound is relative — at
+    // most a tenth — rather than the 0.5 absolute B51 measured on the lower
+    // ratios it then touched (a 14:1 headline loses ~1.3 and is unharmed).
+    expect(r.watermark, name).toBeGreaterThanOrEqual(r.plain * 0.9);
     if (r.plain >= 4.5) expect(r.watermark, name).toBeGreaterThanOrEqual(4.5);
   }
 });
