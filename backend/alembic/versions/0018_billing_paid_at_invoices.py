@@ -13,6 +13,9 @@ longer pending was paid at `purchased_at`; an hourly or mixed booking that
 is confirmed, completed or paid-but-unfulfilled, a cancelled one that left a
 cancellation credit (so it had been paid), and a manual booking with an
 amount, were paid at `created_at`.
+
+I04 — `users.tax_id` (a 9-digit Portuguese NIF), `billing_name`,
+`billing_address`: what an issued invoice names.
 """
 
 import sqlalchemy as sa
@@ -80,8 +83,16 @@ def upgrade() -> None:
     for statement in BACKFILL_STATEMENTS:
         op.execute(sa.text(statement))
 
+    # I04
+    op.add_column("users", sa.Column("tax_id", sa.String(length=9), nullable=True))
+    op.add_column("users", sa.Column("billing_name", sa.String(length=255), nullable=True))
+    op.add_column("users", sa.Column("billing_address", sa.Text(), nullable=True))
+
 
 def downgrade() -> None:
+    op.drop_column("users", "billing_address")
+    op.drop_column("users", "billing_name")
+    op.drop_column("users", "tax_id")
     op.drop_index("ix_user_package_purchases_org_id_paid_at", table_name="user_package_purchases")
     op.drop_index("ix_bookings_org_id_paid_at", table_name="bookings")
     op.drop_column("user_package_purchases", "paid_at")

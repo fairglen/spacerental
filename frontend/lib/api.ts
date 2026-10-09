@@ -12,6 +12,7 @@ import type {
   AdminBookingDetail, AdminPackageDetail, AdminUserCreateBody, AdminUserPatch, AnonymisedUser,
   PaginatedPurchases, AdminPurchaseDetail, PurchaseFilters, SupportRequestDetail,
   OrganizationSettings, OrganizationSettingsPatch, PublicContact, EmailStatus, EmailTestResult,
+  BillingDetails,
 } from '@/types'
 
 // Relative by default (/backend/api/v1): the browser calls the API through
@@ -143,6 +144,13 @@ export const authApi = {
   enroll: (api: Api) =>
     api.post<{ membership: Pick<Membership, 'org_id' | 'role'> }>('/auth/enroll')
       .then(r => r.data.membership),
+
+  // Billing details (I04): the caller's own NIF, billing name and address.
+  getBilling: (api: Api): Promise<BillingDetails> =>
+    api.get<{ billing: BillingDetails }>('/auth/me/billing').then(r => r.data.billing),
+
+  updateBilling: (body: BillingDetails, api: Api): Promise<BillingDetails> =>
+    api.put<{ billing: BillingDetails }>('/auth/me/billing', body).then(r => r.data.billing),
 
   register: (data: { email: string; password: string; name: string }) =>
     apiClient.post<RegisterResponse>('/auth/register', data).then(r => r.data),

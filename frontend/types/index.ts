@@ -179,6 +179,10 @@ export type OrgUser = {
   role: 'owner' | 'admin' | 'member'
   joined_at: string
   bookings_count: number
+  // Billing details (I04).
+  tax_id: string | null
+  billing_name: string | null
+  billing_address: string | null
   // "Suspender" (G02): set while the account cannot sign in.
   disabled_at?: string | null
   created_at: string
@@ -325,12 +329,6 @@ export type PaginatedSupportRequests = {
   page_size: number
 }
 
-export type AdminStats = {
-  total_bookings: number
-  // All-time money received (I03): card bookings, manual amounts and pack
-  // sales, counted once at `paid_at`.
-  total_revenue: string
-  occupancy_rate: number
 // Money on the billing statement (I02) travels as the API's `Decimal`
 // strings ("221.00"); `formatCurrency(Number(x))` renders them.
 export type BillingKind = 'pack' | 'hourly' | 'mixed' | 'manual'
@@ -361,12 +359,18 @@ export type BillingSummary = {
   pending_amount: string
 }
 
+export type AdminStats = {
+  total_bookings: number
+  // All-time money received (I03): card bookings, manual amounts and pack
+  // sales, counted once at `paid_at`.
+  total_revenue: string
+  occupancy_rate: number
   active_users: number
+  this_month: BillingSummary
 }
 
 export type OrgMembership = {
   org_id: string
-  this_month: BillingSummary
   role: 'owner' | 'admin' | 'member'
 }
 
@@ -473,7 +477,9 @@ export type DeleteBlockers =
 
 // Users (G03/G04).
 export type AdminUserCreateBody = { email: string; name?: string; password?: string }
-export type AdminUserPatch = { name?: string | null; email?: string; disabled_at?: string | null }
+// What an invoice to the customer names (I04); blank clears a field.
+export type BillingDetails = { tax_id: string | null; billing_name: string | null; billing_address: string | null }
+export type AdminUserPatch = Partial<BillingDetails> & { name?: string | null; email?: string; disabled_at?: string | null }
 export type AnonymisedUser = { id: string; email: string; name: string | null; disabled_at: string | null }
 
 // Purchases (G04): the list carries the customer alongside each row.

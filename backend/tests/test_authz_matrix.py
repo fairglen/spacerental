@@ -91,6 +91,9 @@ ROUTES: dict[tuple[str, str], str] = {
     # B61: the email gateway's state and a self-addressed test send.
     ("GET", f"{API}/admin/email/status"): OPERATOR,
     ("POST", f"{API}/admin/email/test"): OPERATOR,
+    # I04: the caller's own billing details (NIF, name, address).
+    ("GET", f"{API}/auth/me/billing"): CUSTOMER,
+    ("PUT", f"{API}/auth/me/billing"): CUSTOMER,
     # I02: the billing statement, read by `paid_at` over Lisbon days.
     ("GET", f"{API}/admin/billing/summary"): OPERATOR,
     ("GET", f"{API}/admin/billing/statement"): OPERATOR,
@@ -171,6 +174,7 @@ ROUTES: dict[tuple[str, str], str] = {
 # Minimal valid bodies, so a sweep's 401/403/404 is the authorization answer and
 # a positive control is not a 422 in disguise.
 BODIES: dict[tuple[str, str], dict] = {
+    ("PUT", f"{API}/auth/me/billing"): {"tax_id": "123456789"},
     ("POST", f"{API}/admin/spaces"): {"name": "Sweep space"},
     ("PUT", f"{API}/admin/spaces/{{space_id}}"): {"name": "Renamed"},
     ("POST", f"{API}/admin/spaces/{{space_id}}/rooms"): {"name": "Sala", "hourly_rate": "10.00"},
@@ -232,6 +236,8 @@ def _password_hash() -> str:
 CUSTOMER_ISOLATION: dict[tuple[str, str], str] = {
     ("POST", f"{API}/auth/enroll"): "test_enrolling_joins_only_the_configured_org_as_a_member",
     ("GET", f"{API}/auth/me"): "test_my_lists_contain_only_my_rows",
+    ("GET", f"{API}/auth/me/billing"): "test_billing_details_are_only_my_own",
+    ("PUT", f"{API}/auth/me/billing"): "test_billing_details_are_only_my_own",
     ("GET", f"{API}/auth/memberships"): "test_my_lists_contain_only_my_rows",
     ("GET", f"{API}/bookings/me"): "test_my_lists_contain_only_my_rows",
     ("POST", f"{API}/bookings"): (
@@ -769,9 +775,31 @@ class TestOperatorListsAreScoped:
             "occupancy_rate": 100.0,
             "active_users": 1,
         }
+        assert month["received_total"] == "11.00"
+        assert month["hourly"] == {"count": 1, "amount": "11.00", "hours": "1.00"}
 
 
 class TestCustomerIsolation:
+    async def test_billing_details_are_only_my_own(self, client, world):
+        # I04: the route addresses the caller and nobody else — a customer
+        # of another org, and an operator, read and write only their own.
+        resp = await client.put(
+            f"{API}/auth/me/billing",
+            json={"tax_id": "123456789", "billing_name": "A", "billing_address": "R. 1"},
+            headers=_as(world.cust_a),
+        )
+        assert resp.status_code == 200, resp.text
+        for other in (world.cust_b, world.op_a):
+            resp = await client.get(f"{API}/auth/me/billing", headers=_as(other))
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["billing"]["tax_id"] is None
+        resp = await client.put(
+            f"{API}/auth/me/billing", json={"tax_id": "999999990"}, headers=_as(world.cust_b)
+        )
+        assert resp.status_code == 200, resp.text
+        mine = await client.get(f"{API}/auth/me/billing", headers=_as(world.cust_a))
+        assert mine.json()["billing"]["tax_id"] == "123456789"
+
     async def test_nobody_else_can_cancel_or_pay_a_customers_booking(
         self, client, world, db_session, payments
     ):

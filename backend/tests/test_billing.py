@@ -132,6 +132,9 @@ class TestStatement:
             "id": str(ledger.ana.id),
             "name": "Test User",
             "email": "user@test.com",
+            "tax_id": None,
+            "billing_name": None,
+            "billing_address": None,
         }
         assert ana["breakdown"] == {
             "packs": [{"name": "Pack 5h", "count": 1}],

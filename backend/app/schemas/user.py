@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator
 
+from app import nif
 from app.schemas.bounds import PersonName
 
 
@@ -14,6 +16,43 @@ class UserOut(BaseModel):
     name: str | None
     avatar_url: str | None
     created_at: datetime
+
+
+class BillingDetailsOut(BaseModel):
+    """What an invoice to this customer names (I04)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    tax_id: str | None
+    billing_name: str | None
+    billing_address: str | None
+
+
+BillingName = Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)]
+BillingAddress = Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)]
+
+
+def _blank_is_none(value: str | None) -> str | None:
+    return value or None
+
+
+class BillingDetailsUpdate(BaseModel):
+    """PUT /auth/me/billing: every field is sent; blank clears it. The NIF
+    must pass the check digit (`app.nif`) or the whole request is refused."""
+
+    tax_id: str | None = Field(default=None, max_length=32)
+    billing_name: BillingName | None = None
+    billing_address: BillingAddress | None = None
+
+    @field_validator("tax_id")
+    @classmethod
+    def _nif(cls, value: str | None) -> str | None:
+        return nif.validate(value)
+
+    @field_validator("billing_name", "billing_address")
+    @classmethod
+    def _blank(cls, value: str | None) -> str | None:
+        return _blank_is_none(value)
 
 
 class UserRegister(BaseModel):

@@ -977,3 +977,16 @@ describe('Part A1 admin endpoints (G01–G04): every wrapper unwraps its envelop
     expect(sent.fn).toHaveBeenCalledWith('/admin/email/test')
   })
 })
+
+describe('billing details API contract (I04)', () => {
+  it('unwraps `billing` on read and on update', async () => {
+    const api = createAuthenticatedApi('customer-token')
+    const billing = { tax_id: '123456789', billing_name: 'Ana Silva, Lda.', billing_address: 'Rua 1' }
+    const get = vi.spyOn(api, 'get').mockResolvedValue({ data: { billing } })
+    expect(await authApi.getBilling(api)).toEqual(billing)
+    expect(get).toHaveBeenCalledWith('/auth/me/billing')
+    const put = vi.spyOn(api, 'put').mockResolvedValue({ data: { billing: { ...billing, tax_id: null } } })
+    expect(await authApi.updateBilling({ ...billing, tax_id: null }, api)).toEqual({ ...billing, tax_id: null })
+    expect(put).toHaveBeenCalledWith('/auth/me/billing', { ...billing, tax_id: null })
+  })
+})

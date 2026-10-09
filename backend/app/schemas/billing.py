@@ -16,8 +16,12 @@ class BillingUserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    name: str
+    name: str | None
     email: str
+    # I04: what the invoice names.
+    tax_id: str | None = None
+    billing_name: str | None = None
+    billing_address: str | None = None
 
 
 class TransactionOut(BaseModel):

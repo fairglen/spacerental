@@ -74,6 +74,9 @@ def _row(member: OrganizationMember, bookings_count: int) -> OrgUserOut:
         bookings_count=bookings_count,
         disabled_at=member.user.disabled_at,
         created_at=member.user.created_at,
+        tax_id=member.user.tax_id,
+        billing_name=member.user.billing_name,
+        billing_address=member.user.billing_address,
     )
 
 

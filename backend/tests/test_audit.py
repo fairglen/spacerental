@@ -658,7 +658,18 @@ class TestWhatARowHolds:
         user = w.admin
         user.password_hash = "$argon2id$v=19$m=65536,t=3,p=4$secret"
         snap = audit.snapshot(user)
-        assert set(snap) == {"id", "email", "name", "avatar_url", "disabled_at", "created_at"}
+        assert set(snap) == {
+            "id",
+            "email",
+            "name",
+            "avatar_url",
+            "disabled_at",
+            "created_at",
+            # I04: the operator's edit of a NIF must be visible in history.
+            "tax_id",
+            "billing_name",
+            "billing_address",
+        }
         flat = " ".join(f"{k}={v}" for k, v in snap.items()).lower()
         for needle in ("password", "hash", "token", "argon2", "version"):
             assert needle not in flat

@@ -364,9 +364,9 @@ def statement_csv(lines: list[Line]) -> str:
     for line in lines:
         writer.writerow(
             (
-                line.user.name,
+                line.user.billing_name or line.user.name or "",
                 line.user.email,
-                getattr(line.user, "tax_id", None) or "",
+                line.user.tax_id or "",
                 line.transactions_count,
                 decimal_pt(line.hours),
                 decimal_pt(line.amount),

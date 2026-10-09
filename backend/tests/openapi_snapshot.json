@@ -386,6 +386,16 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/auth/me/billing",
+    "operation_id": "my_billing_details_api_v1_auth_me_billing_get"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/auth/me/billing",
+    "operation_id": "update_my_billing_details_api_v1_auth_me_billing_put"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/auth/memberships",
     "operation_id": "memberships_api_v1_auth_memberships_get"
   },
