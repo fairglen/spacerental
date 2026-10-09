@@ -262,13 +262,24 @@ class TestAvailabilityRange:
 
     @staticmethod
     def _days(offset: int, count: int) -> list[str]:
-        # From the first Monday on or after `offset` days out: the fixture
-        # room opens Monday to Saturday, so a range that crossed a Sunday
-        # (every Friday run, for "the day after tomorrow") had no slot to
-        # mark as blocked.
         first = (datetime.now(UTC) + timedelta(days=offset)).date()
-        first += timedelta(days=(7 - first.weekday()) % 7)
         return [(first + timedelta(days=i)).isoformat() for i in range(count)]
+
+    @staticmethod
+    def _open_days(offset: int, count: int) -> list[str]:
+        """The next `count` days from `offset` on which the test room is open.
+
+        The fixture room is closed on Sunday, so a test that expects a booking
+        or a block to show up as a taken slot must not land on one — `_days`
+        did, every Friday (CI on main, 2026-10-09).
+        """
+        day = (datetime.now(UTC) + timedelta(days=offset)).date()
+        found: list[str] = []
+        while len(found) < count:
+            if day.weekday() != 6:
+                found.append(day.isoformat())
+            day += timedelta(days=1)
+        return found
 
     async def test_a_range_equals_the_days_asked_one_by_one(self, client, test_room):
         days = self._days(1, 3)
@@ -293,7 +304,7 @@ class TestAvailabilityRange:
     ):
         from app.models.room_block import RoomBlock
 
-        days = self._days(1, 2)
+        days = self._open_days(1, 2)
         first = datetime.fromisoformat(days[0]).replace(tzinfo=UTC)
         second = datetime.fromisoformat(days[1]).replace(tzinfo=UTC)
         db_session.add_all(

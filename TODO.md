@@ -1624,6 +1624,60 @@ the two D15 cross-worker flakes (`single-space.spec.ts:79` where-line
 suffix; packages room fixture 404), nothing from the changed specs; the
 failed jobs re-run → green, `required-checks` pass.
 
+### B62 — Land #94 + #95 on `main`; a Friday-only availability test; 0018's backfill on a fresh database
+
+**Priority: P0. State: DONE 2026-10-09 (PR `fix/ci-main-billing`, base
+`main`).** Two faults kept `main` red after #93, and two merged PRs had not
+reached it.
+
+**The merge.** `main` was `1cf8e65` (#93 only). #94 and #95 show "merged"
+but went into their **base branches** — #94 → `fix/brand-header-hero`,
+#95 → `fix/email-delivery-visibility` — because GitHub only retargets a
+stacked PR when its base branch is deleted. `origin/fix/email-delivery-
+visibility` (`aa25491`) therefore held everything: the B57–B60 commits
+(same content as #93's squash), B61 (#94) and I01–I08 (#95). This branch
+is `origin/main` + `git merge origin/fix/email-delivery-visibility`
+(`8b83794`; the only conflict was `TODO.md`, two hunks with an empty `HEAD`
+side, resolved with `--theirs`) + one fix commit.
+
+**Fault 1 — `tests/test_spaces.py::TestAvailabilityRange::
+test_a_booking_and_a_block_mark_their_slots_across_the_range`** placed its
+block on "the day after tomorrow", which on a Friday is a Sunday; the
+fixture room is closed on Sundays (`conftest.py`: Mon–Sat 08:00–20:00), so
+no slot could read `blocked`. It failed every Friday; nothing in #93 caused
+it. Fix: `_open_days(offset, count)` next to `_days` — the next `count`
+days on which the room is open — used by that one test; the other tests
+stay on `_days`, restored to its original form (#95 had patched `_days` to
+start on a Monday; superseded).
+
+**Fault 2 — migration `0018_billing_paid_at_invoices` (#95)** broke CI's
+`migrations` job and any fresh clone: its `paid_at` backfill compared enum
+columns to `'mixed'`, `'manual'`, `'paid_unfulfilled'` — values added by
+`ALTER TYPE … ADD VALUE` in 0003/0005/0008. On an empty database the whole
+chain runs in one transaction and PostgreSQL refuses to use those values
+("unsafe use of new value \"mixed\" of enum type payment_method"). A
+developer's database had them committed long ago, so `docker compose up`
+never saw it. Fix: every enum column in `BACKFILL_STATEMENTS` is compared
+as text (`source::text = 'purchase'`, `status::text IN (…)`,
+`payment_method::text IN ('hourly', 'mixed')`, …), with the reason as a
+comment above the tuple; `tests/test_paid_at.py` runs the same statements
+and stays green.
+
+**Validation (2026-10-09, the owner's dev stack untouched on 3000/8000/5432):**
+backend `docker compose -p spacerental-ci-main-tests -f
+docker-compose.test.yml up --build --abort-on-container-exit
+--exit-code-from backend-tests` → 1044 passed, 0 failed (exit 0; 4
+subtests passed); migrations on an **empty**
+disposable database (`spacerental_migrations` on that project's `test-db`,
+PostgreSQL 18.6): `alembic upgrade head` → `alembic check` ("No new upgrade
+operations detected") → `alembic downgrade base` → 0 tables left (`SELECT
+count(*) FROM pg_tables WHERE schemaname='public' AND tablename <>
+'alembic_version'`) → `alembic upgrade head` → `alembic check` clean —
+the step that proves fault 2's fix; frontend `npm ci && npx tsc --noEmit &&
+npm test` → tsc clean, 756 passed in 76 files; Ruff 0.16.5 `format --check`
+and `check` clean on the two Python files. No Playwright: no frontend code
+beyond what #93–#95 already ran green.
+
 ## Billing statement and invoice records (I-series) — owner assignment 2026-10-07 (PR `feat/billing-statement-invoices`, stacked on #94)
 
 Owner's ask: see, for the past month or a custom range, how much money was

@@ -34,41 +34,50 @@ depends_on = None
 
 # The approximation, in the order it applies; tests/test_paid_at.py runs the
 # same statements on a fixture ledger.
+#
+# Every enum column is compared as text (B62). `'mixed'`, `'manual'` and
+# `'paid_unfulfilled'` were added by `ALTER TYPE … ADD VALUE` in 0003, 0005
+# and 0008; on an empty database the whole chain runs in one transaction and
+# PostgreSQL refuses to use those values before it commits ("unsafe use of
+# new value \"mixed\" of enum type payment_method"), which broke CI's
+# `migrations` job and any fresh clone. A developer's database had them
+# committed long ago, so `docker compose up` never saw it. Casting the column
+# to text compares labels and never touches the enum's new values.
 BACKFILL_STATEMENTS = (
     """
     UPDATE user_package_purchases
        SET paid_at = purchased_at
-     WHERE paid_at IS NULL AND source = 'purchase' AND status <> 'pending'
+     WHERE paid_at IS NULL AND source::text = 'purchase' AND status::text <> 'pending'
     """,
     """
     UPDATE user_package_purchases
        SET paid_at = purchased_at
-     WHERE paid_at IS NULL AND source = 'complimentary'
+     WHERE paid_at IS NULL AND source::text = 'complimentary'
     """,
     """
     UPDATE bookings
        SET paid_at = created_at
      WHERE paid_at IS NULL
-       AND payment_method IN ('hourly', 'mixed')
-       AND status IN ('confirmed', 'completed', 'paid_unfulfilled')
+       AND payment_method::text IN ('hourly', 'mixed')
+       AND status::text IN ('confirmed', 'completed', 'paid_unfulfilled')
     """,
     """
     UPDATE bookings b
        SET paid_at = b.created_at
      WHERE b.paid_at IS NULL
-       AND b.status = 'cancelled'
+       AND b.status::text = 'cancelled'
        AND EXISTS (
            SELECT 1 FROM user_package_purchases p
-            WHERE p.source = 'cancellation_credit' AND p.source_booking_id = b.id
+            WHERE p.source::text = 'cancellation_credit' AND p.source_booking_id = b.id
        )
     """,
     """
     UPDATE bookings
        SET paid_at = created_at
      WHERE paid_at IS NULL
-       AND payment_method = 'manual'
+       AND payment_method::text = 'manual'
        AND total_amount > 0
-       AND status IN ('confirmed', 'completed')
+       AND status::text IN ('confirmed', 'completed')
     """,
 )
 
