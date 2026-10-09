@@ -9,7 +9,7 @@ import { useOrg } from '@/contexts/OrgContext'
  * page shares, over `lib/api.ts`. Keys are `['admin', <entity>, org, ...]`
  * so switching organisation never shows another tenant's cache.
  */
-export type CrudEntity = 'spaces' | 'rooms' | 'bookings' | 'users' | 'packages' | 'purchases' | 'support' | 'organization' | 'audit'
+export type CrudEntity = 'spaces' | 'rooms' | 'bookings' | 'users' | 'packages' | 'purchases' | 'support' | 'organization' | 'audit' | 'billing'
 
 export function useCrud(entity: CrudEntity) {
   const api = useApi()

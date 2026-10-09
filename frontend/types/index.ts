@@ -359,6 +359,81 @@ export type BillingSummary = {
   pending_amount: string
 }
 
+export type InvoicedFilter = 'all' | 'pending' | 'done'
+export type BillingPeriod = { from: string; to: string }
+
+export type BillingTransaction = {
+  kind: BillingKind
+  id: string
+  paid_at: string
+  label: string
+  amount: string
+  hours: string
+  channel: BillingChannel
+  invoice_id: string | null
+}
+
+export type BillingUser = {
+  id: string
+  name: string | null
+  email: string
+  tax_id: string | null
+  billing_name: string | null
+  billing_address: string | null
+}
+
+export type StatementLine = {
+  user: BillingUser
+  amount: string
+  hours: string
+  transactions_count: number
+  breakdown: { packs: { name: string; count: number }[]; hourly_hours: string; mixed_hours: string; manual_hours: string }
+  invoiced_amount: string
+  pending_amount: string
+  transactions: BillingTransaction[]
+}
+
+export type BillingStatement = BillingPeriod & { invoiced: InvoicedFilter; lines: StatementLine[] }
+
+// An invoice the operator registered (I05): a record of a fatura issued
+// elsewhere, never issued here.
+export type InvoiceItem = { kind: 'booking' | 'purchase'; id: string }
+export type Invoice = {
+  id: string
+  org_id: string
+  user_id: string
+  number: string
+  issued_at: string
+  period_from: string
+  period_to: string
+  amount: string
+  hours: string
+  currency: string
+  note: string | null
+  has_pdf: boolean
+  created_by_admin_id: string | null
+  created_at: string
+  updated_at: string
+  user: { id: string; name: string | null; email: string; tax_id: string | null; billing_name: string | null }
+  items: InvoiceItem[]
+}
+export type MyInvoice = Pick<Invoice, 'id' | 'number' | 'issued_at' | 'period_from' | 'period_to' | 'amount' | 'hours' | 'currency' | 'has_pdf'>
+export type InvoiceFilters = { user_id?: string; from?: string; to?: string }
+export type InvoiceCreateBody = {
+  user_id: string
+  number: string
+  issued_at: string
+  period_from: string
+  period_to: string
+  amount: string
+  hours: string
+  transaction_ids: string[]
+  note?: string
+  notify?: boolean
+  pdf?: File | null
+}
+export type InvoiceUpdateBody = { number?: string; issued_at?: string; note?: string; pdf?: File | null; remove_pdf?: boolean }
+
 export type AdminStats = {
   total_bookings: number
   // All-time money received (I03): card bookings, manual amounts and pack

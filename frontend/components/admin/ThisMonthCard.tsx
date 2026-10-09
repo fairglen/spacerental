@@ -20,20 +20,32 @@ export function periodLabel(from: string, to: string): string {
     : `${format(start, "d 'de' MMM", { locale: pt })} – ${format(end, "d 'de' MMM 'de' yyyy", { locale: pt })}`
 }
 
-export function ThisMonthCard({ summary }: { summary: BillingSummary }) {
+export function ThisMonthCard({
+  summary,
+  title = 'Este mês',
+  showLink = true,
+  testId = 'this-month',
+}: {
+  summary: BillingSummary
+  title?: string
+  showLink?: boolean
+  testId?: string
+}) {
   const packsSold = summary.pack_sales.reduce((n, p) => n + p.count, 0)
   const bookings = summary.hourly.count + summary.mixed.count + summary.manual.count
   const paidHours = Number(summary.hourly.hours) + Number(summary.mixed.hours) + Number(summary.manual.hours)
   return (
-    <Card data-testid="this-month">
+    <Card data-testid={testId}>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Este mês</CardTitle>
+          <CardTitle>{title}</CardTitle>
           <p className="text-sm text-muted-foreground mt-1">{periodLabel(summary.from, summary.to)}</p>
         </div>
-        <Link href="/admin/billing">
-          <Button variant="ghost" size="sm" className="gap-1">Ver faturação <ArrowRight className="h-4 w-4" /></Button>
-        </Link>
+        {showLink && (
+          <Link href="/admin/billing">
+            <Button variant="ghost" size="sm" className="gap-1">Ver faturação <ArrowRight className="h-4 w-4" /></Button>
+          </Link>
+        )}
       </CardHeader>
       <CardContent>
         {summary.transactions_count === 0 ? (
