@@ -133,11 +133,18 @@ async def _confirm_booking(
             )
             booking.status = BookingStatus.paid_unfulfilled
             booking.hold_expires_at = None
+            # I01: the money arrived even though the slot is lost.
+            if booking.paid_at is None:
+                booking.paid_at = now
             await db.flush()
             return True
     else:
         booking.status = BookingStatus.confirmed
         booking.hold_expires_at = None
+    # I01: the first completion is the moment the money was received; the
+    # guards above already make a repeated webhook a no-op.
+    if booking.paid_at is None:
+        booking.paid_at = now
 
     email.enqueue_email(
         background_tasks,
@@ -181,6 +188,10 @@ async def _activate_purchase(
     if purchase is None or purchase.status is not PurchaseStatus.pending:
         return False
     purchase.status = PurchaseStatus.active
+    # I01: the money for the pack arrived now; `pending` above keeps a
+    # repeated webhook from moving it.
+    if purchase.paid_at is None:
+        purchase.paid_at = clock.utcnow()
     return True
 
 

@@ -196,6 +196,21 @@ disabled` on any token, and no reset email.
 Headers: `Authorization: Bearer <jwt>`
 Response: `User`
 
+### GET /auth/me/billing · PUT /auth/me/billing
+The caller's billing details (I04): what an invoice to them names.
+Response: `{ billing: { tax_id, billing_name, billing_address } }` (all
+nullable). PUT sends every field; blank clears it. `tax_id` is a Portuguese
+NIF — nine digits, mod-11 check digit, no leading zero (`app/nif.py`) —
+or 422 `NIF inválido`. The operator edits the same fields through
+`PUT /admin/users/{user_id}`, audited.
+
+### GET /invoices/me · GET /invoices/{invoice_id}/pdf
+The invoices the operator registered for the caller (I05/I07), newest
+first, across organisations: `{ invoices: [{ id, number, issued_at,
+period_from, period_to, amount, hours, currency, has_pdf }] }`. The PDF is
+streamed as `application/pdf` with `Content-Disposition: attachment` and
+`nosniff`; an invoice that is not the caller's, or has no PDF, is a 404.
+
 ---
 
 ## User Endpoints (requires auth)
@@ -461,7 +476,51 @@ the timezone live in `organizations.settings`; the public space detail
 carries the contact.
 
 ### GET /admin/dashboard
-Stats: total bookings, revenue, occupancy rate, active users.
+Stats: total bookings, revenue, occupancy rate, active users, and
+`this_month` (I03) — the billing summary (below) for the current Lisbon
+month. `total_revenue` is a Decimal string: every euro received at
+`paid_at` — card bookings, manual amounts and pack sales, counted once.
+
+### GET /admin/billing/summary · GET /admin/billing/statement · GET /admin/billing/statement.csv
+The billing statement (I02): money received in a period of Lisbon calendar
+days, counted at `paid_at` (I01), never by a booking's later status. Query:
+`from`, `to` (ISO dates, required, a year at most, else 422), and on the
+statement `invoiced=all|pending|done`.
+`summary` → `{ summary: { from, to, received_total, by_channel { online,
+manual }, pack_sales [{ package_id, name, count, amount, hours }], hourly,
+mixed, manual { count, amount, hours }, transactions_count,
+invoiced_amount, pending_amount } }`.
+`statement` → `{ statement: { from, to, invoiced, lines [{ user { id, name,
+email, tax_id, billing_name, billing_address }, amount, hours,
+transactions_count, breakdown { packs [{ name, count }], hourly_hours,
+mixed_hours, manual_hours }, invoiced_amount, pending_amount, transactions
+[{ kind: pack|hourly|mixed|manual, id, paid_at, label, amount, hours,
+channel: online|manual, invoice_id }] }] } }`, biggest amount first.
+`statement.csv` → the same lines for Excel PT: UTF-8 with BOM, `;`,
+decimal comma; columns cliente, email, NIF, transações, horas, valor,
+faturado, por faturar; `Content-Disposition: attachment`.
+
+### POST /admin/billing/invoices · GET /admin/billing/invoices · GET/PUT/DELETE /admin/billing/invoices/{invoice_id} · GET /admin/billing/invoices/{invoice_id}/pdf
+Invoice records (I05): the operator REGISTERS a fatura issued by certified
+software against the transactions it covers. POST is multipart —
+`user_id`, `number`, `issued_at`, `period_from`, `period_to`, `amount`,
+`hours`, `transaction_ids` (repeated, `kind:id` as the statement lists
+them), optional `note`, `pdf` (`%PDF-`, ≤ 10 MB: 415/413 otherwise) and
+`notify` (`true` emails "Fatura disponível", I08). `amount` and `hours`
+must equal the statement's sums for the selected transactions (422 says
+the expected ones); a transaction already on an invoice, or a number the
+org already used, is a 409; a transaction that is not this customer's paid
+one in this org is a 404. Rate-limit tier `upload`. Response
+`{ invoice: { id, org_id, user_id, number, issued_at, period_from,
+period_to, amount, hours, currency, note, has_pdf, created_by_admin_id,
+created_at, updated_at, user { id, name, email, tax_id, billing_name },
+items [{ kind: booking|purchase, id }] } }`; the list is `{ invoices: [...] }`
+filtered by `user_id`, `from`, `to` (issue date). PUT (multipart) changes
+`number`, `issued_at`, `note` (blank clears), replaces the `pdf` or drops it
+with `remove_pdf=true`; DELETE (204) frees the transactions and removes the
+file. The PDF lives under `MEDIA_ROOT/private/…`, which `/media` never
+serves; only these routes stream it (attachment, nosniff). Every mutation
+is audited (`entity_type=invoice`).
 
 ### GET /admin/spaces
 All spaces for admin's org.

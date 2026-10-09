@@ -7,10 +7,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import billing, clock
 from app.auth import require_admin
 from app.database import get_db
-from app.models.booking import PAID_AT_CHECKOUT, Booking, BookingStatus
+from app.models.booking import Booking, BookingStatus
 from app.models.user import User
+from app.schemas.billing import BillingSummaryOut
+from app.schemas.dashboard import AdminDashboardOut
 
 logger = logging.getLogger(__name__)
 
@@ -31,19 +34,13 @@ async def dashboard(
     )
     total_bookings = total_bookings_result.scalar_one()
 
-    # Booking revenue is money charged *for the booking*. A package booking is
-    # settled with hours bought earlier, so counting its `total_amount` here
-    # would bill the same customer twice over — and at the rack rate, which is
-    # not even what a discounted pack cost them. Revenue from package sales
-    # belongs to the purchase, which this dashboard does not total yet.
-    revenue_result = await db.execute(
-        select(func.coalesce(func.sum(Booking.total_amount), 0)).where(
-            Booking.org_id == org_id,
-            Booking.status.in_([BookingStatus.confirmed, BookingStatus.completed]),
-            Booking.payment_method.in_(PAID_AT_CHECKOUT),
-        )
-    )
-    total_revenue = float(revenue_result.scalar_one())
+    # Money received, on the statement's basis (I03): every booking paid by
+    # card or recorded with an amount, and every pack sold, counted once at
+    # `paid_at`. A package booking is settled with hours bought earlier, so
+    # its rack-rate `total_amount` is not money; the pack sale is.
+    total_revenue = await billing.received_all_time(db, org_id)
+    this_month = billing.month_of(clock.utcnow())
+    month_summary = billing.summarise(await billing.load_transactions(db, org_id, this_month))
 
     active_users_result = await db.execute(
         select(func.count(distinct(Booking.user_id))).where(Booking.org_id == org_id)
@@ -71,9 +68,10 @@ async def dashboard(
 
     occupancy_rate = (confirmed / total_non_pending * 100) if total_non_pending > 0 else 0.0
 
-    return {
-        "total_bookings": total_bookings,
-        "total_revenue": total_revenue,
-        "occupancy_rate": round(occupancy_rate, 1),
-        "active_users": active_users,
-    }
+    return AdminDashboardOut(
+        total_bookings=total_bookings,
+        total_revenue=total_revenue,
+        occupancy_rate=round(occupancy_rate, 1),
+        active_users=active_users,
+        this_month=BillingSummaryOut.build(this_month, month_summary),
+    )

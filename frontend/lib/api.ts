@@ -12,6 +12,8 @@ import type {
   AdminBookingDetail, AdminPackageDetail, AdminUserCreateBody, AdminUserPatch, AnonymisedUser,
   PaginatedPurchases, AdminPurchaseDetail, PurchaseFilters, SupportRequestDetail,
   OrganizationSettings, OrganizationSettingsPatch, PublicContact, EmailStatus, EmailTestResult,
+  BillingDetails, BillingPeriod, BillingSummary, BillingStatement, InvoicedFilter,
+  Invoice, InvoiceFilters, InvoiceCreateBody, InvoiceUpdateBody, MyInvoice,
 } from '@/types'
 
 // Relative by default (/backend/api/v1): the browser calls the API through
@@ -143,6 +145,13 @@ export const authApi = {
   enroll: (api: Api) =>
     api.post<{ membership: Pick<Membership, 'org_id' | 'role'> }>('/auth/enroll')
       .then(r => r.data.membership),
+
+  // Billing details (I04): the caller's own NIF, billing name and address.
+  getBilling: (api: Api): Promise<BillingDetails> =>
+    api.get<{ billing: BillingDetails }>('/auth/me/billing').then(r => r.data.billing),
+
+  updateBilling: (body: BillingDetails, api: Api): Promise<BillingDetails> =>
+    api.put<{ billing: BillingDetails }>('/auth/me/billing', body).then(r => r.data.billing),
 
   register: (data: { email: string; password: string; name: string }) =>
     apiClient.post<RegisterResponse>('/auth/register', data).then(r => r.data),
@@ -309,6 +318,30 @@ export type HistoryEntity = 'spaces' | 'rooms' | 'bookings' | 'users' | 'package
 const HISTORY_PATH: Record<HistoryEntity, string> = {
   spaces: 'spaces', rooms: 'rooms', bookings: 'bookings', users: 'users', packages: 'packages',
   purchases: 'purchases', support: 'support/requests',
+}
+
+/**
+ * The multipart body of an invoice record (I05): every field as a form
+ * entry, `transaction_ids[]` repeated, booleans as `true`/`false`, the PDF
+ * as a file; `undefined`/`null` fields are left out so the API keeps them.
+ */
+export function invoiceForm(body: InvoiceCreateBody | InvoiceUpdateBody): FormData {
+  const form = new FormData()
+  for (const [key, value] of Object.entries(body)) {
+    if (value === undefined || value === null) continue
+    if (Array.isArray(value)) value.forEach((v) => form.append(key, v))
+    else if (typeof value === 'boolean') form.append(key, value ? 'true' : 'false')
+    else form.append(key, value)
+  }
+  return form
+}
+
+// The customer's invoices (I07): records of faturas issued to them, and the PDF.
+export const invoicesApi = {
+  listMine: (api: Api): Promise<MyInvoice[]> =>
+    api.get<{ invoices: MyInvoice[] }>('/invoices/me').then(r => r.data.invoices),
+  downloadPdf: (id: string, api: Api): Promise<Blob> =>
+    api.get<Blob>(`/invoices/${id}/pdf`, { responseType: 'blob' }).then(r => r.data),
 }
 
 export const adminApi = {
@@ -546,6 +579,27 @@ export const adminApi = {
     api.get<{ organization: OrganizationSettings }>('/admin/organization').then(r => r.data.organization),
   updateOrganization: (body: OrganizationSettingsPatch, api: Api): Promise<OrganizationSettings> =>
     api.put<{ organization: OrganizationSettings }>('/admin/organization', body).then(r => r.data.organization),
+  // ── Billing statement and invoice records (I02/I05) ──────────────────────
+  getBillingSummary: (period: BillingPeriod, api: Api): Promise<BillingSummary> =>
+    api.get<{ summary: BillingSummary }>('/admin/billing/summary', { params: period }).then(r => r.data.summary),
+  getBillingStatement: (params: BillingPeriod & { invoiced?: InvoicedFilter }, api: Api): Promise<BillingStatement> =>
+    api.get<{ statement: BillingStatement }>('/admin/billing/statement', { params }).then(r => r.data.statement),
+  // The bytes of the CSV (UTF-8 with BOM, `;`, decimal comma); the page saves them.
+  downloadBillingCsv: (params: BillingPeriod & { invoiced?: InvoicedFilter }, api: Api): Promise<Blob> =>
+    api.get<Blob>('/admin/billing/statement.csv', { params, responseType: 'blob' }).then(r => r.data),
+  getInvoices: (params: InvoiceFilters, api: Api): Promise<Invoice[]> =>
+    api.get<{ invoices: Invoice[] }>('/admin/billing/invoices', { params }).then(r => r.data.invoices),
+  getInvoice: (id: string, api: Api): Promise<Invoice> =>
+    api.get<{ invoice: Invoice }>(`/admin/billing/invoices/${id}`).then(r => r.data.invoice),
+  // Multipart: the PDF rides with the fields (see `invoiceForm`).
+  createInvoice: (body: InvoiceCreateBody, api: Api): Promise<Invoice> =>
+    api.post<{ invoice: Invoice }>('/admin/billing/invoices', invoiceForm(body)).then(r => r.data.invoice),
+  updateInvoice: (id: string, body: InvoiceUpdateBody, api: Api): Promise<Invoice> =>
+    api.put<{ invoice: Invoice }>(`/admin/billing/invoices/${id}`, invoiceForm(body)).then(r => r.data.invoice),
+  deleteInvoice: (id: string, api: Api): Promise<void> =>
+    api.delete(`/admin/billing/invoices/${id}`).then(() => undefined),
+  downloadInvoicePdf: (id: string, api: Api): Promise<Blob> =>
+    api.get<Blob>(`/admin/billing/invoices/${id}/pdf`, { responseType: 'blob' }).then(r => r.data),
   // ── Email (B61) ─────────────────────────────────────────────────────────
   getEmailStatus: (api: Api): Promise<EmailStatus> =>
     api.get<{ email: EmailStatus }>('/admin/email/status').then(r => r.data.email),

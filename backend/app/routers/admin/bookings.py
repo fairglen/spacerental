@@ -617,6 +617,10 @@ async def admin_create_booking(
         admin_note=body.admin_note,
         hold_expires_at=None,
     )
+    # I01: a manual booking with an amount is money received outside the
+    # platform, at the moment the operator records it.
+    if booking.total_amount > 0:
+        booking.paid_at = clock.utcnow()
     db.add(booking)
     try:
         await db.flush()
@@ -728,6 +732,9 @@ async def admin_mark_booking_paid(
     booking.status = BookingStatus.confirmed
     booking.payment_method = PaymentMethod.manual
     booking.hold_expires_at = None
+    # I01: "marked as paid" is the moment the operator received the money.
+    if booking.paid_at is None:
+        booking.paid_at = now
     stamp = f"Marcada como paga: {body.reason}"
     booking.admin_note = f"{booking.admin_note}\n{stamp}" if booking.admin_note else stamp
     try:

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { AxiosError, AxiosHeaders } from 'axios'
-import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, recurrencesApi, supportApi, createAuthenticatedApi, withSessionRevocation } from '@/lib/api'
+import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, invoicesApi, recurrencesApi, supportApi, createAuthenticatedApi, withSessionRevocation } from '@/lib/api'
 
 describe('spacesApi.list', () => {
   it('extracts spaces array from wrapped response', async () => {
@@ -975,5 +975,57 @@ describe('Part A1 admin endpoints (G01–G04): every wrapper unwraps its envelop
     expect(await adminApi.sendTestEmail(sent as any)).toEqual({ delivered: true, to: 'admin@demo.com' })
     // No body, no recipient: the API sends to the caller.
     expect(sent.fn).toHaveBeenCalledWith('/admin/email/test')
+  })
+})
+
+describe('billing details API contract (I04)', () => {
+  it('unwraps `billing` on read and on update', async () => {
+    const api = createAuthenticatedApi('customer-token')
+    const billing = { tax_id: '123456789', billing_name: 'Ana Silva, Lda.', billing_address: 'Rua 1' }
+    const get = vi.spyOn(api, 'get').mockResolvedValue({ data: { billing } })
+    expect(await authApi.getBilling(api)).toEqual(billing)
+    expect(get).toHaveBeenCalledWith('/auth/me/billing')
+    const put = vi.spyOn(api, 'put').mockResolvedValue({ data: { billing: { ...billing, tax_id: null } } })
+    expect(await authApi.updateBilling({ ...billing, tax_id: null }, api)).toEqual({ ...billing, tax_id: null })
+    expect(put).toHaveBeenCalledWith('/auth/me/billing', { ...billing, tax_id: null })
+  })
+})
+
+describe('billing statement and invoice records API contract (I02/I05)', () => {
+  it('unwraps `summary`, `statement` and `invoices`', async () => {
+    const api = createAuthenticatedApi('admin-token')
+    const get = vi.spyOn(api, 'get')
+    get.mockResolvedValueOnce({ data: { summary: { received_total: '221.00' } } })
+    expect(await adminApi.getBillingSummary({ from: '2026-09-01', to: '2026-09-30' }, api)).toEqual({ received_total: '221.00' })
+    expect(get).toHaveBeenLastCalledWith('/admin/billing/summary', { params: { from: '2026-09-01', to: '2026-09-30' } })
+    get.mockResolvedValueOnce({ data: { statement: { lines: [] } } })
+    expect(await adminApi.getBillingStatement({ from: '2026-09-01', to: '2026-09-30', invoiced: 'pending' }, api)).toEqual({ lines: [] })
+    expect(get).toHaveBeenLastCalledWith('/admin/billing/statement', { params: { from: '2026-09-01', to: '2026-09-30', invoiced: 'pending' } })
+    get.mockResolvedValueOnce({ data: { invoices: [{ id: 'inv-1' }] } })
+    expect(await adminApi.getInvoices({ user_id: 'u-1' }, api)).toEqual([{ id: 'inv-1' }])
+    get.mockResolvedValueOnce({ data: { invoices: [{ id: 'inv-1' }] } })
+    expect(await invoicesApi.listMine(api)).toEqual([{ id: 'inv-1' }])
+    expect(get).toHaveBeenLastCalledWith('/invoices/me')
+  })
+
+  it('posts an invoice as multipart with repeated transaction ids and unwraps `invoice`', async () => {
+    const api = createAuthenticatedApi('admin-token')
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { invoice: { id: 'inv-2', number: 'FT 2026/12' } } })
+    const pdf = new File(['%PDF-1.4'], 'fatura.pdf', { type: 'application/pdf' })
+    const body = { user_id: 'u-1', number: 'FT 2026/12', issued_at: '2026-10-02', period_from: '2026-09-01', period_to: '2026-09-30', amount: '88.00', hours: '8.00', transaction_ids: ['hourly:b1', 'pack:p1'], notify: true, pdf, note: undefined }
+    expect(await adminApi.createInvoice(body, api)).toEqual({ id: 'inv-2', number: 'FT 2026/12' })
+    const form = post.mock.calls[0][1] as FormData
+    expect(post.mock.calls[0][0]).toBe('/admin/billing/invoices')
+    expect(form).toBeInstanceOf(FormData)
+    expect(form.getAll('transaction_ids')).toEqual(['hourly:b1', 'pack:p1'])
+    expect(form.get('notify')).toBe('true')
+    expect(form.get('amount')).toBe('88.00')
+    expect(form.get('pdf')).toBeInstanceOf(File)
+    expect(form.has('note')).toBe(false)
+    const put = vi.spyOn(api, 'put').mockResolvedValue({ data: { invoice: { id: 'inv-2', note: null } } })
+    await adminApi.updateInvoice('inv-2', { note: '', remove_pdf: true }, api)
+    const update = put.mock.calls[0][1] as FormData
+    expect(update.get('note')).toBe('')
+    expect(update.get('remove_pdf')).toBe('true')
   })
 })

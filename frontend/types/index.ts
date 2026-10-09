@@ -179,6 +179,10 @@ export type OrgUser = {
   role: 'owner' | 'admin' | 'member'
   joined_at: string
   bookings_count: number
+  // Billing details (I04).
+  tax_id: string | null
+  billing_name: string | null
+  billing_address: string | null
   // "Suspender" (G02): set while the account cannot sign in.
   disabled_at?: string | null
   created_at: string
@@ -325,11 +329,119 @@ export type PaginatedSupportRequests = {
   page_size: number
 }
 
+// Money on the billing statement (I02) travels as the API's `Decimal`
+// strings ("221.00"); `formatCurrency(Number(x))` renders them.
+export type BillingKind = 'pack' | 'hourly' | 'mixed' | 'manual'
+export type BillingChannel = 'online' | 'manual'
+
+export type BillingKindTotals = {
+  count: number
+  amount: string
+  hours: string
+}
+
+export type BillingPackSales = BillingKindTotals & {
+  package_id: string | null
+  name: string
+}
+
+export type BillingSummary = {
+  from: string
+  to: string
+  received_total: string
+  by_channel: { online: string; manual: string }
+  pack_sales: BillingPackSales[]
+  hourly: BillingKindTotals
+  mixed: BillingKindTotals
+  manual: BillingKindTotals
+  transactions_count: number
+  invoiced_amount: string
+  pending_amount: string
+}
+
+export type InvoicedFilter = 'all' | 'pending' | 'done'
+export type BillingPeriod = { from: string; to: string }
+
+export type BillingTransaction = {
+  kind: BillingKind
+  id: string
+  paid_at: string
+  label: string
+  amount: string
+  hours: string
+  channel: BillingChannel
+  invoice_id: string | null
+}
+
+export type BillingUser = {
+  id: string
+  name: string | null
+  email: string
+  tax_id: string | null
+  billing_name: string | null
+  billing_address: string | null
+}
+
+export type StatementLine = {
+  user: BillingUser
+  amount: string
+  hours: string
+  transactions_count: number
+  breakdown: { packs: { name: string; count: number }[]; hourly_hours: string; mixed_hours: string; manual_hours: string }
+  invoiced_amount: string
+  pending_amount: string
+  transactions: BillingTransaction[]
+}
+
+export type BillingStatement = BillingPeriod & { invoiced: InvoicedFilter; lines: StatementLine[] }
+
+// An invoice the operator registered (I05): a record of a fatura issued
+// elsewhere, never issued here.
+export type InvoiceItem = { kind: 'booking' | 'purchase'; id: string }
+export type Invoice = {
+  id: string
+  org_id: string
+  user_id: string
+  number: string
+  issued_at: string
+  period_from: string
+  period_to: string
+  amount: string
+  hours: string
+  currency: string
+  note: string | null
+  has_pdf: boolean
+  created_by_admin_id: string | null
+  created_at: string
+  updated_at: string
+  user: { id: string; name: string | null; email: string; tax_id: string | null; billing_name: string | null }
+  items: InvoiceItem[]
+}
+export type MyInvoice = Pick<Invoice, 'id' | 'number' | 'issued_at' | 'period_from' | 'period_to' | 'amount' | 'hours' | 'currency' | 'has_pdf'>
+export type InvoiceFilters = { user_id?: string; from?: string; to?: string }
+export type InvoiceCreateBody = {
+  user_id: string
+  number: string
+  issued_at: string
+  period_from: string
+  period_to: string
+  amount: string
+  hours: string
+  transaction_ids: string[]
+  note?: string
+  notify?: boolean
+  pdf?: File | null
+}
+export type InvoiceUpdateBody = { number?: string; issued_at?: string; note?: string; pdf?: File | null; remove_pdf?: boolean }
+
 export type AdminStats = {
   total_bookings: number
-  total_revenue: number
+  // All-time money received (I03): card bookings, manual amounts and pack
+  // sales, counted once at `paid_at`.
+  total_revenue: string
   occupancy_rate: number
   active_users: number
+  this_month: BillingSummary
 }
 
 export type OrgMembership = {
@@ -440,7 +552,9 @@ export type DeleteBlockers =
 
 // Users (G03/G04).
 export type AdminUserCreateBody = { email: string; name?: string; password?: string }
-export type AdminUserPatch = { name?: string | null; email?: string; disabled_at?: string | null }
+// What an invoice to the customer names (I04); blank clears a field.
+export type BillingDetails = { tax_id: string | null; billing_name: string | null; billing_address: string | null }
+export type AdminUserPatch = Partial<BillingDetails> & { name?: string | null; email?: string; disabled_at?: string | null }
 export type AnonymisedUser = { id: string; email: string; name: string | null; disabled_at: string | null }
 
 // Purchases (G04): the list carries the customer alongside each row.

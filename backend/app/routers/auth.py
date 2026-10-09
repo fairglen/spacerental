@@ -22,6 +22,8 @@ from app.models.user import User
 from app.ratelimit import AUTH_TIER, rate_limit
 from app.schemas.organization import EnrollmentOut, OrgMembershipDetail, OrgMembershipOut
 from app.schemas.user import (
+    BillingDetailsOut,
+    BillingDetailsUpdate,
     PasswordResetConfirm,
     PasswordResetRequest,
     TokenOut,
@@ -287,6 +289,28 @@ async def confirm_password_reset(body: PasswordResetConfirm, db: AsyncSession = 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):
     return UserOut.model_validate(user)
+
+
+@router.get("/me/billing")
+async def my_billing_details(user: User = Depends(get_current_user)):
+    """What an invoice to the caller names (I04): NIF, billing name, address."""
+    return {"billing": BillingDetailsOut.model_validate(user)}
+
+
+@router.put("/me/billing")
+async def update_my_billing_details(
+    body: BillingDetailsUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The caller's own details only; the operator edits a customer's on
+    `/admin/users/{id}`, audited. Every field is sent, blank clears it."""
+    user.tax_id = body.tax_id
+    user.billing_name = body.billing_name
+    user.billing_address = body.billing_address
+    db.add(user)
+    await db.flush()
+    return {"billing": BillingDetailsOut.model_validate(user)}
 
 
 @router.get("/memberships")

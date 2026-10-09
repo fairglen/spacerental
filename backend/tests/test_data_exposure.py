@@ -46,6 +46,8 @@ USER_FIELDS = {"id", "email", "name", "avatar_url", "created_at"}
 # The operator's members list (A05): the membership, never the account.
 ORG_USER_FIELDS = {
     "id", "email", "name", "role", "joined_at", "bookings_count", "disabled_at", "created_at",
+    # Billing details (I04): what an invoice names, visible to the operator only.
+    "tax_id", "billing_name", "billing_address",
 }  # fmt: skip
 # `reason` (H01) is one of four words about the slot, never about a person.
 SLOT_FIELDS = {"start", "end", "available", "reason"}
