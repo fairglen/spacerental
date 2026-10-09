@@ -1646,7 +1646,7 @@ calendar days (`[from 00:00, to 24:00)` Europe/Lisbon → UTC).
 
 ### I01 — `paid_at` on bookings and purchases (migration 0018)
 
-**Priority: P1. State: IN PROGRESS. Depends on:** nothing. `bookings.paid_at`
+**Priority: P1. State: DONE 2026-10-09 (PR `feat/billing-statement-invoices`, `2daf502`). Depends on:** nothing. `bookings.paid_at`
 and `user_package_purchases.paid_at` (`DateTime(timezone=True)`, nullable,
 indexed with `org_id`). Set exactly once on every money-receiving
 transition: `routers/webhooks.py` (booking → `confirmed`/`paid_unfulfilled`;
@@ -1666,9 +1666,23 @@ confirmed/completed → `created_at`.
 round trip (upgrade → check → downgrade → upgrade → check) on a disposable
 database; backfill assertions on a fixture ledger.
 
+**Outcome (2026-10-09, `2daf502`):** built as scoped. `paid_at` on both
+models with `(org_id, paid_at)` indexes; migration
+`0018_billing_paid_at_invoices` (it also carries I04/I05 — one migration per
+PR) with the five backfill statements importable (`BACKFILL_STATEMENTS`), so
+`tests/test_paid_at.py` runs them on a fixture ledger; the transitions in
+`webhooks.py` (the `taken` and confirmed branches, `_activate_purchase`),
+`admin/bookings.py` (manual create with an amount; mark-paid, which flips
+the row to `manual`) and `admin/users.py` (complimentary). Round trip
+upgrade → check → downgrade (0 tables left) → upgrade → check on a fresh
+PostgreSQL 18.6 (`deps/roundtrip.sh` on the loop test-db). Counts:
+`test_paid_at.py` 7 (6 transitions, 1 backfill table). **Limitation:** the
+backfill dates old rows by `created_at`/`purchased_at`, documented as
+approximate in the migration.
+
 ### I02 — Billing service and the admin statement API
 
-**Priority: P1. State: IN PROGRESS. Depends on:** I01. `app/billing.py`:
+**Priority: P1. State: DONE 2026-10-09 (`ba7036c`). Depends on:** I01. `app/billing.py`:
 pure functions over SQLAlchemy selects, `Decimal` only. Transaction kinds —
 `pack`: purchase `source='purchase'`, amount `amount_paid`, hours
 `hours_total`, label the package name; `hourly`: booking, amount
@@ -1694,9 +1708,24 @@ pack, complimentary, cancellation credit, a cancelled-after-payment booking,
 a pending hold) with hand-computed expected totals; cross-org 403; an
 invalid range 422; the CSV's shape.
 
+**Outcome (2026-10-09, `ba7036c`):** `app/billing.py` (`period`, `month_of`,
+`load_transactions`, `summarise`, `statement`, `statement_csv`,
+`received_all_time`; Decimal only), `schemas/billing.py`,
+`routers/admin/billing.py` (summary; statement with
+`invoiced=all|pending|done`; statement.csv as `attachment;
+filename=extrato-<from>_<to>.csv`); authz-matrix entries. The `ledger`
+fixture (conftest: September 2026, two customers, hand-computed `expected`)
+feeds `tests/test_billing.py` 17 — the Lisbon day math including the
+31 Aug 23:30 UTC edge, the totals, a zero month, bad ranges 422, member 403,
+another org 403, line order and breakdown, transaction order and labels,
+the invoiced filter, the CSV's BOM/`;`/decimal comma/filename. DECISION:
+`from`/`to` are required and a range is capped at 366 days; a `manual`
+block is reported next to hourly/mixed so the breakdown adds up;
+complimentary grants and cancellation credits are not transactions.
+
 ### I03 — Dashboard: this month's money, by type (closes the O03 smoke finding)
 
-**Priority: P1. State: IN PROGRESS. Depends on:** I02. `routers/admin/
+**Priority: P1. State: DONE 2026-10-09 (`3caaa3c`). Depends on:** I02. `routers/admin/
 dashboard.py` + `frontend/app/admin/page.tsx`: an "Este mês" row from the
 I02 service — received, pack sales by pack (count), hourly bookings (count,
 hours), "por faturar" — with a link to `/admin/billing`. "Receita Total"
@@ -1705,9 +1734,23 @@ them: 22 € shown for 122 € collected). O03 updated above.
 **Validation:** the dashboard test with the fixture ledger; the Vitest page
 test.
 
+**Outcome (2026-10-09, `3caaa3c`):** `routers/admin/dashboard.py` answers
+through `schemas/dashboard.py::AdminDashboardOut` — `total_revenue` =
+`billing.received_all_time` (a Decimal string; FastAPI's dict encoder would
+have made it a float), `this_month` = the I02 summary for
+`billing.month_of(clock.utcnow())`; `components/admin/ThisMonthCard.tsx` on
+`/admin` (received, packs by pack, bookings and paid hours, por faturar,
+"Ver faturação"); `AdminStats` typed accordingly. Tests: `test_admin.py`
+dashboard on the ledger with a pinned clock (`total_revenue` 232.00, the
+month 221.00); the authz list-isolation assertion moved to the `paid_at`
+basis; `test_package_redemption.py::TestRevenueAccounting` walks the hold
+through mark-paid (an admin status flip is not a payment); Vitest
+`AdminDashboardPage.test.tsx` 4. O03's smoke finding is closed above; its
+refund rules stay HOLD.
+
 ### I04 — Customer billing details (NIF)
 
-**Priority: P2. State: IN PROGRESS. Depends on:** I01 (same migration).
+**Priority: P2. State: DONE 2026-10-09 (`c22b494`). Depends on:** I01 (same migration).
 `users.tax_id` (9 chars), `billing_name`, `billing_address` (nullable).
 Portuguese NIF check-digit validation (mod 11; rejected otherwise; empty
 allowed). `GET/PUT /auth/me/billing` for the customer; the admin edits them
@@ -1716,9 +1759,24 @@ and the CSV.
 **Validation:** a validator table; 403 for another user's details; the
 audit row.
 
+**Outcome (2026-10-09, `c22b494`):** `app/nif.py` (`normalise`,
+`is_valid`, `validate`), mirrored by `frontend/lib/nif.ts`; the three
+`users` columns; `schemas/user.py` `BillingDetailsOut/Update`; `GET/PUT
+/auth/me/billing`; `AdminUserUpdate`/`OrgUserOut`/`AuditUserOut` carry the
+fields, so the operator's edit on `/admin/users/[id]` (a "Faturação" section
+with the inline NIF check) is audited with the NIF in the snapshot;
+`BillingUserOut` and the CSV name the billing name and NIF. Tests:
+`test_billing_details.py` 15 (validator table, own details, blank clears,
+401, per-customer isolation, the audited operator edit, 422, member 403,
+outside-org 404, the statement and CSV); authz CUSTOMER entries with
+`test_billing_details_are_only_my_own`; `test_audit`/`test_data_exposure`
+key sets extended; Vitest `nif.test.ts` 3, `AdminEntityPages` +1, api
+shape +1. DECISION: NIF prefix classes are not policed; the CSV's "cliente"
+prefers the billing name when set.
+
 ### I05 — Invoice records (metadata + private PDF)
 
-**Priority: P1. State: IN PROGRESS. Depends on:** I02, I04. Tables
+**Priority: P1. State: DONE 2026-10-09 (`fc253bb`). Depends on:** I02, I04. Tables
 `invoices` (`id, org_id, user_id, number, issued_at, period_from,
 period_to, amount Numeric(10,2), hours Numeric(6,2), currency 'EUR', note,
 pdf_key, created_by_admin_id, created_at, updated_at`, unique `(org_id,
@@ -1739,9 +1797,37 @@ above with `Content-Disposition: attachment` and `nosniff`.
 amount mismatch 422, PDF magic/size rejections, cross-org 403, the private
 path never under `/media` (requesting it → 404).
 
+**Outcome (2026-10-09, `fc253bb`):** `models/invoice.py` (`Invoice`,
+`InvoiceItem` with the CHECK and the two unique columns), the tables in
+migration 0018; `routers/admin/invoices.py` — multipart create
+(`_selected_transactions`: 404 for anything that is not this customer's
+paid transaction in this org, 409 when already invoiced or the number is
+taken, 422 unless `amount`/`hours` equal the statement's sums), list with
+`user_id`/`from`/`to`, get, multipart update of number/date/note/PDF with
+`remove_pdf`, delete 204 that frees the transactions and drops the file
+after the commit, the PDF stream — under the `upload` tier, audited
+(`audit._ENTITIES[Invoice] = InvoiceOut`); `routers/invoices.py` (`GET
+/invoices/me`, `GET /invoices/{id}/pdf` by ownership; `pdf_response` shared
+with the admin route: attachment, nosniff, `private, no-store`); `media.py`
+`read()`, `PRIVATE_PREFIX`, `invoice_pdf_key`, `is_pdf`, the 10 MB cap;
+`main.py::PublicMediaFiles` answers 404 under `private/`;
+`billing.with_invoices` fills `invoice_id`. Tests: `test_invoices.py` 20 —
+register with/without a PDF and the audit row; the statement, summary and
+CSV after; sums 422; double invoicing 409; number 409; six 404 cases, bad
+ids 422, a reversed period; PDF 415/413 leaving no row; member and other-org
+403; list filters and get; update incl. PDF replace/remove and the audit
+diff; a number clash on update; delete freeing the transactions and the
+file; the download headers and `/media/private` 404; the customer's view,
+another customer's 404 and a member's 403 on the operator download — plus
+three audit scenarios, eight authz entries with
+`test_invoices_are_only_my_own`, and the OpenAPI snapshot. DECISION: a
+blank `note` on PUT clears it (FastAPI drops empty form fields; the route
+checks the parsed form). **Limitation:** object storage would need
+`MediaStorage.read` alongside `save`/`delete` (the seam is in `media.py`).
+
 ### I06 — Admin UI `/admin/billing` ("Faturação")
 
-**Priority: P1. State: IN PROGRESS. Depends on:** I02, I05. Nav entry in
+**Priority: P1. State: DONE 2026-10-09 (`e419c58`). Depends on:** I02, I05. Nav entry in
 `AdminShell.tsx` (icon `Receipt`, after "Banco de horas"). Period presets
 (Este mês, Mês passado, Últimos 30 dias, Personalizado with two date
 inputs) → summary cards → the per-client table (expandable transactions;
@@ -1755,9 +1841,29 @@ delete (confirm). All data via `lib/api.ts` + `queryKeys.ts`.
 hourly booking, see the totals, register an invoice with a tiny PDF, see
 "Faturada".
 
+**Outcome (2026-10-09, `e419c58`):** the nav entry (Receipt) after "Banco
+de horas"; `lib/billingPeriods.ts` (presets on the browser's local calendar,
+`isValidRange`), `lib/download.ts` (`saveBlob`),
+`adminApi.getBillingSummary/getBillingStatement/downloadBillingCsv/
+getInvoices/getInvoice/createInvoice/updateInvoice/deleteInvoice/
+downloadInvoicePdf`, `invoiceForm` (the multipart body) and `invoicesApi`;
+`app/admin/billing/page.tsx` (presets, custom dates with validation, the
+summary card reused, Extrato / Faturas registadas tabs, search, expandable
+transactions with the invoice number, the invoiced filter, "Registar fatura
+emitida", "Exportar CSV", download / edit / delete with confirmation);
+`components/admin/billing/RegisterInvoiceDialog.tsx` (pending transactions
+ticked, cents arithmetic, number / date / PDF / note, notify on by default)
+and `InvoiceDialog.tsx`. Vitest `AdminBillingPage.test.tsx` 5,
+`billingPeriods.test.ts` 5, api shape 2; Playwright `admin-billing.spec.ts`
+green on the loop e2e stack (3100/8100). Screenshots
+`docs/ui-evidence/I-series/admin-billing-*.webp`,
+`admin-dashboard-this-month.webp`. DECISION: presets are local calendar
+days; the invoices tab lists the org's records regardless of the period;
+downloads come through axios as blobs (a link cannot carry the token).
+
 ### I07 — Customer UI `/dashboard/billing` ("Faturação")
 
-**Priority: P2. State: IN PROGRESS. Depends on:** I04, I05. The billing
+**Priority: P2. State: DONE 2026-10-09 (`304daa9`). Depends on:** I04, I05. The billing
 details form (NIF, nome de faturação, morada) with inline NIF validation,
 and "As minhas faturas" (number, date, amount, period, download). Linked
 next to the existing "Os meus packs" entry points (the signed-in menus,
@@ -1765,18 +1871,47 @@ desktop and mobile).
 **Validation:** Playwright — the customer from I06's spec sees and downloads
 the invoice; another customer gets nothing (404 on the PDF).
 
+**Outcome (2026-10-09, `304daa9`):** `app/dashboard/billing/page.tsx` (the
+details form with inline `nifError`, saved through `authApi.updateBilling`;
+"As minhas faturas" with `invoicesApi.listMine`/`downloadPdf`), the
+"Faturação" link next to "Os meus packs" in both signed-in menus
+(`navbar.billing` in PT/EN). Vitest `DashboardBillingPage.test.tsx` 3;
+Playwright `customer-billing.spec.ts` green on the loop stack (the menu
+link, the inline refusal, save and reload, the download event, another
+customer's empty list and 404). DECISION: inline `role="status"` feedback —
+the customer pages mount no toast region. Screenshots
+`customer-billing.webp`, `customer-billing-390.webp`.
+
 ### I08 — "Fatura disponível" email
 
-**Priority: P2. State: IN PROGRESS. Depends on:** I05. `invoice_available_
+**Priority: P2. State: DONE 2026-10-09 (`68cf0e9`). Depends on:** I05. `invoice_available_
 email(to, number, issued_at, amount, link)` in `app/email.py` (formal PT,
 branded header, link to `/dashboard/billing`), enqueued when `notify` is on.
 **Validation:** the stub's `sent` has it; off → nothing.
 
-**PR evidence:** the backend and frontend suites, the migration round trip,
-the two Playwright specs, the OpenAPI snapshot, screenshots of
-`/admin/billing` and `/dashboard/billing` under `docs/ui-evidence/I-series/`,
-and a worked example in the PR body: the fixture ledger with its expected
-totals and the CSV excerpt.
+**Outcome (2026-10-09, `68cf0e9`):** `email.invoice_available_email`
+(formal PT, the branded header, a decimal-comma amount, the link to
+`/dashboard/billing`, the PDF line only when there is one, the shared
+sign-off, no attachment — the PDF stays behind the sign-in), enqueued by
+the create route when `notify` is on, through the same BackgroundTasks path
+as every other email. Tests: `test_invoices.py::TestNotify` 3 (sent once
+with the link; nothing without notify; nothing on a refused registration).
+
+**PR evidence (2026-10-09):** backend 1044 passed (loop test project,
+`-n auto`; #94 had 960) — `test_paid_at` 7, `test_billing` 17,
+`test_billing_details` 15, `test_invoices` 20, the audit scenarios, the
+authz entries, the adapted pins; the migration round trip clean on
+PostgreSQL 18.6; the OpenAPI snapshot refreshed; Ruff clean. Frontend `tsc`
+clean, Vitest 756 passed in 76 files (#94: 725), `npm run build` clean.
+Playwright `admin-billing.spec.ts` and `customer-billing.spec.ts` 2/2 on the
+loop e2e stack (production images rebuilt with the branch). Static site
+untouched: render `--check` up to date, unittest OK, copy-parity 4/4, smoke
+48/48. Screenshots under `docs/ui-evidence/I-series/` (6 WebP, 24–81 KB);
+the worked example (ledger totals, CSV excerpt) is in the PR body;
+`API_SPEC.md` documents every new route. Discovered and fixed on the way:
+`tests/test_spaces.py` ranged-availability days now start on a Monday — a
+Friday-only red (the blocked "day after tomorrow" was a Sunday without
+opening hours). Review rounds: recorded below once the loop runs.
 
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
