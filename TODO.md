@@ -1678,6 +1678,16 @@ npm test` → tsc clean, 756 passed in 76 files; Ruff 0.16.5 `format --check`
 and `check` clean on the two Python files. No Playwright: no frontend code
 beyond what #93–#95 already ran green.
 
+**Review round 1 (2026-10-09, PR #96, head `a4f687f`):** CI green on the
+first run — `required-checks` pass; backend / test, migrations / migrate
+(the job fault 2 broke, now green on an empty database), e2e 1/2 and 2/2 +
+merge-reports, frontend / unit, lint (compose, frontend, python), perf (api,
+web), pip-audit, npm-audit pass; docs and CodeQL skipped by path filters.
+No Copilot review: none in 6 minutes of polling (GraphQL `reviews` +
+`reviewThreads`), the one-time request registered no reviewer, none in the
+4 minutes after — as on #91–#96, this repository has no Copilot code
+review. Zero review threads, no fix commits.
+
 ## Billing statement and invoice records (I-series) — owner assignment 2026-10-07 (PR `feat/billing-statement-invoices`, stacked on #94)
 
 Owner's ask: see, for the past month or a custom range, how much money was
