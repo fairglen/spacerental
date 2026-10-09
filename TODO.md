@@ -1911,7 +1911,15 @@ the worked example (ledger totals, CSV excerpt) is in the PR body;
 `API_SPEC.md` documents every new route. Discovered and fixed on the way:
 `tests/test_spaces.py` ranged-availability days now start on a Monday — a
 Friday-only red (the blocked "day after tomorrow" was a Sunday without
-opening hours). Review rounds: recorded below once the loop runs.
+opening hours).
+**Review round 1 (2026-10-09, PR #95):** no Copilot review — none arrived
+in 6 minutes of polling, the one-time request (`POST
+…/pulls/95/requested_reviewers`) registered no reviewer, none in the 4
+minutes after (the same as #91–#94: this repository has no Copilot code
+review). Zero review threads. CI green on the first run: `required-checks`
+pass — backend, e2e 1/2 and 2/2 + merge-reports, frontend unit, lint
+(compose, frontend, python), migrations, perf (api, web), pip-audit,
+npm-audit; docs and CodeQL skipped by path filters. No fix commits.
 
 ## Brand and copy revision (W-series) — owner assignment 2026-09-22
 
