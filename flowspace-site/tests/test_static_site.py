@@ -203,6 +203,40 @@ class StructuredData(unittest.TestCase):
         self.assertEqual(action["target"]["urlTemplate"], BUSINESS["booking"]["url"])
         self.assertEqual(action["result"]["@type"], "Reservation")
 
+    def test_every_door_follows_the_booking_url(self):
+        """E07: the nav and pricing "Reservar" anchors render from
+        `booking.url` — the page's own contact form while that is the site's
+        address, the app once `booking.url` is `booking.app_url` — so the
+        go-live switch is one value in business.json plus a render."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("render_static", SITE / "scripts" / "render-static.py")
+        render = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(render)
+        doors = re.compile(r'<a href="([^"]*)" class="btn btn-(?:primary|outline) btn-(?:sm|block)">Reservar(?: sala)?</a>')
+
+        # Today: the app is announced nowhere, every door is the contact form.
+        self.assertEqual(BUSINESS["booking"]["app_url"], "https://app.flowspace.pt")
+        self.assertEqual(render.booking_door(BUSINESS), "#contacto")
+        self.assertEqual(set(doors.findall(INDEX)), {"#contacto"})
+        self.assertEqual(len(doors.findall(INDEX)), 4)
+        self.assertNotIn("app.flowspace.pt", "\n".join(render.llms_facts(BUSINESS)))
+
+        # Go-live (docs/runbooks/aws.md, Phase 4): booking.url = app_url.
+        live = json.loads(json.dumps(BUSINESS))
+        live["booking"]["url"] = live["booking"]["app_url"]
+        self.assertEqual(render.booking_door(live), "https://app.flowspace.pt")
+        rendered = render.render_index(INDEX, {
+            "door-nav": render.block_door_nav(live),
+            "door-nav-mobile": render.block_door_nav_mobile(live),
+            "pricing": render.block_pricing(live),
+        })
+        self.assertEqual(set(doors.findall(rendered)), {"https://app.flowspace.pt"})
+        self.assertEqual(len(doors.findall(rendered)), 4)
+        self.assertIn("plataforma de reservas: https://app.flowspace.pt", "\n".join(render.llms_facts(live)))
+        # "Falar connosco" is the form whatever the door is.
+        self.assertIn('<a href="#contacto" class="btn btn-outline btn-block">Falar connosco</a>', rendered)
+
     def test_organization_website_and_breadcrumbs(self):
         graph = jsonld()
         org = by_type(graph, "Organization")
