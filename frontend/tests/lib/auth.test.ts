@@ -16,4 +16,19 @@ describe('server authentication configuration', () => {
     const { authOptions } = await import('@/lib/auth')
     expect(authOptions.secret).toBe('test-only-explicit-auth-secret')
   })
+
+  // E02: the .env.example value protects nothing; a production deployment
+  // must not start on it. Development keeps working with it.
+  it('refuses the development default under APP_ENV=production', async () => {
+    vi.stubEnv('APP_ENV', 'production')
+    vi.stubEnv('NEXTAUTH_SECRET', 'dev-nextauth-secret-change-in-production')
+    await expect(import('@/lib/auth')).rejects.toThrow('NEXTAUTH_SECRET is the development default')
+  })
+
+  it('accepts the development default outside production', async () => {
+    vi.stubEnv('APP_ENV', 'development')
+    vi.stubEnv('NEXTAUTH_SECRET', 'dev-nextauth-secret-change-in-production')
+    const { authOptions } = await import('@/lib/auth')
+    expect(authOptions.secret).toBe('dev-nextauth-secret-change-in-production')
+  })
 })
