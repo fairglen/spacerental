@@ -116,6 +116,7 @@ jobs:
           find "$PUBLISH_DIR" -type f | sort | sed "s|^$PUBLISH_DIR/|  |"
 
           echo "Not published (kept out of the artifact on purpose):"
+          # shellcheck disable=SC2045 # names without spaces, by construction
           for entry in $(ls -A "$SITE_DIR"); do
             case " $SITE_PATHS $OPTIONAL_PATHS " in
               *" $entry "*) ;;
