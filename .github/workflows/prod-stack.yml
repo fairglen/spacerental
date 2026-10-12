@@ -1,0 +1,60 @@
+name: Production stack
+
+# Called by checks.yml when backend, frontend or the Compose layer changes
+# (E01). Runs docker-compose.prod.yml the way the host does — Caddy in front,
+# the production images, APP_ENV=production with its interlock armed (E02) —
+# with the test overlay (a throwaway Postgres where RDS would be, Caddy on
+# the runner's 443/80) through scripts/tests/prod-stack.sh: health, the
+# bootstrap command (E03), sign-up, a booking, proxy identity for the rate
+# limiter, a signed webhook; then scripts/tests/backup-restore.sh (E06) on
+# the same stack. The images come from `docker buildx bake` with the Actions
+# layer cache, in their own scopes (the e2e job's build args differ).
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  prod-stack:
+    name: prod-stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the production images (layer cache in Actions)
+        uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
+        env:
+          # bake parses the whole Compose model, so the variables the stack
+          # requires must exist; only the `build` sections are used.
+          CADDY_DOMAIN: localhost
+          NEXTAUTH_URL: https://localhost
+          NEXTAUTH_SECRET: bake-only-not-a-secret
+          PROD_STACK_ENV_FILE: .env.production.example
+        with:
+          source: .
+          files: |
+            docker-compose.prod.yml
+            scripts/tests/prod-stack.compose.yml
+          load: true
+          set: |
+            backend.cache-from=type=gha,scope=prod-backend
+            backend.cache-to=type=gha,scope=prod-backend,mode=max
+            frontend.cache-from=type=gha,scope=prod-frontend
+            frontend.cache-to=type=gha,scope=prod-frontend,mode=max
+      - name: The stack, end to end (scripts/tests/prod-stack.sh)
+        run: KEEP=1 PROD_STACK_BUILD=0 scripts/tests/prod-stack.sh
+      - name: Backup → drop a table → restore (scripts/tests/backup-restore.sh)
+        run: scripts/tests/backup-restore.sh
+      - name: Stack logs on failure
+        if: failure()
+        run: |
+          work="${TMPDIR:-/tmp}/spacerental-prod-stack-spacerental-prod-local"
+          [ -f "$work/.env" ] && docker compose -p spacerental-prod-local --env-file "$work/.env" \
+            -f docker-compose.prod.yml -f scripts/tests/prod-stack.compose.yml logs --no-color --tail 300 || true
+      - name: Down
+        if: always()
+        run: scripts/tests/prod-stack.sh down

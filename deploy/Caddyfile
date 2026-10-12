@@ -1,0 +1,16 @@
+# The only thing the production stack publishes (E01): TLS for CADDY_DOMAIN
+# (Let's Encrypt, HTTP→HTTPS redirect, HTTP/3), everything to the Next.js
+# server, which proxies /backend/* to the API itself (D20). With
+# CADDY_DOMAIN=localhost Caddy signs with its internal CA — the local run,
+# `curl -k`.
+#
+# Caddy replaces a client's X-Forwarded-For with the address that connected
+# (its default for peers outside `trusted_proxies`, none here) and sets
+# X-Forwarded-Proto. That overwrite is what makes
+# RATE_LIMIT_TRUST_FORWARDED_FOR=true safe for the API's limiter
+# (app/ratelimit.py:client_identity, S12) — scripts/tests/prod-stack.sh
+# proves a spoofed header does not reset a client's bucket.
+{$CADDY_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy frontend:3000
+}

@@ -1,0 +1,32 @@
+# Production logging overlay (E01): the three services' stdout/stderr go to
+# one CloudWatch log group, a stream per service. Added with a second `-f`
+# on the host (deploy/deploy.sh) — the options are specific to the `awslogs`
+# driver and cannot sit behind a variable in docker-compose.prod.yml, whose
+# default `json-file` driver would reject them. The Docker daemon signs the
+# calls with the instance profile (E04); the group is created by Terraform
+# (30-day retention), so `awslogs-create-group` stays off and a missing
+# group fails loudly at `up`.
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.prod.awslogs.yml up -d
+services:
+  caddy:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION is required for the awslogs driver}
+        awslogs-group: ${AWS_LOG_GROUP:-/spacerental/prod}
+        awslogs-stream: caddy
+  frontend:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION is required for the awslogs driver}
+        awslogs-group: ${AWS_LOG_GROUP:-/spacerental/prod}
+        awslogs-stream: frontend
+  backend:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION is required for the awslogs driver}
+        awslogs-group: ${AWS_LOG_GROUP:-/spacerental/prod}
+        awslogs-stream: backend
