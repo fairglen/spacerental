@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import media
 from app.auth import hash_password
-from app.config import settings
+from app.config import PRODUCTION, settings
 from app.database import async_session_factory, engine
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.package import Package
@@ -362,7 +362,18 @@ async def seed_demo_data(session: AsyncSession) -> None:
             print(f"Package already exists: {pkg.name} ({pkg.id})")
 
 
+def refuse_in_production() -> None:
+    """Demo data has a published owner password: never on a real deployment
+    (E03, S17). `python -m app.bootstrap` is the production counterpart."""
+    if settings.APP_ENV == PRODUCTION:
+        raise SystemExit(
+            f"app.seed refuses to run with APP_ENV={PRODUCTION}: it creates a demo owner "
+            "with a published password. Use `python -m app.bootstrap` for a real organisation."
+        )
+
+
 async def seed() -> None:
+    refuse_in_production()
     await require_migrated_schema()
 
     async with async_session_factory() as session:
