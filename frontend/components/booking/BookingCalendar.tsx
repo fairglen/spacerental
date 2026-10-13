@@ -5,13 +5,14 @@ import { format, parse, startOfWeek, getDay, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
+import { ptMonday } from '@/lib/dateLocale'
 import { CALENDAR_VIEWS, useCalendarView, type CalendarView } from '@/lib/hooks/useCalendarView'
 import { bookingWindowEnd, datesWithinWindow, isBeyondWindow, nextPeriodIsBeyondWindow } from '@/lib/bookingWindow'
 import { availabilityQueryKey, availabilitySpan, datesForView } from '@/lib/availabilitySpan'
 import type { Room, AvailabilitySlot } from '@/types'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
-const locales = { 'pt': pt }
+const locales = { 'pt': ptMonday }
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
 
 interface BookingCalendarProps {
