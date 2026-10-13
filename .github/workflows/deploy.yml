@@ -7,17 +7,18 @@ name: Deploy
 # commit to deploy — the rollback path: Run workflow with the previous sha.
 # Builds the two linux/arm64 images on an arm64 runner (native, no
 # emulation), pushes them to ECR as sha-<7> and main, ships this commit's
-# deploy/ files and Compose files to the backups bucket, and runs
-# /srv/spacerental/deploy.sh <sha> on the instance tagged
-# Name=spacerental-prod through SSM RunCommand; ends with an HTTPS probe.
+# deploy/ files and Compose files to the backups bucket, and runs the
+# `spacerental-deploy` SSM document (= /srv/spacerental/deploy.sh <sha>) on
+# the instance tagged Name=spacerental-prod; ends with an HTTPS probe.
 #
-# DECISION: no `environment:` on the deploy job — app deploys are continuous
-# once enabled; only infrastructure applies are gated. GitHub applies an
-# environment's required reviewers to every job that names it, so putting
-# this job in `production` would make every deploy wait for a click. To gate
-# deploys too, create an environment `production-app` with a required
-# reviewer and set `environment: production-app` below: the deploy role
-# already trusts that subject (infra/bootstrap).
+# DECISION (E10, revising E05): the deploy job runs in the GitHub
+# environment `production-app`, and the deploy role trusts that subject
+# only — not the branch, so no other workflow on main can assume it. The
+# owner creates the environment WITHOUT reviewers (runbook 2.2), which keeps
+# deploys continuous; adding a required reviewer there is the one switch
+# that makes every deploy wait for a click (runbook, Phase 5). The role may
+# send that one document and nothing else: it says "deploy this sha", it
+# cannot run a shell.
 
 on:
   workflow_run:
@@ -57,12 +58,16 @@ jobs:
     # many times longer and is the fallback if the repository turns private.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 40
+    # The deploy role's only trusted subject (E10). No reviewers by default.
+    environment: production-app
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.sha || github.event.workflow_run.head_sha || github.sha }}
+          # The whole history: the ancestry check below needs it.
+          fetch-depth: 0
       - name: The commit to deploy
         id: sha
         run: |
@@ -70,6 +75,20 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "short=${sha:0:7}" >> "$GITHUB_OUTPUT"
           echo "deploying $sha"
+      - name: The commit must be on main (E16)
+        # Run workflow accepts any sha the repository holds — a branch, a
+        # closed pull request. Only what main contains may reach production;
+        # on every other path this is a tautology and costs one fetch.
+        env:
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          git fetch --no-tags --quiet origin main
+          if git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "$SHA is on main"
+          else
+            echo "::error::$SHA is not on main — a deploy ships only commits that main contains (E16)"
+            exit 1
+          fi
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/spacerental-gh-deploy
@@ -124,7 +143,7 @@ jobs:
             echo "id=$id" >> "$GITHUB_OUTPUT"
             echo "instance $id"
           fi
-      - name: deploy.sh on the instance (SSM RunCommand)
+      - name: deploy.sh on the instance (the spacerental-deploy SSM document)
         if: steps.instance.outputs.id != ''
         env:
           INSTANCE: ${{ steps.instance.outputs.id }}
@@ -133,10 +152,10 @@ jobs:
           set -euo pipefail
           command_id=$(aws ssm send-command \
             --instance-ids "$INSTANCE" \
-            --document-name AWS-RunShellScript \
+            --document-name spacerental-deploy \
             --comment "deploy $SHA" \
             --timeout-seconds 600 \
-            --parameters "commands=[\"/srv/spacerental/deploy.sh $SHA\"],executionTimeout=[\"900\"]" \
+            --parameters "sha=$SHA" \
             --query Command.CommandId --output text)
           echo "command $command_id"
           for _ in $(seq 1 120); do
@@ -149,8 +168,15 @@ jobs:
             esac
           done
           echo "status: $status"
-          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE" \
-            --query '[StandardOutputContent, StandardErrorContent]' --output text
+          output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE" \
+            --query '[StandardOutputContent, StandardErrorContent]' --output text)
+          printf '%s\n' "$output"
+          # E14: deploy.sh rolled the host back to the previous release; the
+          # job stays red, the summary says what is serving.
+          if rolled=$(grep -m1 '^rolled back to ' <<< "$output"); then
+            echo "::warning::$SHA was not healthy — the host $rolled"
+            printf '### Deploy of %s failed — the host %s\n\nThe previous release is serving; deploy.sh left the schema as it is (migrations are forward-compatible by rule, CLAUDE.md §6.5).\n' "$SHA" "$rolled" >> "$GITHUB_STEP_SUMMARY"
+          fi
           [ "$status" = Success ] || { echo "::error::deploy.sh ended with status $status"; exit 1; }
       - name: Probe the site
         if: steps.instance.outputs.id != ''

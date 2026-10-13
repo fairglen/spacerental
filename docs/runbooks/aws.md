@@ -88,6 +88,18 @@ JSON
 Settings → Environments → New environment → `production` → Required
 reviewers: fairglen; Deployment branches: protected branches only.)
 
+The second environment, `production-app`, is the deploy role's only
+trusted subject (E10): every `deploy.yml` run happens in it. Create it
+**without** reviewers — deploys stay continuous; a reviewer here is the one
+switch that makes every deploy wait (Phase 5):
+
+```bash
+gh api -X PUT repos/fairglen/spacerental/environments/production-app \
+  --input - <<'JSON'
+{"deployment_branch_policy": {"protected_branches": true, "custom_branch_policies": false}}
+JSON
+```
+
 Then arm the infrastructure workflow:
 
 ```bash
@@ -96,7 +108,8 @@ gh variable set INFRA_ENABLED --body true
 
 From now on a PR touching `infra/**` gets a `terraform plan` comment, and a
 merge to `main` touching `infra/**` plans and waits for your approval before
-applying.
+applying. Dependabot's provider bumps get `validate` only (E12): their plan
+happens on `main` after the merge, behind the same approval.
 
 ### 2.3 The first apply
 
@@ -124,19 +137,40 @@ terraform output
 # ecr_backend_url, ecr_frontend_url, log_group, ssm_session_command
 ```
 
-### 2.4 The production `.env` into SSM Parameter Store
+### 2.4 The application's database role, then the production `.env` into SSM
+
+The application never connects as the RDS master user: RDS rotates that
+password every 7 days, so nothing may copy it (E09). Once, after the first
+apply and before the first deploy, create the app role on the host — the
+master URL is read **on the laptop** and pasted into the session; the host
+never stores it:
+
+```bash
+# On the laptop: the master URL, from the secret RDS manages.
+MASTER_URL="postgresql://spacerental:$(aws secretsmanager get-secret-value \
+  --secret-id "$(terraform -chdir=infra/prod output -raw rds_secret_arn)" \
+  --query SecretString --output text | jq -r .password)@$(terraform -chdir=infra/prod output -raw rds_endpoint)/spacerental"
+echo "$MASTER_URL"      # copy it
+
+aws ssm start-session --target "$(terraform -chdir=infra/prod output -raw instance_id)"
+# on the host:
+sudo /srv/spacerental/db-bootstrap.sh     # paste the URL at the prompt (not echoed)
+```
+
+It generates the app password, stores it in the secret
+`spacerental/prod/db-app` (Terraform created the empty shell), creates the
+role `spacerental_app`, hands it the database and checks it can connect.
+Running it again changes nothing. From then on every deploy composes
+`DATABASE_URL` from that secret — **do not put `DATABASE_URL` in the
+`.env`**; `deploy.sh` refuses a file that carries one.
+
+Then the `.env`:
 
 ```bash
 cp .env.production.example .env.production      # gitignored
 # Fill it in. Secrets:
 python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(48))"
 echo "NEXTAUTH_SECRET=$(openssl rand -base64 48)"
-# The database password lives in Secrets Manager (RDS manages it):
-aws secretsmanager get-secret-value \
-  --secret-id "$(terraform -chdir=infra/prod output -raw rds_secret_arn)" \
-  --query SecretString --output text | jq -r .password
-# DATABASE_URL=postgresql+asyncpg://spacerental:<that password>@<rds_endpoint>/spacerental
-#   (the endpoint output already carries :5432)
 
 aws ssm put-parameter --region eu-west-1 --name /spacerental/prod/env \
   --type SecureString --value file://.env.production --overwrite
@@ -199,7 +233,7 @@ Smoke checklist, in the browser and on the host:
 - [ ] Upload a photo to a room (`/admin/rooms`); it renders on the public page.
 - [ ] The help form (`/ajuda`) accepts a message (stub email: `docker compose … logs backend | grep "STUB EMAIL"`).
 - [ ] `aws logs tail /spacerental/prod --since 10m` shows the three streams; `systemctl list-timers spacerental-backup.timer` shows tonight's run; `sudo /srv/spacerental/backup.sh` once by hand → `aws s3 ls s3://<backups_bucket>/dumps/`.
-- [ ] The alarm email: confirm the SNS subscription from the mail AWS sent you.
+- [ ] The alarm email: confirm the SNS subscription from the mail AWS sent you. `spacerental-prod-backup-missing` is in ALARM until the first nightly backup after this deploy (or the manual run above) — expected (E15).
 
 ## Phase 4 — go-live switches
 
@@ -245,28 +279,38 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
 
 - **Alarms** (email): instance system check failed (the instance is
   recovered automatically), disk > 80 % on either volume, RDS free storage
-  < 2 GB, RDS CPU > 80 % for 15 minutes, the Budget at 80/100 %.
+  < 2 GB, RDS CPU > 80 % for 15 minutes, the Budget at 80/100 %, and
+  **a day without a successful backup** (`spacerental-prod-backup-missing`,
+  E15: `backup.sh` publishes `FlowSpace/BackupSucceeded` after every run;
+  a run that fails also emails its last 50 journal lines through
+  `spacerental-backup-failed.service`). That alarm is in ALARM from the
+  apply until the first nightly run after the first deploy — expected;
+  `sudo systemctl start spacerental-backup.service` once by hand clears it
+  earlier.
 - **Patching:** the host installs security updates on its own
   (`unattended-upgrades`, no automatic reboot). Monthly:
   `sudo apt-get update && sudo apt-get dist-upgrade -y && sudo reboot` in a
   quiet hour — the stack is `restart: unless-stopped` and comes back by
   itself. Application dependencies: Dependabot's PRs, once merged, deploy
   themselves like any other merge.
-- **Rollback:** `gh workflow run deploy.yml --ref main -f sha=<the previous
+- **Rollback:** a deploy whose containers do not get healthy within 120 s
+  rolls itself back to the previous release (E14): the job goes red with
+  "the host rolled back to `<sha>`" in its summary, the site keeps serving,
+  the schema stays as the new migration left it (every migration must
+  leave the previous release working — CLAUDE.md §6.5). To go back by
+  hand: `gh workflow run deploy.yml --ref main -f sha=<the previous
   commit>` — the images for every deployed commit stay in ECR (the last
-  10 tags).
+  10 tags); the host keeps the current and the previous one (E13).
 - **Pause everything:** `gh variable set DEPLOY_ENABLED --body false` (no
   deploy runs; the site keeps serving) and `gh variable set INFRA_ENABLED
   --body false` (no plan or apply). Setting them back to `true` re-arms.
-- **Gating app deploys too** (optional): create an environment
-  `production-app` with yourself as required reviewer and add
-  `environment: production-app` to the `deploy` job in
-  `.github/workflows/deploy.yml` (the deploy role already trusts that
-  subject); every deploy then waits for your approval. By default the
-  deploy job names no environment — GitHub applies an environment's
-  required reviewers to every job that uses it — so only infrastructure
-  applies are gated and app deploys are continuous once enabled (E05
-  decision).
+- **Gating app deploys too** (optional): add yourself as required reviewer
+  to the `production-app` environment (Settings → Environments); every
+  deploy then waits for your approval. Without a reviewer — how 2.2
+  creates it — app deploys are continuous once enabled, and only
+  infrastructure applies are gated (E05 decision, E10 revision). What the
+  deploy role can do from that environment is exactly one thing: send the
+  `spacerental-deploy` SSM document, i.e. `deploy.sh <sha>` on the host.
 - **If the repository ever turns private:** the deploy job runs on
   GitHub's hosted arm64 runner (`ubuntu-24.04-arm`), free for public
   repositories only; switch `runs-on` to `ubuntu-latest` and add
@@ -288,6 +332,7 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
 | Variable | `INFRA_ENABLED` | `true` to let `infra.yml` plan and apply |
 | Variable | `DEPLOY_ENABLED` | `true` to let `deploy.yml` build and deploy |
 | Environment | `production` | required reviewer: fairglen; protected branches only |
+| Environment | `production-app` | no reviewers (continuous deploys; add one to gate them); protected branches only |
 
 No secret is stored in GitHub: the workflows assume the roles
 `infra/bootstrap` created through OIDC, the `.env` lives in SSM, the

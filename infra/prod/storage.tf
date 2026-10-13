@@ -35,6 +35,26 @@ resource "aws_s3_bucket_public_access_block" "backups" {
   restrict_public_buckets = true
 }
 
+# E11: dumps and media are the production data; the bucket says who may read
+# or delete them — the host (its instance role), the owner's Identity Center
+# administrator role, and the account root user, unconditionally, so a
+# mistyped role pattern can never lock the owner out. Everything else,
+# including a plan role carrying ReadOnlyAccess, is denied at the object
+# level only: bucket configuration (lifecycle, this policy) stays the apply
+# role's to manage, and deploy/<sha>/ stays readable to whoever may list it.
+# The document lives in policies/ so tests/infra/policies.test.sh can assert
+# on it without AWS.
+resource "aws_s3_bucket_policy" "backups" {
+  bucket = aws_s3_bucket.backups.id
+  policy = templatefile("${path.module}/policies/backups-bucket.json.tftpl", {
+    account_id        = local.account_id
+    bucket_arn        = aws_s3_bucket.backups.arn
+    instance_role_arn = aws_iam_role.instance.arn
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.backups]
+}
+
 resource "aws_s3_bucket_lifecycle_configuration" "backups" {
   bucket = aws_s3_bucket.backups.id
 

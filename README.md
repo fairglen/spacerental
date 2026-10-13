@@ -550,11 +550,15 @@ runs in AWS until the repository variables `INFRA_ENABLED` and
 [docs/runbooks/aws.md](docs/runbooks/aws.md). The pieces:
 
 - `docker-compose.prod.yml` + `docker-compose.prod.awslogs.yml`, `deploy/`
-  (Caddyfile, `deploy.sh`, `backup.sh`, `restore.sh`, the backup timer,
-  `cloud-init.yaml`) and `.env.production.example`, every variable
-  documented. With `APP_ENV=production` the backend refuses to start on a
-  development default (`backend/app/config.py`) and the frontend refuses the
-  development `NEXTAUTH_SECRET`.
+  (Caddyfile, `deploy.sh`, `db-bootstrap.sh`, `backup.sh`, `restore.sh`,
+  the backup timer and its failure unit, `cloud-init.yaml`) and
+  `.env.production.example`, every variable documented. With
+  `APP_ENV=production` the backend refuses to start on a development
+  default (`backend/app/config.py`) and the frontend refuses the
+  development `NEXTAUTH_SECRET`. The app connects to RDS as its own role,
+  composed into `DATABASE_URL` by `deploy.sh` at deploy time (E09); a deploy
+  that does not get healthy rolls itself back (E14); the host keeps two
+  releases' images (E13); a missing backup is an alarm (E15).
 - `python -m app.bootstrap --name FlowSpace --slug flowspace --admin-email …`
   creates a real organisation once — space, rooms, pack, the first admin
   without a password and the "Defina a sua password" link printed (and

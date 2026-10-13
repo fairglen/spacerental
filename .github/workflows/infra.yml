@@ -73,7 +73,11 @@ jobs:
   plan:
     name: plan (pull request)
     needs: validate
-    if: github.event_name == 'pull_request' && vars.INFRA_ENABLED == 'true'
+    # E12: not for Dependabot's provider bumps — their pull requests run with
+    # read-only tokens and no repository variables, and a plan needs the
+    # read-only AWS role; `validate` still runs for them. A provider bump is
+    # planned on main after the merge, behind the apply approval.
+    if: github.event_name == 'pull_request' && vars.INFRA_ENABLED == 'true' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

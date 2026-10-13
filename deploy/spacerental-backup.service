@@ -6,6 +6,8 @@ Description=FlowSpace backup: pg_dump to S3 and the media directory synced
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service
+# E15: a failed run emails the journal through the alarms topic.
+OnFailure=spacerental-backup-failed.service
 
 [Service]
 Type=oneshot
