@@ -3467,7 +3467,12 @@ nothing in the PR touches the frontend or the backend code): (1)
 expected the first "Onde estamos" line to be "Todos os dias 08:00–22:00" and
 got it with "Horário por sala no calendário." appended, i.e. another
 worker's room with different hours was alive in the shared seeded space at
-that moment. Both are ordering-dependent; a rerun passed. Acceptance: the
+that moment. Both are ordering-dependent; a rerun passed. Seen again on
+2026-10-13 (D21): #102's first run (`pay-mixed.spec.ts:33`,
+`packages.spec.ts:157`) and #101's rebased head (`customer-billing.spec.ts:14`
+— the same `404 Room not found` right after `createRoom` —, `booking.spec.ts:403`
+"no booking behind checkout session"), each green on re-run; nothing in
+either PR touches the browser stack. Acceptance: the
 room fixture tolerates (or explains) the 404, the single-space spec asserts
 on its own space or waits for a quiet window, and ten consecutive sharded
 CI runs stay green.
@@ -3820,7 +3825,10 @@ Per PR:
   `VerifyMismatchError`, `check_needs_rehash()` is `False`, a fresh hash
   carries the same `m=65536,t=3,p=4` header; `argon2-cffi-bindings` 26.1.0
   both sides. 25.1 deprecates `argon2.__version__` (unused here). CI green.
-  No fix.
+  No fix. On the head rebased onto `main` for the merge, `e2e (1/2)` failed
+  once with the D15 signature (`customer-billing.spec.ts:14`: `404 Room not
+  found` right after `createRoom`; `booking.spec.ts:403`: no booking behind
+  the stub checkout session) and was green on re-run.
 - **#99 pip group (fastapi 0.143.0, sqlalchemy 2.1.4, asyncpg 0.32.0,
   pydantic 2.14.0, orjson 3.13.0) — READY.** Suite 1044 passed, with
   `test_openapi_stable.py` (the snapshot is unchanged) and
