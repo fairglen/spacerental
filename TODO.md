@@ -1734,6 +1734,23 @@ anything against AWS (no credentials; forbidden by the assignment), the
 cloud-init file as a boot, Playwright (no customer-facing UI change; the
 `server.js` fix is exercised through Caddy by the stack test).
 
+**Review rounds (PR #107, `feat/prod-stack` → `main`, 2026-10-13):**
+round 1 (head `d25296f`) — 18 of 19 checks green on the first run; the
+new `prod-stack / prod-stack` job failed in 20 s: `docker buildx bake`
+refused the Compose model with "env file .env not found" (it resolves the
+backend's `env_file` before the test overlay's override), so
+`required-checks` was red. No Copilot review: none in 6 minutes of
+polling (GraphQL `reviews` + `reviewThreads`), the one request
+registered no reviewer, none in the 4 minutes after — as on every PR of
+this repository; zero review threads. Fixes: `9085840` (E01: the job
+creates `.env` from the example, as the e2e job does) and `f2d6950`
+(E08: no dollar-brace in `cloud-init.yaml`'s comments — found by PR B's
+`terraform validate`, which renders the template, not by CI). Round 2
+(head `9085840`) — all 19 checks green, `required-checks` pass,
+`prod-stack` 5 min 15 s (the stack test and the backup → restore round
+trip on the runner); no threads, no fix. This record is the PR's last
+commit (docs-only).
+
 ### E01 — Production Compose with Caddy
 
 **Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).**
