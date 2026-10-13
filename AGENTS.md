@@ -157,6 +157,7 @@ Fix, and the rule going forward:
 - **`Base.metadata.create_all` survives in `tests/conftest.py` only**, where a per-test throwaway schema needs to be fast.
 - **Anything that belongs in the schema belongs in `Base.metadata`** — including indexes, via `__table_args__`. An index that exists only in a migration will be emitted as a `drop_index` by the next `--autogenerate`.
 - The one deliberate exception is the `bookings_no_overlap` EXCLUDE constraint, which lives only in the migration because applying it needs conflict-free data. It is documented in the baseline migration and is invisible to `alembic check`, which does not compare EXCLUDE constraints.
+- **Every migration leaves the previous release working** (E14). A production deploy that does not get healthy rolls back to the previous images on the schema the new migration already built — `deploy.sh` never downgrades. So migrations are expand/contract: add nullable columns, defaults and new tables freely; fill them in code that tolerates their absence; drop, rename or make NOT NULL only one release after nothing reads the old shape. A migration the previous release cannot run against is a migration that turns a failed deploy into an outage.
 
 `.github/workflows/migrations.yml` runs upgrade → check → downgrade → upgrade against an empty PostgreSQL 18 so this cannot regress silently again.
 

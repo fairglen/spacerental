@@ -87,9 +87,12 @@ write_env() {
   chmod 600 "$ENV_FILE"
 }
 
+# The images deploy.sh is handed in section 8, named as ECR would name them.
+REG=prod-stack.invalid
 down() {
   [ -f "$ENV_FILE" ] || write_env
   compose down -v --remove-orphans
+  docker images --format '{{.Repository}}:{{.Tag}}' --filter "reference=$REG/spacerental/*" | xargs -r docker rmi > /dev/null 2>&1 || true
   # The media directory belongs to the backend's user after the chown below.
   docker run --rm -v "$WORK:/work" "$PG_IMAGE" sh -c 'rm -rf /work/media /work/backups'
   rm -rf "$WORK"
@@ -330,6 +333,40 @@ echo "── 7. the production interlock is armed (E02): the backend logs the ex
 # Once per process that imports app.config (the migration, each worker).
 warned=$(compose logs --no-color backend | grep -c 'EMAIL_MODE=stub under APP_ENV=production' || true)
 check "EMAIL_MODE=stub warning in the backend log" "$([ "$warned" -ge 1 ] && echo yes || echo no)" yes
+
+echo "── 8. deploy/deploy.sh on this stack (DEPLOY_LOCAL): a healthy deploy, then a broken release that rolls back by itself (E14)"
+# The images the stack was built with, tagged as deploy.sh expects ECR's:
+# aaaaaaa and ccccccc are the real images; bbbbbbb's frontend is the same
+# image with an entrypoint that exits at once — a release that never gets
+# healthy. (A Compose overlay could not play that part: it would still apply
+# to the rollback, which on the host runs the same files with older images.)
+# docker-compose.prod.yml's defaults for BACKEND_IMAGE/FRONTEND_IMAGE — what
+# `compose build` and CI's bake produced for this stack.
+BACKEND_LOCAL=spacerental-backend:local
+FRONTEND_LOCAL=spacerental-frontend:local
+for tag in aaaaaaa ccccccc; do
+  docker tag "$BACKEND_LOCAL" "$REG/spacerental/backend:sha-$tag"
+  docker tag "$FRONTEND_LOCAL" "$REG/spacerental/frontend:sha-$tag"
+done
+docker tag "$BACKEND_LOCAL" "$REG/spacerental/backend:sha-bbbbbbb"
+printf 'FROM %s\nENTRYPOINT ["sh", "-c", "exit 1"]\n' "$FRONTEND_LOCAL" | docker build -q -t "$REG/spacerental/frontend:sha-bbbbbbb" - > /dev/null
+deploy_local() { # sha → deploy.sh's stdout in $WORK/deploy-<sha>.out, stderr in .err, its exit code returned
+  DEPLOY_LOCAL=1 DEPLOY_LOCAL_ENV="$ENV_FILE" DEPLOY_DIR="$WORK" DEPLOY_CONF="$WORK/deploy.env" ECR_REGISTRY="$REG" \
+    DEPLOY_COMPOSE_PROJECT="$PROJECT" DEPLOY_COMPOSE_FILES="$ROOT/docker-compose.prod.yml $ROOT/scripts/tests/prod-stack.compose.yml" \
+    HEALTH_TIMEOUT=60 MEDIA_HOST_DIR="$WORK/media" "$ROOT/deploy/deploy.sh" "$1" > "$WORK/deploy-$1.out" 2> "$WORK/deploy-$1.err"
+}
+frontend_image() { docker inspect --format '{{.Config.Image}}' "$(compose ps -q frontend)"; }
+deploy_local aaaaaaa && DEPLOY_EXIT=0 || DEPLOY_EXIT=$?
+check "deploy.sh aaaaaaa exits 0" "$DEPLOY_EXIT" 0
+check "…and reports the deploy" "$(grep -c '^deployed aaaaaaa' "$WORK/deploy-aaaaaaa.out")" 1
+check "CURRENT_SHA = aaaaaaa" "$(cat "$WORK/CURRENT_SHA")" aaaaaaa
+check "the frontend runs the aaaaaaa image" "$(frontend_image)" "$REG/spacerental/frontend:sha-aaaaaaa"
+deploy_local bbbbbbb && DEPLOY_EXIT=0 || DEPLOY_EXIT=$?
+check "deploy.sh bbbbbbb (a frontend that exits) exits 1" "$DEPLOY_EXIT" 1
+check "…after rolling back" "$(grep -c '^rolled back to aaaaaaa' "$WORK/deploy-bbbbbbb.out")" 1
+check "the frontend runs the aaaaaaa image again" "$(frontend_image)" "$REG/spacerental/frontend:sha-aaaaaaa"
+check "CURRENT_SHA is still aaaaaaa" "$(cat "$WORK/CURRENT_SHA")" aaaaaaa
+check "the site answers after the rollback" "$(status_of -o /dev/null "$HEALTH")" 200
 
 trap - ERR
 if [ "$fail" -ne 0 ]; then
