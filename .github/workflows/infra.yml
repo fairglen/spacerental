@@ -1,0 +1,165 @@
+name: Infrastructure
+
+# E05: Terraform for infra/ from GitHub, inert until the owner sets the
+# repository variable INFRA_ENABLED=true (docs/runbooks/aws.md, Phase 2).
+#
+# Always, with no credentials: `terraform fmt -check`, `init -backend=false`
+# and `validate` for both modules. When enabled: on a pull request, a plan
+# of infra/prod with the read-only role, posted as one sticky comment; on
+# main (a push touching infra/**, or Run workflow), plan + apply in the
+# `production` environment — the required reviewer there is the gate. Every
+# `uses:` is pinned by commit; the roles are assumed through OIDC, so no
+# long-lived secret exists anywhere.
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - 'deploy/cloud-init.yaml'
+      - '.github/workflows/infra.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - 'deploy/cloud-init.yaml'
+      - '.github/workflows/infra.yml'
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+# One plan or apply at a time: the state lock would refuse the second anyway.
+concurrency:
+  group: infra
+  cancel-in-progress: false
+
+env:
+  # The version the modules were validated with (require_version >= 1.10).
+  TF_VERSION: '1.15.3'
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: '0'
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive -diff infra
+      - name: validate infra/bootstrap
+        working-directory: infra/bootstrap
+        run: terraform init -backend=false && terraform validate
+      - name: validate infra/prod
+        working-directory: infra/prod
+        run: terraform init -backend=false && terraform validate
+
+  disabled:
+    name: disabled
+    needs: validate
+    if: vars.INFRA_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo "::notice::infra disabled - set repository variable INFRA_ENABLED=true to plan on pull requests and apply from main (docs/runbooks/aws.md, Phase 2)"
+
+  plan:
+    name: plan (pull request)
+    needs: validate
+    if: github.event_name == 'pull_request' && vars.INFRA_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/spacerental-gh-plan
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: terraform init
+        working-directory: infra/prod
+        run: terraform init -backend-config="bucket=spacerental-tfstate-${{ vars.AWS_ACCOUNT_ID }}"
+      - name: terraform plan
+        id: plan
+        working-directory: infra/prod
+        # -lock=false: the read-only role may not write the lock file, and a
+        # plan changes nothing. -detailed-exitcode: 2 = changes, still a pass.
+        run: |
+          set +e
+          terraform plan -lock=false -no-color -input=false -out=tfplan -var "domain=${{ vars.APP_DOMAIN }}" > plan.txt 2>&1
+          code=$?
+          set -e
+          cat plan.txt
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" -eq 0 ] || [ "$code" -eq 2 ]
+      - name: Post the plan as one sticky comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          EXIT: ${{ steps.plan.outputs.exitcode }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        working-directory: infra/prod
+        run: |
+          set -euo pipefail
+          marker='<!-- infra-plan -->'
+          body="$(head -c 60000 plan.txt)"
+          [ "${#body}" -lt 60000 ] || body="$body
+          … (truncated to 60 KB; the job log has the whole plan)"
+          {
+            echo "$marker"
+            echo "### \`terraform plan\` for \`infra/prod\` at ${HEAD:0:7} — exit ${EXIT:-?}"
+            echo
+            echo '```'
+            echo "$body"
+            echo '```'
+          } > comment.md
+          existing=$(gh api "repos/${{ github.repository }}/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$existing" -F body=@comment.md > /dev/null
+          else
+            gh api -X POST "repos/${{ github.repository }}/issues/$PR/comments" -F body=@comment.md > /dev/null
+          fi
+
+  apply:
+    name: apply (production)
+    needs: validate
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.INFRA_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # The approval gate: the environment's required reviewer must approve
+    # this job before it gets credentials.
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/spacerental-gh-apply
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: terraform init
+        working-directory: infra/prod
+        run: terraform init -backend-config="bucket=spacerental-tfstate-${{ vars.AWS_ACCOUNT_ID }}"
+      - name: terraform plan
+        working-directory: infra/prod
+        run: terraform plan -no-color -input=false -out=tfplan -var "domain=${{ vars.APP_DOMAIN }}"
+      - name: terraform apply
+        working-directory: infra/prod
+        run: terraform apply -no-color -input=false tfplan
+      - name: Outputs
+        working-directory: infra/prod
+        run: terraform output -no-color
