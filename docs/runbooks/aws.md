@@ -286,7 +286,12 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
   quiet hour — the stack is `restart: unless-stopped` and comes back by
   itself. Application dependencies: Dependabot's PRs, once merged, deploy
   themselves like any other merge.
-- **Rollback:** `gh workflow run deploy.yml --ref main -f sha=<the previous
+- **Rollback:** a deploy whose containers do not get healthy within 120 s
+  rolls itself back to the previous release (E14): the job goes red with
+  "the host rolled back to `<sha>`" in its summary, the site keeps serving,
+  the schema stays as the new migration left it (every migration must
+  leave the previous release working — CLAUDE.md §6.5). To go back by
+  hand: `gh workflow run deploy.yml --ref main -f sha=<the previous
   commit>` — the images for every deployed commit stay in ECR (the last
   10 tags).
 - **Pause everything:** `gh variable set DEPLOY_ENABLED --body false` (no
