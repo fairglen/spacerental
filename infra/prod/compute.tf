@@ -47,10 +47,12 @@ data "aws_iam_policy_document" "instance" {
     resources = [aws_s3_bucket.backups.arn]
   }
 
+  # No s3:DeleteObject (E11): the host only ever adds — dumps every night,
+  # media additively — and the lifecycle rules do the expiring.
   statement {
     sid       = "BackupsBucketReadWrite"
     effect    = "Allow"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    actions   = ["s3:GetObject", "s3:PutObject"]
     resources = ["${aws_s3_bucket.backups.arn}/*"]
   }
 

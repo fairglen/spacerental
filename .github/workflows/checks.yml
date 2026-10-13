@@ -58,7 +58,7 @@ jobs:
           # A workflow or Compose change can break any area: run them all.
           # scripts/ and .env.remote.example are the Compose layer's (D19);
           # deploy/ and .env.production.example the production stack's (E01).
-          infra='^(\.github/|docker-compose|\.env\.example$|\.env\.remote\.example$|\.env\.production\.example$|scripts/|deploy/)'
+          infra='^(\.github/|docker-compose|\.env\.example$|\.env\.remote\.example$|\.env\.production\.example$|scripts/|deploy/|tests/infra/)'
           # .pre-commit-config.yaml pins the same Ruff as lint.yml: a hook bump must run it.
           backend="$(matches "^(backend/|ruff\.toml$|\.pre-commit-config\.yaml$)|$infra")"
           frontend="$(matches "^frontend/|$infra")"
