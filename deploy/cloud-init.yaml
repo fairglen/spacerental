@@ -3,9 +3,12 @@
 # `user_data` rendered by Terraform's templatefile() (infra/prod, E04) with
 # `deploy_ref` (the commit whose files are fetched), `repo`
 # (fairglen/spacerental), `backup_bucket`, `aws_region`, `ecr_registry`,
-# `app_domain` and `log_group`. `${…}` is Terraform's; a `$` meant for the
-# shell or the CloudWatch agent is written `$$`. Validated as it is here by
-# `cloud-init schema --config-file deploy/cloud-init.yaml` (the lint job).
+# `app_domain` and `log_group`. A dollar-brace placeholder is Terraform's —
+# everywhere in this file, comments included, which is why none appears in
+# the prose; a `$` meant for the shell or the CloudWatch agent is written
+# `$$`. Validated as it is here by `cloud-init schema --config-file
+# deploy/cloud-init.yaml` (the lint job) and rendered by `terraform
+# validate` in infra/prod.
 #
 # What it leaves behind: Docker Engine + the compose plugin, the AWS CLI v2,
 # the CloudWatch agent (disk used % on / and /srv/media, memory), the data
