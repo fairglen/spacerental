@@ -1708,8 +1708,7 @@ PR A's branch): E04 and E05, below.
 
 ### E04 — Terraform (`infra/`)
 
-**Priority: P1. State: IN PROGRESS (PR `feat/aws-infra`, base
-`feat/prod-stack` while PR A is open, `main` after).** **Scope:**
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/aws-infra` → `feat/prod-stack` while PR A is open, `main` after; merged by the owner, never by the loop).** **Scope:**
 `infra/bootstrap/` (local state, applied once by the owner from the
 laptop): the state bucket `spacerental-tfstate-<account-id>` (versioning,
 SSE-S3, public-access block, `prevent_destroy`), the GitHub OIDC
@@ -1761,7 +1760,7 @@ credentials; the first plan the owner approves creates ≈ 40 resources.
 
 ### E05 — GitHub as the deployer (inert until enabled)
 
-**Priority: P1. State: IN PROGRESS (PR `feat/aws-infra`).** **Scope:**
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/aws-infra` → `feat/prod-stack` while PR A is open, `main` after; merged by the owner, never by the loop).** **Scope:**
 `.github/workflows/infra.yml` — always, on a pull request or a push to
 `main` touching `infra/**` (and `deploy/cloud-init.yaml`, which it
 templates), with no credentials: `hashicorp/setup-terraform` (pinned,
@@ -1808,6 +1807,27 @@ with the owner as required reviewer. No long-lived secret anywhere.
 the PR itself — with no variable set, `infra.yml` runs validate + the
 `disabled` notice and succeeds (and `deploy.yml` cannot run before it is
 on `main`; its `disabled` path is the same expression).
+
+**PR B validation and review rounds (2026-10-13, PR #108, head
+`52722f9`):** `terraform fmt -check -recursive infra` clean; `terraform
+init -backend=false && terraform validate` → "Success! The configuration
+is valid." for both modules (hashicorp/aws 6.68.0; `infra/prod`'s
+`templatefile()` renders `deploy/cloud-init.yaml`, which is how the
+dollar-brace-in-a-comment fault was found and fixed on PR A, `f2d6950`;
+the DLM description's character set was the other validate finding,
+fixed before the commit); `tflint` (its image, built-in rules) no
+findings in either module; `actionlint` 1.7.11 "All checks passed!" with
+`infra.yml` and `deploy.yml` included. Not run: `plan`/`apply` (no
+credentials), `deploy.yml` (not on `main` yet, nothing to deploy to).
+Round 1 — the PR's own `Infrastructure` run on `52722f9`: `validate`
+success (fmt, init, validate ×2), `disabled` success printing "infra
+disabled - set repository variable INFRA_ENABLED=true …", `plan` and
+`apply` skipped — the inert path proven with no variable and no
+`production` environment existing; `Checks` all green (`required-checks`
+pass, `prod-stack` 5 min 13 s). No Copilot review: none in 6 minutes of
+polling, the one request registered no reviewer, none in the 4 minutes
+after; zero threads, no fix commit. This record is the PR's last commit
+(docs-only).
 
 **PR A validation (2026-10-13, the owner's dev stack untouched on
 3000/8000/5432):** the production stack on this laptop — `KEEP=1
