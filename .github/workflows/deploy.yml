@@ -66,6 +66,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.sha || github.event.workflow_run.head_sha || github.sha }}
+          # The whole history: the ancestry check below needs it.
+          fetch-depth: 0
       - name: The commit to deploy
         id: sha
         run: |
@@ -73,6 +75,20 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "short=${sha:0:7}" >> "$GITHUB_OUTPUT"
           echo "deploying $sha"
+      - name: The commit must be on main (E16)
+        # Run workflow accepts any sha the repository holds — a branch, a
+        # closed pull request. Only what main contains may reach production;
+        # on every other path this is a tautology and costs one fetch.
+        env:
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          git fetch --no-tags --quiet origin main
+          if git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "$SHA is on main"
+          else
+            echo "::error::$SHA is not on main — a deploy ships only commits that main contains (E16)"
+            exit 1
+          fi
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/spacerental-gh-deploy
