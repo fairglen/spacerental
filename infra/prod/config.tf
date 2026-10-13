@@ -16,3 +16,36 @@ resource "aws_ssm_parameter" "env" {
     ignore_changes = [value]
   }
 }
+
+# E10: the one command deploy.yml may send to the instance. The deploy role
+# (infra/bootstrap) is allowed this document and nothing else — not
+# AWS-RunShellScript — so the whole surface of a deploy from GitHub is "run
+# /srv/spacerental/deploy.sh with a git sha". The pattern is deploy.sh's own
+# check; the timeout matches deploy.yml's execution timeout.
+resource "aws_ssm_document" "deploy" {
+  name            = "spacerental-deploy"
+  document_type   = "Command"
+  document_format = "JSON"
+
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "FlowSpace: /srv/spacerental/deploy.sh <sha> on the production host (E10)"
+    parameters = {
+      sha = {
+        type           = "String"
+        description    = "The git sha to deploy (deploy.yml ships its files to the bucket and its images to ECR first)"
+        allowedPattern = "^[0-9a-f]{7,40}$"
+      }
+    }
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "deploy"
+      inputs = {
+        timeoutSeconds = "900"
+        runCommand     = ["/srv/spacerental/deploy.sh {{ sha }}"]
+      }
+    }]
+  })
+
+  tags = { Name = local.name }
+}

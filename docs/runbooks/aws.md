@@ -88,6 +88,18 @@ JSON
 Settings → Environments → New environment → `production` → Required
 reviewers: fairglen; Deployment branches: protected branches only.)
 
+The second environment, `production-app`, is the deploy role's only
+trusted subject (E10): every `deploy.yml` run happens in it. Create it
+**without** reviewers — deploys stay continuous; a reviewer here is the one
+switch that makes every deploy wait (Phase 5):
+
+```bash
+gh api -X PUT repos/fairglen/spacerental/environments/production-app \
+  --input - <<'JSON'
+{"deployment_branch_policy": {"protected_branches": true, "custom_branch_policies": false}}
+JSON
+```
+
 Then arm the infrastructure workflow:
 
 ```bash
@@ -279,15 +291,13 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
 - **Pause everything:** `gh variable set DEPLOY_ENABLED --body false` (no
   deploy runs; the site keeps serving) and `gh variable set INFRA_ENABLED
   --body false` (no plan or apply). Setting them back to `true` re-arms.
-- **Gating app deploys too** (optional): create an environment
-  `production-app` with yourself as required reviewer and add
-  `environment: production-app` to the `deploy` job in
-  `.github/workflows/deploy.yml` (the deploy role already trusts that
-  subject); every deploy then waits for your approval. By default the
-  deploy job names no environment — GitHub applies an environment's
-  required reviewers to every job that uses it — so only infrastructure
-  applies are gated and app deploys are continuous once enabled (E05
-  decision).
+- **Gating app deploys too** (optional): add yourself as required reviewer
+  to the `production-app` environment (Settings → Environments); every
+  deploy then waits for your approval. Without a reviewer — how 2.2
+  creates it — app deploys are continuous once enabled, and only
+  infrastructure applies are gated (E05 decision, E10 revision). What the
+  deploy role can do from that environment is exactly one thing: send the
+  `spacerental-deploy` SSM document, i.e. `deploy.sh <sha>` on the host.
 - **If the repository ever turns private:** the deploy job runs on
   GitHub's hosted arm64 runner (`ubuntu-24.04-arm`), free for public
   repositories only; switch `runs-on` to `ubuntu-latest` and add
@@ -309,6 +319,7 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
 | Variable | `INFRA_ENABLED` | `true` to let `infra.yml` plan and apply |
 | Variable | `DEPLOY_ENABLED` | `true` to let `deploy.yml` build and deploy |
 | Environment | `production` | required reviewer: fairglen; protected branches only |
+| Environment | `production-app` | no reviewers (continuous deploys; add one to gate them); protected branches only |
 
 No secret is stored in GitHub: the workflows assume the roles
 `infra/bootstrap` created through OIDC, the `.env` lives in SSM, the
