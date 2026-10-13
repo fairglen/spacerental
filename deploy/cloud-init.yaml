@@ -135,6 +135,7 @@ runcmd:
   - chmod 700 /srv/spacerental
   - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/spacerental-backup.service -o /etc/systemd/system/spacerental-backup.service
   - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/spacerental-backup.timer -o /etc/systemd/system/spacerental-backup.timer
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/spacerental-backup-failed.service -o /etc/systemd/system/spacerental-backup-failed.service
   - systemctl daemon-reload
   - systemctl enable --now spacerental-backup.timer
   # Security updates on a timer (the package ships the apt timers enabled).

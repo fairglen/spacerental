@@ -79,6 +79,28 @@ data "aws_iam_policy_document" "instance" {
     actions   = ["secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:DescribeSecret"]
     resources = [aws_secretsmanager_secret.db_app.arn]
   }
+
+  # E15: backup.sh's BackupSucceeded data point, in the one namespace the
+  # alarm reads, and the failed-backup unit's email through the topic.
+  statement {
+    sid       = "BackupMetric"
+    effect    = "Allow"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["FlowSpace"]
+    }
+  }
+
+  statement {
+    sid       = "BackupFailedEmail"
+    effect    = "Allow"
+    actions   = ["sns:Publish"]
+    resources = [aws_sns_topic.alarms.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "instance" {

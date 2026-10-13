@@ -233,7 +233,7 @@ Smoke checklist, in the browser and on the host:
 - [ ] Upload a photo to a room (`/admin/rooms`); it renders on the public page.
 - [ ] The help form (`/ajuda`) accepts a message (stub email: `docker compose … logs backend | grep "STUB EMAIL"`).
 - [ ] `aws logs tail /spacerental/prod --since 10m` shows the three streams; `systemctl list-timers spacerental-backup.timer` shows tonight's run; `sudo /srv/spacerental/backup.sh` once by hand → `aws s3 ls s3://<backups_bucket>/dumps/`.
-- [ ] The alarm email: confirm the SNS subscription from the mail AWS sent you.
+- [ ] The alarm email: confirm the SNS subscription from the mail AWS sent you. `spacerental-prod-backup-missing` is in ALARM until the first nightly backup after this deploy (or the manual run above) — expected (E15).
 
 ## Phase 4 — go-live switches
 
@@ -279,7 +279,14 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
 
 - **Alarms** (email): instance system check failed (the instance is
   recovered automatically), disk > 80 % on either volume, RDS free storage
-  < 2 GB, RDS CPU > 80 % for 15 minutes, the Budget at 80/100 %.
+  < 2 GB, RDS CPU > 80 % for 15 minutes, the Budget at 80/100 %, and
+  **a day without a successful backup** (`spacerental-prod-backup-missing`,
+  E15: `backup.sh` publishes `FlowSpace/BackupSucceeded` after every run;
+  a run that fails also emails its last 50 journal lines through
+  `spacerental-backup-failed.service`). That alarm is in ALARM from the
+  apply until the first nightly run after the first deploy — expected;
+  `sudo systemctl start spacerental-backup.service` once by hand clears it
+  earlier.
 - **Patching:** the host installs security updates on its own
   (`unattended-upgrades`, no automatic reboot). Monthly:
   `sudo apt-get update && sudo apt-get dist-upgrade -y && sudo reboot` in a
@@ -293,7 +300,7 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
   leave the previous release working — CLAUDE.md §6.5). To go back by
   hand: `gh workflow run deploy.yml --ref main -f sha=<the previous
   commit>` — the images for every deployed commit stay in ECR (the last
-  10 tags).
+  10 tags); the host keeps the current and the previous one (E13).
 - **Pause everything:** `gh variable set DEPLOY_ENABLED --body false` (no
   deploy runs; the site keeps serving) and `gh variable set INFRA_ENABLED
   --body false` (no plan or apply). Setting them back to `true` re-arms.

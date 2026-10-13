@@ -50,9 +50,15 @@ check "bookings (the stack test's)" "$bookings" 1
 check "availability rules (3 rooms × 7 days)" "$rules" 21
 in_backend sh -c 'echo "kept through a restore" > /app/media/backup-marker.txt'
 
-echo "── 2. deploy/backup.sh without BACKUP_BUCKET: a dump and a media copy under $BACKUP_DIR"
+echo "── 2. deploy/backup.sh without BACKUP_BUCKET: a dump and a media copy under $BACKUP_DIR; the E15 metric call (dry) and the no-.env exit"
+# Before the first deploy the timer still fires: no .env, exit 0, no metric.
+nothing_yet=$(ENV_FILE="$WORK/no-such-env" "$ROOT/deploy/backup.sh")
+check "without an .env backup.sh exits 0 and says nothing is deployed" "$(grep -c 'nothing deployed yet' <<< "$nothing_yet")" 1
+check "…and publishes no metric" "$(grep -c 'put-metric-data' <<< "$nothing_yet")" 0
 rm -rf "$BACKUP_DIR"
-"$ROOT/deploy/backup.sh"
+backup_out=$(BACKUP_DRY_RUN=1 "$ROOT/deploy/backup.sh")
+check "a successful run ends with the BackupSucceeded data point (printed: BACKUP_DRY_RUN=1)" \
+  "$(grep -c '^+ aws cloudwatch put-metric-data .* --namespace FlowSpace --metric-name BackupSucceeded --value 1 --dimensions Host=spacerental-prod' <<< "$backup_out")" 1
 DUMP="$BACKUP_DIR/dumps/$(date -u +%F).dump"
 check "the dump exists and is not empty" "$([ -s "$DUMP" ] && echo yes || echo no)" yes
 check "the dump is pg_dump's custom format" "$(head -c 5 "$DUMP")" "PGDMP"
