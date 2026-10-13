@@ -3,7 +3,8 @@
 # `user_data` rendered by Terraform's templatefile() (infra/prod, E04) with
 # `deploy_ref` (the commit whose files are fetched), `repo`
 # (fairglen/spacerental), `backup_bucket`, `aws_region`, `ecr_registry`,
-# `app_domain` and `log_group`. A dollar-brace placeholder is Terraform's —
+# `app_domain`, `log_group`, the database's `db_host`/`db_port`/`db_name`,
+# `db_app_secret_arn` and `alarm_topic_arn` (E09, E15). A dollar-brace placeholder is Terraform's —
 # everywhere in this file, comments included, which is why none appears in
 # the prose; a `$` meant for the shell or the CloudWatch agent is written
 # `$$`. Validated as it is here by `cloud-init schema --config-file
@@ -30,7 +31,9 @@ packages:
   - unattended-upgrades
 
 write_files:
-  # Read by deploy.sh, backup.sh and the backup service (EnvironmentFile).
+  # Read by deploy.sh, db-bootstrap.sh, backup.sh and the backup units
+  # (EnvironmentFile). Nothing secret: the database password is read from
+  # the secret named here at deploy time (E09).
   - path: /etc/spacerental/deploy.env
     permissions: "0644"
     content: |
@@ -40,6 +43,11 @@ write_files:
       APP_DOMAIN=${app_domain}
       AWS_LOG_GROUP=${log_group}
       DEPLOY_REF=${deploy_ref}
+      DB_HOST=${db_host}
+      DB_PORT=${db_port}
+      DB_NAME=${db_name}
+      DB_APP_SECRET_ARN=${db_app_secret_arn}
+      ALARM_TOPIC_ARN=${alarm_topic_arn}
 
   # The data volume: /dev/sdf on the API side is nvme1n1 on a Nitro instance.
   # Formatted only when it carries no filesystem, mounted by UUID with nofail
@@ -122,7 +130,8 @@ runcmd:
   - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/deploy.sh -o /srv/spacerental/deploy.sh
   - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/backup.sh -o /srv/spacerental/backup.sh
   - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/restore.sh -o /srv/spacerental/restore.sh
-  - chmod 755 /srv/spacerental/deploy.sh /srv/spacerental/backup.sh /srv/spacerental/restore.sh
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/db-bootstrap.sh -o /srv/spacerental/db-bootstrap.sh
+  - chmod 755 /srv/spacerental/deploy.sh /srv/spacerental/backup.sh /srv/spacerental/restore.sh /srv/spacerental/db-bootstrap.sh
   - chmod 700 /srv/spacerental
   - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/spacerental-backup.service -o /etc/systemd/system/spacerental-backup.service
   - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/spacerental-backup.timer -o /etc/systemd/system/spacerental-backup.timer

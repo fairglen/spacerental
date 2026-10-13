@@ -15,6 +15,23 @@ services:
       POSTGRES_USER: spacerental
       POSTGRES_PASSWORD: spacerental
       POSTGRES_DB: spacerental
+    # TLS, as RDS enforces it with rds.force_ssl (E09): the self-signed pair
+    # the stack test generated (PROD_STACK_CERTS), copied where the server's
+    # user may read it, then the image's own entrypoint with ssl=on. The
+    # app's URL says ssl=require; the test reads pg_stat_ssl to prove it.
+    volumes:
+      - ${PROD_STACK_CERTS:-./scripts/tests}:/certs:ro
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /var/lib/postgresql/tls
+        cp /certs/server.crt /certs/server.key /var/lib/postgresql/tls/
+        chown -R postgres:postgres /var/lib/postgresql/tls
+        chmod 600 /var/lib/postgresql/tls/server.key
+        exec docker-entrypoint.sh postgres -c ssl=on \
+          -c ssl_cert_file=/var/lib/postgresql/tls/server.crt \
+          -c ssl_key_file=/var/lib/postgresql/tls/server.key
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U spacerental -d spacerental"]
       interval: 3s

@@ -2307,6 +2307,161 @@ Testable without AWS: `cloud-init schema --config-file`, shellcheck,
 running it. **Validation:** the three checks in the PR body; the lint job
 runs shellcheck, actionlint and the cloud-init schema check in CI.
 
+### Production hardening before `DEPLOY_ENABLED` (E09–E16) — owner assignment 2026-10-13 (PR `fix/prod-hardening-v1`, stacked on `feat/aws-infra`)
+
+Owner's ask: the v1 critical fixes found in review of E01–E08 before the
+deployer is armed — the app never runs as the RDS master user, the deploy
+role can only say "deploy this sha" from one GitHub environment, the plan
+role and the bucket keep dumps and secrets out of a pull request's reach,
+Dependabot's infra PRs skip the plan, deploys keep the disk bounded, a
+failed deploy rolls back by itself, a missing backup is an alarm, a manual
+deploy ships only commits on `main`. Same rules as E01–E08: no AWS
+credentials, nothing applied or deployed, the inert path of both workflows
+stays inert, one commit per item, one PR, never merged by the loop. Base
+`feat/aws-infra` (#108 open at the time; chain #107 ← #108 ← this PR). Two
+things only the owner can do after the merge: re-apply `infra/bootstrap`
+from the laptop (the deploy and plan roles change) and create the GitHub
+environment `production-app` (no reviewers).
+
+### E09 — The app never runs as the RDS master user; `DATABASE_URL` is composed at deploy time
+
+**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).** Why:
+`manage_master_user_password = true` rotates the master secret every 7
+days, and runbook 2.4 copied that password into the SSM `.env` — the first
+rotation would take production down. **Scope:** `infra/prod` — a
+Secrets Manager secret `spacerental/prod/db-app` (shell only, no value in
+the state, `recovery_window_in_days = 7`); a parameter group for the
+`postgres<major>` family with `rds.force_ssl = 1` and
+`log_min_duration_statement = 1000`, attached to the instance; cloud-init's
+`/etc/spacerental/deploy.env` gains `DB_HOST`, `DB_PORT`, `DB_NAME`,
+`DB_APP_SECRET_ARN`, `ALARM_TOPIC_ARN`; the instance may read (and, for the
+one-off bootstrap, write) the app secret only — the grant on the master
+secret goes. `deploy/db-bootstrap.sh` (host, once, idempotent): the master
+URL on stdin or `MASTER_URL` (read from the master secret on the laptop,
+pasted into the Session Manager session; the host never stores it), the app
+password generated and stored as `{username, password}` when the secret
+has no value yet, `CREATE ROLE spacerental_app LOGIN` if missing, the
+password set, `GRANT spacerental_app TO <master>` (RDS: the master is not a
+superuser, so owning the database needs membership), `ALTER DATABASE …
+OWNER TO spacerental_app`, `GRANT ALL ON SCHEMA public`; through the pinned
+`postgres:18-alpine` image like `backup.sh`; `uuid-ossp` is a trusted
+extension, so the database owner can create it (the baseline migration
+does). `deploy/deploy.sh` step 1: after writing `.env` from SSM, read the
+app secret and append `DATABASE_URL=postgresql+asyncpg://<user>:<password
+percent-encoded>@$DB_HOST:$DB_PORT/$DB_NAME?ssl=require`; the SSM `.env`
+must not carry `DATABASE_URL` (refused loudly); `.env.production.example`
+says so. `backup.sh`/`restore.sh` keep reading `DATABASE_URL` from that
+file. Runbook 2.4 rewritten: apply → `db-bootstrap.sh` once through
+Session Manager → deploy. **Validation:** `scripts/tests/prod-stack.sh`
+runs `db-bootstrap.sh` against the throwaway Postgres (started with
+`ssl=on` and a self-signed certificate made in the test), the backend
+comes up as `spacerental_app` over TLS (`pg_stat_ssl` says so), the
+migrations run as that role; `terraform validate`; shellcheck.
+
+### E10 — The deploy role is bound to one GitHub environment and can only say "deploy this sha"
+
+**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).** Why:
+the deploy role trusted `ref:refs/heads/main` and could run
+`AWS-RunShellScript` on the instance — any workflow on `main` got root on
+production. **Scope:** `infra/bootstrap`: the deploy trust is
+`repo:<repo>:environment:production-app` only; the policy allows
+`ssm:SendCommand` on the static ARN of the document
+`spacerental-deploy` plus the tagged-instance statement, and the
+`AWS-RunShellScript` statement goes. `infra/prod`: `aws_ssm_document`
+`spacerental-deploy` (Command, schema 2.2, one parameter `sha` with
+`allowedPattern ^[0-9a-f]{7,40}$`, `runCommand = ["/srv/spacerental/deploy.sh
+{{ sha }}"]`, `timeoutSeconds` 900). `deploy.yml`: `--document-name
+spacerental-deploy --parameters sha=<sha>`, the job in `environment:
+production-app`; the DECISION comment and the runbook follow.
+**Validation:** `terraform validate` both modules, actionlint, the inert
+path green on the PR.
+
+### E11 — The plan role cannot read dumps, the env parameter or secrets; the backups bucket has a policy
+
+**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).** Why:
+`ReadOnlyAccess` includes `s3:GetObject` on every bucket, and the `plan`
+job runs the pull request's own workflow file. **Scope:** the plan role
+keeps `ReadOnlyAccess` and gains an explicit `Deny` on `s3:GetObject*`
+under the backups bucket, `ssm:GetParameter*` under
+`parameter/spacerental/prod/*`, `secretsmanager:GetSecretValue` and
+`kms:Decrypt` on `*` (the state bucket grant is untouched). A bucket policy
+(`infra/prod/policies/backups-bucket.json.tftpl`, rendered by
+`templatefile`) denies `s3:GetObject`, `s3:DeleteObject`,
+`s3:DeleteObjectVersion` on `dumps/*` and `media/*` to every principal
+except the account root (unconditional, `NotPrincipal`), the instance role
+and the owner's Identity Center role (`aws:PrincipalArn` patterns) —
+object-level only, so the apply role's bucket-configuration calls stay
+allowed and a wrong Identity Center ARN cannot lock the owner out. The
+instance policy loses `s3:DeleteObject` (lifecycle rules delete; the host
+only adds). **Validation:** `tests/infra/policies.test.sh` renders the
+template with fake values and asserts the JSON (effect, the three actions,
+the two prefixes only, the root `NotPrincipal`, the two `ArnNotLike`
+patterns); limitation recorded: it tests the document, not AWS's
+evaluation — `terraform plan` on the owner's first run is the proof.
+
+### E12 — Dependabot's infra PRs skip the plan job
+
+**Priority: P2. State: IN PROGRESS (PR `fix/prod-hardening-v1`).** `infra.yml`:
+`plan` runs only when `github.actor != 'dependabot[bot]'` (and
+`INFRA_ENABLED`); `validate` still runs for everyone. Runbook: a provider
+bump is planned on `main` after the merge, behind the approval.
+**Validation:** actionlint; the inert path on the PR.
+
+### E13 — Deploys do not fill the root disk
+
+**Priority: P2. State: IN PROGRESS (PR `fix/prod-hardening-v1`).**
+`deploy.sh`: after a healthy deploy, `PREVIOUS_SHA` (the old `CURRENT_SHA`)
+then `CURRENT_SHA`; every `$ECR_REGISTRY/spacerental/*` image whose tag is
+not `sha-<current>` or `sha-<previous>` is removed, then `docker image
+prune -f`. **Validation:** the dry run prints it; `scripts/tests/prod-stack.sh`
+proves it with three locally tagged image pairs: two survive.
+
+### E14 — A failed deploy rolls back by itself; migrations are forward-compatible by rule
+
+**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).**
+`deploy.sh`: when the health wait fails and `CURRENT_SHA` exists and
+differs from the sha being deployed, the previous images come back up,
+health is awaited again, `rolled back to <sha>` is printed and the exit
+code stays 1 (the workflow red, the site up); no `CURRENT_SHA` → the old
+behaviour. `DEPLOY_LOCAL=1` skips SSM, S3, ECR and the pull (env from
+`DEPLOY_LOCAL_ENV`, images present, Compose files and project from
+`DEPLOY_COMPOSE_FILES`/`DEPLOY_COMPOSE_PROJECT`) so the rollback runs for
+real in `scripts/tests/prod-stack.sh`: a frontend whose command is `exit 1`
+(an overlay) → rollback → the previous frontend healthy → exit 1 asserted.
+`deploy.yml` surfaces the "rolled back" line in the job summary.
+`CLAUDE.md`/`AGENTS.md` §6.5 and this file: every migration leaves the
+previous release working (expand/contract — add nullable columns and new
+tables freely; drop or rename only one release after nothing reads them);
+a rollback never downgrades the schema. **Validation:** the stack test's
+rollback scenario; the dry run; actionlint.
+
+### E15 — A missing or failed backup is an alarm, not a journal line
+
+**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).**
+`backup.sh`: on success `aws cloudwatch put-metric-data --namespace
+FlowSpace --metric-name BackupSucceeded --value 1 --dimensions
+Host=spacerental-prod`; with `/srv/spacerental/.env` absent it logs
+"nothing deployed yet" and exits 0 without publishing; `BACKUP_DRY_RUN=1`
+prints the metric call. `deploy/spacerental-backup-failed.service`, run by
+`OnFailure=` of the backup service, publishes the last 50 journal lines to
+the alarms topic; both units installed by cloud-init and by `deploy.sh`.
+Instance policy: `cloudwatch:PutMetricData` in namespace `FlowSpace`,
+`sns:Publish` on the topic. Alarm `spacerental-prod-backup-missing`:
+`FlowSpace/BackupSucceeded` (Host), Maximum over 86400 s, 1 period,
+`LessThanThreshold 1`, missing data breaching → the topic. Runbook: the
+alarm fires until the first nightly run after the first deploy — expected.
+**Validation:** `scripts/tests/backup-restore.sh` with `BACKUP_DRY_RUN=1`
+shows the metric call and the no-`.env` early exit; `terraform validate`;
+shellcheck; the unit files reviewed.
+
+### E16 — A manual deploy can only ship a commit that is on `main`
+
+**Priority: P2. State: IN PROGRESS (PR `fix/prod-hardening-v1`).**
+`deploy.yml`: after the checkout (full history, `origin/main` fetched
+explicitly) a step fails with `::error::` unless `git merge-base
+--is-ancestor <sha> origin/main`; it runs on every path, bites on
+`workflow_dispatch`. **Validation:** actionlint; the inert path on the PR.
+
 ## Billing statement and invoice records (I-series) — owner assignment 2026-10-07 (PR `feat/billing-statement-invoices`, stacked on #94)
 
 Owner's ask: see, for the past month or a custom range, how much money was
