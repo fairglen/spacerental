@@ -1707,9 +1707,36 @@ PR A: E01 E02 E03 E06 E07 E08 (below). PR B: E04 (Terraform `infra/`) and
 E05 (`infra.yml` + `deploy.yml`, inert until enabled) — QUEUED, recorded in
 full in PR B's first commit.
 
+**PR A validation (2026-10-13, the owner's dev stack untouched on
+3000/8000/5432):** the production stack on this laptop — `KEEP=1
+PROD_STACK_HTTPS_PORT=8443 PROD_STACK_HTTP_PORT=8080
+scripts/tests/prod-stack.sh` → 30 checks, all passed (health through
+Caddy, bootstrap once + seed refusal, sign-up, proxy identity: first 429
+at auth-tier request 12, then 34/40, 37/40 spoofed and 40/40
+right-password requests refused while a second container's first request
+was 200, a booking, the signed webhook, the stub-mode warning); then
+`scripts/tests/backup-restore.sh` → 14 checks, all passed (60 KB dump,
+`bookings` dropped and back with its EXCLUDE constraint, the media marker
+back owned by `app`); `scripts/tests/prod-stack.sh down`. Backend `docker
+compose -p spacerental-prod-tests -f docker-compose.test.yml up --build
+--abort-on-container-exit --exit-code-from backend-tests` → 1084 passed,
+1 skipped (the read-only `MEDIA_ROOT` rule, root in the test image), 4
+subtests, exit 0. Frontend `npm ci && npx tsc --noEmit && npx eslint .
+--ext .ts,.tsx,.js,.mjs && npm test && npm run build` → tsc and ESLint
+clean, 758 passed in 76 files, build clean (27 pages). Static site
+`render-static.py --check` ("generated files are up to date"), 29 unit
+tests OK, `node --test` 44 passed. Lint: Ruff 0.16.5 check + format
+clean; shellcheck v0.11.0 on every script clean; actionlint 1.7.11 "All
+checks passed!"; `cloud-init schema` (26.1, Ubuntu 24.04) "Valid schema";
+`DEPLOY_DRY_RUN=1 deploy/deploy.sh <sha>` prints its six steps and runs
+none; the awslogs overlay renders with `docker compose config`. Not run:
+anything against AWS (no credentials; forbidden by the assignment), the
+cloud-init file as a boot, Playwright (no customer-facing UI change; the
+`server.js` fix is exercised through Caddy by the stack test).
+
 ### E01 — Production Compose with Caddy
 
-**Priority: P1. State: IN PROGRESS (PR `feat/prod-stack`, base `main`).**
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).**
 **Scope:** `docker-compose.prod.yml` — `caddy` (`caddy:2` pinned by digest;
 80, 443, 443/udp; `caddy_data`/`caddy_config` volumes; `deploy/Caddyfile`
 read-only; `CADDY_DOMAIN`), `frontend` (`${FRONTEND_IMAGE:-spacerental-frontend:local}`,
@@ -1762,7 +1789,7 @@ script's output in the PR body with the exact compose/env used.
 
 ### E02 — Production settings validation (fail loudly)
 
-**Priority: P1. State: IN PROGRESS (PR `feat/prod-stack`).** Closes the
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** Closes the
 backend half of S17 (the frontend's missing-API-URL refusal is not needed:
 the production build's API URL is relative, D20). **Scope:**
 `backend/app/config.py` — with `APP_ENV=production` the process refuses to
@@ -1786,7 +1813,7 @@ e2e stack and the test suite unchanged in behaviour.
 
 ### E03 — Bootstrap command for a real deployment
 
-**Priority: P1. State: IN PROGRESS (PR `feat/prod-stack`).** **Scope:**
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** **Scope:**
 `python -m app.bootstrap`, idempotent, one organisation: the org (`--name`,
 `--slug`), its space (the site's address, `Europe/Lisbon`, 08:00–22:00
 every day — R01's model, the same rules `app.seed` writes), rooms
@@ -1805,7 +1832,7 @@ match `business.json`.
 
 ### E06 — Backups and restore
 
-**Priority: P1. State: IN PROGRESS (PR `feat/prod-stack`).** **Scope:**
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** **Scope:**
 `deploy/backup.sh`: `pg_dump -Fc` through a one-off `postgres:18-alpine`
 container (digest-pinned, the same as the Compose files) to
 `dumps/<YYYY-MM-DD>.dump` → `aws s3 cp s3://$BACKUP_BUCKET/dumps/`; `aws s3
@@ -1822,7 +1849,7 @@ body.
 
 ### E07 — Docs and the static site's door
 
-**Priority: P1. State: IN PROGRESS (PR `feat/prod-stack`).** **Scope:**
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** **Scope:**
 `docs/runbooks/aws.md`, the owner's manual, every step a runnable command:
 Phase 1 account hygiene; Phase 2 `infra/bootstrap` once from the laptop →
 GitHub variables and the `production` environment → `INFRA_ENABLED=true`
@@ -1848,7 +1875,7 @@ tests/copy-parity.test.mjs`; README/runbook links checked.
 
 ### E08 — Host provisioning, deploy script, logs
 
-**Priority: P1. State: IN PROGRESS (PR `feat/prod-stack`).** **Scope:**
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** **Scope:**
 `deploy/cloud-init.yaml` (E04's `user_data`, a Terraform template): Docker
 Engine + the compose plugin from Docker's apt repository, AWS CLI v2, the
 CloudWatch agent with a minimal config (disk used % on `/` and
