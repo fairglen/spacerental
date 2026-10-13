@@ -7,17 +7,18 @@ name: Deploy
 # commit to deploy — the rollback path: Run workflow with the previous sha.
 # Builds the two linux/arm64 images on an arm64 runner (native, no
 # emulation), pushes them to ECR as sha-<7> and main, ships this commit's
-# deploy/ files and Compose files to the backups bucket, and runs
-# /srv/spacerental/deploy.sh <sha> on the instance tagged
-# Name=spacerental-prod through SSM RunCommand; ends with an HTTPS probe.
+# deploy/ files and Compose files to the backups bucket, and runs the
+# `spacerental-deploy` SSM document (= /srv/spacerental/deploy.sh <sha>) on
+# the instance tagged Name=spacerental-prod; ends with an HTTPS probe.
 #
-# DECISION: no `environment:` on the deploy job — app deploys are continuous
-# once enabled; only infrastructure applies are gated. GitHub applies an
-# environment's required reviewers to every job that names it, so putting
-# this job in `production` would make every deploy wait for a click. To gate
-# deploys too, create an environment `production-app` with a required
-# reviewer and set `environment: production-app` below: the deploy role
-# already trusts that subject (infra/bootstrap).
+# DECISION (E10, revising E05): the deploy job runs in the GitHub
+# environment `production-app`, and the deploy role trusts that subject
+# only — not the branch, so no other workflow on main can assume it. The
+# owner creates the environment WITHOUT reviewers (runbook 2.2), which keeps
+# deploys continuous; adding a required reviewer there is the one switch
+# that makes every deploy wait for a click (runbook, Phase 5). The role may
+# send that one document and nothing else: it says "deploy this sha", it
+# cannot run a shell.
 
 on:
   workflow_run:
@@ -57,6 +58,8 @@ jobs:
     # many times longer and is the fallback if the repository turns private.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 40
+    # The deploy role's only trusted subject (E10). No reviewers by default.
+    environment: production-app
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
     steps:
@@ -124,7 +127,7 @@ jobs:
             echo "id=$id" >> "$GITHUB_OUTPUT"
             echo "instance $id"
           fi
-      - name: deploy.sh on the instance (SSM RunCommand)
+      - name: deploy.sh on the instance (the spacerental-deploy SSM document)
         if: steps.instance.outputs.id != ''
         env:
           INSTANCE: ${{ steps.instance.outputs.id }}
@@ -133,10 +136,10 @@ jobs:
           set -euo pipefail
           command_id=$(aws ssm send-command \
             --instance-ids "$INSTANCE" \
-            --document-name AWS-RunShellScript \
+            --document-name spacerental-deploy \
             --comment "deploy $SHA" \
             --timeout-seconds 600 \
-            --parameters "commands=[\"/srv/spacerental/deploy.sh $SHA\"],executionTimeout=[\"900\"]" \
+            --parameters "sha=$SHA" \
             --query Command.CommandId --output text)
           echo "command $command_id"
           for _ in $(seq 1 120); do
