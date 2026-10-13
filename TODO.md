@@ -1976,9 +1976,111 @@ conservative way, recorded under the item and tagged `DECISION:` in the
 commit body. Region eu-west-1; single backend instance by design
 (in-process rate limits and BackgroundTasks, Q55).
 
-PR A: E01 E02 E03 E06 E07 E08 (below). PR B: E04 (Terraform `infra/`) and
-E05 (`infra.yml` + `deploy.yml`, inert until enabled) — QUEUED, recorded in
-full in PR B's first commit.
+PR A: E01 E02 E03 E06 E07 E08 (below). PR B (`feat/aws-infra`, stacked on
+PR A's branch): E04 and E05, below.
+
+### E04 — Terraform (`infra/`)
+
+**Priority: P1. State: IN PROGRESS (PR `feat/aws-infra`, base
+`feat/prod-stack` while PR A is open, `main` after).** **Scope:**
+`infra/bootstrap/` (local state, applied once by the owner from the
+laptop): the state bucket `spacerental-tfstate-<account-id>` (versioning,
+SSE-S3, public-access block, `prevent_destroy`), the GitHub OIDC
+provider, three roles with exact `sub` conditions — `spacerental-gh-plan`
+(`repo:fairglen/spacerental:pull_request`; `ReadOnlyAccess` + read on the
+state bucket), `spacerental-gh-apply` (`…:environment:production` only;
+`AdministratorAccess` — **DECISION:** it creates IAM roles and policies,
+so a narrower policy is not realistic for v1; the environment's required
+reviewer is the control), `spacerental-gh-deploy` (`…:ref:refs/heads/main`,
+`…:environment:production`, `…:environment:production-app`; ECR push on
+the two repositories, `ec2:DescribeInstances`, `ssm:SendCommand` on
+instances tagged `Name=spacerental-prod` and the `AWS-RunShellScript`
+document, `ssm:GetCommandInvocation`, `s3:PutObject` on the backups
+bucket's `deploy/` prefix); outputs the role ARNs and the bucket;
+`github_repo` default `fairglen/spacerental`. `infra/prod/` with backend
+`s3` + `use_lockfile = true` (the bucket name carries the account id, so
+it is passed with `-backend-config`); variables `region`, `domain`,
+`instance_type=t4g.small`, `db_engine_version="18"` (17 if the region's
+plan rejects it; the app runs on 16+), `alarm_email`, `deploy_ref`,
+`monthly_budget_usd`. One file per concern: network (**DECISION:** the
+default VPC and subnets — the database is private by its security group
+and `publicly_accessible=false`, not by subnet), compute (Ubuntu 24.04
+arm64 from the SSM public parameter, IMDSv2 required, 20 GB gp3
+encrypted root, the 20 GB data volume tagged `Backup=daily` at `/dev/sdf`,
+`user_data` = `deploy/cloud-init.yaml` templated, EIP, instance profile
+with `AmazonSSMManagedInstanceCore` + `AmazonEC2ContainerRegistryReadOnly`
++ `CloudWatchAgentServerPolicy` + inline S3 RW on the backups bucket,
+`ssm:GetParameter` and `kms:Decrypt` on `/spacerental/prod/*`,
+`secretsmanager:GetSecretValue` on the RDS secret; no key pair, no port
+22; `ignore_changes = [ami, user_data]` so a new AMI never recreates the
+host), database (`db.t4g.micro`, 20 GB gp3 encrypted, private,
+7-day backups, `deletion_protection`, final snapshot,
+`manage_master_user_password`, auto minor upgrades, **DECISION:** single
+AZ — cost), storage (the backups bucket: versioning, SSE-S3, public
+block, `dumps/` 30 d, noncurrent 90 d, abort multipart 7 d), registry (two
+ECR repositories, scan on push, keep the last 10 images), config (the
+SSM SecureString placeholder with `ignore_changes = [value]`, Advanced
+tier for the 8 KB template), observability (the log group, 30 d; SNS +
+email; alarms `StatusCheckFailed_System` with the recover action, disk
+used % > 80 on either volume, RDS free storage < 2 GB, RDS CPU > 80 % for
+15 min; DLM daily snapshots of `Backup=daily` volumes, 7 kept; the Budget,
+USD 55, 80 %/100 %), outputs (EIP, instance id, RDS endpoint and secret
+ARN, bucket, ECR URLs, log group, the `aws ssm start-session` command).
+`.github/dependabot.yml` gets the `terraform` ecosystem for both modules.
+**Validation:** `terraform fmt -check -recursive`, `terraform init
+-backend=false && terraform validate` in both modules (the AWS provider
+`~> 6.0`), `tflint` if its image runs; `plan`/`apply` are NOT run — no
+credentials; the first plan the owner approves creates ≈ 40 resources.
+
+### E05 — GitHub as the deployer (inert until enabled)
+
+**Priority: P1. State: IN PROGRESS (PR `feat/aws-infra`).** **Scope:**
+`.github/workflows/infra.yml` — always, on a pull request or a push to
+`main` touching `infra/**` (and `deploy/cloud-init.yaml`, which it
+templates), with no credentials: `hashicorp/setup-terraform` (pinned,
+`terraform_wrapper: false`, version pinned), `fmt -check`, `init
+-backend=false`, `validate` for both modules; then only `if:
+vars.INFRA_ENABLED == 'true'`: on pull requests OIDC with
+`spacerental-gh-plan`, real `init`, `plan -lock=false -no-color -out=tfplan`
+for `infra/prod`, posted as one sticky comment (60 KB cap); on `main` (and
+`workflow_dispatch`) the `apply` job in `environment: production` with
+`spacerental-gh-apply`: `plan -out=tfplan` then `apply tfplan`. With the
+variable unset the gated jobs are skipped and a `disabled` job prints
+"infra disabled: set repository variable INFRA_ENABLED=true". Concurrency
+group `infra`; `permissions: id-token: write, contents: read,
+pull-requests: write`. `.github/workflows/deploy.yml` — `on: workflow_run:
+workflows: ["Checks"], types: [completed], branches: [main]` guarded by
+`conclusion == 'success'`, plus `workflow_dispatch` with an optional `sha`
+(rollback, first deploy); every job `if: vars.DEPLOY_ENABLED == 'true'`,
+else the `disabled` job prints "deploy disabled: set repository variable
+DEPLOY_ENABLED=true". Steps: checkout the sha, OIDC with
+`spacerental-gh-deploy`, ECR login, build and push `backend` (target
+`runtime`) and `frontend` (target `runner`) for `linux/arm64` with a
+registry cache, tags `sha-<7>` and `main`; upload `deploy/*` and the two
+Compose files to `s3://<bucket>/deploy/<sha>/`; find the running instance
+tagged `Name=spacerental-prod` (none → a notice, exit 0); `aws ssm
+send-command … /srv/spacerental/deploy.sh <sha>`, polled with
+`get-command-invocation`, its output printed, anything but `Success`
+fails; the final probe `https://<APP_DOMAIN>/backend/health`. Concurrency
+group `deploy`, never cancelled in progress. **DECISION:** the deploy job
+names no environment — GitHub applies an environment's required
+reviewers to every job that uses it, so `environment: production` would
+make every app deploy wait for a click; app deploys are continuous once
+enabled, only infrastructure applies are gated, and gating deploys too is
+one line (`environment: production-app`, a second environment with a
+reviewer; the deploy role already trusts that subject). **DECISION:** the
+deploy job runs on GitHub's hosted arm64 runner (`ubuntu-24.04-arm`, free
+for public repositories) and builds the arm64 images natively instead of
+under QEMU on an x86 runner — `next build` under emulation would take
+many times longer; QEMU (`docker/setup-qemu-action`) is the fallback if
+the repository turns private. Repository settings the owner creates
+(runbook and PR body): variables `AWS_ACCOUNT_ID`, `AWS_REGION`,
+`APP_DOMAIN`, `INFRA_ENABLED`, `DEPLOY_ENABLED`; environment `production`
+with the owner as required reviewer. No long-lived secret anywhere.
+**Acceptance/validation:** `actionlint` clean; the inert path proven on
+the PR itself — with no variable set, `infra.yml` runs validate + the
+`disabled` notice and succeeds (and `deploy.yml` cannot run before it is
+on `main`; its `disabled` path is the same expression).
 
 **PR A validation (2026-10-13, the owner's dev stack untouched on
 3000/8000/5432):** the production stack on this laptop — `KEEP=1
