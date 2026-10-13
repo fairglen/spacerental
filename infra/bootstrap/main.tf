@@ -142,6 +142,40 @@ resource "aws_iam_role_policy" "plan_state" {
   policy = data.aws_iam_policy_document.plan_state.json
 }
 
+# E11: ReadOnlyAccess can read every object and parameter in the account,
+# and the plan job runs a pull request's own workflow file. What a plan must
+# never read is denied explicitly, over the managed policy: the dumps and
+# media in the backups bucket, the production .env, every secret, every KMS
+# decryption. The state bucket grant above is untouched — a plan needs it.
+data "aws_iam_policy_document" "plan_deny" {
+  statement {
+    sid       = "NoBackupsBucketObjects"
+    effect    = "Deny"
+    actions   = ["s3:GetObject*"]
+    resources = ["arn:aws:s3:::${local.backups_bucket}/*"]
+  }
+
+  statement {
+    sid       = "NoProductionParameters"
+    effect    = "Deny"
+    actions   = ["ssm:GetParameter*"]
+    resources = ["arn:aws:ssm:${var.region}:${local.account_id}:parameter/spacerental/prod/*"]
+  }
+
+  statement {
+    sid       = "NoSecretsNoDecryption"
+    effect    = "Deny"
+    actions   = ["secretsmanager:GetSecretValue", "kms:Decrypt"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "plan_deny" {
+  name   = "deny-production-data"
+  role   = aws_iam_role.plan.id
+  policy = data.aws_iam_policy_document.plan_deny.json
+}
+
 # ── spacerental-gh-apply: `terraform apply` behind the production
 #    environment's approval ───────────────────────────────────────────────────
 #
