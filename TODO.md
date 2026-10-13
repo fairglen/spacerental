@@ -3786,6 +3786,142 @@ trusted). Acceptance: the e2e suite green with `NEXT_PUBLIC_API_URL=/api/backend
 D19's shell test extended with the one-URL layer, the rate-limit tests still
 proving per-client budgets.
 
+## Dependabot batch #97–#106 (D-series, D21–D22) — owner assignment 2026-10-13
+
+Goal: every open Dependabot PR either green with a "ready to merge" comment
+or closed with a reasoned one, each validated locally against the repo
+baseline from its own worktree and Compose project; a merge order for the
+owner; nothing merged by the loop (`main` is protected and merges are the
+owner's). D11 (Node major) and D12 (SQLAlchemy `noload`) were read first and
+hold. Fixes go to the Dependabot branch as `<ID>: <what>` commits and are
+described in a PR comment so they survive `@dependabot rebase`; `@dependabot
+recreate` is never used.
+
+### D21 — Dependabot batch #97–#106: outcomes, evidence, decisions
+
+**Priority: P1. State: DONE 2026-10-13 (seven PRs ready, three closed; merges
+by the owner, never by the loop).** All ten branches already sat on `main`
+= `02a0365`, so no rebase was needed. None of the PRs received a Copilot
+review (the repository has never had one); zero review threads anywhere.
+Local runs used Node 24.21 (D11), Compose projects `spacerental-pr<n>-tests`
+/ `-mig` / `-e2e` and ports 3<n>/8<n> — the owner's stack on 3000/8000/5432
+and the loop stack on 3100/8100/55432 were not touched.
+
+Per PR:
+
+- **#100 tzdata 2024.2 → 2026.5 — READY.** Backend suite 1044 passed, 4
+  subtests (R01's `test_local_opening_hours.py` 26 and `test_recurrences.py`
+  86 among them); CI green. No fix.
+- **#101 argon2-cffi 23.1 → 25.1 — READY.** Suite 1044 passed on the re-run
+  (the first run: 1043 + one timing assertion in `test_hold_sweep.py`,
+  `assert 2 >= 3`, while three suites shared the machine). Explicit check in
+  `python:3.12-slim`: a hash made by 23.1.0 with the app's parameters
+  (`app/auth.py:21`) verifies under 25.1.0, a wrong password raises
+  `VerifyMismatchError`, `check_needs_rehash()` is `False`, a fresh hash
+  carries the same `m=65536,t=3,p=4` header; `argon2-cffi-bindings` 26.1.0
+  both sides. 25.1 deprecates `argon2.__version__` (unused here). CI green.
+  No fix.
+- **#99 pip group (fastapi 0.143.0, sqlalchemy 2.1.4, asyncpg 0.32.0,
+  pydantic 2.14.0, orjson 3.13.0) — READY.** Suite 1044 passed, with
+  `test_openapi_stable.py` (the snapshot is unchanged) and
+  `test_openapi_public.py`; migration round trip on an empty PostgreSQL 18
+  (upgrade → check → downgrade → no leftover table or enum → upgrade →
+  check) clean; CI green including `migrations / migrate`. FastAPI
+  0.143 **deprecates `ORJSONResponse`** ("FastAPI now serializes data
+  directly to JSON bytes via Pydantic when a return type or response_model
+  is declared") — a `DeprecationWarning` only: no failure, no snapshot diff,
+  so `app/main.py:75` (`default_response_class=ORJSONResponse`, P2.3) is
+  left as it is, per the assignment. When FastAPI removes it, drop the
+  class and the `orjson` pin together and re-measure P2.3's payload
+  timings. The starlette status-constant renames in the warnings
+  (`HTTP_422_UNPROCESSABLE_ENTITY` → `…_CONTENT`, `HTTP_413_…`) predate this
+  PR (starlette 1.8.0 on both sides). No fix.
+- **#106 actions group (setup-node v7.1.0, upload-artifact v7.0.2,
+  download-artifact v8.0.2, codeql-action v4.38.3 init + analyze) — READY.**
+  Every pin is the commit its tag resolves to (checked through the API);
+  no unpinned `uses:` remains; `actionlint` 1.7.11 reports nothing new (its
+  three shellcheck notes are identical on `main` and fixed by #107/E08);
+  every workflow that uses the actions ran green on the PR. No fix.
+- **#98 @playwright/test 1.63 → 1.64 — READY.** `tsc`, Vitest 756/756 (76
+  files), `next lint`, `next build`; full Playwright suite against the
+  production-build e2e stack (`docker-compose.e2e.yml`) 84 passed + 8
+  skipped on 1.64.0 (Chromium build 1248 fetched by the same command);
+  `npx playwright install chromium` in the baseline is unchanged (the
+  `e2e.yml` browser cache key follows the version). CI green. No fix.
+- **#103 date-fns 3.6 → 4.4 — READY after one fix.** CI was red on
+  `booking-window.spec.ts:22` and `week-view.spec.ts:35`: the toolbar read
+  "8 de nov – 14 de nov" instead of "9 de nov …" and the third column was
+  "13 ter" instead of 14 — both calendars had moved to a **Sunday** week.
+  Cause: date-fns 4 changed the `pt` locale's `weekStartsOn` from 1 to 0
+  (CLDR's territory data for Portugal); the two react-big-calendar
+  localizers (`components/booking/BookingCalendar.tsx`,
+  `app/admin/calendar/page.tsx`) hand `locales: { pt }` + `culture="pt"` to
+  `dateFnsLocalizer`, whose first-day-of-week is
+  `getDay(startOfWeek(new Date(), { locale }))`. Audit of the 41 importing
+  files: every other `startOfWeek`/`endOfWeek` already says `weekStartsOn:
+  1` (`lib/bookingWindow.ts`, `lib/availabilitySpan.ts`, the admin range);
+  no `format` string uses a week-dependent token (`w`, `e`, `c`, `I`, `Y`,
+  `R`); no `isSameWeek`/`setDay`/`getWeek`/`formatDistance`/`formatRelative`
+  call; `lib/billingPeriods.ts` does not use date-fns; `constructNow`/
+  `constructFrom`/`date-fns/constants` exist in 4. Fix (commit
+  `0fd5067` on the Dependabot branch): `lib/dateLocale.ts` exports
+  `ptMonday` — the stock `pt` with `weekStartsOn: 1` — and both localizers
+  use it; `tests/lib/dateLocale.test.ts` (3: Monday from every day of a
+  week, otherwise the stock locale, the real `dateFnsLocalizer` reports
+  first day 1). The component test mocks `dateFnsLocalizer`, which is why
+  the unit suite stayed green and only the browser suite caught it.
+  Evidence: `tsc`, Vitest 759/759 (77 files), `next lint`, `next build`,
+  Playwright 84 passed + 8 skipped (the two red specs among them) against
+  the production-build e2e stack on 3103/8103; CI on `0fd5067` green
+  (`Checks` + `Security`, `required-checks` ✓, both e2e shards), one
+  review round, no Copilot review within the 6-minute poll, no thread.
+  **DECISION (loop, D21):** the Monday start is pinned in the locale object
+  the calendars receive, not by wrapping `startOfWeek`, so the same locale
+  also drives `loc.format(…, culture)` and there is one place to read.
+  Reverse: a `startOfWeek` wrapper with `weekStartsOn: 1` in the localizer.
+- **#102 vite 7 → 8 — READY.** `vitest@5.0.3` peers `vite ^6.4.0 || ^7.0.0
+  || ^8.0.0`, `@vitejs/plugin-react@5.2.0` up to `^8.0.0`; `npm ls vite` =
+  one `vite@8.3.4` deduped, `npm ci` without peer warnings; `tsc`, Vitest
+  756/756, `next lint`, `next build`. CI's first `e2e (2/2)` failure
+  (`pay-mixed.spec.ts:33`, `packages.spec.ts:157`/B14) is the D15 signature
+  — vite drives Vitest only — and the re-run is green. No fix.
+- **#104 react / @types/react 18 → 19 — CLOSED,** `@dependabot ignore this
+  major version`. `next@14.2.35` peers `react ^18.2.0`; `npm ci` fails with
+  `ERESOLVE` (`@types/react-dom@18.3.7` vs `@types/react@19.3.0`), so lint,
+  unit, e2e and perf-web were red. React 19 comes with D22.
+- **#105 eslint 8 → 10 — CLOSED,** `@dependabot ignore this major version`.
+  `eslint-config-next@14.2.35` peers `eslint ^7.23.0 || ^8.0.0`; `npm ci`
+  fails with `ERESOLVE`. ESLint 9+/flat config comes with D22.
+- **#97 node:24-alpine → node:26-alpine — CLOSED, no ignore.** D11 holds:
+  Node 26 is Current until **2026-10-28** (nodejs/Release `schedule.json`;
+  Node 24 enters Maintenance on 2026-10-20), and the PR moves the image
+  without CI's `setup-node` steps. Retry after that date with the image
+  and the seven `setup-node` steps in one PR, gated on Vitest, `tsc`,
+  `next build`, the image build and Playwright. Dependabot proposes it
+  again on its own.
+
+Merge order handed to the owner: #100 → #101 → #99 (if GitHub reports a
+`requirements.txt` conflict after one merges, `@dependabot rebase` the next)
+→ #106 → #98 → `@dependabot rebase` #103 → #103 → `@dependabot rebase`
+#102 → #102. #97 after 2026-10-28; #104/#105 through D22.
+
+### D22 — Next 15 + React 19 + ESLint 9/10 upgrade
+
+**Priority: P2. State: QUEUED.** The three majors are one change because of
+the peer ranges found in D21: `next@14.2.35` peers `react ^18.2.0` (#104)
+and `eslint-config-next@14.2.35` peers `eslint ^7.23.0 || ^8.0.0` (#105),
+and `next lint` on 14 is the legacy ESLint 8 config. Scope: Next 15 (the
+request APIs `cookies()`/`headers()`/`params`/`searchParams` become
+Promises, `fetch` and GET route handlers stop being cached by default, the
+custom `server.js` and `lib/backendProxy.js` rewrite re-checked), React 19
+with `@types/react` 19 (`@testing-library/react` ≥ 16, `tests/setup.ts`'s
+act environment), ESLint 9+ with `eslint-config-next` 15's flat config
+replacing `next lint`, then `npm audit` re-read (D17's PostCSS findings
+follow Next). Acceptance: `npm ci` clean, `tsc`, Vitest, `next build`, the
+D16 visual gate, Playwright green, the audit clean at `--audit-level=high`.
+When it lands, reopen the Dependabot topics ignored in D21 (#104, #105) by
+bumping the ranges in the same PR.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are
