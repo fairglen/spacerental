@@ -344,29 +344,51 @@ echo "── 8. deploy/deploy.sh on this stack (DEPLOY_LOCAL): a healthy deploy,
 # `compose build` and CI's bake produced for this stack.
 BACKEND_LOCAL=spacerental-backend:local
 FRONTEND_LOCAL=spacerental-frontend:local
-for tag in aaaaaaa ccccccc; do
-  docker tag "$BACKEND_LOCAL" "$REG/spacerental/backend:sha-$tag"
-  docker tag "$FRONTEND_LOCAL" "$REG/spacerental/frontend:sha-$tag"
-done
-docker tag "$BACKEND_LOCAL" "$REG/spacerental/backend:sha-bbbbbbb"
-printf 'FROM %s\nENTRYPOINT ["sh", "-c", "exit 1"]\n' "$FRONTEND_LOCAL" | docker build -q -t "$REG/spacerental/frontend:sha-bbbbbbb" - > /dev/null
+# Each release's images appear right before its deploy, as on the host
+# (step 4 pulls them): a deploy's retention step (E13) keeps the current and
+# the previous release only, so images tagged ahead of time would be gone.
+tag_release() { # sha
+  docker tag "$BACKEND_LOCAL" "$REG/spacerental/backend:sha-$1"
+  docker tag "$FRONTEND_LOCAL" "$REG/spacerental/frontend:sha-$1"
+}
 deploy_local() { # sha → deploy.sh's stdout in $WORK/deploy-<sha>.out, stderr in .err, its exit code returned
   DEPLOY_LOCAL=1 DEPLOY_LOCAL_ENV="$ENV_FILE" DEPLOY_DIR="$WORK" DEPLOY_CONF="$WORK/deploy.env" ECR_REGISTRY="$REG" \
     DEPLOY_COMPOSE_PROJECT="$PROJECT" DEPLOY_COMPOSE_FILES="$ROOT/docker-compose.prod.yml $ROOT/scripts/tests/prod-stack.compose.yml" \
     HEALTH_TIMEOUT=60 MEDIA_HOST_DIR="$WORK/media" "$ROOT/deploy/deploy.sh" "$1" > "$WORK/deploy-$1.out" 2> "$WORK/deploy-$1.err"
 }
 frontend_image() { docker inspect --format '{{.Config.Image}}' "$(compose ps -q frontend)"; }
+deploy_err() { # sha — deploy.sh's stderr, for the log when a check fails
+  sed 's/^/      deploy.sh: /' "$WORK/deploy-$1.err" | tail -40
+}
+tag_release aaaaaaa
 deploy_local aaaaaaa && DEPLOY_EXIT=0 || DEPLOY_EXIT=$?
+[ "$DEPLOY_EXIT" = 0 ] || deploy_err aaaaaaa
 check "deploy.sh aaaaaaa exits 0" "$DEPLOY_EXIT" 0
 check "…and reports the deploy" "$(grep -c '^deployed aaaaaaa' "$WORK/deploy-aaaaaaa.out")" 1
 check "CURRENT_SHA = aaaaaaa" "$(cat "$WORK/CURRENT_SHA")" aaaaaaa
 check "the frontend runs the aaaaaaa image" "$(frontend_image)" "$REG/spacerental/frontend:sha-aaaaaaa"
+docker tag "$BACKEND_LOCAL" "$REG/spacerental/backend:sha-bbbbbbb"
+printf 'FROM %s\nENTRYPOINT ["sh", "-c", "exit 1"]\n' "$FRONTEND_LOCAL" | docker build -q -t "$REG/spacerental/frontend:sha-bbbbbbb" - > /dev/null
 deploy_local bbbbbbb && DEPLOY_EXIT=0 || DEPLOY_EXIT=$?
+grep -q '^rolled back to aaaaaaa' "$WORK/deploy-bbbbbbb.out" || deploy_err bbbbbbb
 check "deploy.sh bbbbbbb (a frontend that exits) exits 1" "$DEPLOY_EXIT" 1
 check "…after rolling back" "$(grep -c '^rolled back to aaaaaaa' "$WORK/deploy-bbbbbbb.out")" 1
 check "the frontend runs the aaaaaaa image again" "$(frontend_image)" "$REG/spacerental/frontend:sha-aaaaaaa"
 check "CURRENT_SHA is still aaaaaaa" "$(cat "$WORK/CURRENT_SHA")" aaaaaaa
 check "the site answers after the rollback" "$(status_of -o /dev/null "$HEALTH")" 200
+
+echo "── 9. a third release: the host keeps this one and the previous one, the broken one's images go (E13)"
+tag_release ccccccc
+deploy_local ccccccc && DEPLOY_EXIT=0 || DEPLOY_EXIT=$?
+[ "$DEPLOY_EXIT" = 0 ] || deploy_err ccccccc
+check "deploy.sh ccccccc exits 0" "$DEPLOY_EXIT" 0
+check "PREVIOUS_SHA = aaaaaaa" "$(cat "$WORK/PREVIOUS_SHA")" aaaaaaa
+check "CURRENT_SHA = ccccccc" "$(cat "$WORK/CURRENT_SHA")" ccccccc
+check "the frontend runs the ccccccc image" "$(frontend_image)" "$REG/spacerental/frontend:sha-ccccccc"
+check "deploy.sh reports the removals" "$(grep -c "^removed $REG/spacerental/.*:sha-bbbbbbb" "$WORK/deploy-ccccccc.out")" 2
+check "only the current and the previous images remain under $REG/spacerental/*" \
+  "$(docker images --format '{{.Repository}}:{{.Tag}}' --filter "reference=$REG/spacerental/*" | sort | paste -sd' ' -)" \
+  "$REG/spacerental/backend:sha-aaaaaaa $REG/spacerental/backend:sha-ccccccc $REG/spacerental/frontend:sha-aaaaaaa $REG/spacerental/frontend:sha-ccccccc"
 
 trap - ERR
 if [ "$fail" -ne 0 ]; then

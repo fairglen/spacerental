@@ -257,7 +257,7 @@ elif ! up_and_wait; then
   exit 1
 fi
 
-step "6/6 record the deploy, prune"
+step "6/6 record the deploy, keep this release's images and the previous one's, prune"
 write_current() {
   if [ -n "$CURRENT" ] && [ "$CURRENT" != "$SHA" ]; then
     echo "$CURRENT" > PREVIOUS_SHA
@@ -265,5 +265,22 @@ write_current() {
   echo "$SHA" > CURRENT_SHA
 }
 run_fn "echo ${CURRENT:-<none>} > PREVIOUS_SHA (when it differs); echo $SHA > CURRENT_SHA" write_current
+# E13: the host keeps the images of this release and of the previous one
+# (the rollback's) and nothing else under the registry's spacerental/
+# repositories, so a year of deploys cannot fill the root disk. A removal
+# that fails (an image still in use) is reported, not fatal: the deploy
+# itself succeeded.
+retain_images() {
+  local keep_current="sha-$SHORT" keep_previous="" image tag
+  [ ! -f PREVIOUS_SHA ] || keep_previous="sha-$(cut -c1-7 PREVIOUS_SHA)"
+  while IFS= read -r image; do
+    [ -n "$image" ] || continue
+    tag=${image##*:}
+    if [ "$tag" != "$keep_current" ] && [ "$tag" != "$keep_previous" ]; then
+      docker rmi "$image" > /dev/null && echo "removed $image" || echo "deploy: could not remove $image" >&2
+    fi
+  done < <(docker images --format '{{.Repository}}:{{.Tag}}' --filter "reference=$ECR_REGISTRY/spacerental/*")
+}
+run_fn "docker rmi every $ECR_REGISTRY/spacerental/* image tagged neither sha-$SHORT nor sha-<PREVIOUS_SHA> (E13)" retain_images
 run docker image prune -f
 echo "deployed $SHA (images sha-$SHORT)"
