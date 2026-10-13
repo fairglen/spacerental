@@ -46,3 +46,12 @@ updates:
     groups:
       pip-minor-and-patch:
         update-types: ["minor", "patch"]
+
+  # The AWS provider in both Terraform modules (E04); a bump is planned on
+  # its PR by infra.yml once INFRA_ENABLED is set.
+  - package-ecosystem: terraform
+    directories:
+      - /infra/bootstrap
+      - /infra/prod
+    schedule:
+      interval: weekly
