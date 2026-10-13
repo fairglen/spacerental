@@ -15,4 +15,4 @@ pillow==12.3.0
 stripe==16.0.0
 # P2.3: the JSON renderer (ORJSONResponse) — the performance work's one new runtime dependency.
 orjson==3.12.0
-tzdata==2024.2
+tzdata==2026.5
