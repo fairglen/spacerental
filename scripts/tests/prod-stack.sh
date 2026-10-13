@@ -44,10 +44,20 @@ compose() {
     -f "$ROOT/docker-compose.prod.yml" -f "$ROOT/scripts/tests/prod-stack.compose.yml" "$@"
 }
 
+# The app role's password, as deploy/db-bootstrap.sh sets it: deliberately
+# full of the characters a URL must encode (+ / = @), so the percent-encoded
+# DATABASE_URL below exercises deploy.sh's composition, the backend's URL
+# parsing and alembic's `%%` escape (E09) end to end.
+APP_ROLE=spacerental_app
+APP_PASSWORD="pw+/=@$(openssl rand -hex 6)"
+url_encode() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
+
 write_env() {
   # The example as the template, so a variable the stack needs and the
-  # example forgot surfaces here; the local values replace its lines.
-  mkdir -p "$WORK/media"
+  # example forgot surfaces here; the local values replace its lines. The
+  # example carries no DATABASE_URL (deploy.sh composes it on the host, E09):
+  # here the composed shape, for the role db-bootstrap.sh creates below.
+  mkdir -p "$WORK/media" "$WORK/certs"
   local overrides=(
     "APP_ENV=production"
     "SECRET_KEY=$(openssl rand -hex 32)"
@@ -56,7 +66,7 @@ write_env() {
     "FRONTEND_URL=$BASE"
     "NEXTAUTH_URL=$BASE"
     "CORS_ORIGINS=$BASE"
-    "DATABASE_URL=postgresql+asyncpg://spacerental:spacerental@db:5432/spacerental"
+    "DATABASE_URL=postgresql+asyncpg://$APP_ROLE:$(url_encode "$APP_PASSWORD")@db:5432/spacerental?ssl=require"
     "CUSTOMER_ENROLLMENT_ORG_SLUG=flowspace"
     "STRIPE_MODE=stub"
     "STRIPE_WEBHOOK_SECRET=whsec_prod_stack_$(openssl rand -hex 8)"
@@ -68,6 +78,7 @@ write_env() {
     "PROD_STACK_ENV_FILE=$ENV_FILE"
     "PROD_STACK_HTTP_PORT=$HTTP_PORT"
     "PROD_STACK_HTTPS_PORT=$HTTPS_PORT"
+    "PROD_STACK_CERTS=$WORK/certs"
   )
   local keys
   keys=$(printf '%s\n' "${overrides[@]}" | cut -d= -f1 | paste -sd'|' -)
@@ -116,6 +127,23 @@ docker compose version
 if [ "${PROD_STACK_BUILD:-1}" = 1 ]; then
   compose build
 fi
+# The database first, with TLS as RDS enforces it (a self-signed pair the
+# overlay hands to the server), then the app role the way the host gets it:
+# deploy/db-bootstrap.sh as the master user, exactly as runbook 2.4 runs it
+# through Session Manager — DB_APP_PASSWORD standing in for the secret.
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=db \
+  -keyout "$WORK/certs/server.key" -out "$WORK/certs/server.crt" 2> /dev/null
+chmod 644 "$WORK/certs/server.key" "$WORK/certs/server.crt"
+compose up -d --no-build --wait --wait-timeout 120 db
+printf 'DB_HOST=db\nDB_PORT=5432\nDB_NAME=spacerental\n' > "$WORK/deploy.env"
+db_bootstrap() {
+  DEPLOY_CONF="$WORK/deploy.env" DB_APP_PASSWORD="$APP_PASSWORD" DB_BOOTSTRAP_DOCKER_NETWORK="${PROJECT}_default" \
+    MASTER_URL=postgresql://spacerental:spacerental@db:5432/spacerental "$ROOT/deploy/db-bootstrap.sh"
+}
+first_bootstrap=$(db_bootstrap)
+check "db-bootstrap.sh hands the database to $APP_ROLE" "$(grep -c "owner of spacerental: $APP_ROLE" <<< "$first_bootstrap")" 1
+check "db-bootstrap.sh connects as $APP_ROLE with that password" "$(grep -c "connected as $APP_ROLE" <<< "$first_bootstrap")" 1
+check "db-bootstrap.sh a second time changes nothing and still passes" "$(db_bootstrap | grep -c "connected as $APP_ROLE")" 1
 # The media directory is owned by the image's `app` user, as deploy.sh does
 # on the host, so APP_ENV=production's writable-MEDIA_ROOT check is real.
 compose run --rm --no-deps --user root --entrypoint chown backend app:app /app/media
@@ -131,11 +159,16 @@ wait_for() { # url label
 wait_for "$HEALTH" "the API through Caddy"
 wait_for "$BASE/api/auth/providers" "the frontend through Caddy"
 
-echo "── 1. health probes through Caddy"
+echo "── 1. health probes through Caddy; the database side of E09"
 check "GET / (the landing page)" "$(status_of -o /dev/null "$BASE/")" 200
 check "GET /backend/health (the API through the Next.js proxy)" "$(status_of -o /dev/null "$HEALTH")" 200
 check "health body" "$(curl -ksS "$HEALTH")" '{"status":"ok"}'
 check "GET /api/auth/providers (NextAuth)" "$(status_of -o /dev/null "$BASE/api/auth/providers")" 200
+sql() { compose exec -T db psql -U spacerental -d spacerental -tAc "$1"; }
+check "the migrations ran as $APP_ROLE (every public table is its)" \
+  "$(sql "select count(*) > 0 and count(*) = count(*) filter (where tableowner = '$APP_ROLE') from pg_tables where schemaname = 'public'")" t
+check "the backend's connections are TLS (pg_stat_ssl; the URL says ssl=require)" \
+  "$(sql "select count(*) > 0 and bool_and(s.ssl) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.usename = '$APP_ROLE'")" t
 
 echo "── 2. bootstrap once (E03): the organisation, its space, rooms, pack and admin; the seed refuses"
 bootstrap() {
