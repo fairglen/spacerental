@@ -113,11 +113,13 @@ plan rejects PostgreSQL `18` for the region, set
 `db_engine_version = "17"` in `infra/prod/variables.tf` (the app needs 16+)
 and run again.
 
-Read the outputs (either from the job's log, or locally — the S3 backend is
-read-only for you after `init`):
+Read the outputs (either from the job's log, or locally — `init` only
+connects to the state bucket; nothing is applied from the laptop):
 
 ```bash
-cd infra/prod && terraform init && terraform output
+cd infra/prod
+terraform init -backend-config="bucket=spacerental-tfstate-$ACCOUNT_ID"
+terraform output
 # elastic_ip, instance_id, rds_endpoint, rds_secret_arn, backups_bucket,
 # ecr_backend_url, ecr_frontend_url, log_group, ssm_session_command
 ```
@@ -257,11 +259,18 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
   deploy runs; the site keeps serving) and `gh variable set INFRA_ENABLED
   --body false` (no plan or apply). Setting them back to `true` re-arms.
 - **Gating app deploys too** (optional): create an environment
-  `production-app` with yourself as required reviewer and change
-  `environment: production` to `production-app` in
-  `.github/workflows/deploy.yml`; every deploy then waits for your approval.
-  By default only infrastructure applies are gated — app deploys are
-  continuous once enabled (E05 decision).
+  `production-app` with yourself as required reviewer and add
+  `environment: production-app` to the `deploy` job in
+  `.github/workflows/deploy.yml` (the deploy role already trusts that
+  subject); every deploy then waits for your approval. By default the
+  deploy job names no environment — GitHub applies an environment's
+  required reviewers to every job that uses it — so only infrastructure
+  applies are gated and app deploys are continuous once enabled (E05
+  decision).
+- **If the repository ever turns private:** the deploy job runs on
+  GitHub's hosted arm64 runner (`ubuntu-24.04-arm`), free for public
+  repositories only; switch `runs-on` to `ubuntu-latest` and add
+  `docker/setup-qemu-action` before the builds (slower, emulated).
 - **A new `.env` value:** `put-parameter` + `gh workflow run deploy.yml --ref main`.
 - **Tearing it down:** `INFRA_ENABLED=false`, then from the laptop
   `cd infra/prod && terraform init && terraform destroy` (RDS has deletion
