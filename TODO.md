@@ -2328,7 +2328,7 @@ environment `production-app` (no reviewers).
 
 ### E09 — The app never runs as the RDS master user; `DATABASE_URL` is composed at deploy time
 
-**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).** Why:
+**Priority: P1. State: DONE 2026-10-13 (PR #110 `fix/prod-hardening-v1`, base `feat/aws-infra`; merged by the owner, never by the loop).** Why:
 `manage_master_user_password = true` rotates the master secret every 7
 days, and runbook 2.4 copied that password into the SSM `.env` — the first
 rotation would take production down. **Scope:** `infra/prod` — a
@@ -2363,7 +2363,7 @@ migrations run as that role; `terraform validate`; shellcheck.
 
 ### E10 — The deploy role is bound to one GitHub environment and can only say "deploy this sha"
 
-**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).** Why:
+**Priority: P1. State: DONE 2026-10-13 (PR #110 `fix/prod-hardening-v1`, base `feat/aws-infra`; merged by the owner, never by the loop).** Why:
 the deploy role trusted `ref:refs/heads/main` and could run
 `AWS-RunShellScript` on the instance — any workflow on `main` got root on
 production. **Scope:** `infra/bootstrap`: the deploy trust is
@@ -2381,7 +2381,7 @@ path green on the PR.
 
 ### E11 — The plan role cannot read dumps, the env parameter or secrets; the backups bucket has a policy
 
-**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).** Why:
+**Priority: P1. State: DONE 2026-10-13 (PR #110 `fix/prod-hardening-v1`, base `feat/aws-infra`; merged by the owner, never by the loop).** Why:
 `ReadOnlyAccess` includes `s3:GetObject` on every bucket, and the `plan`
 job runs the pull request's own workflow file. **Scope:** the plan role
 keeps `ReadOnlyAccess` and gains an explicit `Deny` on `s3:GetObject*`
@@ -2404,7 +2404,7 @@ evaluation — `terraform plan` on the owner's first run is the proof.
 
 ### E12 — Dependabot's infra PRs skip the plan job
 
-**Priority: P2. State: IN PROGRESS (PR `fix/prod-hardening-v1`).** `infra.yml`:
+**Priority: P2. State: DONE 2026-10-13 (PR #110 `fix/prod-hardening-v1`, base `feat/aws-infra`; merged by the owner, never by the loop).** `infra.yml`:
 `plan` runs only when `github.actor != 'dependabot[bot]'` (and
 `INFRA_ENABLED`); `validate` still runs for everyone. Runbook: a provider
 bump is planned on `main` after the merge, behind the approval.
@@ -2412,7 +2412,7 @@ bump is planned on `main` after the merge, behind the approval.
 
 ### E13 — Deploys do not fill the root disk
 
-**Priority: P2. State: IN PROGRESS (PR `fix/prod-hardening-v1`).**
+**Priority: P2. State: DONE 2026-10-13 (PR #110 `fix/prod-hardening-v1`, base `feat/aws-infra`; merged by the owner, never by the loop).**
 `deploy.sh`: after a healthy deploy, `PREVIOUS_SHA` (the old `CURRENT_SHA`)
 then `CURRENT_SHA`; every `$ECR_REGISTRY/spacerental/*` image whose tag is
 not `sha-<current>` or `sha-<previous>` is removed, then `docker image
@@ -2421,7 +2421,7 @@ proves it with three locally tagged image pairs: two survive.
 
 ### E14 — A failed deploy rolls back by itself; migrations are forward-compatible by rule
 
-**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).**
+**Priority: P1. State: DONE 2026-10-13 (PR #110 `fix/prod-hardening-v1`, base `feat/aws-infra`; merged by the owner, never by the loop).**
 `deploy.sh`: when the health wait fails and `CURRENT_SHA` exists and
 differs from the sha being deployed, the previous images come back up,
 health is awaited again, `rolled back to <sha>` is printed and the exit
@@ -2440,7 +2440,7 @@ rollback scenario; the dry run; actionlint.
 
 ### E15 — A missing or failed backup is an alarm, not a journal line
 
-**Priority: P1. State: IN PROGRESS (PR `fix/prod-hardening-v1`).**
+**Priority: P1. State: DONE 2026-10-13 (PR #110 `fix/prod-hardening-v1`, base `feat/aws-infra`; merged by the owner, never by the loop).**
 `backup.sh`: on success `aws cloudwatch put-metric-data --namespace
 FlowSpace --metric-name BackupSucceeded --value 1 --dimensions
 Host=spacerental-prod`; with `/srv/spacerental/.env` absent it logs
@@ -2459,11 +2459,33 @@ shellcheck; the unit files reviewed.
 
 ### E16 — A manual deploy can only ship a commit that is on `main`
 
-**Priority: P2. State: IN PROGRESS (PR `fix/prod-hardening-v1`).**
+**Priority: P2. State: DONE 2026-10-13 (PR #110 `fix/prod-hardening-v1`, base `feat/aws-infra`; merged by the owner, never by the loop).**
 `deploy.yml`: after the checkout (full history, `origin/main` fetched
 explicitly) a step fails with `::error::` unless `git merge-base
 --is-ancestor <sha> origin/main`; it runs on every path, bites on
 `workflow_dispatch`. **Validation:** actionlint; the inert path on the PR.
+
+**PR #110 validation (2026-10-13, all local, no AWS):** shellcheck 0.11.0
+clean on `deploy/*.sh scripts/*.sh scripts/tests/*.sh tests/infra/*.sh
+backend/docker-entrypoint.sh`; actionlint 1.7.11 clean on every workflow;
+`terraform fmt -check` clean and `validate` Success for `infra/bootstrap`
+and `infra/prod` (aws 6.68.0); `tests/infra/policies.test.sh` 14/14;
+`cloud-init schema` valid (cloud-init 26.1 on Ubuntu 24.04);
+`DEPLOY_DRY_RUN=1 deploy/deploy.sh <sha>` prints the six steps with the
+composed `DATABASE_URL`, the rollback rule and the retention rule;
+`scripts/tests/prod-stack.sh` **46/46** (E01–E07's 31; E09: `db-bootstrap.sh`
+twice, the migrations owned by `spacerental_app`, every backend connection
+TLS; E14: `aaaaaaa` healthy, `bbbbbbb` rolled back with exit 1 and the site
+answering; E13: `ccccccc` healthy, `PREVIOUS_SHA`, two removals, two pairs
+left) and `scripts/tests/backup-restore.sh` **19/19** (E06's 14; E15: the
+no-`.env` exit 0 without a metric, the printed `put-metric-data` call) on
+ports 8443/8080, project `spacerental-prod-local`, torn down after. Found
+and fixed on the way: libpq calls asyncpg's `ssl=require` `sslmode`
+(`backup.sh`/`restore.sh` translate it); Compose reads `.env` from the first
+Compose file's directory, so `deploy.sh` names it (`--env-file`). Not run:
+`terraform plan`/`apply` (no credentials); the two workflows end to end
+(inert) — their inert path is the PR's own `Infrastructure` run.
+**Review rounds (PR #110):** round 1 on head `4178b6b` (the eight item commits): `Checks` 20 pass + 3 skipping, `Security` green, `Infrastructure` = `validate` ✓ + the `disabled` notice ✓ with plan/apply skipped (the inert path, with no repository variable set); no Copilot review within 6 minutes, one review request (registered, no reviewer appeared), none after 4 more minutes; zero threads; no fix commit. Round 2 is this record commit (docs-only: TODO.md, README).
 
 ## Billing statement and invoice records (I-series) — owner assignment 2026-10-07 (PR `feat/billing-statement-invoices`, stacked on #94)
 
