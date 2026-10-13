@@ -108,7 +108,8 @@ gh variable set INFRA_ENABLED --body true
 
 From now on a PR touching `infra/**` gets a `terraform plan` comment, and a
 merge to `main` touching `infra/**` plans and waits for your approval before
-applying.
+applying. Dependabot's provider bumps get `validate` only (E12): their plan
+happens on `main` after the merge, behind the same approval.
 
 ### 2.3 The first apply
 
