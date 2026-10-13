@@ -76,7 +76,9 @@ jobs:
         run: |
           # koalaman/shellcheck v0.11.0
           docker run --rm -v "$PWD:/mnt" koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
-            -x deploy/*.sh scripts/*.sh scripts/tests/*.sh backend/docker-entrypoint.sh
+            -x deploy/*.sh scripts/*.sh scripts/tests/*.sh tests/infra/*.sh backend/docker-entrypoint.sh
+      - name: backups bucket policy (E11)
+        run: tests/infra/policies.test.sh
       - name: actionlint
         run: |
           # rhysd/actionlint 1.7.11

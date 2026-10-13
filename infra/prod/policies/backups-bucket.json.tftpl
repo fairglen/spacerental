@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DumpsAndMediaOnlyForTheHostAndTheOwner",
+      "Effect": "Deny",
+      "NotPrincipal": {
+        "AWS": "arn:aws:iam::${account_id}:root"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": [
+        "${bucket_arn}/dumps/*",
+        "${bucket_arn}/media/*"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "${instance_role_arn}",
+            "arn:aws:iam::${account_id}:role/aws-reserved/sso.amazonaws.com/*AdministratorAccess*"
+          ]
+        }
+      }
+    }
+  ]
+}
