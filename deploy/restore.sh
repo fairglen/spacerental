@@ -43,7 +43,10 @@ database_url() {
   raw=${raw#\"}
   raw=${raw%\"}
   [ -n "$raw" ] || { echo "$TAG: DATABASE_URL not found in $ENV_FILE" >&2; exit 1; }
-  echo "${raw/postgresql+asyncpg:/postgresql:}"
+  raw=${raw/postgresql+asyncpg:/postgresql:}
+  # asyncpg's `ssl=require` (E09) is libpq's `sslmode=require`.
+  raw=${raw/\?ssl=/?sslmode=}
+  echo "${raw/&ssl=/&sslmode=}"
 }
 
 URL=$(database_url)

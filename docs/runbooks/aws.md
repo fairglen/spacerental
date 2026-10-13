@@ -124,19 +124,40 @@ terraform output
 # ecr_backend_url, ecr_frontend_url, log_group, ssm_session_command
 ```
 
-### 2.4 The production `.env` into SSM Parameter Store
+### 2.4 The application's database role, then the production `.env` into SSM
+
+The application never connects as the RDS master user: RDS rotates that
+password every 7 days, so nothing may copy it (E09). Once, after the first
+apply and before the first deploy, create the app role on the host — the
+master URL is read **on the laptop** and pasted into the session; the host
+never stores it:
+
+```bash
+# On the laptop: the master URL, from the secret RDS manages.
+MASTER_URL="postgresql://spacerental:$(aws secretsmanager get-secret-value \
+  --secret-id "$(terraform -chdir=infra/prod output -raw rds_secret_arn)" \
+  --query SecretString --output text | jq -r .password)@$(terraform -chdir=infra/prod output -raw rds_endpoint)/spacerental"
+echo "$MASTER_URL"      # copy it
+
+aws ssm start-session --target "$(terraform -chdir=infra/prod output -raw instance_id)"
+# on the host:
+sudo /srv/spacerental/db-bootstrap.sh     # paste the URL at the prompt (not echoed)
+```
+
+It generates the app password, stores it in the secret
+`spacerental/prod/db-app` (Terraform created the empty shell), creates the
+role `spacerental_app`, hands it the database and checks it can connect.
+Running it again changes nothing. From then on every deploy composes
+`DATABASE_URL` from that secret — **do not put `DATABASE_URL` in the
+`.env`**; `deploy.sh` refuses a file that carries one.
+
+Then the `.env`:
 
 ```bash
 cp .env.production.example .env.production      # gitignored
 # Fill it in. Secrets:
 python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(48))"
 echo "NEXTAUTH_SECRET=$(openssl rand -base64 48)"
-# The database password lives in Secrets Manager (RDS manages it):
-aws secretsmanager get-secret-value \
-  --secret-id "$(terraform -chdir=infra/prod output -raw rds_secret_arn)" \
-  --query SecretString --output text | jq -r .password
-# DATABASE_URL=postgresql+asyncpg://spacerental:<that password>@<rds_endpoint>/spacerental
-#   (the endpoint output already carries :5432)
 
 aws ssm put-parameter --region eu-west-1 --name /spacerental/prod/env \
   --type SecureString --value file://.env.production --overwrite
