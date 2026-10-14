@@ -83,11 +83,15 @@
     "my_packages": "Os meus packs",
     "billing": "Faturação",
     "my_bookings": "As minhas reservas",
-    "sign_out": "Sair",
+    "sign_out": "Terminar sessão",
     "sign_in": "Entrar",
     "book": "Reservar",
     "menu_open": "Abrir menu",
-    "menu_close": "Fechar menu"
+    "menu_close": "Fechar menu",
+    "menu": "Menu",
+    "account_menu": "A sua conta",
+    "account_bookings": "Reservas",
+    "account_packs": "Packs"
   },
   "footer": {
     "my_bookings": "As minhas reservas",

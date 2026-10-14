@@ -1,20 +1,26 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { SpaceModeText } from '@/components/spaces/SpaceModeText'
-import { LogOut, User, Menu, X, LifeBuoy } from 'lucide-react'
+import { Menu, X, LifeBuoy, CalendarDays, Package, Receipt } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { useHelp } from '@/components/help/HelpProvider'
 import { useOrg } from '@/contexts/OrgContext'
 import { useT } from '@/lib/i18n'
 import { LocaleSwitcher } from '@/components/layout/LocaleSwitcher'
+import { AccountMenu } from '@/components/layout/AccountMenu'
 
 // Loaded only for a member of several organisations (P1.3): the select
 // primitive it needs is 16 KB gzipped no public page should carry.
 const OrgSwitcher = dynamic(() => import('@/components/layout/OrgSwitcher').then((m) => m.OrgSwitcher), { ssr: false })
+// B69: the sheet's Dialog primitive arrives on the first tap, not with the page.
+const MobileMenu = dynamic(() => import('@/components/layout/MobileMenu').then((m) => m.MobileMenu), { ssr: false })
+
+const SHEET_LINK = 'block py-3 text-base text-foreground hover:text-primary transition-colors'
 
 export function Navbar() {
   const t = useT()
@@ -23,6 +29,7 @@ export function Navbar() {
   const canSwitchOrg = memberships.length >= 2
   const [mobileOpen, setMobileOpen] = useState(false)
   const { openHelp } = useHelp()
+  const pathname = usePathname()
   const isSignedIn = status === 'authenticated'
   const navLinks = [
     { href: '/spaces', label: <SpaceModeText single="navbar.rooms_link" multi="navbar.spaces_link" /> },
@@ -37,6 +44,19 @@ export function Navbar() {
     session?.role === 'admin' || session?.role === 'owner' || isAdminInCurrentOrg
 
   const links = hasAnyAdminRole ? [...navLinks, { href: '/admin', label: t('navbar.admin_link') }] : navLinks
+  // B69: the three account entries, the same in the sheet and in the menu.
+  const accountLinks = [
+    { href: '/dashboard', label: t('navbar.account_bookings'), icon: CalendarDays },
+    { href: '/dashboard/packages', label: t('navbar.account_packs'), icon: Package },
+    { href: '/dashboard/billing', label: t('navbar.billing'), icon: Receipt },
+  ]
+  const userName = session?.user?.name
+  const userEmail = session?.user?.email
+
+  // The sheet closes with the page it opened on (B69).
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [pathname])
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-border bg-white/90 backdrop-blur-xs">
@@ -69,29 +89,15 @@ export function Navbar() {
             {isSignedIn ? (
               <>
                 {canSwitchOrg && <OrgSwitcher />}
-                <Link href="/dashboard/packages" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                  {t('navbar.my_packages')}
-                </Link>
-                <Link href="/dashboard/billing" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                  {t('navbar.billing')}
-                </Link>
-                <Link href="/dashboard">
-                  <Button variant="outline" size="sm">{t('navbar.my_bookings')}</Button>
-                </Link>
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent">
-                    <User className="h-4 w-4 text-primary" />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => signOut({ callbackUrl: '/' })}
-                    className="gap-1.5 text-muted-foreground"
-                  >
-                    <LogOut className="h-3.5 w-3.5" />
-                    {t('navbar.sign_out')}
-                  </Button>
-                </div>
+                {/* B69: the signed-in links live behind the avatar. */}
+                <AccountMenu
+                  label={t('navbar.account_menu')}
+                  name={userName}
+                  email={userEmail}
+                  links={accountLinks}
+                  signOutLabel={t('navbar.sign_out')}
+                  onSignOut={() => signOut({ callbackUrl: '/' })}
+                />
               </>
             ) : (
               <>
@@ -105,79 +111,66 @@ export function Navbar() {
             )}
           </div>
 
-          {/* Mobile toggle */}
+          {/* Mobile: a sheet below the bar (B69) — its own scroll, the page's
+              locked, Escape and a route change close it, focus stays inside. */}
           <button
+            type="button"
             className="md:hidden p-2 rounded-md text-muted-foreground hover:text-primary"
-            onClick={() => setMobileOpen((o) => !o)}
             aria-label={mobileOpen ? t('navbar.menu_close') : t('navbar.menu_open')}
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((o) => !o)}
           >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {mobileOpen ? <X className="h-5 w-5" aria-hidden /> : <Menu className="h-5 w-5" aria-hidden />}
           </button>
+          {mobileOpen && (
+            <MobileMenu open onOpenChange={setMobileOpen} title={t('navbar.menu')}>
+              {isSignedIn && (
+                <section aria-label={t('navbar.account_menu')} className="border-b border-border pb-3 mb-2">
+                  <p className="px-0 py-2 text-xs text-muted-foreground">
+                    {userName && <span className="block text-sm font-medium text-foreground">{userName}</span>}
+                    {userEmail && <span className="block break-all">{userEmail}</span>}
+                  </p>
+                  {canSwitchOrg && <OrgSwitcher className="w-full my-2" />}
+                  {accountLinks.map((l) => (
+                    <Link key={l.href} href={l.href} className={SHEET_LINK} onClick={() => setMobileOpen(false)}>
+                      {l.label}
+                    </Link>
+                  ))}
+                  <button
+                    type="button"
+                    className={`${SHEET_LINK} w-full text-left`}
+                    onClick={() => { setMobileOpen(false); signOut({ callbackUrl: '/' }) }}
+                  >
+                    {t('navbar.sign_out')}
+                  </button>
+                </section>
+              )}
+              {links.map((l) => (
+                <Link key={l.href} href={l.href} className={SHEET_LINK} onClick={() => setMobileOpen(false)}>
+                  {l.label}
+                </Link>
+              ))}
+              <div className="pt-3 mt-2 border-t border-border flex flex-col gap-2">
+                <LocaleSwitcher className="self-start" />
+                <Button variant="ghost" size="sm" onClick={() => { setMobileOpen(false); openHelp() }} className="w-full gap-1.5 text-muted-foreground justify-start">
+                  <LifeBuoy className="h-4 w-4" aria-hidden />
+                  {t('navbar.help')}
+                </Button>
+                {!isSignedIn && (
+                  <>
+                    <Link href="/sign-in" onClick={() => setMobileOpen(false)}>
+                      <Button variant="ghost" size="sm" className="w-full">{t('navbar.sign_in')}</Button>
+                    </Link>
+                    <Link href="/sign-up" onClick={() => setMobileOpen(false)}>
+                      <Button size="sm" className="w-full">{t('navbar.book')}</Button>
+                    </Link>
+                  </>
+                )}
+              </div>
+            </MobileMenu>
+          )}
         </div>
       </div>
-
-      {/* Mobile menu */}
-      {mobileOpen && (
-        <div className="md:hidden border-t border-border bg-white px-4 pb-4 pt-2 space-y-1">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className="block py-2 text-sm text-muted-foreground hover:text-primary transition-colors"
-              onClick={() => setMobileOpen(false)}
-            >
-              {l.label}
-            </Link>
-          ))}
-          <div className="pt-3 border-t border-border flex flex-col gap-2">
-            <LocaleSwitcher className="self-start" />
-            <Button variant="ghost" size="sm" onClick={() => { setMobileOpen(false); openHelp() }} className="w-full gap-1.5 text-muted-foreground">
-              <LifeBuoy className="h-4 w-4" aria-hidden />
-              {t('navbar.help')}
-            </Button>
-            {isSignedIn ? (
-              <>
-                {canSwitchOrg && <OrgSwitcher className="w-full" />}
-                <Link
-                  href="/dashboard/packages"
-                  onClick={() => setMobileOpen(false)}
-                  className="block py-2 text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  {t('navbar.my_packages')}
-                </Link>
-                <Link
-                  href="/dashboard/billing"
-                  onClick={() => setMobileOpen(false)}
-                  className="block py-2 text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  {t('navbar.billing')}
-                </Link>
-                <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
-                  <Button variant="outline" size="sm" className="w-full">{t('navbar.my_bookings')}</Button>
-                </Link>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => { signOut({ callbackUrl: '/' }); setMobileOpen(false) }}
-                  className="w-full gap-1.5 text-muted-foreground"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  {t('navbar.sign_out')}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Link href="/sign-in" onClick={() => setMobileOpen(false)}>
-                  <Button variant="ghost" size="sm" className="w-full">{t('navbar.sign_in')}</Button>
-                </Link>
-                <Link href="/sign-up" onClick={() => setMobileOpen(false)}>
-                  <Button size="sm" className="w-full">{t('navbar.book')}</Button>
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </nav>
   )
 }

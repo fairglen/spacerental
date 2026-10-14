@@ -41,7 +41,9 @@ test('customer: billing details with NIF validation, and the registered invoice 
   const context = await contextAs(browser, customer, contextOptions)
   const page = await context.newPage()
   await page.goto('/dashboard')
-  await page.getByRole('link', { name: 'Faturação' }).first().click()
+  // B69: on desktop the signed-in links sit behind the account menu.
+  await page.getByRole('button', { name: 'A sua conta' }).click()
+  await page.getByRole('menuitem', { name: 'Faturação' }).click()
   await page.waitForURL('**/dashboard/billing')
   await expect(page.getByRole('heading', { name: 'Faturação', exact: true })).toBeVisible()
 

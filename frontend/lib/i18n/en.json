@@ -83,11 +83,15 @@
     "my_packages": "My packs",
     "billing": "Billing",
     "my_bookings": "My Bookings",
-    "sign_out": "Sign Out",
+    "sign_out": "Sign out",
     "sign_in": "Sign In",
     "book": "Book",
     "menu_open": "Open menu",
-    "menu_close": "Close menu"
+    "menu_close": "Close menu",
+    "menu": "Menu",
+    "account_menu": "Your account",
+    "account_bookings": "Bookings",
+    "account_packs": "Packs"
   },
   "footer": {
     "my_bookings": "My bookings",
