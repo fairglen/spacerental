@@ -18,6 +18,7 @@ from app.auth import hash_password, require_admin
 from app.booking_validity import expire_user_holds
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.emails import normalize_email
 from app.models.audit import AdminAction
 from app.models.booking import Booking
 from app.models.organization import MemberRole, Organization, OrganizationMember
@@ -101,7 +102,15 @@ async def admin_list_users(
     where = [OrganizationMember.org_id == org_id]
     if q:
         needle = f"%{q.strip().lower()}%"
-        where.append(or_(func.lower(User.email).like(needle), func.lower(User.name).like(needle)))
+        # The typed address, its normalised form (B67: "ana@gmail.com" finds
+        # "An.a+x@gmail.com") and the name.
+        where.append(
+            or_(
+                func.lower(User.email).like(needle),
+                User.email_normalized.like(needle),
+                func.lower(User.name).like(needle),
+            )
+        )
     if role is not None:
         where.append(OrganizationMember.role == role)
     if disabled is not None:
@@ -154,7 +163,9 @@ async def admin_create_user(
     reset flow's token, G03); with one, nothing is sent. The response never
     carries a password; the trail never sees one."""
     taken = await db.scalar(
-        select(func.count()).select_from(User).where(func.lower(User.email) == body.email.lower())
+        select(func.count())
+        .select_from(User)
+        .where(User.email_normalized == normalize_email(body.email))
     )
     if taken:
         raise HTTPException(
@@ -226,11 +237,11 @@ async def admin_update_user(
     # who also belongs to another organisation would reach into that tenant.
     await _refuse_other_memberships(db, member)
     await _refuse_non_owner_on_owner(db, admin, member)
-    if "email" in changes and changes["email"].lower() != user.email.lower():
+    if "email" in changes and normalize_email(changes["email"]) != user.email_normalized:
         taken = await db.scalar(
             select(func.count())
             .select_from(User)
-            .where(func.lower(User.email) == changes["email"].lower(), User.id != user.id)
+            .where(User.email_normalized == normalize_email(changes["email"]), User.id != user.id)
         )
         if taken:
             raise HTTPException(
@@ -247,7 +258,7 @@ async def admin_update_user(
             user.token_version += 1
         elif was_disabled and not now_disabled:
             action = "reactivate"
-    if "email" in changes and changes["email"].lower() != user.email.lower():
+    if "email" in changes and normalize_email(changes["email"]) != user.email_normalized:
         # A reset link already in the old mailbox must not reset the account
         # after the address moved on (review on #65).
         await password_reset.invalidate_open(db, user.id)

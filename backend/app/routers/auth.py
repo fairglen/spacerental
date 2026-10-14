@@ -1,7 +1,7 @@
 import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from app.auth import (
 from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.emails import normalize_email
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.user import User
 from app.ratelimit import AUTH_TIER, rate_limit
@@ -142,7 +143,10 @@ async def _enroll_member(user: User, org: Organization, db: AsyncSession) -> Org
 
 async def _register(body: UserRegister, db: AsyncSession, *, operator: bool = False) -> TokenOut:
     org = None if operator else await _enrollment_org(db)
-    existing = await db.execute(select(User).where(User.email == body.email))
+    # One mailbox, one account (B67): the identity is the normalised address.
+    existing = await db.execute(
+        select(User).where(User.email_normalized == normalize_email(body.email))
+    )
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=400, detail="Este email já está registado.")
 
@@ -195,8 +199,7 @@ async def enroll(user: User = Depends(get_current_user), db: AsyncSession = Depe
 @router.post("/login", response_model=TokenOut)
 @rate_limit(AUTH_TIER)
 async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
+    user = await _user_by_email(db, body.email)
 
     if (
         user is None
@@ -223,18 +226,10 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
 
 
 async def _user_by_email(db: AsyncSession, email: str) -> User | None:
-    """The account for an address, matched without regard to case. `users.email`
-    is unique case-sensitively (B37), so two accounts may differ only by case:
-    then the exact spelling wins, and with no exact match nobody does — the
-    endpoint must never pick one of two people."""
-    rows = (
-        (await db.execute(select(User).where(func.lower(User.email) == email.lower())))
-        .scalars()
-        .all()
-    )
-    if len(rows) == 1:
-        return rows[0]
-    return next((u for u in rows if u.email == email), None)
+    """The account for an address, by its normalised form (B67): case,
+    a `+tag` and Gmail dots do not make a second mailbox, and the unique
+    index guarantees at most one row."""
+    return await db.scalar(select(User).where(User.email_normalized == normalize_email(email)))
 
 
 RESET_REQUESTED = (

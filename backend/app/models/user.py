@@ -1,23 +1,38 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.database import Base
+from app.emails import normalize_email
 
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # B67: one mailbox, one account — the identity we compare on.
+        Index("ix_users_email_normalized", "email_normalized", unique=True),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         server_default=func.uuid_generate_v4(),
     )
+    # As typed: what we send to. Unique as before; the identity is below.
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    # Lowercased, `+tag` dropped, Gmail dots removed (app/emails.py); kept in
+    # step with `email` by the validator, so no code path can forget it.
+    email_normalized: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    @validates("email")
+    def _keep_normalized(self, _key: str, value: str) -> str:
+        self.email_normalized = normalize_email(value)
+        return value
+
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # What an issued invoice names (I04): the NIF and, when they differ from
