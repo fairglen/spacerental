@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { format, isPast, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
+import { ExternalLink } from 'lucide-react'
 import { bookingsApi, createAuthenticatedApi, supportApi } from '@/lib/api'
 import { statusOf } from '@/lib/httpError'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useT } from '@/lib/i18n'
 import type { SupportCategory, SupportRequestBody } from '@/types'
+
+/** B70: the static site's FAQ answers most of what reaches this form. */
+export const FAQ_URL = 'https://flowspace.pt/#faq'
 
 interface HelpDialogProps {
   open: boolean
@@ -55,6 +60,7 @@ function submitErrorMessage(error: unknown): string {
 export function HelpDialog({ open, onOpenChange, initialCategory, initialBookingId }: HelpDialogProps) {
   const { data: session, status } = useSession()
   const signedIn = status === 'authenticated'
+  const t = useT()
   const api = useMemo(() => createAuthenticatedApi(session?.accessToken), [session?.accessToken])
 
   const [category, setCategory] = useState<SupportCategory>(initialCategory ?? 'technical')
@@ -121,6 +127,17 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
               : 'Conte-nos o que se passa. Respondemos por email, normalmente no mesmo dia útil.'}
           </DialogDescription>
         </DialogHeader>
+        <p className="text-sm">
+          <a
+            href={FAQ_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {t('help.faq_link')}
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+          </a>
+        </p>
 
         {mutation.isSuccess ? (
           <div className="space-y-3">

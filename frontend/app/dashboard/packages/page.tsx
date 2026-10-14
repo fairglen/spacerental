@@ -18,6 +18,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
+import { UseHoursPrompt } from '@/components/packages/UseHoursPrompt'
 import { formatHours } from '@/lib/utils'
 import { purchaseLabel } from '@/lib/cancellationCredit'
 
@@ -130,8 +131,9 @@ export default function MyPackagesPage() {
               <div className="space-y-3">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
             ) : purchases.length === 0 ? (
               <Card>
-                <CardContent className="p-8 text-center text-muted-foreground">
+                <CardContent className="p-8 text-center text-muted-foreground space-y-3">
                   <p>Não tem pacotes de horas.</p>
+                  <UseHoursPrompt className="justify-center" />
                 </CardContent>
               </Card>
             ) : (
@@ -152,6 +154,7 @@ export default function MyPackagesPage() {
                       <p className="text-xs text-muted-foreground">
                         {formatHours(p.hours_remaining)} restantes de {formatHours(p.hours_total)}
                       </p>
+                      <UseHoursPrompt compact className="mt-3 text-muted-foreground" />
                     </CardContent>
                   </Card>
                 ))}

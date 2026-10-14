@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MyPackagesPage from '@/app/dashboard/packages/page'
 import { packagesApi } from '@/lib/api'
@@ -150,5 +150,34 @@ describe('Packages page — the hour bank (H02)', () => {
     vi.mocked(packagesApi.list).mockResolvedValue([pack10])
     renderPage()
     expect(await screen.findByRole('region', { name: /banco de horas/i })).toHaveTextContent(/9h disponíveis/)
+  })
+})
+
+// B70: the way from "I have hours" to "I booked a room", in the empty state
+// and on every pack card.
+describe('Packages page — how to use the hours (B70)', () => {
+  it('with no packs, the empty state says how the hours get used and links to the rooms', async () => {
+    mine([])
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    renderPage()
+    expect(await screen.findByText('Não tem pacotes de horas.')).toBeVisible()
+    const prompt = screen.getByTestId('use-hours-prompt')
+    expect(prompt).toHaveTextContent(/Para usar as horas, reserve uma sala: escolha a sala e o horário/)
+    expect(within(prompt).getByRole('link', { name: /Reservar uma sala/ })).toHaveAttribute('href', '/spaces')
+  })
+
+  it('every pack card carries the same line and link', async () => {
+    mine([
+      { ...activePurchase, id: 'one' },
+      { ...activePurchase, id: 'two', hours_remaining: 10, hours_used: 0 },
+    ])
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    renderPage()
+    await screen.findByText(/7h restantes de 10h/)
+    const prompts = screen.getAllByTestId('use-hours-prompt')
+    expect(prompts).toHaveLength(2)
+    for (const prompt of prompts) {
+      expect(within(prompt).getByRole('link', { name: /Reservar uma sala/ })).toHaveAttribute('href', '/spaces')
+    }
   })
 })

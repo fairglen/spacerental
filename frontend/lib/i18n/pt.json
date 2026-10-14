@@ -130,5 +130,12 @@
     "lead": "Somos flexíveis.",
     "body": "Precisa de um horário fixo todas as semanas, de um acordo diferente, ou tem dúvidas?",
     "cta": "Fale connosco"
+  },
+  "packs": {
+    "use_hours_line": "Para usar as horas, reserve uma sala: escolha a sala e o horário; as horas do pack são descontadas automaticamente.",
+    "use_hours_cta": "Reservar uma sala"
+  },
+  "help": {
+    "faq_link": "Perguntas frequentes"
   }
 }

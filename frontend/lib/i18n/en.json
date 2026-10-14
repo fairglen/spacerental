@@ -130,5 +130,12 @@
     "lead": "We're flexible.",
     "body": "Need the same slot every week, a different arrangement, or have a question?",
     "cta": "Talk to us"
+  },
+  "packs": {
+    "use_hours_line": "To use the hours, book a room: choose the room and the time; the pack's hours are deducted automatically.",
+    "use_hours_cta": "Book a room"
+  },
+  "help": {
+    "faq_link": "Frequently asked questions"
   }
 }

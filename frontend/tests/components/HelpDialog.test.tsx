@@ -198,3 +198,20 @@ describe('HelpProvider', () => {
     await waitFor(() => expect(within(dialog()).getByLabelText(/Reserva/)).toHaveValue('b-1'))
   })
 })
+
+// B70: the FAQ on the static site answers most of what would reach the form.
+describe('HelpDialog — the FAQ link', () => {
+  it('links "Perguntas frequentes" to the static site FAQ, in a new tab, before and after sending', async () => {
+    const user = userEvent.setup()
+    signedIn()
+    renderDialog()
+    const faq = within(dialog()).getByRole('link', { name: /Perguntas frequentes/ })
+    expect(faq).toHaveAttribute('href', 'https://flowspace.pt/#faq')
+    expect(faq).toHaveAttribute('target', '_blank')
+    expect(faq).toHaveAttribute('rel', expect.stringContaining('noopener'))
+    await user.type(within(dialog()).getByLabelText(/Mensagem/), MESSAGE)
+    await user.click(within(dialog()).getByRole('button', { name: 'Enviar' }))
+    await screen.findByRole('status')
+    expect(within(dialog()).getByRole('link', { name: /Perguntas frequentes/ })).toHaveAttribute('href', 'https://flowspace.pt/#faq')
+  })
+})

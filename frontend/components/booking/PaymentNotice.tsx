@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { X } from 'lucide-react'
+import { UseHoursPrompt } from '@/components/packages/UseHoursPrompt'
 
 export type PaymentOutcome = 'sucesso' | 'cancelado'
 
@@ -27,7 +28,8 @@ export function PaymentNotice({ outcome, onClose, context = 'dashboard' }: Payme
           : 'mb-6 flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900'
       }
     >
-      <p>
+      <div className="space-y-2">
+        <p>
         {context === 'booking' ? (
           outcome === 'sucesso' ? (
             <>
@@ -54,7 +56,10 @@ export function PaymentNotice({ outcome, onClose, context = 'dashboard' }: Payme
             <Link href="/dashboard/packages" className="font-medium underline">Os meus packs</Link>.
           </>
         )}
-      </p>
+        </p>
+        {/* B70: a pack just paid for — the next step is a room, said here. */}
+        {context === 'dashboard' && outcome === 'sucesso' && <UseHoursPrompt />}
+      </div>
       <button
         type="button"
         onClick={onClose}
