@@ -1688,6 +1688,230 @@ No Copilot review: none in 6 minutes of polling (GraphQL `reviews` +
 4 minutes after — as on #91–#96, this repository has no Copilot code
 review. Zero review threads, no fix commits.
 
+## Production on AWS, Phase 0 (E-series) — owner assignment 2026-10-13 (PR A `feat/prod-stack` on `main`; PR B `feat/aws-infra` stacked on it)
+
+Owner's ask: make the repository deploy itself from GitHub to AWS — a
+production Compose stack behind Caddy on one arm64 EC2 instance with RDS,
+backups, host provisioning, a bootstrap command for a real organisation, a
+production interlock on the settings, the owner's runbook, and (PR B)
+Terraform plus two workflows that stay inert until the owner sets
+`INFRA_ENABLED` / `DEPLOY_ENABLED`. Nothing is deployed, applied or
+provisioned by the loop: no AWS credentials exist here; Terraform and the
+workflows are validated, not run. Two PRs, one commit per item, nothing
+merged by the loop. Decisions the owner did not give are taken the
+conservative way, recorded under the item and tagged `DECISION:` in the
+commit body. Region eu-west-1; single backend instance by design
+(in-process rate limits and BackgroundTasks, Q55).
+
+PR A: E01 E02 E03 E06 E07 E08 (below). PR B: E04 (Terraform `infra/`) and
+E05 (`infra.yml` + `deploy.yml`, inert until enabled) — QUEUED, recorded in
+full in PR B's first commit.
+
+**PR A validation (2026-10-13, the owner's dev stack untouched on
+3000/8000/5432):** the production stack on this laptop — `KEEP=1
+PROD_STACK_HTTPS_PORT=8443 PROD_STACK_HTTP_PORT=8080
+scripts/tests/prod-stack.sh` → 30 checks, all passed (health through
+Caddy, bootstrap once + seed refusal, sign-up, proxy identity: first 429
+at auth-tier request 12, then 34/40, 37/40 spoofed and 40/40
+right-password requests refused while a second container's first request
+was 200, a booking, the signed webhook, the stub-mode warning); then
+`scripts/tests/backup-restore.sh` → 14 checks, all passed (60 KB dump,
+`bookings` dropped and back with its EXCLUDE constraint, the media marker
+back owned by `app`); `scripts/tests/prod-stack.sh down`. Backend `docker
+compose -p spacerental-prod-tests -f docker-compose.test.yml up --build
+--abort-on-container-exit --exit-code-from backend-tests` → 1084 passed,
+1 skipped (the read-only `MEDIA_ROOT` rule, root in the test image), 4
+subtests, exit 0. Frontend `npm ci && npx tsc --noEmit && npx eslint .
+--ext .ts,.tsx,.js,.mjs && npm test && npm run build` → tsc and ESLint
+clean, 758 passed in 76 files, build clean (27 pages). Static site
+`render-static.py --check` ("generated files are up to date"), 29 unit
+tests OK, `node --test` 44 passed. Lint: Ruff 0.16.5 check + format
+clean; shellcheck v0.11.0 on every script clean; actionlint 1.7.11 "All
+checks passed!"; `cloud-init schema` (26.1, Ubuntu 24.04) "Valid schema";
+`DEPLOY_DRY_RUN=1 deploy/deploy.sh <sha>` prints its six steps and runs
+none; the awslogs overlay renders with `docker compose config`. Not run:
+anything against AWS (no credentials; forbidden by the assignment), the
+cloud-init file as a boot, Playwright (no customer-facing UI change; the
+`server.js` fix is exercised through Caddy by the stack test).
+
+**Review rounds (PR #107, `feat/prod-stack` → `main`, 2026-10-13):**
+round 1 (head `d25296f`) — 18 of 19 checks green on the first run; the
+new `prod-stack / prod-stack` job failed in 20 s: `docker buildx bake`
+refused the Compose model with "env file .env not found" (it resolves the
+backend's `env_file` before the test overlay's override), so
+`required-checks` was red. No Copilot review: none in 6 minutes of
+polling (GraphQL `reviews` + `reviewThreads`), the one request
+registered no reviewer, none in the 4 minutes after — as on every PR of
+this repository; zero review threads. Fixes: `9085840` (E01: the job
+creates `.env` from the example, as the e2e job does) and `f2d6950`
+(E08: no dollar-brace in `cloud-init.yaml`'s comments — found by PR B's
+`terraform validate`, which renders the template, not by CI). Round 2
+(head `9085840`) — all 19 checks green, `required-checks` pass,
+`prod-stack` 5 min 15 s (the stack test and the backup → restore round
+trip on the runner); no threads, no fix. This record is the PR's last
+commit (docs-only).
+
+### E01 — Production Compose with Caddy
+
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).**
+**Scope:** `docker-compose.prod.yml` — `caddy` (`caddy:2` pinned by digest;
+80, 443, 443/udp; `caddy_data`/`caddy_config` volumes; `deploy/Caddyfile`
+read-only; `CADDY_DOMAIN`), `frontend` (`${FRONTEND_IMAGE:-spacerental-frontend:local}`,
+`build` target `runner` for the local case, `npm run start`, no published
+port), `backend` (`${BACKEND_IMAGE:-spacerental-backend:local}`, the
+Dockerfile's own CMD — `WEB_CONCURRENCY=2`, `--proxy-headers` — no published
+port, `${MEDIA_HOST_DIR:-./data/media}:/app/media`, `MEDIA_ROOT=/app/media`);
+`restart: unless-stopped`, the images' HEALTHCHECKs, `depends_on:
+condition: service_healthy`, logging through an `x-logging` anchor
+(`LOG_DRIVER`, default `json-file`; the `awslogs` options cannot be
+conditional in one file, so `docker-compose.prod.awslogs.yml` is the overlay
+production adds with a second `-f`). No database service: `DATABASE_URL`
+points at RDS. `deploy/Caddyfile`: `{$CADDY_DOMAIN} { encode zstd gzip;
+reverse_proxy frontend:3000 }` — `CADDY_DOMAIN=localhost` uses Caddy's
+internal CA (`curl -k`); Caddy overwrites a client's `X-Forwarded-For`
+(its default for untrusted peers), which is what makes
+`RATE_LIMIT_TRUST_FORWARDED_FOR=true` safe (`app/ratelimit.py:client_identity`, S12).
+**Dependencies:** none (E02's `.env.production.example` and E03's bootstrap
+are what the stack test feeds it). **Acceptance (local, `docker compose -p
+spacerental-prod-local -f docker-compose.prod.yml -f
+scripts/tests/prod-stack.compose.yml …`, the overlay adding a throwaway
+Postgres and remapping Caddy's ports):** `GET /` → 200 and the API's health
+through Caddy → 200 (**DECISION:** the route is `/health`, without the
+`/api/v1` prefix, as it always was, so the proxied path is
+`/backend/health` — the assignment's `/backend/api/v1/health` is read as
+"the health endpoint through the proxy"; no alias route is added, which
+would have moved the OpenAPI snapshot and the authz matrix for a URL
+nobody else calls); sign-up and a booking through
+the proxy; **proxy identity**: from the host, the auth tier throttles the
+client — no 429 among its first 10 requests, a first 429 by the 21st, then
+of 40 more requests at least 20 are 429, and so are at least 20 of 40
+requests each spoofing a different `X-Forwarded-For` (Caddy overwrote it;
+believed, each would be a new client and none refused) and at least 20 of
+40 with the right password (the bucket is the client's, not the
+account's); from a second client container on the Caddy network the first
+request is 200 (clients are distinct). **DECISION:** "the 11th is 429"
+holds per uvicorn worker — the stack runs `WEB_CONCURRENCY=2`, the limiter
+is in-process (Q55) and the worker that answers follows the connection the
+Next.js proxy reuses — so the test asserts the bounds that hold for any
+routing (a client gets between 10 and 20 requests before its first 429; a
+batch of N under one identity has at most 20 accepted) instead of a fixed
+count; **webhook
+through the proxy**: a `POST …/webhooks/stripe` signed with the stack's
+`STRIPE_WEBHOOK_SECRET` (the `t=<ts>,v1=<hmac-sha256(secret, "<ts>." +
+body)>` header `backend/tests` build) fails only on the unknown session,
+never on the signature — the raw body survives Caddy + Next. All in
+`scripts/tests/prod-stack.sh` (bash, shellcheck-clean), run by a new
+`prod-stack` job in `checks.yml` (amd64 build there). **Validation:** the
+script's output in the PR body with the exact compose/env used.
+
+### E02 — Production settings validation (fail loudly)
+
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** Closes the
+backend half of S17 (the frontend's missing-API-URL refusal is not needed:
+the production build's API URL is relative, D20). **Scope:**
+`backend/app/config.py` — with `APP_ENV=production` the process refuses to
+start unless: `SECRET_KEY` is not the dev default and is ≥ 32 characters;
+`TEST_HOOKS_ENABLED` is false; `FRONTEND_URL` and every `CORS_ORIGINS` entry
+are `https://`; `EMAIL_MODE` and `STRIPE_MODE` are set explicitly (stub
+allowed but explicit, logged at WARNING); `DATABASE_URL` does not point at
+localhost; `MEDIA_ROOT` exists and is writable. Every problem is listed in
+one `RuntimeError` at import, before the app is built. Frontend:
+`lib/auth.ts` already refuses a missing `NEXTAUTH_SECRET`; with
+`APP_ENV=production` it also refuses the dev default value (the dev and
+e2e stacks keep `APP_ENV=development`). `.env.production.example`: every
+variable documented, including `RATE_LIMIT_TRUST_FORWARDED_FOR=true`,
+`RATE_LIMIT_TRUSTED_PROXIES=frontend`, `INTERNAL_API_URL=http://backend:8000/api/v1`,
+`NEXT_PUBLIC_API_URL=/backend/api/v1`, `CUSTOMER_ENROLLMENT_ORG_SLUG=flowspace`,
+`LOG_DRIVER=awslogs`, `AWS_REGION=eu-west-1`, `CADDY_DOMAIN=app.flowspace.pt`.
+**Acceptance/validation:** one unit test per rule (`Settings` built from
+explicit values, no `.env`, no network; the `MEDIA_ROOT` rule on a temporary
+directory), one Vitest case for the frontend refusal; the dev stack, the
+e2e stack and the test suite unchanged in behaviour.
+
+### E03 — Bootstrap command for a real deployment
+
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** **Scope:**
+`python -m app.bootstrap`, idempotent, one organisation: the org (`--name`,
+`--slug`), its space (the site's address, `Europe/Lisbon`, 08:00–22:00
+every day — R01's model, the same rules `app.seed` writes), rooms
+(`--room "Sala Calma:12.00"`, repeatable, name:hourly-rate), packs
+(`--pack "Pack 10 horas:10:108.00:3650"`, name:hours:price:validity-days),
+the first admin (`--admin-email`; the user is created without a password,
+the G04 "Defina a sua password" link is printed and, with `EMAIL_MODE=live`,
+emailed). Defaults for rooms, packs, address and hours come from
+`flowspace-site/assets/data/business.json`, so both sites agree; a test
+pins the constants to that file. Re-running with the same slug changes
+nothing, exits 0 and says so; nothing is ever deleted. `app.seed` refuses
+to run with `APP_ENV=production` (the S17 half about the seed). README
+documents the command. **Acceptance/validation:** real-PostgreSQL tests —
+creates once, the second run is a no-op, the seed guard, the defaults
+match `business.json`.
+
+### E06 — Backups and restore
+
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** **Scope:**
+`deploy/backup.sh`: `pg_dump -Fc` through a one-off `postgres:18-alpine`
+container (digest-pinned, the same as the Compose files) to
+`dumps/<YYYY-MM-DD>.dump` → `aws s3 cp s3://$BACKUP_BUCKET/dumps/`; `aws s3
+sync <media> s3://$BACKUP_BUCKET/media/` (never `--delete`); non-zero on
+any failure; `logger -t spacerental-backup`; with `BACKUP_BUCKET` unset it
+writes to `./backups/` (the local test). `deploy/restore.sh <dump>
+[media-prefix]`: `pg_restore --clean --if-exists --no-owner` plus the media
+sync back, behind a confirmation prompt that names the target database.
+`deploy/spacerental-backup.{service,timer}`: daily at 03:00 Europe/Lisbon.
+`scripts/tests/backup-restore.sh`: dump → drop a table → restore → the
+table and its rows are back, against the stack test's throwaway Postgres;
+in the `prod-stack` CI job. **Validation:** the script's output in the PR
+body.
+
+### E07 — Docs and the static site's door
+
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** **Scope:**
+`docs/runbooks/aws.md`, the owner's manual, every step a runnable command:
+Phase 1 account hygiene; Phase 2 `infra/bootstrap` once from the laptop →
+GitHub variables and the `production` environment → `INFRA_ENABLED=true`
+→ the approved apply → the `.env` into SSM → DNS (one line) →
+`DEPLOY_ENABLED=true`; Phase 3 first deploy, bootstrap through SSM, smoke
+checklist; Phase 4 go-live switches (Resend, Stripe live keys and the
+webhook, `APP_ENV=production`, each `.env` change = `put-parameter` +
+re-run); Phase 5 restore drill, alarms, patching, rollback, pause. The
+static site: the app's address lives in one place, `business.json` →
+`booking.app_url = https://app.flowspace.pt`, and every "Reservar" door
+(the nav, the pricing cards, the JSON-LD action) renders from
+`booking.url`; `render-static.py --check`, its tests and `copy-parity`
+stay green. README gets a short "Production (AWS)" section linking the
+runbook. **DECISION:** `booking.url` keeps pointing at the contact form
+until the app answers at `app.flowspace.pt`: the site deploys to GitHub
+Pages on every merge to `main`, so switching the doors in this PR would
+publish links to a domain that does not resolve yet. The switch is one
+value (`booking.url` ← `booking.app_url`) plus `render-static.py`, listed
+in the runbook's go-live phase, as the S0 note already planned.
+**Validation:** `python3 scripts/render-static.py --check`, `python3 -m
+unittest discover -s tests -p 'test_static_site.py'`, `node --test
+tests/copy-parity.test.mjs`; README/runbook links checked.
+
+### E08 — Host provisioning, deploy script, logs
+
+**Priority: P1. State: DONE 2026-10-13 (PR `feat/prod-stack`, base `main`; merged by the owner, never by the loop).** **Scope:**
+`deploy/cloud-init.yaml` (E04's `user_data`, a Terraform template): Docker
+Engine + the compose plugin from Docker's apt repository, AWS CLI v2, the
+CloudWatch agent with a minimal config (disk used % on `/` and
+`/srv/media`, memory), the data volume formatted once and mounted at
+`/srv/media` (`/dev/nvme1n1`, fstab by UUID, `nofail`), `/srv/spacerental`
+with `deploy.sh`, `backup.sh`, `restore.sh`, `docker-compose.prod.yml`, the
+awslogs overlay and `deploy/Caddyfile` fetched from the public repository at
+the commit the template is rendered with (raw.githubusercontent.com), the
+backup timer enabled, `unattended-upgrades`. `deploy/deploy.sh <sha>`:
+`aws ssm get-parameter --with-decryption` → `.env` (0600); the Compose files
+and the Caddyfile for that sha from `s3://$BACKUP_BUCKET/deploy/<sha>/`
+(uploaded by `deploy.yml`, E05); ECR login; `BACKEND_IMAGE`/`FRONTEND_IMAGE`
+= `…:sha-<7>`; `pull` + `up -d --remove-orphans`; both HEALTHCHECKs healthy
+within 120 s or `logs --tail 200` and exit 1; `docker image prune -f`.
+Testable without AWS: `cloud-init schema --config-file`, shellcheck,
+`DEPLOY_DRY_RUN=1 deploy/deploy.sh <sha>` prints every command instead of
+running it. **Validation:** the three checks in the PR body; the lint job
+runs shellcheck, actionlint and the cloud-init schema check in CI.
+
 ## Billing statement and invoice records (I-series) — owner assignment 2026-10-07 (PR `feat/billing-statement-invoices`, stacked on #94)
 
 Owner's ask: see, for the past month or a custom range, how much money was

@@ -184,8 +184,7 @@ ngrok_mode() {
     echo "Starting ngrok (all tunnels of $cfg; log: $NGROK_LOG)…"
     nohup ngrok start --all --log "$NGROK_LOG" > /dev/null 2>&1 &
     started=true
-    local i
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 30); do
       ngrok_api_up && break
       sleep 1
     done
@@ -193,8 +192,8 @@ ngrok_mode() {
   fi
 
   # The tunnel registers a moment after the agent's API is up.
-  local web="" i
-  for i in $(seq 1 30); do
+  local web=""
+  for _ in $(seq 1 30); do
     web=$(tunnel_url "$WEB_PORT")
     [ -n "$web" ] && break
     sleep 1

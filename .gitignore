@@ -4,6 +4,8 @@
 .env.*.local
 # The layer scripts/remote-up.sh writes (D19); .env.remote.example is the template
 .env.remote
+# The filled-in production file (E02); .env.production.example is the template
+.env.production
 *.pem
 *.key
 

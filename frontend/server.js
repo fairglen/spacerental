@@ -17,7 +17,12 @@ const { appendForwardedFor } = require('./lib/backendProxy')
 
 const dev = process.env.NODE_ENV !== 'production'
 const port = Number(process.env.PORT || 3000)
-const hostname = process.env.HOSTNAME || '0.0.0.0'
+// Every interface unless HOST says otherwise. Not HOSTNAME: Docker sets it
+// to the container id, which bound the server to the container's address
+// only and left the image's loopback HEALTHCHECK refused — unnoticed in the
+// e2e stack, where nothing waits on it, fatal in the production stack,
+// where Caddy does (E01).
+const hostname = process.env.HOST || '0.0.0.0'
 
 const app = next({ dev, hostname, port })
 const handle = app.getRequestHandler()

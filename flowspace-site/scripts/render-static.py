@@ -56,6 +56,24 @@ def absolute(business: dict, path: str) -> str:
     return business["url"] + path.lstrip("/")
 
 
+def booking_door(business: dict) -> str:
+    """The href of every "Reservar" (E07): `booking.url` as it is when it
+    leaves the site — the app, once `booking.url` is `booking.app_url` — and
+    the page's own anchor while it points back at this site (the contact
+    form, the S1.1 decision until the app answers). One value in
+    business.json moves every door."""
+    url, site = business["booking"]["url"], business["url"]
+    if url.startswith(site):
+        return "#" + url.split("#", 1)[1] if "#" in url else "/"
+    return url
+
+
+def platform_is_live(business: dict) -> bool:
+    """Whether the booking platform is the door: `booking.url` IS `booking.app_url`."""
+    b = business["booking"]
+    return bool(b.get("app_url")) and b["url"] == b["app_url"]
+
+
 def git_lastmod(*paths: str) -> str:
     """The date of the last commit touching any of `paths`; today when git
     cannot say (a shallow clone, an export) — the check mode ignores the
@@ -344,20 +362,29 @@ def block_rooms(business: dict) -> str:
     return "\n".join(cards)
 
 
+def block_door_nav(business: dict) -> str:
+    return f'        <a href="{escape(booking_door(business), quote=True)}" class="btn btn-primary btn-sm">Reservar sala</a>'
+
+
+def block_door_nav_mobile(business: dict) -> str:
+    return f'      <a href="{escape(booking_door(business), quote=True)}" class="btn btn-primary btn-block">Reservar sala</a>'
+
+
 def block_pricing(business: dict) -> str:
     h, pack, rec = business["hourly"], business["packs"][0], business["recurring"]
+    door = escape(booking_door(business), quote=True)
     return f"""        <div class="card price-card">
           <h3>À hora</h3>
           <p class="price">{price(h['min']).rstrip('€')}–{price(h['max'])}<small>/hora</small></p>
           <p class="price-desc">Conforme a sala escolhida.</p>
-          <a href="#contacto" class="btn btn-outline btn-block">Reservar</a>
+          <a href="{door}" class="btn btn-outline btn-block">Reservar</a>
         </div>
         <div class="card price-card featured">
           <span class="card-badge">{escape(pack['badge'])}</span>
           <h3>{escape(pack['name'])}</h3>
           <p class="price">{pack['discount_percent']}%<small> de desconto</small></p>
           <p class="price-desc">{escape(pack['validity'])}.</p>
-          <a href="#contacto" class="btn btn-primary btn-block">Reservar</a>
+          <a href="{door}" class="btn btn-primary btn-block">Reservar</a>
         </div>
         <div class="card price-card">
           <h3>Reserva recorrente</h3>
@@ -531,7 +558,7 @@ def llms_facts(business: dict) -> list[str]:
         f"- Packs: {packs}",
         f"- Reserva recorrente: {business['recurring']['price_label'].lower()}, a partir de {business['recurring']['min_hours_per_week']} horas semanais",
         f"- Cancelamento: até {business['cancellation']['hours_before']} horas antes do início; as horas pagas são creditadas no banco de horas",
-        f"- Reservas: {b['url']}" + (f" — plataforma de reservas: {b['app_url']}" if b.get("app_url") else " (a plataforma de reservas online é anunciada aqui quando publicada)"),
+        f"- Reservas: {b['url']}" + (f" — plataforma de reservas: {b['app_url']}" if platform_is_live(business) else " (a plataforma de reservas online é anunciada aqui quando publicada)"),
         f"- Formato de ligação direta para uma sala e hora na plataforma: `{b['deep_link_format']}`",
     ]
     if b.get("api_url"):
@@ -637,6 +664,8 @@ def outputs(business: dict, faq: dict, env: dict | None) -> dict[Path, str]:
         "verification": block_verification(env),
         "jsonld": block_jsonld(business, faq_items),
         "rooms": block_rooms(business),
+        "door-nav": block_door_nav(business),
+        "door-nav-mobile": block_door_nav_mobile(business),
         "pricing": block_pricing(business),
         "faq": block_faq(faq_items),
         "where": block_where(business),
