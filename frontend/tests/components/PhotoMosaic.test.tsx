@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { PhotoMosaic } from '@/components/spaces/PhotoMosaic'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { Photo } from '@/types'
 
 const photos = (n: number): Photo[] =>
@@ -124,5 +125,26 @@ describe('PhotoMosaic — the gallery', () => {
     const carousel = screen.getByTestId('photo-mosaic-carousel')
     fireEvent.click(within(carousel).getAllByRole('img')[1])
     expect(within(screen.getByRole('dialog')).getByTestId('photo-counter')).toHaveTextContent('2 / 3')
+  })
+})
+
+// B65: the mosaic, its carousel and the gallery in English.
+describe('PhotoMosaic in English', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('names the region, the gallery button, the dialog, its thumbnails and its close in English', () => {
+    setLocale('en')
+    render(<PhotoMosaic photos={photos(4)} label="Sala Calma" placeholder={placeholder} />)
+    expect(screen.getByRole('region', { name: 'Sala Calma — photos' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Sala Calma — photo carousel' })).toBeInTheDocument()
+    expect(within(mosaic()).getAllByRole('img')[2]).toHaveAttribute('alt', 'Sala Calma — photo 3 of 4')
+    fireEvent.click(screen.getByRole('button', { name: 'Show all photos' }))
+    const dialog = screen.getByRole('dialog', { name: 'Sala Calma — photos' })
+    expect(dialog).toHaveTextContent('Photo gallery. Use the arrow keys to change photo and Escape to close.')
+    const strip = within(dialog).getByRole('tablist', { name: 'Thumbnails' })
+    expect(within(strip).getAllByRole('tab')[1]).toHaveAttribute('aria-label', 'Photo 2 of 4')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.body.innerHTML).not.toMatch(/Fotografia|fotografias|Mostrar|Fechar|Miniaturas/)
   })
 })

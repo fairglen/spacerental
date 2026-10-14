@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { packagesApi, createAuthenticatedApi } from '@/lib/api'
 import { statusOf } from '@/lib/httpError'
+import { useT } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import type { Package } from '@/types'
 
@@ -14,10 +15,10 @@ interface PackageBuyButtonProps {
   className?: string
 }
 
-function errorMessage(error: unknown): string {
-  if (statusOf(error) === 403) return 'A sua conta não tem acesso a este pacote.'
-  if (statusOf(error) === 404) return 'Este pacote já não está disponível.'
-  return 'Erro ao iniciar a compra. Tente novamente.'
+function errorKey(error: unknown): string {
+  if (statusOf(error) === 403) return 'packs.buy_error_forbidden'
+  if (statusOf(error) === 404) return 'packs.buy_error_gone'
+  return 'packs.buy_error_generic'
 }
 
 /**
@@ -26,9 +27,11 @@ function errorMessage(error: unknown): string {
  * on the landing page pricing table and on /dashboard/packages, so the
  * signed-in-vs-signed-out branching only lives in one place (B12).
  */
-export function PackageBuyButton({ pkg, label = 'Comprar Pack', variant = 'default', className }: PackageBuyButtonProps) {
+export function PackageBuyButton({ pkg, label, variant = 'default', className }: PackageBuyButtonProps) {
+  const t = useT()
   const { data: session, status } = useSession()
   const queryClient = useQueryClient()
+  const buttonLabel = label ?? t('packs.buy_cta')
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -50,9 +53,9 @@ export function PackageBuyButton({ pkg, label = 'Comprar Pack', variant = 'defau
   if (statusOf(mutation.error) === 401 || (status === 'authenticated' && !session?.accessToken)) {
     return (
       <div className={className}>
-        <p role="alert" className="text-sm text-amber-700 mb-2">A sua sessão deixou de ser válida. Volte a entrar para continuar a compra.</p>
+        <p role="alert" className="text-sm text-amber-700 mb-2">{t('packs.session_invalid')}</p>
         <Link href={`/sign-in?packageId=${encodeURIComponent(pkg.id)}`} onClick={() => queryClient.clear()} className="text-primary font-medium underline">
-          Entrar e continuar a compra
+          {t('packs.session_sign_in')}
         </Link>
       </div>
     )
@@ -63,7 +66,7 @@ export function PackageBuyButton({ pkg, label = 'Comprar Pack', variant = 'defau
     // param the sign-up/sign-in pages read and resume into on success.
     return (
       <Link href={`/sign-up?packageId=${pkg.id}`} className={className}>
-        <Button variant={variant} className="w-full">{label}</Button>
+        <Button variant={variant} className="w-full">{buttonLabel}</Button>
       </Link>
     )
   }
@@ -76,10 +79,10 @@ export function PackageBuyButton({ pkg, label = 'Comprar Pack', variant = 'defau
         onClick={() => mutation.mutate()}
         disabled={status === 'loading' || mutation.isPending}
       >
-        {mutation.isPending ? 'A processar...' : label}
+        {mutation.isPending ? t('packs.buy_processing') : buttonLabel}
       </Button>
       {mutation.isError && (
-        <p role="alert" className="text-xs text-red-600 mt-2">{errorMessage(mutation.error)}</p>
+        <p role="alert" className="text-xs text-red-600 mt-2">{t(errorKey(mutation.error))}</p>
       )}
     </div>
   )

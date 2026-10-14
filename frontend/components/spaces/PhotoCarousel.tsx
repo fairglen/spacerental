@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import type { Photo } from '@/types'
 
@@ -46,6 +47,7 @@ const SWIPE_THRESHOLD = 10
 export function PhotoCarousel({
   photos, label, placeholder, size = 'card', indicator = 'auto', initialIndex = 0, onIndexChange, onPhotoClick, regionLabel, className,
 }: PhotoCarouselProps) {
+  const t = useT()
   const track = useRef<HTMLDivElement>(null)
   const pressedAt = useRef<{ x: number; y: number } | null>(null)
   const swiped = useRef(false)
@@ -53,17 +55,19 @@ export function PhotoCarousel({
   const [announcement, setAnnouncement] = useState('')
 
   const count = photos.length
-  const position = (i: number) => `Fotografia ${i + 1} de ${count}`
+  const position = (i: number) => t('photos.position', { index: i + 1, count })
 
   const goTo = useCallback((next: number) => {
     const target = Math.min(count - 1, Math.max(0, next))
     setIndex(target)
     onIndexChange?.(target)
-    setAnnouncement(`Fotografia ${target + 1} de ${count}`)
+    setAnnouncement(t('photos.position', { index: target + 1, count }))
     const el = track.current
     if (!el || typeof el.scrollTo !== 'function') return
     const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollTo({ left: target * el.clientWidth, behavior: reduced ? 'auto' : 'smooth' })
+    // `t` is a fresh closure per render; the locale it reads is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count, onIndexChange])
 
   // The gallery's thumbnail strip, or a reopen on another photo: follow it.
@@ -134,8 +138,8 @@ export function PhotoCarousel({
   return (
     <div
       role="region"
-      aria-roledescription="carrossel"
-      aria-label={regionLabel ?? `${label} — fotografias`}
+      aria-roledescription={t('photos.carousel_role')}
+      aria-label={regionLabel ?? t('photos.region_label', { label })}
       tabIndex={multiple ? 0 : undefined}
       onKeyDown={multiple ? onKeyDown : undefined}
       className={cn(
@@ -161,7 +165,7 @@ export function PhotoCarousel({
             key={photo.id}
             id={`${photo.id}-slide`}
             role="group"
-            aria-roledescription="diapositivo"
+            aria-roledescription={t('photos.slide_role')}
             aria-label={position(i)}
             className="h-full w-full shrink-0 snap-center"
           >
@@ -173,7 +177,7 @@ export function PhotoCarousel({
               // thumbnail or the 1600px original from that and its pixel ratio.
               srcSet={`${photo.thumb_url} 480w, ${photo.url} 1600w`}
               sizes={size === 'card' ? '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw' : '100vw'}
-              alt={`${label} — fotografia ${i + 1} de ${count}`}
+              alt={t('photos.alt', { label, index: i + 1, count })}
               width={photo.width ?? 1600}
               height={photo.height ?? 1200}
               loading={i === 0 ? 'eager' : 'lazy'}
@@ -188,18 +192,18 @@ export function PhotoCarousel({
 
       {multiple && (
         <>
-          <button type="button" aria-label="Fotografia anterior" disabled={index === 0}
+          <button type="button" aria-label={t('photos.previous')} disabled={index === 0}
             onClick={(e) => act(e, index - 1)} className={cn(control, 'left-2')}>
             <ChevronLeft className="h-5 w-5" aria-hidden="true" />
           </button>
-          <button type="button" aria-label="Fotografia seguinte" disabled={index === count - 1}
+          <button type="button" aria-label={t('photos.next')} disabled={index === count - 1}
             onClick={(e) => act(e, index + 1)} className={cn(control, 'right-2')}>
             <ChevronRight className="h-5 w-5" aria-hidden="true" />
           </button>
 
           {showDots ? (
             // A dark pill behind the dots: white dots alone vanish on a light photo.
-            <div role="tablist" aria-label="Escolher fotografia"
+            <div role="tablist" aria-label={t('photos.choose')}
               className="absolute bottom-2 left-1/2 z-10 flex -translate-x-1/2 rounded-full bg-black/35 px-1">
               {photos.map((photo, i) => (
                 <button

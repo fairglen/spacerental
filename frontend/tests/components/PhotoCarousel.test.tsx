@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { PhotoCarousel } from '@/components/spaces/PhotoCarousel'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { Photo } from '@/types'
 
 const photos = (n: number): Photo[] =>
@@ -25,6 +26,27 @@ beforeEach(() => {
     matches: false, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
   }))
+})
+
+afterEach(() => resetLocaleForTests())
+
+// B65: every accessible name follows the UI locale; the photos' own label does not.
+describe('PhotoCarousel in English', () => {
+  it('labels the region, the controls, the dots, the slides and the announcement in English', () => {
+    setLocale('en')
+    const { container } = render(<PhotoCarousel photos={photos(3)} label="Sala Calma" placeholder={placeholder} />)
+    const en = screen.getByRole('region', { name: 'Sala Calma — photos' })
+    expect(en).toHaveAttribute('aria-roledescription', 'carousel')
+    expect(container.querySelector('[role="group"]')).toHaveAttribute('aria-roledescription', 'slide')
+    expect(container.querySelector('[role="group"]')).toHaveAttribute('aria-label', 'Photo 1 of 3')
+    expect(screen.getAllByRole('img')[0]).toHaveAttribute('alt', 'Sala Calma — photo 1 of 3')
+    expect(screen.getByRole('button', { name: 'Previous photo' })).toBeDisabled()
+    expect(screen.getByRole('tablist')).toHaveAttribute('aria-label', 'Choose a photo')
+    expect(screen.getAllByRole('tab').map((d) => d.getAttribute('aria-label'))).toEqual(['Photo 1 of 3', 'Photo 2 of 3', 'Photo 3 of 3'])
+    fireEvent.click(screen.getByRole('button', { name: 'Next photo' }))
+    expect(screen.getByTestId('photo-announcer')).toHaveTextContent('Photo 2 of 3')
+    expect(container.innerHTML).not.toMatch(/Fotografia|carrossel|diapositivo/)
+  })
 })
 
 describe('PhotoCarousel — how many photos', () => {

@@ -1806,7 +1806,7 @@ new rules, never weakened. **Review rounds (PR A):** round 1 (head `fe58dd0`) �
 
 ### B64 — The locale survives a reload without a flash
 
-**Priority: P2. State: IN PROGRESS (PR B).** **Scope:** the locale in a
+**Priority: P2. State: DONE 2026-10-14 (PR B `fix/tester-round-1-i18n-ui`, commit `B64: …`).** **Scope:** the locale in a
 cookie `flowspace.locale` (SameSite=Lax, path `/`, one year) written by
 `setLocale`; the root layout reads it with `cookies()` and renders `<html
 lang="pt-PT"|"en">` with the initial locale, so the first paint is already in
@@ -1818,13 +1818,13 @@ server HTML with the cookie set.
 
 ### B65 — EN covers the whole customer journey (closes D02 for customers)
 
-**Priority: P2. State: IN PROGRESS (PR B).** **Scope:** every page a
+**Priority: P2. State: DONE 2026-10-14 (PR B, commit `B65: …`).** **Scope:** every page a
 customer reaches — landing, spaces and rooms (`SpaceRoomsView`, the "Onde
 estamos" lines), the pricing CTAs, the booking calendar and modal, the auth
 pages, the help dialog, the dashboard, packs, billing, the 404 page, the
 stub checkout page (EN when `Accept-Language` prefers it; dev-only, Stripe
-localises the real one); `lib/amenities.ts` maps the known PT amenity values
-to EN labels with the raw string as fallback. **DECISION:** emails stay PT —
+localises the real one); amenities are operator-entered strings shown as they are (there is no
+`lib/amenities.ts`; nothing to translate). **DECISION:** emails stay PT —
 a per-customer language is a later item. Admin stays PT (D02's scope for
 operators is not implied). **Validation:** the catalog parity test; a
 Vitest guard rendering each customer page in EN and refusing a short list of
@@ -1832,7 +1832,7 @@ PT-only words; Playwright `locale.spec.ts` through the journey in EN.
 
 ### B69 — A mobile menu that works at any height, and an account menu
 
-**Priority: P2. State: IN PROGRESS (PR B).** **Scope:** `Navbar.tsx` — the
+**Priority: P2. State: DONE 2026-10-14 (PR B, commit `B69: …`).** **Scope:** `Navbar.tsx` — the
 mobile menu is a fixed sheet below the bar (`fixed inset-x-0 top-16
 bottom-0`, its own scroll, body scroll locked, closes on route change and
 Escape, focus trapped) with the account actions first when signed in; on
@@ -1844,13 +1844,52 @@ scrolling inside the sheet while `document.body` does not scroll.
 
 ### B70 — Say how a pack is used
 
-**Priority: P3. State: IN PROGRESS (PR B).** **Scope:** after a purchase (the
+**Priority: P3. State: DONE 2026-10-14 (PR B, commit `B70: …`).** **Scope:** after a purchase (the
 "Pagamento concluído" banner), in the packs page's empty state and on the
 pack cards: "Para usar as horas, reserve uma sala: escolha a sala e o
 horário; as horas do pack são descontadas automaticamente." with the CTA
 "Reservar uma sala" → `/spaces`, in EN too; the help dialog links "Perguntas
 frequentes" to `https://flowspace.pt/#faq`. **Validation:** Vitest for both
 states.
+
+**PR B validation (2026-10-14, head of `fix/tester-round-1-i18n-ui`, stacked on
+PR A `8a4da7f`):** catalogs 111 → 435 keys per language (324 added by B65,
+3 by B70), parity and the two new guards (no Portuguese in EN, formal register
+in PT) green; Vitest 828 passed / 81 files; `tsc --noEmit`, `next lint` and
+`next build` clean (Server Components read `tFor` from `lib/i18n/server`;
+`lib/i18n/translate.ts` keeps React out of their graph); backend suite
+1122 passed + 4 subtests (test_checkout_stub 44, incl. 32 parsed
+`Accept-Language` headers; OpenAPI snapshot unchanged, no schema change so
+no migration); Playwright on a fresh PR-B stack (`-p spacerental-tester-e2e-b`,
+3120/8120): 90 passed, 8 skipped (35.3 s, after the perf fix) — `locale.spec.ts` (the EN journey + the stub page's two
+languages), `navbar.spec.ts` (320×480, 640×360, desktop account menu),
+`landing-ssr.spec.ts` (EN cookie → `lang="en"` in the first HTML).
+`playwright.config.ts` now sets the browser locale to pt-PT: Chromium's en-US
+default rendered the stub Checkout page in English and ten checkout specs
+could not find "Pagar". Two specs fail only on a stack with rooms left by
+earlier aborted runs (per-room hours add "Horário por sala no calendário";
+a cross-spec room cleanup race) — data, not code; green on a fresh seed.
+**Perf budgets (round 1 of the PR's CI):** `perf / perf-web` failed —
+the landing's JS before `load` was 252.7 KB against 220 (PR A: 207.3):
+B69's Radix dropdown/dialog stack on every page (~31 KB gz), both catalogs
+shipped to everyone (+7.5 KB), B65's code. Fixed by weight, not budget: a
+hand-rolled account menu (`components/layout/AccountMenu.tsx`) and the
+mobile sheet's Dialog primitive loaded on the first tap
+(`components/layout/MobileMenu.tsx`, next/dynamic); the English catalog as
+a chunk of its own (`lib/i18n/registry.ts` — Portuguese always bundled,
+English registered from the server's render for an EN cookie, fetched by
+`setLocale` on a switch). The perf harness on the PR-B stack then passed all
+six pages: landing 216.7/220, spaces 249/252, space-week/day 248.2/252,
+dashboard 242.6/246, admin-calendar 337/342 — ~3 KB of room each, from the
+Portuguese catalog's own growth; D25 is the structural fix. Screenshots in
+`docs/ui-evidence/B63-B70/`. Found on the way: the reset page
+and the admin user page said "Pelo menos 8 caracteres" (10 since B66);
+"esperavas"/"procuras" were informal and now read "esperava"/"procura";
+`customer-billing.spec.ts` reached Faturação through the navbar link B69 moved
+into the account menu. **DECISION:** emails and the admin stay Portuguese;
+backend `detail` text is shown as it arrives (Portuguese); amounts keep pt-PT
+formatting in both languages. **Review rounds (PR B):** recorded in the last
+commit of the PR.
 
 ### D23 — Customer flags for operators
 
@@ -1865,6 +1904,20 @@ users list; visible to operators only, audited. Not built.
 site's FAQ (`https://flowspace.pt/#faq`, linked from the help dialog by B70)
 as a page inside the app, in PT and EN, so a signed-in customer never leaves
 the app for it. Not built.
+
+### D25 — Catalog chunks per section, so the JS budgets get their headroom back
+
+**Priority: P3. State: QUEUED (found by B65's perf run).** B65 grew the
+Portuguese catalog from 111 to 435 keys (+5.9 KB gz) and every page carries
+all of it — the landing ships `booking`, `auth`, `billing`, `help`, `errors`
+it never reads. The English catalog already loads on demand
+(`lib/i18n/registry.ts`); the perf budgets (`frontend/perf-budget.json`,
+"measured + ~5%") now have ~3 KB of room on every page (landing 216.7/220,
+spaces 249/252, dashboard 242.6/246, admin-calendar 337/342 on the PR-B
+stack). Split the catalogs by section (one chunk per top-level key, loaded by
+the pages that use it, the landing's own sections inlined), measure, and
+only then decide whether the budgets move. Not built; the budgets were not
+touched.
 
 ## Billing statement and invoice records (I-series) — owner assignment 2026-10-07 (PR `feat/billing-statement-invoices`, stacked on #94)
 

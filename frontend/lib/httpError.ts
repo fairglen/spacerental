@@ -1,6 +1,7 @@
 import { format } from 'date-fns'
-import { pt } from 'date-fns/locale'
 import { bookingMaxAdvanceDays, bookingWindowEnd } from '@/lib/bookingWindow'
+import { getLocale, t } from '@/lib/i18n'
+import { dateFnsLocale } from '@/lib/utils'
 
 /**
  * HTTP status of a failed request, without importing axios into a component
@@ -46,82 +47,75 @@ export function conflictsOf(error: unknown): string[] | undefined {
 }
 
 /**
- * Portuguese explanation for a failed `DELETE /bookings/{id}` (C07). Maps the
- * backend's own rejections; the backend stays authoritative, this only puts
- * words to its answer. Deliberately says nothing about refunds — O02 has not
- * defined a refund policy.
+ * Explanation, in the browser's locale (B65), for a failed
+ * `DELETE /bookings/{id}` (C07). Maps the backend's own rejections; the
+ * backend stays authoritative, this only puts words to its answer.
+ * Deliberately says nothing about refunds — O02 has not defined a refund
+ * policy.
  */
 export function cancellationErrorMessage(error: unknown): string {
   const status = statusOf(error)
   const detail = detailOf(error)?.toLowerCase() ?? ''
   if (status === 400) {
-    if (detail.includes('24 hours')) {
-      return 'Só é possível cancelar com pelo menos 24 horas de antecedência. Esta reserva já está dentro desse prazo.'
-    }
-    if (detail.includes('already cancelled')) return 'Esta reserva já foi cancelada.'
-    if (detail.includes('already completed')) return 'Esta reserva já terminou e não pode ser cancelada.'
-    return 'Não foi possível cancelar esta reserva.'
+    if (detail.includes('24 hours')) return t('errors.cancel_24h')
+    if (detail.includes('already cancelled')) return t('errors.cancel_already_cancelled')
+    if (detail.includes('already completed')) return t('errors.cancel_already_completed')
+    return t('errors.cancel_400')
   }
-  if (status === 401) return 'A sua sessão expirou. Entre de novo para cancelar a reserva.'
-  if (status === 403) return 'Esta reserva não é sua, por isso não a pode cancelar.'
-  if (status === 404) return 'Reserva não encontrada. Pode já ter sido removida.'
+  if (status === 401) return t('errors.cancel_401')
+  if (status === 403) return t('errors.cancel_403')
+  if (status === 404) return t('errors.cancel_404')
   // K01: only an operator's price override can make the credit too large for
   // the hour bank; retrying changes nothing, a person has to fix the amount.
-  if (status === 409 && detail.includes('exceeds what the hour bank')) {
-    return 'O crédito desta reserva excede o que o banco de horas suporta. Fale connosco pela Ajuda para corrigirmos o valor da reserva antes de a cancelar.'
-  }
-  if (status === 429) return 'Demasiadas tentativas. Aguarde um momento e tente de novo.'
-  if (status === undefined) return 'Sem ligação ao servidor. Verifique a internet e tente novamente.'
-  return 'Não foi possível cancelar a reserva. Tente novamente daqui a pouco.'
+  if (status === 409 && detail.includes('exceeds what the hour bank')) return t('errors.cancel_credit_exceeds')
+  if (status === 429) return t('errors.cancel_429')
+  if (status === undefined) return t('errors.offline')
+  return t('errors.cancel_default')
 }
 
 export type BookingPaymentMethod = 'hourly' | 'package' | 'mixed'
 
 /**
- * Portuguese explanation for a failed `POST /bookings` (B31). Everything that
- * is not a 409 used to collapse into "Erro ao criar reserva". Kept here, next
- * to `cancellationErrorMessage`, so other screens can reuse the same words.
+ * Explanation, in the browser's locale (B65), for a failed `POST /bookings`
+ * (B31). Everything that is not a 409 used to collapse into "Erro ao criar
+ * reserva". Kept here, next to `cancellationErrorMessage`, so other screens
+ * can reuse the same words.
  */
 export function bookingErrorMessage(error: unknown, method: BookingPaymentMethod): string {
   const status = statusOf(error)
   const detail = detailOf(error)?.toLowerCase() ?? ''
   switch (status) {
     case 409: {
-      if (detail.includes('already received')) {
-        return 'O pagamento desta reserva já foi recebido. A confirmação aparece em instantes.'
-      }
+      if (detail.includes('already received')) return t('errors.booking_payment_received')
       // Retrying an expired mixed hold needs the same pack hours again (C13).
-      if (detail.includes('package no longer has')) {
-        return 'O seu pack já não tem as horas que esta reserva tinha guardadas. Faça uma nova reserva para ver o novo valor.'
-      }
+      if (detail.includes('package no longer has')) return t('errors.booking_pack_hours_gone')
       const slotTaken = detail.includes('time slot') || detail.includes('horário') || detail.includes('reservado')
-      return method !== 'hourly' && !slotTaken
-        ? 'O seu pack já não tem horas suficientes para esta reserva.'
-        : 'Este horário já está reservado. Escolha outro intervalo no calendário.'
+      return method !== 'hourly' && !slotTaken ? t('errors.booking_pack_insufficient') : t('errors.booking_slot_taken')
     }
     case 400:
-      if (detail.includes('past')) return 'Essa hora já passou. Escolha um horário a partir de agora.'
+      if (detail.includes('past')) return t('errors.booking_past')
       if (detail.includes('booking window')) {
         // H01: the API's horizon; the date is the calendar's own hint.
-        return `Só é possível reservar com ${bookingMaxAdvanceDays()} dias de antecedência, no máximo. Escolha uma data até ${format(bookingWindowEnd(), "d 'de' MMMM", { locale: pt })}.`
+        return t('errors.booking_window', {
+          days: bookingMaxAdvanceDays(),
+          date: format(bookingWindowEnd(), t('errors.booking_window_date_format'), { locale: dateFnsLocale(getLocale()) }),
+        })
       }
-      if (detail.includes('opening hours')) {
-        return 'O horário escolhido está fora do horário de funcionamento da sala.'
-      }
-      return 'O horário escolhido não é válido. Volte a selecionar as horas no calendário.'
+      if (detail.includes('opening hours')) return t('errors.booking_opening_hours')
+      return t('errors.booking_invalid_time')
     case 401:
-      return 'A sua sessão expirou. Entre de novo para concluir a reserva.'
+      return t('errors.booking_401')
     case 403:
-      return 'A sua conta ainda não está inscrita neste espaço. Contacte o espaço para se inscrever.'
+      return t('errors.booking_403')
     case 404:
-      return 'Esta sala já não está disponível para reservas.'
+      return t('errors.booking_404')
     case 429:
-      return 'Demasiados pedidos seguidos. Aguarde um momento e tente de novo.'
+      return t('errors.too_many_requests')
     case 502:
-      return 'Não foi possível iniciar o pagamento. Tente novamente daqui a pouco.'
+      return t('errors.booking_502')
     case undefined:
-      return 'Sem ligação ao servidor. Verifique a internet e tente novamente.'
+      return t('errors.offline')
     default:
-      return 'Erro ao criar reserva. Tente novamente.'
+      return t('errors.booking_default')
   }
 }

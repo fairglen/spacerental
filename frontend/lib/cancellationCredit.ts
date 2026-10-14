@@ -1,6 +1,6 @@
 import { addDays, format, parseISO } from 'date-fns'
-import { pt } from 'date-fns/locale'
-import { isUnpaidHold } from '@/lib/utils'
+import { catalog, dateFnsLocale, fillTemplate, isUnpaidHold } from '@/lib/utils'
+import type { Locale } from '@/lib/i18n/locale'
 import type { Booking, UserPackagePurchase } from '@/types'
 
 /**
@@ -45,16 +45,23 @@ export function creditExpiry(now: Date = new Date()): Date {
   return addDays(now, cancellationCreditValidityDays())
 }
 
-/** The bank-card label of a purchase row: the pack's name, or the credit's origin. */
-export function purchaseLabel(p: Pick<UserPackagePurchase, 'source' | 'purchased_at' | 'package'>): string {
+/** The bank-card label of a purchase row: the pack's name, or the credit's
+ * origin. Portuguese unless the caller passes the UI locale (B65). */
+export function purchaseLabel(p: Pick<UserPackagePurchase, 'source' | 'purchased_at' | 'package'>, locale: Locale = 'pt'): string {
+  const packs = catalog(locale).packs
   if (p.source === 'cancellation_credit') {
-    return `Crédito — cancelamento de ${format(parseISO(p.purchased_at), 'd MMM', { locale: pt })}`
+    return fillTemplate(packs.credit_label, { date: format(parseISO(p.purchased_at), 'd MMM', { locale: dateFnsLocale(locale) }) })
   }
-  return p.package?.name ?? 'Pack'
+  return p.package?.name ?? packs.pack_fallback
 }
 
-export const PURCHASE_SOURCE_LABELS: Record<UserPackagePurchase['source'], string> = {
-  purchase: 'Compra',
-  complimentary: 'Oferta',
-  cancellation_credit: 'Crédito de cancelamento',
+export function purchaseSourceLabels(locale: Locale): Record<UserPackagePurchase['source'], string> {
+  const packs = catalog(locale).packs
+  return {
+    purchase: packs.source_purchase,
+    complimentary: packs.source_complimentary,
+    cancellation_credit: packs.source_cancellation_credit,
+  }
 }
+
+export const PURCHASE_SOURCE_LABELS: Record<UserPackagePurchase['source'], string> = purchaseSourceLabels('pt')

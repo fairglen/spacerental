@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { cancellationErrorMessage } from '@/lib/httpError'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 
 function httpError(status: number, detail?: string) {
   return { response: { status, data: detail ? { detail } : {} } }
@@ -69,5 +70,33 @@ describe('bookingErrorMessage (B31)', () => {
   it('names a network failure and keeps the generic fallback for the rest', () => {
     expect(bookingErrorMessage(new Error('Network Error'), 'hourly')).toMatch(/ligação/i)
     expect(bookingErrorMessage(httpError(500), 'hourly')).toMatch(/Erro ao criar reserva/)
+  })
+})
+
+describe('error messages in English (B65)', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('cancellation and booking messages follow the browser locale, the date included', () => {
+    setLocale('en')
+    expect(cancellationErrorMessage(httpError(400, 'Bookings can only be cancelled more than 24 hours in advance'))).toBe("Cancellations need at least 24 hours' notice. This booking is already within that window.")
+    expect(cancellationErrorMessage(httpError(403))).toMatch(/not yours/)
+    expect(cancellationErrorMessage(httpError(409, 'The credit for this booking exceeds what the hour bank can hold'))).toMatch(/hour bank/)
+    expect(cancellationErrorMessage(new Error('Network Error'))).toBe('No connection to the server. Check your internet and try again.')
+    expect(bookingErrorMessage(httpError(409, 'This time slot is already booked'), 'hourly')).toMatch(/already booked/)
+    expect(bookingErrorMessage(httpError(409, 'No active package with 3 hours remaining'), 'package')).toMatch(/enough hours/)
+    // H01: the horizon, with an English month name and no "de".
+    expect(bookingErrorMessage(httpError(400, 'start_time is beyond the booking window'), 'hourly')).toMatch(/^Bookings can be made at most 30 days in advance\. Choose a date up to \d+ [A-Z][a-z]+\.$/)
+    expect(bookingErrorMessage(httpError(429), 'hourly')).toBe('Too many requests in a row. Wait a moment and try again.')
+    expect(bookingErrorMessage(httpError(500), 'hourly')).toBe('Error creating the booking. Please try again.')
+    for (const message of [cancellationErrorMessage(httpError(401)), cancellationErrorMessage(httpError(500)), bookingErrorMessage(httpError(401), 'hourly'), bookingErrorMessage(httpError(403), 'hourly')]) {
+      expect(message).not.toMatch(/sessão|reserva|aguarde|não/i)
+    }
+  })
+
+  it('never promise a refund in English either', () => {
+    setLocale('en')
+    for (const e of [httpError(400, 'x'), httpError(500), new Error('boom')]) {
+      expect(cancellationErrorMessage(e)).not.toMatch(/refund/i)
+    }
   })
 })

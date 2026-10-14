@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BookingModal } from '@/components/booking/BookingModal'
 import { bookingsApi, recurrencesApi, packagesApi } from '@/lib/api'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { Booking, Room, RecurrenceWithBookings, UserPackagePurchase } from '@/types'
 
 vi.mock('next-auth/react', () => ({
@@ -101,6 +102,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
+  resetLocaleForTests()
 })
 
 describe('BookingModal checkout', () => {
@@ -681,6 +683,76 @@ describe('BookingModal — "Comprar um pack" (K02)', () => {
     await user.click((await screen.findAllByRole('button', { name: 'Comprar' }))[0])
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível iniciar a compra')
     expect(assign).not.toHaveBeenCalled()
+  })
+})
+
+// B65: the modal's choices, breakdown, dates and both end states in English;
+// the Decimal and currency formatting stays as it is.
+describe('BookingModal in English', () => {
+  const noPortuguese = /Reservar|Comprar|Os meus|Não tem|Entrar|Pagar|Horas/
+
+  it('offers the choices, the breakdown and the confirm in English', async () => {
+    setLocale('en')
+    vi.mocked(packagesApi.listMine).mockResolvedValue([purchase(2)])
+    renderModal() // 3h block at 11 €/h, 2h in the bank
+
+    expect(await screen.findByRole('radio', { name: 'Use the pack hours and pay the rest' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Pay everything now' })).not.toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Buy a pack' })).not.toBeChecked()
+    const breakdown = screen.getByRole('group', { name: 'Payment summary' })
+    expect(breakdown).toHaveTextContent(/Pack hours\s*−\s*2h\s*\(0h left\)/)
+    expect(breakdown).toHaveTextContent(/Due now\s*1h × 11,00\s€ = 11,00\s€/)
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Confirm Booking' })).toBeVisible()
+    expect(dialog).toHaveTextContent('10 August 2026')
+    expect(dialog).toHaveTextContent(/Room\s*Sala Calma/)
+    expect(within(dialog).getByRole('button', { name: 'Confirm Booking' })).toBeEnabled()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeEnabled()
+    expect(dialog.textContent).not.toMatch(noPortuguese)
+  })
+
+  it('an empty bank sees the pack to buy and the hourly price in English, and the pack list says the slot is not held', async () => {
+    setLocale('en')
+    vi.mocked(packagesApi.list).mockResolvedValue([
+      { id: 'pkg-10', org_id: 'org-1', name: 'Pack 10h', hours: 10, price: 100, validity_days: 180, is_active: true },
+    ])
+    const user = userEvent.setup()
+    renderModal()
+    expect(await screen.findByRole('radio', { name: /^Pay 33,00\s€ now$/ })).toBeChecked()
+    expect(screen.getByText('Total').nextElementSibling).toHaveTextContent(/33,00\s€/)
+    await user.click(screen.getByRole('radio', { name: 'Buy a pack' }))
+    const list = await screen.findByTestId('buy-pack')
+    expect(list).toHaveTextContent(/10h · 100,00\s€ · valid 180 days/)
+    expect(list).toHaveTextContent('The time is not held while you buy the pack; you come back to this hour after payment.')
+    expect(within(list).getByRole('button', { name: 'Buy' })).toBeEnabled()
+    expect(screen.getByRole('dialog').textContent).not.toMatch(noPortuguese)
+  })
+
+  it('ends on an English success state after a pack booking', async () => {
+    setLocale('en')
+    vi.mocked(packagesApi.listMine)
+      .mockResolvedValueOnce([purchase(5)])
+      .mockResolvedValue([purchase(2)])
+    vi.mocked(bookingsApi.create).mockResolvedValue({
+      booking: { ...pendingBooking, status: 'confirmed', payment_method: 'package' },
+      checkout_url: null,
+    })
+    const user = userEvent.setup()
+    renderModal()
+
+    await screen.findByRole('radio', { name: 'Use pack hours (5h available)' })
+    await user.click(screen.getByRole('button', { name: 'Confirm Booking' }))
+
+    expect(await screen.findByRole('heading', { name: 'Booking confirmed' })).toBeVisible()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('The hours were deducted from your pack. There is nothing to pay now.')
+    expect(dialog).toHaveTextContent(/Hours used\s*3h from your pack/)
+    expect(dialog).toHaveTextContent('10 August 2026')
+    await waitFor(() => expect(dialog).toHaveTextContent(/Hours remaining\s*2h/))
+    expect(screen.getByRole('link', { name: 'View my bookings' })).toHaveAttribute('href', '/dashboard')
+    // The dialog's own X carries an sr-only "Close" too; the footer button is the one without an icon.
+    expect(screen.getAllByRole('button', { name: 'Close' }).find((b) => !b.querySelector('svg'))).toBeVisible()
+    expect(dialog.textContent).not.toMatch(noPortuguese)
   })
 })
 

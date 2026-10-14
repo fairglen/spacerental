@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SpacesPage from '@/app/spaces/page'
 import { useSingleSpace } from '@/lib/hooks/useSingleSpace'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import { spacesApi } from '@/lib/api'
 import { makeRoom, makeSpace, modeState } from './spaceModeFixtures'
 
@@ -72,5 +73,31 @@ describe('/spaces by space mode', () => {
     renderPage()
     fireEvent.click(within(screen.getByRole('alert')).getByRole('button'))
     expect(retry).toHaveBeenCalled()
+  })
+})
+
+// B65: the same three states in English.
+describe('/spaces in English', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('the list, the empty state and the error speak English', () => {
+    setLocale('en')
+    vi.mocked(useSingleSpace).mockReturnValue(modeState({ mode: 'multi', spaces: [makeSpace('s-1'), makeSpace('s-2')] }))
+    const list = renderPage()
+    expect(screen.getByRole('heading', { name: 'All Spaces' })).toBeVisible()
+    expect(screen.getByText('Find the perfect room for your practice.')).toBeVisible()
+    expect(screen.getAllByRole('button', { name: 'View Rooms and Book' })).toHaveLength(2)
+    expect(document.body.textContent).not.toMatch(/Reservar|Comprar|Os meus|Não tem|Entrar/)
+    list.unmount()
+
+    vi.mocked(useSingleSpace).mockReturnValue(modeState({ mode: 'empty' }))
+    const empty = renderPage()
+    expect(screen.getByTestId('spaces-empty')).toHaveTextContent('No rooms available yet. Check back soon.')
+    empty.unmount()
+
+    vi.mocked(useSingleSpace).mockReturnValue(modeState({ mode: 'error' }))
+    renderPage()
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load the rooms.')
+    expect(within(screen.getByRole('alert')).getByRole('button', { name: 'Try again' })).toBeVisible()
   })
 })
