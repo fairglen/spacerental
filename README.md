@@ -95,7 +95,15 @@ docker compose --env-file .env --env-file .env.remote up -d -V
 
 `scripts/remote-up.sh` writes `.env.remote` from the example and runs that
 command. It never edits `.env` (and refuses to run without one); `--dry-run`
-prints the file it would write and leaves Docker alone. The layer sets
+prints the file it would write, and the compose command, and leaves Docker
+alone. **Which build testers get (B63):** `ngrok` mode starts the
+**production build** — `docker-compose.yml` through the
+`docker-compose.share.yml` overlay (the production build targets, built
+locally, `next start`, no source mounts; the dev database and seed,
+`APP_ENV=development`) — so Next's dev overlay
+never turns an error thrown by a phone's browser extension into a
+full-screen error page; `lan` mode keeps the dev stack (hot reload).
+`--prod` and `--dev` flip either. The layer sets
 `NEXTAUTH_URL` and `FRONTEND_URL` and nothing else: `NEXT_PUBLIC_API_URL` is
 the relative `/backend/api/v1`, and `MEDIA_BASE_URL`,
 `STRIPE_STUB_CHECKOUT_BASE_URL`, `STRIPE_SUCCESS_URL` and `STRIPE_CANCEL_URL`
@@ -156,7 +164,8 @@ the hostname changes at every agent start (the script says so and goes on).
 Starts `ngrok start --all` in the background if the agent is not running,
 waits for its local API (`http://127.0.0.1:4040/api/tunnels`), reads the
 public URL of the tunnel to port 3000, writes `.env.remote` with it, starts
-the stack and prints it. Without the tunnel it prints the YAML above and
+the stack — the production build, seeded (`--dev` for the dev stack) — and
+prints it. Without the tunnel it prints the YAML above and
 exits 1; with a second tunnel on the same URL (a leftover `api` tunnel from
 the two-URL setup — a free account has one domain, and ngrok pools tunnels
 that share it, sending requests to port 3000 or 8000 at random) it names the
@@ -179,9 +188,11 @@ Free-plan notes:
 ./scripts/remote-up.sh off
 ```
 
-Recreates the stack from plain `.env` (`docker compose up -d -V`), reminds
-you to stop ngrok if it is still running (`pkill -f 'ngrok start'`) and to
-open `http://localhost:3000` in a fresh window. `.env.remote` stays on disk,
+Recreates the dev stack from plain `.env` (`docker compose up -d -V`; a
+production-build share session's containers are replaced in place — same
+project, same database and media volumes), reminds you to stop ngrok if it
+is still running (`pkill -f 'ngrok start'`) and to open
+`http://localhost:3000` in a fresh window. `.env.remote` stays on disk,
 ignored until the layered command runs again.
 
 ---

@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-cp "$ROOT/docker-compose.yml" "$ROOT/.env.remote.example" "$work/"
+cp "$ROOT/docker-compose.yml" "$ROOT/docker-compose.share.yml" "$ROOT/.env.remote.example" "$work/"
 cp "$ROOT/.env.example" "$work/.env"
 mkdir -p "$work/scripts"
 cp "$ROOT/scripts/remote-up.sh" "$work/scripts/"
@@ -147,6 +147,34 @@ else
   check "the message prints the web tunnel YAML" "$(grep -c 'addr: 3000' missing.txt)" "1"
 fi
 check ".env.remote still not written" "$([ -e .env.remote ] && echo written || echo absent)" "absent"
+
+echo "── 6. the production build for testers (B63): ngrok defaults to it, lan to the dev stack, --prod/--dev flip them"
+printf '{"tunnels":[{"name":"web","public_url":"https://stable.ngrok-free.dev","config":{"addr":"http://localhost:3000"}}]}' > fake/api/tunnels
+share_cmd='docker compose -f docker-compose.yml -f docker-compose.share.yml --env-file .env --env-file .env.remote up -d --build'
+dev_cmd='docker compose --env-file .env --env-file .env.remote up -d -V'
+check "ngrok --dry-run starts the production build" "$(ngrok_env | grep -c "^# $share_cmd\$")" "1"
+check "ngrok --dev --dry-run starts the dev stack" "$(PATH="$work/bin:$PATH" NGROK_API="http://127.0.0.1:$port/api/tunnels" scripts/remote-up.sh ngrok --dev --dry-run | grep -c "^# $dev_cmd\$")" "1"
+check "lan --dry-run starts the dev stack" "$(REMOTE_HOST_IP=10.0.0.5 scripts/remote-up.sh lan --dry-run | grep -c "^# $dev_cmd\$")" "1"
+check "lan --prod --dry-run starts the production build" "$(REMOTE_HOST_IP=10.0.0.5 scripts/remote-up.sh lan --prod --dry-run | grep -c "^# $share_cmd\$")" "1"
+# What that build renders to: the production build targets without the
+# source mounts, the dev database, APP_ENV=development, the frontend on 3000
+# for the tunnel, the one URL.
+sed -e 's|^WEB=.*|WEB=https://stable.ngrok-free.dev|' .env.remote.example > .env.remote
+share=$(render -f docker-compose.yml -f docker-compose.share.yml --env-file .env --env-file .env.remote)
+rm -f .env.remote
+check "share: the services" "$(jq -r '.services | keys | join(",")' <<< "$share")" "backend,db,frontend"
+check "share: the frontend publishes 3000" "$(jq -r '.services.frontend.ports[0] | "\(.published):\(.target)"' <<< "$share")" "3000:3000"
+check "share: the frontend is the production build target" "$(jq -r '.services.frontend.build.target' <<< "$share")" "runner"
+check "share: the frontend runs next start" "$(jq -r '.services.frontend.command | join(" ")' <<< "$share")" "npm run start"
+check "share: the frontend has no source mount" "$(jq -r '.services.frontend.volumes // [] | length' <<< "$share")" "0"
+check "share: the backend runs without --reload" "$(jq -r '.services.backend.command | index("--reload") // "absent"' <<< "$share")" "absent"
+check "share: the backend keeps the media volume only" "$(jq -r '[.services.backend.volumes[] | select(.type == "volume")] | length' <<< "$share")" "1"
+check "share: frontend APP_ENV" "$(frontend_env APP_ENV <<< "$share")" "development"
+check "share: backend APP_ENV" "$(backend_env APP_ENV <<< "$share")" "development"
+check "share: backend FRONTEND_URL follows WEB" "$(backend_env FRONTEND_URL <<< "$share")" "https://stable.ngrok-free.dev"
+check "share: frontend NEXTAUTH_URL follows WEB" "$(frontend_env NEXTAUTH_URL <<< "$share")" "https://stable.ngrok-free.dev"
+check "share: the backend talks to the dev database" "$(backend_env DATABASE_URL <<< "$share")" "postgresql+asyncpg://spacerental:spacerental@db:5432/spacerental"
+check "share: frontend NEXT_PUBLIC_API_URL (relative, through the proxy)" "$(frontend_env NEXT_PUBLIC_API_URL <<< "$share")" "/backend/api/v1"
 
 if [ "$fail" -ne 0 ]; then
   echo "remote-env: FAILED" >&2
