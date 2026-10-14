@@ -1712,7 +1712,7 @@ noted under D02's outcome.
 
 ### B63 — Testers get the production build, never the dev overlay
 
-**Priority: P1. State: IN PROGRESS (PR A).** `scripts/remote-up.sh` started
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** `scripts/remote-up.sh` started
 `docker-compose.yml` (`npm run dev`), so Next's dev overlay turned an error
 thrown by a tester's browser extension (`window.__firefox__.reader`,
 `window.ethereum` injected by Brave) into a full-screen error on their
@@ -1731,7 +1731,7 @@ runs; a manual check that `/` through the share stack carries no
 
 ### B66 — Password policy: length and blocklists, not composition rules
 
-**Priority: P1. State: IN PROGRESS (PR A).** Any 8 characters were accepted.
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** Any 8 characters were accepted.
 **DECISION:** NIST SP 800-63B — length 10–128; a password in the bundled
 top-20 000 breached list (`backend/app/data/common-passwords.txt`,
 lowercase, loaded once) is refused; one containing the address's local part
@@ -1750,7 +1750,7 @@ the server's reasons verbatim (the list check is server-side only).
 
 ### B67 — One mailbox, one account (closes B37, covers `+tag`)
 
-**Priority: P1. State: IN PROGRESS (PR A).** **Scope:**
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** **Scope:**
 `users.email_normalized` (migration 0019, unique index), computed by
 `app/emails.py:normalize_email`: trim, lowercase, the `+tag` stripped from
 the local part on every domain, and for `gmail.com`/`googlemail.com` the
@@ -1769,7 +1769,7 @@ an empty database and a collision fixture that is expected to fail.
 
 ### B68 — A cancelled or abandoned pack checkout is cancelled; only active packs are packs
 
-**Priority: P1. State: IN PROGRESS (PR A).** **Scope:** (1) the stub
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** **Scope:** (1) the stub
 checkout's cancel sets a `pending` purchase to `cancelled` (locked by its
 session id, idempotent, the booking branch's shape); (2) the webhook handles
 `checkout.session.expired`: a `pending` purchase → `cancelled`, a `pending`
@@ -1786,6 +1786,23 @@ otherwise). **Validation:** pytest for the stub cancel, the expired webhook,
 the sweeper, the list filter and the cancel route (403/409); Playwright
 `packages.spec.ts`: buy → "Cancelar" on the stub page → no pack and 0h; buy
 → pay → one pack.
+
+**PR A validation (2026-10-14, local):** `scripts/tests/remote-env.sh`
+54/54 (the share render and the four dry runs) and the share build served
+`/` with no `react-refresh`/`__nextjs`/`nextjs-portal` reference and hashed
+`webpack-<hash>.js` chunks, where the dev stack's `/` has `webpack.js?v=`
+(project `spacerental-share-check` on 3063, torn down); backend suite in
+`spacerental-tester-tests` 1087 passed, 4 subtests (the authz matrix classifies the new route and names its isolation test; four tests that pinned the pending-by-default list, the "cancelled" row in a customer list or the expired event as unrelated were moved to the new rules); migration round trip on an empty
+PostgreSQL 18 with 0019 (upgrade → check → downgrade → no leftover →
+upgrade → check) clean; Ruff 0.16.5 clean; shellcheck clean; `tsc`,
+`next lint`, `next build` clean, Vitest 767/767 (78 files); Playwright on the
+worktree's own e2e stack (3110/8110) 85 passed + 8 skipped — `auth.spec.ts` with the
+refused/accepted passwords and `packages.spec.ts` with the cancelled
+purchase among them. Found on the way: `password123`/`Password123!`
+(every fixture) are in the breached list, so the fixtures moved to
+`Senha-2026x` and a phrase; three component/e2e specs pinned the old
+8-character rule or the pending-by-default list and were updated to the
+new rules, never weakened. **Review rounds (PR A):** recorded in the last commit of the PR.
 
 ### B64 — The locale survives a reload without a flash
 
