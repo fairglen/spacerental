@@ -3,16 +3,30 @@ import ptCatalog from './pt.json'
 import enCatalog from './en.json'
 import {
   DEFAULT_LOCALE,
+  LOCALE_COOKIE,
   LOCALE_LABELS,
   SUPPORTED_LOCALES,
   getLocale,
-  getServerLocale,
+  localeFromCookieString,
+  resetLocaleForTests,
   setLocale,
   subscribe,
   type Locale,
 } from './locale'
+import { LocaleProvider, useInitialLocale } from './LocaleProvider'
 
-export { DEFAULT_LOCALE, LOCALE_LABELS, SUPPORTED_LOCALES, getLocale, setLocale, type Locale }
+export {
+  DEFAULT_LOCALE,
+  LOCALE_COOKIE,
+  LOCALE_LABELS,
+  LocaleProvider,
+  SUPPORTED_LOCALES,
+  getLocale,
+  localeFromCookieString,
+  resetLocaleForTests,
+  setLocale,
+  type Locale,
+}
 
 const catalogs: Record<Locale, unknown> = { pt: ptCatalog, en: enCatalog }
 
@@ -68,7 +82,10 @@ function translate(
  * use `useT()` instead.
  */
 export function useLocale(): [Locale, (locale: Locale) => void] {
-  const locale = useSyncExternalStore(subscribe, getLocale, getServerLocale)
+  // The server snapshot is the cookie the root layout read (B64), so the
+  // server HTML and the hydration pass are already in the chosen language.
+  const initial = useInitialLocale()
+  const locale = useSyncExternalStore(subscribe, getLocale, () => initial)
   return [locale, setLocale]
 }
 
@@ -78,7 +95,8 @@ export function useLocale(): [Locale, (locale: Locale) => void] {
  * catalog) whenever the visitor toggles the locale switcher.
  */
 export function useT(): typeof t {
-  // Use React's snapshot so hydration first matches the Portuguese server HTML.
+  // React's snapshot: the hydration pass matches the server HTML, which is
+  // already in the cookie's language (B64).
   const [locale] = useLocale()
   return (key, replacements) => translate(locale, key, replacements)
 }

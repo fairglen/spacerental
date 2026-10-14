@@ -4,6 +4,7 @@ import { SessionProvider } from 'next-auth/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { OrgProvider } from '@/contexts/OrgContext'
 import { HelpProvider } from '@/components/help/HelpProvider'
+import { LocaleProvider, type Locale } from '@/lib/i18n'
 
 // P1.4: no refetch on window focus by default — for the catalog, the
 // availability and the dashboard a tab switch is pure cost; the queries that
@@ -15,15 +16,17 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ initialLocale, children }: { initialLocale: Locale; children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: QUERY_DEFAULTS }))
   return (
-    <SessionProvider>
-      <QueryClientProvider client={queryClient}>
-        <OrgProvider>
-          <HelpProvider>{children}</HelpProvider>
-        </OrgProvider>
-      </QueryClientProvider>
-    </SessionProvider>
+    <LocaleProvider initial={initialLocale}>
+      <SessionProvider>
+        <QueryClientProvider client={queryClient}>
+          <OrgProvider>
+            <HelpProvider>{children}</HelpProvider>
+          </OrgProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    </LocaleProvider>
   )
 }
