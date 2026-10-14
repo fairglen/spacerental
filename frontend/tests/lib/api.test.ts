@@ -159,6 +159,22 @@ describe('all wrapped responses', () => {
     const mockApi = { get: vi.fn().mockResolvedValue({ data: { purchases: [{ id: '1' }] } }) } as any
     expect((await packagesApi.listMine(mockApi)).length).toBe(1)
   })
+  it('packagesApi.myPackages asks for the pending ones only when told (B68) and keeps checkout_url', async () => {
+    const balance = { hours_available: '0', hours_expiring_next: null }
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { purchases: [{ id: '1', status: 'pending', checkout_url: 'http://x/checkout/stub/cs_1', hours_total: '10', hours_used: '0', hours_remaining: '10' }], balance } }) } as any
+    const plain = await packagesApi.myPackages(mockApi)
+    expect(mockApi.get).toHaveBeenLastCalledWith('/packages/me')
+    expect(plain.purchases[0].checkout_url).toBe('http://x/checkout/stub/cs_1')
+    await packagesApi.myPackages(mockApi, { includePending: true })
+    expect(mockApi.get).toHaveBeenLastCalledWith('/packages/me', { params: { include: 'pending' } })
+  })
+  it('packagesApi.cancelPurchase posts to the purchase and extracts it (B68)', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { purchase: { id: 'p1', status: 'cancelled', hours_total: '10', hours_used: '0', hours_remaining: '10' } } }) } as any
+    const result = await packagesApi.cancelPurchase('p1', mockApi)
+    expect(mockApi.post).toHaveBeenCalledWith('/packages/purchases/p1/cancel')
+    expect(result.status).toBe('cancelled')
+    expect(result.hours_total).toBe(10)
+  })
   it('adminApi.getSpaces extracts spaces', async () => {
     const mockApi = { get: vi.fn().mockResolvedValue({ data: { spaces: [] } }) } as any
     expect(Array.isArray(await adminApi.getSpaces(mockApi))).toBe(true)

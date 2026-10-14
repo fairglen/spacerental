@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Positive by construction: zero or negative would expire every hold at
     # once and make hourly Checkout unusable; there is no "disable" value.
     BOOKING_HOLD_MINUTES: int = Field(default=15, gt=0)
+    # B68: a pack purchase left `pending` (Checkout never finished, no
+    # webhook) is cancelled by the sweeper after this long.
+    PACKAGE_CHECKOUT_MINUTES: int = Field(default=60, gt=0)
     # How far ahead a CUSTOMER may book (H01): `start_time` later than now +
     # this many days is refused, and the public availability reports such
     # slots as `beyond_window`. Operators have no horizon (A01 paths are

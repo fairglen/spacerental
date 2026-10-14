@@ -491,6 +491,11 @@
   },
   {
     "method": "POST",
+    "path": "/api/v1/packages/purchases/{purchase_id}/cancel",
+    "operation_id": "cancel_my_purchase_api_v1_packages_purchases__purchase_id__cancel_post"
+  },
+  {
+    "method": "POST",
     "path": "/api/v1/packages/{package_id}/purchase",
     "operation_id": "purchase_package_api_v1_packages__package_id__purchase_post"
   },

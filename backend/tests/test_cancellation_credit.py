@@ -571,8 +571,10 @@ class TestReinstatement:
         (credit,) = await _credits(db_session, booking["id"])
         assert credit.status is PurchaseStatus.cancelled
         assert credit.hours_remaining == 0
+        # B68: a cancelled row never reaches the customer's list (the operator
+        # still sees it, with its status badge); the bank is what matters here.
         mine = await client.get(f"{API}/packages/me", headers=auth_headers)
-        assert [r["status"] for r in mine.json()["purchases"]] == ["cancelled"]
+        assert mine.json()["purchases"] == []
 
         # Cancelled again: the same row comes back, with a fresh expiry.
         again = await client.delete(f"{API}/bookings/{booking['id']}", headers=auth_headers)

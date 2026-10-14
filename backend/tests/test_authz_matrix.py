@@ -65,6 +65,7 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/packages"): PUBLIC,
     ("POST", f"{API}/packages/{{package_id}}/purchase"): CUSTOMER,
     ("GET", f"{API}/packages/me"): CUSTOMER,
+    ("POST", f"{API}/packages/purchases/{{purchase_id}}/cancel"): CUSTOMER,
     ("GET", f"{API}/admin/dashboard"): OPERATOR,
     ("GET", f"{API}/admin/spaces"): OPERATOR,
     ("POST", f"{API}/admin/spaces"): OPERATOR,
@@ -273,6 +274,9 @@ CUSTOMER_ISOLATION: dict[tuple[str, str], str] = {
         "test_a_purchase_is_bound_to_the_packages_org_and_to_membership"
     ),
     ("GET", f"{API}/packages/me"): "test_my_lists_contain_only_my_rows",
+    ("POST", f"{API}/packages/purchases/{{purchase_id}}/cancel"): (
+        "test_nobody_else_can_cancel_a_customers_purchase"
+    ),
 }
 
 
@@ -873,6 +877,26 @@ class TestCustomerIsolation:
         booking = await _fresh(db_session, Booking, world.booking_a.id)
         assert booking.status is BookingStatus.confirmed
         assert booking.stripe_checkout_session_id is None
+
+    async def test_nobody_else_can_cancel_a_customers_purchase(self, client, world, db_session):
+        # B68: "Cancelar" on a pending purchase is the holder's alone; the
+        # org's operators act through /admin and never stand in for them.
+        for other, claim in (
+            (world.cust_a2, "member"),
+            (world.cust_b, "member"),
+            (world.op_b, "admin"),
+            (world.op_a, "owner"),
+        ):
+            resp = await _send(
+                client,
+                "POST",
+                f"{API}/packages/purchases/{{purchase_id}}/cancel",
+                headers=_as(other, claim),
+                ids={"purchase_id": world.purchase_a.id},
+            )
+            assert resp.status_code == 403, f"{other.email} -> {resp.status_code}"
+        purchase = await _fresh(db_session, UserPackagePurchase, world.purchase_a.id)
+        assert purchase.status is PurchaseStatus.active
 
     async def test_my_lists_contain_only_my_rows(self, client, world):
         for user, org, bookings, purchases in (

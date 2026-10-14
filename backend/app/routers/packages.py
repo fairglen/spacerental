@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -17,6 +18,7 @@ from app.models.package import Package, PurchaseStatus, UserPackagePurchase
 from app.models.user import User
 from app.payments import (
     CheckoutKind,
+    CheckoutSessionCompletedError,
     PaymentGateway,
     PaymentProviderError,
     get_payment_gateway,
@@ -147,27 +149,80 @@ async def purchase_package(
 
 @router.get("/me")
 async def my_packages(
+    include: Literal["pending"] | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    gateway: PaymentGateway = Depends(get_payment_gateway),
 ):
     """My package purchases and remaining hours, plus the bank they form (H02).
 
-    `balance` sums every active, unexpired purchase the caller holds. It
-    spans organizations the way the purchases list does — the product has
-    one location (C11); a per-org figure is the same sum over the list.
+    Only `active` purchases are packs (B68); `?include=pending` adds the
+    ones whose Checkout is still open, each with its `checkout_url` to
+    resume, and a `cancelled` purchase never reaches a customer. `balance`
+    sums every active, unexpired purchase the caller holds. It spans
+    organizations the way the purchases list does — the product has one
+    location (C11); a per-org figure is the same sum over the list.
     """
     # A lapsed mixed hold still has hours debited until something reconciles
     # it (expiry is lazy); the balance shown here must not be short by them.
     now = clock.utcnow()
     await expire_user_holds(db, user.id, now)
+    statuses = [PurchaseStatus.active]
+    if include == "pending":
+        statuses.append(PurchaseStatus.pending)
     result = await db.execute(
         select(UserPackagePurchase)
         .options(selectinload(UserPackagePurchase.package))
-        .where(UserPackagePurchase.user_id == user.id)
+        .where(UserPackagePurchase.user_id == user.id, UserPackagePurchase.status.in_(statuses))
         .order_by(UserPackagePurchase.expires_at.asc())
     )
     purchases = list(result.scalars().all())
+    out = []
+    for p in purchases:
+        item = UserPackagePurchaseOut.model_validate(p)
+        if p.status is PurchaseStatus.pending and p.stripe_checkout_session_id:
+            item.checkout_url = await gateway.get_checkout_url(p.stripe_checkout_session_id)
+        out.append(item)
     return {
-        "purchases": [UserPackagePurchaseOut.model_validate(p) for p in purchases],
+        "purchases": out,
         "balance": PackageBalanceOut.model_validate(package_hours.bank_balance(purchases, now)),
     }
+
+
+@router.post("/purchases/{purchase_id}/cancel")
+async def cancel_my_purchase(
+    purchase_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    gateway: PaymentGateway = Depends(get_payment_gateway),
+):
+    """ "Cancelar" on a pending pack purchase (B68): the caller's own, still
+    `pending`, to `cancelled`; its Checkout session is made unpayable so a
+    tab left open cannot pay it afterwards. 403 for someone else's, 409 for
+    one that is no longer pending (paid, or already cancelled)."""
+    purchase = await db.scalar(
+        select(UserPackagePurchase).where(UserPackagePurchase.id == purchase_id).with_for_update()
+    )
+    if purchase is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+    if purchase.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Esta compra não é sua.")
+    if purchase.status is not PurchaseStatus.pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Só uma compra com pagamento pendente pode ser cancelada.",
+        )
+    if purchase.stripe_checkout_session_id:
+        try:
+            await gateway.expire_checkout_session(purchase.stripe_checkout_session_id)
+        except CheckoutSessionCompletedError:
+            # Paid in the meantime: the webhook will activate it; nothing to cancel.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Esta compra acabou de ser paga.",
+            ) from None
+    purchase.status = PurchaseStatus.cancelled
+    await db.flush()
+    await db.refresh(purchase)
+    purchase.package = await db.scalar(select(Package).where(Package.id == purchase.package_id))
+    return {"purchase": UserPackagePurchaseOut.model_validate(purchase)}
