@@ -1802,7 +1802,7 @@ purchase among them. Found on the way: `password123`/`Password123!`
 (every fixture) are in the breached list, so the fixtures moved to
 `Senha-2026x` and a phrase; three component/e2e specs pinned the old
 8-character rule or the pending-by-default list and were updated to the
-new rules, never weakened. **Review rounds (PR A):** recorded in the last commit of the PR.
+new rules, never weakened. **Review rounds (PR A):** round 1 (head `fe58dd0`) — CI green (Security; Checks: 15 pass, 2 skipping); no Copilot review (none in 6 min, requested, none 4 min later); nothing to address. The record commit's own push is polled the same way and its outcome goes in the PR body.
 
 ### B64 — The locale survives a reload without a flash
 
