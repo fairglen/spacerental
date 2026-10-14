@@ -65,6 +65,9 @@ class UserPackagePurchaseOut(BaseModel):
     # 0,00 for complimentary hours (A05); the package's price when bought.
     amount_paid: Decimal = Decimal(0)
     status: PurchaseStatus
+    # B68: a `pending` purchase listed with `?include=pending` carries the
+    # Checkout page to resume; None everywhere else.
+    checkout_url: str | None = None
     # K01: bought, granted, or the paid hours of a cancelled booking.
     source: PurchaseSource = PurchaseSource.purchase
     source_booking_id: uuid.UUID | None = None

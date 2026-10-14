@@ -2,17 +2,21 @@
 import { useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { packagesApi } from '@/lib/api'
+import { queryKeys } from '@/lib/queryKeys'
 import { useApi } from '@/lib/hooks/useApi'
 import { useOrg } from '@/contexts/OrgContext'
+import { detailOf } from '@/lib/httpError'
 import { formatCurrency } from '@/lib/utils'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useToast } from '@/components/ui/toast'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
 import { formatHours } from '@/lib/utils'
 import { purchaseLabel } from '@/lib/cancellationCredit'
@@ -20,6 +24,8 @@ import { purchaseLabel } from '@/lib/cancellationCredit'
 export default function MyPackagesPage() {
   const { data: session } = useSession()
   const api = useApi()
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
   const { currentOrgId } = useOrg()
   const searchParams = useSearchParams()
   // Set when arriving from Pricing/sign-up with a package pre-selected (B12)
@@ -27,14 +33,27 @@ export default function MyPackagesPage() {
   const highlightId = searchParams.get('packageId')
   const highlightRef = useRef<HTMLDivElement | null>(null)
 
-  // The purchases and the bank they form (H02), in one read.
+  // The purchases and the bank they form (H02), in one read — with the
+  // purchases whose Checkout is still open (B68), shown apart below.
   const { data: mine, isLoading } = useQuery({
-    queryKey: ['packages', 'me', 'bank'],
-    queryFn: () => packagesApi.myPackages(api),
+    queryKey: queryKeys.myPackages,
+    queryFn: () => packagesApi.myPackages(api, { includePending: true }),
     enabled: !!session?.accessToken,
   })
-  const purchases = mine?.purchases
+  const purchases = (mine?.purchases ?? []).filter((p) => p.status === 'active')
+  const pending = (mine?.purchases ?? []).filter((p) => p.status === 'pending')
   const balance = mine?.balance
+
+  // "Cancelar" on a pending purchase: the row goes to `cancelled` and its
+  // Checkout page stops accepting a payment.
+  const cancel = useMutation({
+    mutationFn: (purchaseId: string) => packagesApi.cancelPurchase(purchaseId, api),
+    onSuccess: async () => {
+      toast({ title: 'Compra cancelada.', variant: 'success' })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.myPackages })
+    },
+    onError: (err) => toast({ title: detailOf(err) ?? 'Não foi possível cancelar a compra.', variant: 'error' }),
+  })
 
   const { data: availablePackages, isLoading: isLoadingAvailable } = useQuery({
     queryKey: ['packages', 'available', currentOrgId],
@@ -78,10 +97,38 @@ export default function MyPackagesPage() {
               </Card>
             </section>
           )}
+          {/* B68: a Checkout left open is not a pack — resume it or let it go. */}
+          {pending.length > 0 && (
+            <section aria-labelledby="pagamento-pendente" data-testid="pending-purchases">
+              <h2 id="pagamento-pendente" className="text-sm font-medium text-muted-foreground mb-3">Pagamento pendente</h2>
+              <div className="space-y-3">
+                {pending.map((p) => (
+                  <Card key={p.id} className="border-dashed">
+                    <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-foreground">{purchaseLabel(p)}</p>
+                        <p className="text-xs text-muted-foreground">O pagamento não foi concluído. Retome-o ou cancele a compra.</p>
+                      </div>
+                      <div className="flex gap-2">
+                        {p.checkout_url && (
+                          <Button asChild size="sm">
+                            <a href={p.checkout_url}>Retomar pagamento</a>
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate(p.id)}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
           <section>
             {isLoading ? (
               <div className="space-y-3">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
-            ) : (purchases ?? []).length === 0 ? (
+            ) : purchases.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
                   <p>Não tem pacotes de horas.</p>
@@ -89,7 +136,7 @@ export default function MyPackagesPage() {
               </Card>
             ) : (
               <div className="space-y-4">
-                {(purchases ?? []).map((p) => (
+                {purchases.map((p) => (
                   <Card key={p.id}>
                     <CardContent className="p-5">
                       <div className="flex items-center justify-between mb-3">
@@ -116,7 +163,7 @@ export default function MyPackagesPage() {
             <h2 className="text-lg font-semibold text-foreground mb-4">Comprar mais horas</h2>
             {!currentOrgId ? (
               <p className="text-sm text-muted-foreground">
-                Ainda não pertences a nenhuma organização com pacotes disponíveis.
+                Ainda não pertence a nenhuma organização com pacotes disponíveis.
               </p>
             ) : isLoadingAvailable ? (
               <div className="grid gap-4 sm:grid-cols-2">

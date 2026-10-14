@@ -168,7 +168,7 @@ class TestListMyBookings:
         other = User(
             email="other@test.com",
             name="Other",
-            password_hash=hash_password("password123"),
+            password_hash=hash_password("Senha-2026x"),
         )
         db_session.add(other)
         await db_session.flush()
@@ -260,7 +260,7 @@ class TestCancelBooking:
         intruder = User(
             email="intruder@test.com",
             name="Intruder",
-            password_hash=hash_password("password123"),
+            password_hash=hash_password("Senha-2026x"),
         )
         db_session.add(intruder)
         await db_session.flush()

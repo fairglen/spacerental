@@ -533,7 +533,7 @@ class TestAdminAccessControl:
         member = User(
             email="plain-member@test.com",
             name="Plain Member",
-            password_hash=hash_password("password123"),
+            password_hash=hash_password("Senha-2026x"),
         )
         db_session.add(member)
         await db_session.flush()

@@ -1,12 +1,12 @@
 import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import clock, email, password_reset
+from app import clock, email, password_reset, passwords
 from app.auth import (
     create_access_token,
     get_current_user,
@@ -17,6 +17,7 @@ from app.auth import (
 from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
+from app.emails import normalize_email
 from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
 from app.models.user import User
 from app.ratelimit import AUTH_TIER, rate_limit
@@ -140,9 +141,21 @@ async def _enroll_member(user: User, org: Organization, db: AsyncSession) -> Org
     ).scalar_one()
 
 
+def refuse_weak_password(password: str, email: str) -> None:
+    """422 with every reason the policy gives (B66), so the person fixes
+    all of them at once instead of one per attempt."""
+    reasons = passwords.check_password(password, email)
+    if reasons:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=reasons)
+
+
 async def _register(body: UserRegister, db: AsyncSession, *, operator: bool = False) -> TokenOut:
+    refuse_weak_password(body.password, body.email)
     org = None if operator else await _enrollment_org(db)
-    existing = await db.execute(select(User).where(User.email == body.email))
+    # One mailbox, one account (B67): the identity is the normalised address.
+    existing = await db.execute(
+        select(User).where(User.email_normalized == normalize_email(body.email))
+    )
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=400, detail="Este email já está registado.")
 
@@ -195,8 +208,7 @@ async def enroll(user: User = Depends(get_current_user), db: AsyncSession = Depe
 @router.post("/login", response_model=TokenOut)
 @rate_limit(AUTH_TIER)
 async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
+    user = await _user_by_email(db, body.email)
 
     if (
         user is None
@@ -223,18 +235,10 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
 
 
 async def _user_by_email(db: AsyncSession, email: str) -> User | None:
-    """The account for an address, matched without regard to case. `users.email`
-    is unique case-sensitively (B37), so two accounts may differ only by case:
-    then the exact spelling wins, and with no exact match nobody does — the
-    endpoint must never pick one of two people."""
-    rows = (
-        (await db.execute(select(User).where(func.lower(User.email) == email.lower())))
-        .scalars()
-        .all()
-    )
-    if len(rows) == 1:
-        return rows[0]
-    return next((u for u in rows if u.email == email), None)
+    """The account for an address, by its normalised form (B67): case,
+    a `+tag` and Gmail dots do not make a second mailbox, and the unique
+    index guarantees at most one row."""
+    return await db.scalar(select(User).where(User.email_normalized == normalize_email(email)))
 
 
 RESET_REQUESTED = (
@@ -274,6 +278,11 @@ async def confirm_password_reset(body: PasswordResetConfirm, db: AsyncSession = 
     used or expired — one message for all three, so the endpoint cannot be
     used to probe tokens. Success bumps `token_version`: every session issued
     before it is signed out."""
+    # The rules that need no account first (length, the breached list, the
+    # product name): a 422 before any token lookup says nothing about the
+    # link. The email rule needs the account, so it runs below — before
+    # `used_at`, so the link survives the retry either way.
+    refuse_weak_password(body.password, "")
     now = clock.utcnow()
     token = await password_reset.consume(db, body.token, now=now)
     if token is None:
@@ -281,6 +290,7 @@ async def confirm_password_reset(body: PasswordResetConfirm, db: AsyncSession = 
     user = await db.scalar(select(User).where(User.id == token.user_id).with_for_update())
     if user is None or user.disabled_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=RESET_LINK_INVALID)
+    refuse_weak_password(body.password, user.email)
     token.used_at = now
     await password_reset.set_password(db, user, hash_password(body.password))
     return {"detail": "Password alterada. Já pode iniciar sessão."}

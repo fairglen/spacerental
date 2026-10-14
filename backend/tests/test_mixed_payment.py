@@ -138,7 +138,7 @@ async def _pay(client, payments, booking: dict) -> dict:
 
 @pytest_asyncio.fixture
 async def admin(db_session, test_org) -> dict:
-    u = User(email="op@test.com", name="Op", password_hash=hash_password("password123"))
+    u = User(email="op@test.com", name="Op", password_hash=hash_password("Senha-2026x"))
     db_session.add(u)
     await db_session.flush()
     db_session.add(OrganizationMember(org_id=test_org.id, user_id=u.id, role=MemberRole.owner))
@@ -345,7 +345,7 @@ class TestHoursComeBack:
     ):  # fmt: skip
         start = _monday()
         await _book(client, auth_headers, test_room, start, 8)
-        other = User(email="o@test.com", name="O", password_hash=hash_password("password123"))
+        other = User(email="o@test.com", name="O", password_hash=hash_password("Senha-2026x"))
         db_session.add(other)
         await db_session.flush()
         db_session.add(

@@ -26,6 +26,70 @@ from app.payments import (
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 CHECKOUT_COMPLETED = "checkout.session.completed"
+CHECKOUT_EXPIRED = "checkout.session.expired"
+
+
+async def expire_pending_hold(db: AsyncSession, session_id: str, now) -> bool:
+    """A customer backed out of Checkout, or Stripe expired the session: the
+    unpaid hold is fast-forwarded to the same `expired` state a lapsed hold
+    reaches (C03 decision 5) — the slot frees up, and the customer can still
+    "Pagar agora" later if it is free. Idempotent: a hold that is no longer
+    `pending` is left alone."""
+    result = await db.execute(
+        select(Booking)
+        .where(
+            Booking.stripe_checkout_session_id == session_id,
+            Booking.status == BookingStatus.pending,
+            Booking.hold_expires_at.is_not(None),
+        )
+        # Serialised with the completion path: after waiting on its lock the
+        # row is re-read and, once confirmed, no longer matches.
+        .with_for_update()
+    )
+    booking = result.scalar_one_or_none()
+    if booking is None:
+        return False
+    # A mixed hold reserved pack hours; letting go returns them (C13).
+    await package_hours.settle_status_change(
+        db, booking, previous=booking.status, new=BookingStatus.expired, now=now
+    )
+    booking.hold_expires_at = now
+    booking.status = BookingStatus.expired
+    return True
+
+
+async def cancel_pending_purchase(db: AsyncSession, session_id: str) -> bool:
+    """B68: a pack purchase whose Checkout was cancelled or expired is
+    `cancelled`, never a dangling `pending`. Idempotent and serialised with
+    the completion path the same way as the booking branch."""
+    result = await db.execute(
+        select(UserPackagePurchase)
+        .where(
+            UserPackagePurchase.stripe_checkout_session_id == session_id,
+            UserPackagePurchase.status == PurchaseStatus.pending,
+        )
+        .with_for_update()
+    )
+    purchase = result.scalar_one_or_none()
+    if purchase is None:
+        return False
+    purchase.status = PurchaseStatus.cancelled
+    return True
+
+
+async def apply_checkout_expiry(db: AsyncSession, session: CheckoutSessionInfo) -> bool:
+    """`checkout.session.expired` (B68): a pending purchase is cancelled, a
+    pending booking hold takes the path the stub's cancel takes. A session
+    paid meanwhile is already `completed` and matches neither."""
+    if not session.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Checkout Session has no id"
+        )
+    if session.kind == CheckoutKind.booking.value:
+        return await expire_pending_hold(db, session.id, clock.utcnow())
+    if session.kind == CheckoutKind.package_purchase.value:
+        return await cancel_pending_purchase(db, session.id)
+    return False
 
 
 def _required_uuid(raw: str | None, field: str) -> uuid.UUID:
@@ -265,7 +329,14 @@ async def stripe_webhook(
             detail="Malformed webhook payload",
         ) from None
 
-    if event.type != CHECKOUT_COMPLETED or event.checkout_session is None:
+    if event.checkout_session is None:
+        return {"received": True, "handled": False}
+    if event.type == CHECKOUT_EXPIRED:
+        return {
+            "received": True,
+            "handled": await apply_checkout_expiry(db, event.checkout_session),
+        }
+    if event.type != CHECKOUT_COMPLETED:
         return {"received": True, "handled": False}
 
     handled = await apply_checkout_completion(

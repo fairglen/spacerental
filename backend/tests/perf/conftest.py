@@ -29,7 +29,7 @@ RESULTS_FILE = os.environ.get("PERF_RESULTS", "perf-results/api.json")
 
 # Argon2 at the production parameters costs ~0.1 s a hash; the perf customers
 # never log in, so one hash serves all of them.
-_PASSWORD_HASH = hash_password("password123")
+_PASSWORD_HASH = hash_password("Senha-2026x")
 
 
 def headers_for(user: User, role: str = "member") -> dict[str, str]:

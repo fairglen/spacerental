@@ -8,4 +8,6 @@ export const queryKeys = {
   space: (id: string) => ['space', id] as const,
   /** The packs the pricing block offers for an organisation. */
   pricingPackages: (orgId: string) => ['pricing', 'packages', orgId] as const,
+  /** The customer's own purchases and bank (the packs page; with the pending ones, B68). */
+  myPackages: ['packages', 'me', 'bank'] as const,
 }

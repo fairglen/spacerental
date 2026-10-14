@@ -902,7 +902,9 @@ token still passes.
 
 ### B37 — Email addresses are case-sensitive at login and registration
 
-**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+**Priority: P2. State: DONE by reference — B67 (tester round 1, PR A
+`fix/tester-round-1-backend`): `users.email_normalized` with a unique index,
+every lookup through it, the migration failing loudly on a collision.**
 Bug (2026-09-18, authentication audit): the local part of an email is compared
 exactly, so a customer who registered as `Ana@…` cannot sign in as `ana@…`,
 and one mailbox can hold two accounts that differ only by case. There is no
@@ -1687,6 +1689,182 @@ No Copilot review: none in 6 minutes of polling (GraphQL `reviews` +
 `reviewThreads`), the one-time request registered no reviewer, none in the
 4 minutes after — as on #91–#96, this repository has no Copilot code
 review. Zero review threads, no fix commits.
+
+## Tester round 1 (B63–B70) — owner assignment 2026-10-14 (PR A `fix/tester-round-1-backend` on `main`; PR B `fix/tester-round-1-i18n-ui` stacked on it)
+
+Owner's ask: the seven findings of the first tester round, in the fewest
+sensible PRs — the production build for testers, a real password policy,
+one mailbox = one account (closes B37), abandoned pack checkouts cancelled,
+the locale surviving a reload, EN across the customer journey (closes D02
+for customers; admin stays PT), a mobile menu that works at any height plus
+an account menu, and a line that says how a pack is used. Same rules as
+every loop: conservative reading of anything ambiguous, recorded under the
+item and tagged `DECISION:` in the commit body; one commit per item; the
+owner's default Compose project untouched; never merged by the loop.
+Finding → item map: #1 dev overlay on testers' phones → B63; #2 weak
+passwords → B66; #3 `+tag`/case duplicates → B67; #4 a cancelled pack
+checkout stays "pending" → B68; #5 the language flips back → B64; #6 EN
+stops at the landing → B65; #7 the mobile menu cut off / no account menu →
+B69; #7b "what do I do with the pack?" → B70. Backlog only, not built: D23
+and D24 below. The tester's "Rooms opens a separate page" remark is by
+design (the room page carries the calendar, photos and the pack upsell) —
+noted under D02's outcome.
+
+### B63 — Testers get the production build, never the dev overlay
+
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** `scripts/remote-up.sh` started
+`docker-compose.yml` (`npm run dev`), so Next's dev overlay turned an error
+thrown by a tester's browser extension (`window.__firefox__.reader`,
+`window.ethereum` injected by Brave) into a full-screen error on their
+phone. **Scope:** a `--prod` flag, the default for `ngrok` mode (`lan` keeps
+the dev stack unless `--prod`; `--dev` opts ngrok out): the production
+images from `docker-compose.prod.yml` built locally through the new
+overlay `docker-compose.share.yml` (the dev Postgres and media volumes, no
+Caddy — the tunnel terminates TLS and the frontend publishes 3000,
+`APP_ENV=development` so E02 accepts the stub modes and `http://` local
+addresses, `NEXTAUTH_URL`/`FRONTEND_URL` from `.env.remote` as today), the
+dev seed run after `up`; `--dry-run` prints the compose command; README and
+`usage` say which build testers get. **Validation:**
+`scripts/tests/remote-env.sh` gains the share render and the three dry
+runs; a manual check that `/` through the share stack carries no
+`__nextjs` overlay script (PR body).
+
+### B66 — Password policy: length and blocklists, not composition rules
+
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** Any 8 characters were accepted.
+**DECISION:** NIST SP 800-63B — length 10–128; a password in the bundled
+top-20 000 breached list (`backend/app/data/common-passwords.txt`,
+lowercase, loaded once) is refused; one containing the address's local part
+or the word "flowspace" (case-insensitive) is refused; no character-class
+rules. The tester's "letters + numbers + a special character" is the
+rejected alternative: composition rules push people to `Password1!`, which
+the blocklist refuses anyway, and NIST's evidence is that length and
+blocklists do the work. **Scope:** `app/passwords.py:check_password(password,
+email) -> list[str]` used by register, reset-password, set-password and the
+admin set-password, each failure a 422 whose `detail` lists the reasons in
+formal Portuguese; the frontend mirrors the length and email-part rules in
+`lib/password.ts` with an inline hint under every password field and shows
+the server's reasons verbatim (the list check is server-side only).
+**Validation:** pytest per rule and per route; Vitest for the helper;
+`auth.spec.ts` with one rejected and one accepted password.
+
+### B67 — One mailbox, one account (closes B37, covers `+tag`)
+
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** **Scope:**
+`users.email_normalized` (migration 0019, unique index), computed by
+`app/emails.py:normalize_email`: trim, lowercase, the `+tag` stripped from
+the local part on every domain, and for `gmail.com`/`googlemail.com` the
+dots in the local part removed. **DECISION:** subaddressing is stripped
+rather than refused — a `+` is legitimate and widely used, and refusing it
+would block real addresses; the typed address stays in `users.email` and is
+what we send to. Registration, login, forgot-password, the enrollment path,
+admin user creation/update and the admin search look up by
+`email_normalized`; the duplicate message stays "Este email já está
+registado." The migration backfills and **fails loudly** on a collision
+(two existing rows normalising to one), naming both addresses — never a
+merge (B37's acceptance). **Validation:** `a+test@x.pt` then `A@x.pt` →
+400; `an.a@gmail.com` vs `ana@gmail.com` → 400; login with any case; a
+pre-existing mixed-case account still signs in; the migration round trip on
+an empty database and a collision fixture that is expected to fail.
+
+### B68 — A cancelled or abandoned pack checkout is cancelled; only active packs are packs
+
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** **Scope:** (1) the stub
+checkout's cancel sets a `pending` purchase to `cancelled` (locked by its
+session id, idempotent, the booking branch's shape); (2) the webhook handles
+`checkout.session.expired`: a `pending` purchase → `cancelled`, a `pending`
+booking hold → the same `expired` path the stub cancel uses; (3) the sweeper
+also cancels `pending` purchases older than `PACKAGE_CHECKOUT_MINUTES` (new
+setting, default 60); (4) `GET /packages/me` returns `active` purchases by
+default, `?include=pending` adds pending ones with their `checkout_url`
+("Retomar pagamento"), `cancelled` never reaches a customer, the hour-bank
+numbers unchanged (they already ignore non-active rows — asserted); the admin
+purchases list shows a status badge; (5) the packs page shows pending ones
+in a "Pagamento pendente" block with "Retomar pagamento" and "Cancelar"
+(`POST /packages/purchases/{id}/cancel`, owner-only, pending-only, 409
+otherwise). **Validation:** pytest for the stub cancel, the expired webhook,
+the sweeper, the list filter and the cancel route (403/409); Playwright
+`packages.spec.ts`: buy → "Cancelar" on the stub page → no pack and 0h; buy
+→ pay → one pack.
+
+**PR A validation (2026-10-14, local):** `scripts/tests/remote-env.sh`
+54/54 (the share render and the four dry runs) and the share build served
+`/` with no `react-refresh`/`__nextjs`/`nextjs-portal` reference and hashed
+`webpack-<hash>.js` chunks, where the dev stack's `/` has `webpack.js?v=`
+(project `spacerental-share-check` on 3063, torn down); backend suite in
+`spacerental-tester-tests` 1087 passed, 4 subtests (the authz matrix classifies the new route and names its isolation test; four tests that pinned the pending-by-default list, the "cancelled" row in a customer list or the expired event as unrelated were moved to the new rules); migration round trip on an empty
+PostgreSQL 18 with 0019 (upgrade → check → downgrade → no leftover →
+upgrade → check) clean; Ruff 0.16.5 clean; shellcheck clean; `tsc`,
+`next lint`, `next build` clean, Vitest 767/767 (78 files); Playwright on the
+worktree's own e2e stack (3110/8110) 85 passed + 8 skipped — `auth.spec.ts` with the
+refused/accepted passwords and `packages.spec.ts` with the cancelled
+purchase among them. Found on the way: `password123`/`Password123!`
+(every fixture) are in the breached list, so the fixtures moved to
+`Senha-2026x` and a phrase; three component/e2e specs pinned the old
+8-character rule or the pending-by-default list and were updated to the
+new rules, never weakened. **Review rounds (PR A):** round 1 (head `fe58dd0`) — CI green (Security; Checks: 15 pass, 2 skipping); no Copilot review (none in 6 min, requested, none 4 min later); nothing to address. The record commit's own push is polled the same way and its outcome goes in the PR body.
+
+### B64 — The locale survives a reload without a flash
+
+**Priority: P2. State: IN PROGRESS (PR B).** **Scope:** the locale in a
+cookie `flowspace.locale` (SameSite=Lax, path `/`, one year) written by
+`setLocale`; the root layout reads it with `cookies()` and renders `<html
+lang="pt-PT"|"en">` with the initial locale, so the first paint is already in
+the chosen language; `getServerLocale()`; the old `localStorage` key read
+once as a migration. **DECISION:** a first visit stays PT — no
+`Accept-Language` sniffing. **Validation:** Vitest for the cookie round
+trip; `landing-ssr.spec.ts` asserts the EN headline and `lang="en"` in the
+server HTML with the cookie set.
+
+### B65 — EN covers the whole customer journey (closes D02 for customers)
+
+**Priority: P2. State: IN PROGRESS (PR B).** **Scope:** every page a
+customer reaches — landing, spaces and rooms (`SpaceRoomsView`, the "Onde
+estamos" lines), the pricing CTAs, the booking calendar and modal, the auth
+pages, the help dialog, the dashboard, packs, billing, the 404 page, the
+stub checkout page (EN when `Accept-Language` prefers it; dev-only, Stripe
+localises the real one); `lib/amenities.ts` maps the known PT amenity values
+to EN labels with the raw string as fallback. **DECISION:** emails stay PT —
+a per-customer language is a later item. Admin stays PT (D02's scope for
+operators is not implied). **Validation:** the catalog parity test; a
+Vitest guard rendering each customer page in EN and refusing a short list of
+PT-only words; Playwright `locale.spec.ts` through the journey in EN.
+
+### B69 — A mobile menu that works at any height, and an account menu
+
+**Priority: P2. State: IN PROGRESS (PR B).** **Scope:** `Navbar.tsx` — the
+mobile menu is a fixed sheet below the bar (`fixed inset-x-0 top-16
+bottom-0`, its own scroll, body scroll locked, closes on route change and
+Escape, focus trapped) with the account actions first when signed in; on
+desktop the signed-in links collapse into an account menu (avatar → name,
+email, Reservas, Packs, Faturação, Terminar sessão); "Reservar" stays the
+signed-out CTA. **Validation:** Vitest for open/close/Escape and the
+grouping; Playwright at 320×480 and 640×360 — every entry reachable by
+scrolling inside the sheet while `document.body` does not scroll.
+
+### B70 — Say how a pack is used
+
+**Priority: P3. State: IN PROGRESS (PR B).** **Scope:** after a purchase (the
+"Pagamento concluído" banner), in the packs page's empty state and on the
+pack cards: "Para usar as horas, reserve uma sala: escolha a sala e o
+horário; as horas do pack são descontadas automaticamente." with the CTA
+"Reservar uma sala" → `/spaces`, in EN too; the help dialog links "Perguntas
+frequentes" to `https://flowspace.pt/#faq`. **Validation:** Vitest for both
+states.
+
+### D23 — Customer flags for operators
+
+**Priority: P3. State: QUEUED (backlog only, tester round 1).** The tester's
+"orange/red flag" idea: an operator marks a customer (late payer, no-show,
+damage) with a colour and a note that shows on their bookings and in the
+users list; visible to operators only, audited. Not built.
+
+### D24 — In-app FAQ page
+
+**Priority: P3. State: QUEUED (backlog only, tester round 1).** The static
+site's FAQ (`https://flowspace.pt/#faq`, linked from the help dialog by B70)
+as a page inside the app, in PT and EN, so a signed-in customer never leaves
+the app for it. Not built.
 
 ## Billing statement and invoice records (I-series) — owner assignment 2026-10-07 (PR `feat/billing-statement-invoices`, stacked on #94)
 

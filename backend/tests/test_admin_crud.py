@@ -421,7 +421,7 @@ class TestUsers:
         assert suspended.json()["user"]["disabled_at"]
         assert (await client.get(f"{API}/auth/me", headers=member_headers)).status_code == 401
         login = await client.post(
-            f"{API}/auth/login", json={"email": "renamed@test.com", "password": "password123"}
+            f"{API}/auth/login", json={"email": "renamed@test.com", "password": "Senha-2026x"}
         )
         assert login.status_code == 401
         assert login.json()["detail"] == "A conta está desativada."
@@ -436,7 +436,7 @@ class TestUsers:
         assert back.status_code == 200, back.text
         assert back.json()["user"]["disabled_at"] is None
         login = await client.post(
-            f"{API}/auth/login", json={"email": "renamed@test.com", "password": "password123"}
+            f"{API}/auth/login", json={"email": "renamed@test.com", "password": "Senha-2026x"}
         )
         assert login.status_code == 200
         me = await client.put(

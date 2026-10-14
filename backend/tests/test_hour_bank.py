@@ -362,7 +362,9 @@ class TestWhatPeopleSee:
         mine = await client.get(f"{API}/packages/me", headers=auth_headers)
         assert mine.status_code == 200
         body = mine.json()
-        assert len(body["purchases"]) == 4  # history is kept exactly as today
+        # B68: only the active ones are packs; the unpaid and the cancelled
+        # row are not listed, and the bank below is the same number as before.
+        assert len(body["purchases"]) == 2
         expiring = body["balance"]["hours_expiring_next"]
         assert body["balance"] == {
             "hours_available": "12.00",

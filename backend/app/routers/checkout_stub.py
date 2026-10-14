@@ -30,17 +30,19 @@ from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import clock, package_hours
+from app import clock
 from app.config import BRAND_NAME
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
 from app.locks import LockGateway, get_lock_gateway
-from app.models.booking import Booking, BookingStatus
-from app.payments import PaymentGateway, StubPaymentGateway, get_payment_gateway
-from app.routers.webhooks import apply_checkout_completion
+from app.payments import CheckoutKind, PaymentGateway, StubPaymentGateway, get_payment_gateway
+from app.routers.webhooks import (
+    apply_checkout_completion,
+    cancel_pending_purchase,
+    expire_pending_hold,
+)
 
 router = APIRouter(prefix="/checkout/stub", tags=["checkout-stub"])
 
@@ -223,32 +225,16 @@ async def cancel_checkout(
     gateway: StubPaymentGateway = Depends(_require_stub_gateway),
 ) -> RedirectResponse:
     session = _session_or_404(gateway, session_id)
-    if session["kind"] == "booking":
-        # Backing out releases the hold at once by fast-forwarding it to the
-        # same `expired` state a lapsed hold reaches (C03 decision 5) — the
-        # slot frees up, and the customer can still "Pagar agora" later if it
-        # is free. Live Stripe's cancel URL is a plain redirect, so there the
-        # hold simply lapses at BOOKING_HOLD_MINUTES.
-        result = await db.execute(
-            select(Booking)
-            .where(
-                Booking.stripe_checkout_session_id == session_id,
-                Booking.status == BookingStatus.pending,
-                Booking.hold_expires_at.is_not(None),
-            )
-            # Serialised with the stub `pay` route: after waiting on its lock
-            # the row is re-read and, once confirmed, no longer matches.
-            .with_for_update()
-        )
-        booking = result.scalar_one_or_none()
-        if booking is not None:
-            now = clock.utcnow()
-            # A mixed hold reserved pack hours; letting go returns them (C13).
-            await package_hours.settle_status_change(
-                db, booking, previous=booking.status, new=BookingStatus.expired, now=now
-            )
-            booking.hold_expires_at = now
-            booking.status = BookingStatus.expired
+    # Backing out releases what the session held at once: a booking hold to
+    # `expired` (the slot frees up; "Pagar agora" later if it is still free),
+    # a pack purchase to `cancelled` (B68) — the same helpers the
+    # `checkout.session.expired` webhook runs. Live Stripe's cancel URL is a
+    # plain redirect, so there the hold lapses at BOOKING_HOLD_MINUTES and
+    # the purchase waits for that webhook or the sweeper.
+    if session["kind"] == CheckoutKind.booking.value:
+        await expire_pending_hold(db, session_id, clock.utcnow())
+    elif session["kind"] == CheckoutKind.package_purchase.value:
+        await cancel_pending_purchase(db, session_id)
     return RedirectResponse(
         session.get("cancel_url") or gateway.cancel_url, status_code=status.HTTP_303_SEE_OTHER
     )

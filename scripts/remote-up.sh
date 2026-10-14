@@ -4,13 +4,19 @@
 # starts the stack with that file layered on .env. The stack is ONE URL — the
 # browser reaches the API through the frontend's own origin (/backend/*).
 #
-#   scripts/remote-up.sh lan   [--dry-run]   same Wi-Fi, via this host's LAN IP
-#   scripts/remote-up.sh ngrok [--dry-run]   from anywhere, via one ngrok tunnel
-#   scripts/remote-up.sh off                 back to localhost (plain .env)
+#   scripts/remote-up.sh lan   [--prod] [--dry-run]   same Wi-Fi, via this host's LAN IP (the dev stack)
+#   scripts/remote-up.sh ngrok [--dev]  [--dry-run]   from anywhere, via one ngrok tunnel (the PRODUCTION build)
+#   scripts/remote-up.sh off                          back to localhost (plain .env, the dev stack)
 #
-# --dry-run prints the .env.remote it would write and touches neither that
-# file nor Docker. REMOTE_HOST_IP=<ip> replaces the LAN detection (CI uses it).
-# The script never edits .env and refuses to run without one.
+# Testers get the production build (B63): `ngrok` starts docker-compose.yml
+# through the docker-compose.share.yml overlay (the production build targets,
+# built here, `next start`: no dev overlay on their phones; the dev database
+# and seed, APP_ENV=development); `--dev` keeps the dev stack there, `--prod`
+# asks for the build on the LAN.
+# --dry-run prints the .env.remote it would write and the compose command,
+# and touches neither that file nor Docker. REMOTE_HOST_IP=<ip> replaces the
+# LAN detection (CI uses it). The script never edits .env and refuses to run
+# without one.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -23,14 +29,17 @@ NGROK_API=${NGROK_API:-http://127.0.0.1:4040/api/tunnels}
 NGROK_LOG=${TMPDIR:-/tmp}/spacerental-ngrok.log
 
 die() { echo "remote-up: $*" >&2; exit 1; }
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; }
 
 mode=${1:-}
 [ $# -eq 0 ] || shift
 dry_run=false
+build=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run) dry_run=true ;;
+    --prod) build=prod ;;
+    --dev) build=dev ;;
     *) usage >&2; die "unknown argument: $arg" ;;
   esac
 done
@@ -38,6 +47,11 @@ case "$mode" in
   lan|ngrok|off) ;;
   *) usage >&2; exit 2 ;;
 esac
+# The production build is the default for testers reached through ngrok;
+# the LAN keeps the dev stack (hot reload) unless asked.
+if [ -z "$build" ]; then
+  if [ "$mode" = ngrok ]; then build=prod; else build=dev; fi
+fi
 [ -f .env ] || die ".env is missing — cp .env.example .env first (README \"Setup\")"
 [ -f .env.remote.example ] || die ".env.remote.example is missing"
 
@@ -65,21 +79,47 @@ render_env() {
   sed -e "s|^WEB=.*|WEB=$web|" .env.remote.example
 }
 
+# The compose command for the chosen build, as one printable line.
+compose_up_cmd() {
+  if [ "$build" = prod ]; then
+    echo "docker compose -f docker-compose.yml -f docker-compose.share.yml --env-file .env --env-file .env.remote up -d --build"
+  else
+    echo "docker compose --env-file .env --env-file .env.remote up -d -V"
+  fi
+}
+
 start_layered() { # WEB
   if $dry_run; then
     echo "# --dry-run: .env.remote would be written as follows; Docker not touched."
     render_env "$1"
+    echo "# --dry-run: the stack would start with ($build build):"
+    echo "# $(compose_up_cmd)"
     return
   fi
   render_env "$1" > .env.remote
   echo "Wrote .env.remote (WEB=$1)."
-  docker compose --env-file .env --env-file .env.remote up -d -V
+  if [ "$build" = prod ]; then
+    # The seed is what the dev stack runs too; idempotent.
+    docker compose -f docker-compose.yml -f docker-compose.share.yml \
+      --env-file .env --env-file .env.remote up -d --build
+    docker compose -f docker-compose.yml -f docker-compose.share.yml \
+      --env-file .env --env-file .env.remote exec -T backend python -m app.seed
+  else
+    docker compose --env-file .env --env-file .env.remote up -d -V
+  fi
   print_next_steps "$1"
 }
 
 print_next_steps() { # WEB
+  local what
+  if [ "$build" = prod ]; then
+    what="the PRODUCTION build (next start, no dev overlay; docker-compose.share.yml)"
+  else
+    what="the dev stack (npm run dev, hot reload)"
+  fi
   cat <<EOF
 
+Running $what.
 Open on the other device:   $1
 On this machine too, use    $1   (not http://localhost:$WEB_PORT): the
 session cookie is bound to NEXTAUTH_URL, which is now that address. Use a
@@ -184,8 +224,7 @@ ngrok_mode() {
     echo "Starting ngrok (all tunnels of $cfg; log: $NGROK_LOG)…"
     nohup ngrok start --all --log "$NGROK_LOG" > /dev/null 2>&1 &
     started=true
-    local i
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 30); do
       ngrok_api_up && break
       sleep 1
     done
@@ -193,8 +232,8 @@ ngrok_mode() {
   fi
 
   # The tunnel registers a moment after the agent's API is up.
-  local web="" i
-  for i in $(seq 1 30); do
+  local web=""
+  for _ in $(seq 1 30); do
     web=$(tunnel_url "$WEB_PORT")
     [ -n "$web" ] && break
     sleep 1
@@ -236,12 +275,15 @@ case "$mode" in
     ngrok_mode
     ;;
   off)
+    # The dev stack again; the same project, so the production-build
+    # containers of a share session are replaced in place (B63).
     docker compose up -d -V
     cat <<EOF
 
-Back on plain .env: open http://localhost:$WEB_PORT in a fresh or incognito
-window (the cookie set for the remote address does not apply here).
-.env.remote is kept on disk and ignored until the layered command runs again.
+Back on plain .env and the dev stack: open http://localhost:$WEB_PORT in a
+fresh or incognito window (the cookie set for the remote address does not
+apply here). .env.remote is kept on disk and ignored until the layered
+command runs again.
 EOF
     if ngrok_api_up; then
       echo "ngrok is still running — stop it with: pkill -f 'ngrok start'"

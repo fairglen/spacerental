@@ -245,7 +245,7 @@ class TestCreateRecurrence:
 
     async def test_non_member_returns_403(self, client, db_session, test_room):
         outsider = User(
-            email="outsider@test.com", name="Outsider", password_hash=hash_password("password123")
+            email="outsider@test.com", name="Outsider", password_hash=hash_password("Senha-2026x")
         )
         db_session.add(outsider)
         await db_session.commit()
@@ -434,7 +434,7 @@ class TestCancelSeries:
         rule_id = resp.json()["recurrence"]["id"]
 
         intruder = User(
-            email="intruder@test.com", name="Intruder", password_hash=hash_password("password123")
+            email="intruder@test.com", name="Intruder", password_hash=hash_password("Senha-2026x")
         )
         db_session.add(intruder)
         await db_session.flush()
@@ -679,7 +679,7 @@ class TestEditSeries:
         rule_id = created.json()["recurrence"]["id"]
 
         intruder = User(
-            email="intruder2@test.com", name="Intruder", password_hash=hash_password("password123")
+            email="intruder2@test.com", name="Intruder", password_hash=hash_password("Senha-2026x")
         )
         db_session.add(intruder)
         await db_session.flush()

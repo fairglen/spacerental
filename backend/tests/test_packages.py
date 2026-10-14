@@ -95,8 +95,13 @@ class TestPurchasePackage:
         assert session["kind"] == "package_purchase"
         assert session["org_id"] == str(test_org.id)
 
-        # Hours are not spendable until the webhook lands.
+        # Hours are not spendable until the webhook lands; a pending purchase
+        # is listed only on request (B68).
         mine = await client.get("/api/v1/packages/me", headers=auth_headers)
+        assert mine.json()["purchases"] == []
+        mine = await client.get(
+            "/api/v1/packages/me", params={"include": "pending"}, headers=auth_headers
+        )
         assert mine.json()["purchases"][0]["status"] == "pending"
 
 
@@ -129,8 +134,12 @@ class TestReturnTo:
         paid = await client.post(f"{stub}/pay", follow_redirects=False)
         assert paid.status_code == 303, paid.text
         assert paid.headers["location"] == f"{front}{path}&pagamento=sucesso"
-        mine = await client.get("/api/v1/packages/me", headers=auth_headers)
-        assert mine.json()["purchases"][0]["status"] == "active"
+        # B68: backing out cancelled the purchase; a late "Pagar" on the same
+        # stub page redirects as before but resurrects nothing.
+        mine = await client.get(
+            "/api/v1/packages/me", params={"include": "pending"}, headers=auth_headers
+        )
+        assert mine.json()["purchases"] == []
 
     async def test_a_path_without_a_query_gets_a_question_mark(
         self, client, auth_headers, test_org, test_package, test_member, payments
@@ -203,8 +212,11 @@ class TestMyPackages:
         )
         assert buy.status_code == 201, buy.text
 
-        # Now it should appear
-        resp = await client.get("/api/v1/packages/me", headers=auth_headers)
+        # Now it should appear — with the pending ones asked for (B68: a
+        # purchase whose Checkout is open is not a pack by default).
+        resp = await client.get(
+            "/api/v1/packages/me", params={"include": "pending"}, headers=auth_headers
+        )
         assert resp.status_code == 200
         purchases = resp.json()["purchases"]
         assert len(purchases) == 1
