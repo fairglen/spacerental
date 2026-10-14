@@ -60,7 +60,10 @@ Creates: 1 space (Espaço Calmo — R. 12 de Julho de 1997 5, Loja 1, 2745-841 Q
 **Demo login:** `admin@demo.com` / `admin123`
 
 ### 4. Register your own user
-Visit http://localhost:3000/sign-up — any email/password (min 8 chars) works locally.
+Visit http://localhost:3000/sign-up — any email works locally; the password
+needs 10–128 characters and must not be a common one nor contain the part
+of the email before the `@` (B66, NIST SP 800-63B: length and blocklists,
+no composition rules).
 
 To promote an existing user to admin (owner by default):
 ```bash

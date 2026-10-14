@@ -283,7 +283,7 @@ async def test_user(db_session) -> User:
     u = User(
         email="user@test.com",
         name="Test User",
-        password_hash=hash_password("password123"),
+        password_hash=hash_password("Senha-2026x"),
     )
     db_session.add(u)
     await db_session.commit()
@@ -306,7 +306,7 @@ async def admin_user(db_session, test_org) -> User:
     u = User(
         email="admin@test.com",
         name="Admin",
-        password_hash=hash_password("password123"),
+        password_hash=hash_password("Senha-2026x"),
     )
     db_session.add(u)
     await db_session.flush()
@@ -422,7 +422,7 @@ async def ledger(db_session, test_org, test_user, test_member, test_room) -> Sim
 
     w = SimpleNamespace(org=test_org, ana=test_user, room=test_room)
     w.bruno = User(
-        email="bruno@test.com", name="Bruno Costa", password_hash=hash_password("password123")
+        email="bruno@test.com", name="Bruno Costa", password_hash=hash_password("Senha-2026x")
     )
     w.other_org = Organization(name="Outra", slug="outra-ledger", plan=OrgPlan.starter, settings={})
     db_session.add_all([w.bruno, w.other_org])

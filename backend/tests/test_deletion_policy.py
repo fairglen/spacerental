@@ -535,7 +535,7 @@ class TestUser:
         # Sessions are dead, the old email is nobody's, and no reset goes out.
         assert (await client.get(f"{API}/auth/me", headers=member_headers)).status_code == 401
         login = await client.post(
-            f"{API}/auth/login", json={"email": old_email, "password": "password123"}
+            f"{API}/auth/login", json={"email": old_email, "password": "Senha-2026x"}
         )
         assert login.status_code == 401
         emails.sent.clear()

@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import clock, email, password_reset
+from app import clock, email, password_reset, passwords
 from app.auth import (
     create_access_token,
     get_current_user,
@@ -141,7 +141,16 @@ async def _enroll_member(user: User, org: Organization, db: AsyncSession) -> Org
     ).scalar_one()
 
 
+def refuse_weak_password(password: str, email: str) -> None:
+    """422 with every reason the policy gives (B66), so the person fixes
+    all of them at once instead of one per attempt."""
+    reasons = passwords.check_password(password, email)
+    if reasons:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=reasons)
+
+
 async def _register(body: UserRegister, db: AsyncSession, *, operator: bool = False) -> TokenOut:
+    refuse_weak_password(body.password, body.email)
     org = None if operator else await _enrollment_org(db)
     # One mailbox, one account (B67): the identity is the normalised address.
     existing = await db.execute(
@@ -269,6 +278,11 @@ async def confirm_password_reset(body: PasswordResetConfirm, db: AsyncSession = 
     used or expired — one message for all three, so the endpoint cannot be
     used to probe tokens. Success bumps `token_version`: every session issued
     before it is signed out."""
+    # The rules that need no account first (length, the breached list, the
+    # product name): a 422 before any token lookup says nothing about the
+    # link. The email rule needs the account, so it runs below — before
+    # `used_at`, so the link survives the retry either way.
+    refuse_weak_password(body.password, "")
     now = clock.utcnow()
     token = await password_reset.consume(db, body.token, now=now)
     if token is None:
@@ -276,6 +290,7 @@ async def confirm_password_reset(body: PasswordResetConfirm, db: AsyncSession = 
     user = await db.scalar(select(User).where(User.id == token.user_id).with_for_update())
     if user is None or user.disabled_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=RESET_LINK_INVALID)
+    refuse_weak_password(body.password, user.email)
     token.used_at = now
     await password_reset.set_password(db, user, hash_password(body.password))
     return {"detail": "Password alterada. Já pode iniciar sessão."}

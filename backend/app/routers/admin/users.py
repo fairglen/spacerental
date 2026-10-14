@@ -33,6 +33,7 @@ from app.models.password_reset import PasswordResetToken
 from app.models.support import SupportRequest
 from app.models.user import User
 from app.ratelimit import AUTH_TIER, rate_limit
+from app.routers.auth import refuse_weak_password
 from app.schemas.admin_users import (
     AdminUserCreate,
     AdminUserUpdate,
@@ -162,6 +163,8 @@ async def admin_create_user(
     Without a password the person gets a "Defina a sua password" link (the
     reset flow's token, G03); with one, nothing is sent. The response never
     carries a password; the trail never sees one."""
+    if body.password:
+        refuse_weak_password(body.password, body.email)
     taken = await db.scalar(
         select(func.count())
         .select_from(User)
@@ -659,6 +662,7 @@ async def admin_set_password(
     # an owner's only by another owner.
     await _refuse_other_memberships(db, member)
     await _refuse_non_owner_on_owner(db, admin, member)
+    refuse_weak_password(body.password, user.email)
     await password_reset.set_password(db, user, hash_password(body.password))
     await audit.record(
         db,

@@ -13,13 +13,19 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authApi } from '@/lib/api'
 import { useT } from '@/lib/i18n'
+import { PASSWORD_HINT, passwordProblems, passwordReasonsOf } from '@/lib/password'
 
+// B66: the length rule here (the page does not know the email); the server
+// answers 422 with every reason, shown as it is.
 const schema = z
   .object({
-    password: z.string().min(8, 'A password deve ter pelo menos 8 caracteres').max(128, 'A password é demasiado longa'),
+    password: z.string(),
     confirm: z.string(),
   })
   .refine((v) => v.password === v.confirm, { path: ['confirm'], message: 'As passwords não coincidem' })
+  .superRefine((v, ctx) => {
+    for (const problem of passwordProblems(v.password)) ctx.addIssue({ code: 'custom', path: ['password'], message: problem })
+  })
 type FormData = z.infer<typeof schema>
 
 export default function ResetPasswordPage({ params }: { params: { token: string } }) {
@@ -38,8 +44,11 @@ export default function ResetPasswordPage({ params }: { params: { token: string 
       await authApi.confirmPasswordReset(params.token, data.password)
       router.push('/sign-in?password=reset')
     } catch (err) {
+      const reasons = passwordReasonsOf(err)
       if (isAxiosError(err) && err.response?.status === 400) {
         setInvalid(true)
+      } else if (reasons) {
+        setError(reasons.join(' '))
       } else {
         setError('Não foi possível alterar a password. Tente novamente dentro de instantes.')
       }
@@ -75,7 +84,8 @@ export default function ResetPasswordPage({ params }: { params: { token: string 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div>
                   <Label htmlFor="password">Nova password</Label>
-                  <Input id="password" type="password" {...register('password')} className="mt-1" placeholder="••••••••" autoComplete="new-password" />
+                  <Input id="password" type="password" {...register('password')} className="mt-1" placeholder="••••••••••" autoComplete="new-password" aria-describedby="password-hint" />
+                  <p id="password-hint" className="text-xs text-muted-foreground mt-1">{PASSWORD_HINT}</p>
                   {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
                 </div>
                 <div>

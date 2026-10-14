@@ -233,8 +233,8 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
       const email = `pack-buyer-${Date.now()}@example.com`
       await visitor.getByLabel('Nome').fill('Pack Buyer')
       await visitor.getByLabel('Email').fill(email)
-      await visitor.getByLabel('Password', { exact: true }).fill('password123')
-      await visitor.getByLabel('Confirmar password').fill('password123')
+      await visitor.getByLabel('Password', { exact: true }).fill('uma frase comprida e so minha')
+      await visitor.getByLabel('Confirmar password').fill('uma frase comprida e so minha')
       await visitor.getByRole('button', { name: /Criar Conta/i }).click()
 
       // This is the actual B12 deliverable: the chosen package id rides

@@ -350,7 +350,7 @@ class TestADoorCodeExistsOnlyForAConfirmedBooking:
         monkeypatch,
     ):
         rival = User(
-            email="rival@test.com", name="Rival", password_hash=hash_password("password123")
+            email="rival@test.com", name="Rival", password_hash=hash_password("Senha-2026x")
         )
         db_session.add(rival)
         await db_session.flush()

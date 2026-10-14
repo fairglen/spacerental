@@ -87,14 +87,14 @@ describe('Forgot password page', () => {
 })
 
 describe('Reset password page', () => {
-  it('requires a matching pair of at least 8 characters, then confirms and goes to sign-in', async () => {
+  it('requires a matching pair of at least 10 characters (B66), then confirms and goes to sign-in', async () => {
     const confirm = vi.spyOn(authApi, 'confirmPasswordReset').mockResolvedValue('Password alterada.')
     const user = userEvent.setup()
     render(<ResetPasswordPage params={{ token: 'tok-123' }} />)
-    await user.type(screen.getByLabelText('Nova password'), 'short')
-    await user.type(screen.getByLabelText('Confirmar a nova password'), 'short')
+    await user.type(screen.getByLabelText('Nova password'), 'curta1234')
+    await user.type(screen.getByLabelText('Confirmar a nova password'), 'curta1234')
     await user.click(screen.getByRole('button', { name: 'Guardar a nova password' }))
-    expect(await screen.findByText('A password deve ter pelo menos 8 caracteres')).toBeInTheDocument()
+    expect(await screen.findByText('A password tem de ter entre 10 e 128 caracteres.')).toBeInTheDocument()
     expect(confirm).not.toHaveBeenCalled()
 
     await user.clear(screen.getByLabelText('Nova password'))

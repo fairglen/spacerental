@@ -15,15 +15,21 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authApi } from '@/lib/api'
 import { safeInternalPath } from '@/lib/navigation'
 import { useT } from '@/lib/i18n'
+import { PASSWORD_HINT, passwordProblems, passwordReasonsOf } from '@/lib/password'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obrigatório'),
   email: z.string().email('Email inválido'),
-  password: z.string().min(8, 'Mínimo 8 caracteres'),
+  password: z.string(),
   confirmPassword: z.string(),
 }).refine(d => d.password === d.confirmPassword, {
   message: 'As passwords não coincidem',
   path: ['confirmPassword'],
+}).superRefine((d, ctx) => {
+  // B66: the same rules the server applies, said before the request.
+  for (const problem of passwordProblems(d.password, d.email)) {
+    ctx.addIssue({ code: 'custom', path: ['password'], message: problem })
+  }
 })
 type FormData = z.infer<typeof schema>
 
@@ -56,7 +62,9 @@ export default function SignUpPage() {
       router.refresh()
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail || 'Erro ao criar conta.')
+        // B66: a refused password comes back as the list of reasons.
+        const reasons = passwordReasonsOf(err)
+        setError(reasons ? reasons.join(' ') : (typeof err.response?.data?.detail === 'string' ? err.response.data.detail : 'Erro ao criar conta.'))
       } else {
         setError('Erro de ligação. Tente novamente.')
       }
@@ -93,7 +101,8 @@ export default function SignUpPage() {
               </div>
               <div>
                 <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" {...register('password')} className="mt-1" placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
+                <Input id="password" type="password" {...register('password')} className="mt-1" placeholder="Mínimo 10 caracteres" autoComplete="new-password" aria-describedby="password-hint" />
+                <p id="password-hint" className="text-xs text-muted-foreground mt-1">{PASSWORD_HINT}</p>
                 {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
               </div>
               <div>

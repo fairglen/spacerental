@@ -235,7 +235,7 @@ def _password_hash() -> str:
     """Argon2id is deliberately slow; every persona can share one hash."""
     global _PASSWORD_HASH  # noqa: PLW0603
     if _PASSWORD_HASH is None:
-        _PASSWORD_HASH = hash_password("password123")
+        _PASSWORD_HASH = hash_password("Senha-2026x")
     return _PASSWORD_HASH
 
 
@@ -1094,7 +1094,7 @@ class TestClientSuppliedFieldsAreIgnored:
             f"{API}/auth/register",
             json={
                 "email": "newcomer@test.com",
-                "password": "password123",
+                "password": "Senha-2026x",
                 "name": "Newcomer",
                 "role": "owner",
                 "is_admin": True,
@@ -1118,7 +1118,7 @@ class TestClientSuppliedFieldsAreIgnored:
             f"{API}/auth/register/operator",
             json={
                 "email": "new-operator@test.com",
-                "password": "password123",
+                "password": "Senha-2026x",
                 "name": "New Operator",
                 "role": "member",
                 "org_id": str(world.org_a.id),

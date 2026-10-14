@@ -88,7 +88,7 @@ async def _confirmed_booking(db_session, *, org_id, room, user, hour: int, notes
 async def neighbour(db_session, test_org) -> User:
     """Another customer of the same org."""
     user = User(
-        email="neighbour@test.com", name="Neighbour", password_hash=hash_password("password123")
+        email="neighbour@test.com", name="Neighbour", password_hash=hash_password("Senha-2026x")
     )
     db_session.add(user)
     await db_session.flush()
@@ -212,11 +212,11 @@ class TestWhatACustomerSees:
             name="Outra", slug=f"outra-{uuid.uuid4().hex[:8]}", plan=OrgPlan.starter, settings={}
         )
         outsider = User(
-            email="outsider@test.com", name="Outsider", password_hash=hash_password("password123")
+            email="outsider@test.com", name="Outsider", password_hash=hash_password("Senha-2026x")
         )
         # "That org's operators" means both operator roles, not only the owner.
         manager = User(
-            email="manager@test.com", name="Manager", password_hash=hash_password("password123")
+            email="manager@test.com", name="Manager", password_hash=hash_password("Senha-2026x")
         )
         db_session.add_all([other_org, outsider, manager])
         await db_session.flush()

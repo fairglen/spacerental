@@ -9,6 +9,7 @@ import { useCrud } from '@/components/admin/crud/useCrud'
 import { EntityForm, FormField, FormSection } from '@/components/admin/crud/EntityForm'
 import { PageHeader } from '@/components/admin/crud/PageHeader'
 import { Input } from '@/components/ui/input'
+import { PASSWORD_HINT, passwordProblems } from '@/lib/password'
 
 const schema = z
   .object({
@@ -20,7 +21,8 @@ const schema = z
   })
   .superRefine((v, ctx) => {
     if (v.mode !== 'password') return
-    if (v.password.length < 8) ctx.addIssue({ code: 'custom', path: ['password'], message: 'Pelo menos 8 caracteres' })
+    // B66: the server's rules, said first; its 422 reasons come through EntityForm's error.
+    for (const problem of passwordProblems(v.password, v.email)) ctx.addIssue({ code: 'custom', path: ['password'], message: problem })
     if (v.password !== v.confirm) ctx.addIssue({ code: 'custom', path: ['confirm'], message: 'As passwords não coincidem' })
   })
 type FormValues = z.infer<typeof schema>
@@ -66,7 +68,7 @@ export default function NewUserPage() {
           </fieldset>
           {mode === 'password' && (
             <>
-              <FormField id="password" label="Password" error={form.formState.errors.password?.message}><Input id="password" type="password" autoComplete="new-password" {...form.register('password')} /></FormField>
+              <FormField id="password" label="Password" hint={PASSWORD_HINT} error={form.formState.errors.password?.message}><Input id="password" type="password" autoComplete="new-password" {...form.register('password')} /></FormField>
               <FormField id="confirm" label="Confirmar" error={form.formState.errors.confirm?.message}><Input id="confirm" type="password" autoComplete="new-password" {...form.register('confirm')} /></FormField>
             </>
           )}
