@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SpacePage from '@/app/spaces/[id]/page'
 import { spacesApi } from '@/lib/api'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { Room, Space } from '@/types'
 
 vi.mock('@/components/layout/Navbar', () => ({ Navbar: () => null }))
@@ -96,6 +97,25 @@ describe('Space page — location header (C10)', () => {
     renderPage()
     const heading = await screen.findByRole('heading', { name: 'Espaço Calmo' })
     expect(heading.parentElement?.textContent).not.toMatch(/null|undefined/)
+  })
+})
+
+// B65: the rooms page in English — the list heading, the calendar heading and
+// its help line, with the catalog's existing blocks following along.
+describe('Space page in English', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('titles the rooms, the calendar and its help in English', async () => {
+    setLocale('en')
+    renderPage()
+    const buttons = await screen.findAllByRole('button', { name: 'Book This Room' })
+    expect(screen.getByRole('heading', { name: 'Available Rooms' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Where we are' })).toBeVisible()
+    fireEvent.click(buttons[1])
+    expect(await screen.findByRole('heading', { name: 'Availability — Sala Brisa' })).toBeVisible()
+    expect(screen.getByTestId('calendar-help')).toHaveTextContent('Click a free hour to book 1 hour, or drag to book several in a row.')
+    expect(screen.getByText('Selected room')).toBeVisible()
+    expect(document.body.textContent).not.toMatch(/Reservar|Comprar|Os meus|Não tem|Entrar|Disponibilidade/)
   })
 })
 

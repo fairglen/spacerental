@@ -4,15 +4,21 @@ import { describe, it, expect, vi } from 'vitest'
 // compiler can resolve; the metadata is what this test is about.
 vi.mock('next/font/google', () => ({ Inter: () => ({ className: 'inter' }) }))
 vi.mock('@/lib/auth', () => ({ authOptions: {}, backendAcceptsToken: vi.fn() }))
+// B65: the auth layouts' titles follow the locale cookie, so their metadata
+// is a function over `next/headers`; `cookies()` throws outside a request.
+vi.mock('next/headers', () => ({ cookies: () => ({ get: () => undefined }) }))
 
 import { metadata as root } from '@/app/layout'
 import { metadata as landing } from '@/app/page'
 import { metadata as spaces } from '@/app/spaces/layout'
 import { metadata as dashboard } from '@/app/dashboard/layout'
 import { metadata as admin } from '@/app/admin/layout'
-import { metadata as signIn } from '@/app/(auth)/sign-in/layout'
-import { metadata as resetPassword } from '@/app/(auth)/reset-password/[token]/layout'
+import { generateMetadata as signInMetadata } from '@/app/(auth)/sign-in/layout'
+import { generateMetadata as resetPasswordMetadata } from '@/app/(auth)/reset-password/[token]/layout'
 import robots from '@/app/robots'
+
+const signIn = signInMetadata()
+const resetPassword = resetPasswordMetadata()
 
 // S2.1: route metadata — what each page's <meta name="robots"> and the
 // landing's <link rel="canonical"> are rendered from.

@@ -24,7 +24,10 @@ describe('public contact address (C09)', () => {
   // is a second copy waiting to drift, which is how the footer went stale.
   it('is not repeated in the i18n catalogs', () => {
     const literal = /[\w.+-]+@[\w-]+\.[\w.]+/
-    expect(JSON.stringify(pt)).not.toMatch(literal)
-    expect(JSON.stringify(en)).not.toMatch(literal)
+    // B65: an input placeholder at the reserved example.com (RFC 2606) is not
+    // a mailbox anyone could reach, so it cannot drift from lib/contact.ts.
+    const placeholder = /[\w.+-]+@example\.com/g
+    expect(JSON.stringify(pt).replace(placeholder, '')).not.toMatch(literal)
+    expect(JSON.stringify(en).replace(placeholder, '')).not.toMatch(literal)
   })
 })

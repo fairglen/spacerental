@@ -3,8 +3,11 @@ import { ROBOTS_PRIVATE } from '@/lib/seo'
 import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { authOptions, backendAcceptsToken } from '@/lib/auth'
+import pt from '@/lib/i18n/pt.json'
 
-export const metadata: Metadata = { title: 'As minhas reservas', robots: ROBOTS_PRIVATE }
+// Static, like every route's metadata (tests/app/robotsMetadata.test.ts
+// reads the export): the tab title stays the Portuguese catalog's (B65).
+export const metadata: Metadata = { title: pt.navbar.my_bookings, robots: ROBOTS_PRIVATE }
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions)

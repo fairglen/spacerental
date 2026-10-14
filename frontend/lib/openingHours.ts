@@ -1,3 +1,4 @@
+import { t as globalT } from '@/lib/i18n'
 import type { OpeningWindow } from '@/types'
 
 /**
@@ -10,9 +11,10 @@ import type { OpeningWindow } from '@/types'
  * when it books; these lines only read the rules back.
  */
 
-const DAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-const ALL_DAYS = 'Todos os dias'
-const CLOSED = 'Encerrado'
+type Translate = typeof globalT
+
+// Indexed by the API's day_of_week (0 = Monday).
+const DAY_KEYS = ['day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat', 'day_sun']
 
 type RoomLike = { availability_rules?: OpeningWindow[] | null }
 type Span = { open: string; close: string } | null
@@ -44,23 +46,29 @@ function signature(room: RoomLike): string {
     .join(';')
 }
 
-export function describeOpeningHours(rooms: RoomLike[]): { lines: string[]; differsByRoom: boolean } {
+/**
+ * `t` is the caller's (a component's `useT()`, or `tFor(locale)`); the
+ * global reads the browser's current locale and serves client-only callers (B65).
+ */
+export function describeOpeningHours(rooms: RoomLike[], t: Translate = globalT): { lines: string[]; differsByRoom: boolean } {
+  const closed = t('openingHours.closed')
   const spans = unionByDay(rooms)
-  const label = (span: Span) => (span ? `${toClock(span.open)}–${toClock(span.close)}` : CLOSED)
+  const label = (span: Span) => (span ? `${toClock(span.open)}–${toClock(span.close)}` : closed)
   const labels = spans.map(label)
 
   const differsByRoom = new Set(rooms.map(signature)).size > 1
 
-  if (labels.every((l) => l === CLOSED)) return { lines: [CLOSED], differsByRoom }
-  if (labels.every((l) => l === labels[0])) return { lines: [`${ALL_DAYS} ${labels[0]}`], differsByRoom }
+  if (labels.every((l) => l === closed)) return { lines: [closed], differsByRoom }
+  if (labels.every((l) => l === labels[0])) return { lines: [`${t('openingHours.all_days')} ${labels[0]}`], differsByRoom }
 
   // Consecutive days with the same hours fold into "Seg–Sex".
+  const dayLabel = (day: number) => t(`openingHours.${DAY_KEYS[day]}`)
   const lines: string[] = []
   let start = 0
   for (let day = 1; day <= 7; day++) {
     if (day < 7 && labels[day] === labels[start]) continue
     const end = day - 1
-    const days = start === end ? DAY_LABELS[start] : `${DAY_LABELS[start]}–${DAY_LABELS[end]}`
+    const days = start === end ? dayLabel(start) : `${dayLabel(start)}–${dayLabel(end)}`
     lines.push(`${days} ${labels[start]}`)
     start = day
   }

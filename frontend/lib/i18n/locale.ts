@@ -1,3 +1,5 @@
+import { ensureCatalog, hasCatalog } from './registry'
+
 export type Locale = 'pt' | 'en'
 
 export const DEFAULT_LOCALE: Locale = 'pt'
@@ -68,11 +70,26 @@ export function getLocale(): Locale {
   return currentLocale
 }
 
-export function setLocale(locale: Locale): void {
+function commitLocale(locale: Locale): void {
   if (locale === currentLocale) return
   currentLocale = locale
   if (isBrowser()) writeCookie(locale)
   listeners.forEach((listener) => listener())
+}
+
+/**
+ * Switch the language. Synchronous when the locale's catalog is in memory
+ * (Portuguese always is; English once the server or a previous switch
+ * brought it); otherwise the catalog chunk is fetched first and the page
+ * flips when it lands, so nothing renders half-translated (B65).
+ */
+export function setLocale(locale: Locale): void {
+  if (locale === currentLocale) return
+  if (hasCatalog(locale)) {
+    commitLocale(locale)
+    return
+  }
+  void ensureCatalog(locale).then(() => commitLocale(locale))
 }
 
 /** Tests only: forget the choice (cookie and cache) between cases. */

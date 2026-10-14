@@ -4,13 +4,13 @@ import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
-import { pt } from 'date-fns/locale'
 import { packagesApi } from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
 import { useApi } from '@/lib/hooks/useApi'
 import { useOrg } from '@/contexts/OrgContext'
 import { detailOf } from '@/lib/httpError'
-import { formatCurrency } from '@/lib/utils'
+import { useLocale, useT } from '@/lib/i18n'
+import { dateFnsLocale, formatCurrency, formatHours } from '@/lib/utils'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/toast'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
 import { UseHoursPrompt } from '@/components/packages/UseHoursPrompt'
-import { formatHours } from '@/lib/utils'
 import { purchaseLabel } from '@/lib/cancellationCredit'
 
 export default function MyPackagesPage() {
@@ -29,6 +28,9 @@ export default function MyPackagesPage() {
   const { toast } = useToast()
   const { currentOrgId } = useOrg()
   const searchParams = useSearchParams()
+  const t = useT()
+  const [locale] = useLocale()
+  const dateLocale = dateFnsLocale(locale)
   // Set when arriving from Pricing/sign-up with a package pre-selected (B12)
   // — highlights that card instead of leaving the visitor to hunt for it.
   const highlightId = searchParams.get('packageId')
@@ -50,10 +52,10 @@ export default function MyPackagesPage() {
   const cancel = useMutation({
     mutationFn: (purchaseId: string) => packagesApi.cancelPurchase(purchaseId, api),
     onSuccess: async () => {
-      toast({ title: 'Compra cancelada.', variant: 'success' })
+      toast({ title: t('packs.cancel_purchase_done'), variant: 'success' })
       await queryClient.invalidateQueries({ queryKey: queryKeys.myPackages })
     },
-    onError: (err) => toast({ title: detailOf(err) ?? 'Não foi possível cancelar a compra.', variant: 'error' }),
+    onError: (err) => toast({ title: detailOf(err) ?? t('packs.cancel_purchase_error'), variant: 'error' }),
   })
 
   const { data: availablePackages, isLoading: isLoadingAvailable } = useQuery({
@@ -74,8 +76,8 @@ export default function MyPackagesPage() {
       <main className="min-h-screen bg-background">
         <div className="bg-white border-b border-border py-8">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-            <h1 className="text-2xl font-bold text-foreground">Os meus Pacotes</h1>
-            <p className="text-muted-foreground mt-1 text-sm">Horas pré-pagas disponíveis. As horas de todos os packs formam um só saldo.</p>
+            <h1 className="text-2xl font-bold text-foreground">{t('packs.page_title')}</h1>
+            <p className="text-muted-foreground mt-1 text-sm">{t('packs.page_subtitle')}</p>
           </div>
         </div>
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8 space-y-10">
@@ -85,13 +87,15 @@ export default function MyPackagesPage() {
               <Card className="border-primary/40 bg-accent">
                 <CardContent className="p-5 flex flex-wrap items-baseline justify-between gap-2">
                   <div>
-                    <h2 id="banco-de-horas" className="text-sm font-medium text-muted-foreground">Banco de horas</h2>
-                    <p className="text-2xl font-bold text-foreground">{formatHours(balance.hours_available)} disponíveis</p>
+                    <h2 id="banco-de-horas" className="text-sm font-medium text-muted-foreground">{t('packs.bank_title')}</h2>
+                    <p className="text-2xl font-bold text-foreground">{t('packs.bank_available', { hours: formatHours(balance.hours_available) })}</p>
                   </div>
                   {balance.hours_expiring_next && (
                     <p className="text-sm text-muted-foreground">
-                      {formatHours(balance.hours_expiring_next.hours)} expiram a{' '}
-                      {format(parseISO(balance.hours_expiring_next.expires_at), "d 'de' MMM", { locale: pt })}.
+                      {t('packs.bank_expiring', {
+                        hours: formatHours(balance.hours_expiring_next.hours),
+                        date: format(parseISO(balance.hours_expiring_next.expires_at), t('packs.bank_expiring_date_format'), { locale: dateLocale }),
+                      })}
                     </p>
                   )}
                 </CardContent>
@@ -101,23 +105,23 @@ export default function MyPackagesPage() {
           {/* B68: a Checkout left open is not a pack — resume it or let it go. */}
           {pending.length > 0 && (
             <section aria-labelledby="pagamento-pendente" data-testid="pending-purchases">
-              <h2 id="pagamento-pendente" className="text-sm font-medium text-muted-foreground mb-3">Pagamento pendente</h2>
+              <h2 id="pagamento-pendente" className="text-sm font-medium text-muted-foreground mb-3">{t('packs.pending_title')}</h2>
               <div className="space-y-3">
                 {pending.map((p) => (
                   <Card key={p.id} className="border-dashed">
                     <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <p className="font-medium text-foreground">{purchaseLabel(p)}</p>
-                        <p className="text-xs text-muted-foreground">O pagamento não foi concluído. Retome-o ou cancele a compra.</p>
+                        <p className="font-medium text-foreground">{purchaseLabel(p, locale)}</p>
+                        <p className="text-xs text-muted-foreground">{t('packs.pending_note')}</p>
                       </div>
                       <div className="flex gap-2">
                         {p.checkout_url && (
                           <Button asChild size="sm">
-                            <a href={p.checkout_url}>Retomar pagamento</a>
+                            <a href={p.checkout_url}>{t('packs.pending_resume')}</a>
                           </Button>
                         )}
                         <Button size="sm" variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate(p.id)}>
-                          Cancelar
+                          {t('packs.pending_cancel')}
                         </Button>
                       </div>
                     </CardContent>
@@ -132,7 +136,7 @@ export default function MyPackagesPage() {
             ) : purchases.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground space-y-3">
-                  <p>Não tem pacotes de horas.</p>
+                  <p>{t('packs.empty')}</p>
                   <UseHoursPrompt className="justify-center" />
                 </CardContent>
               </Card>
@@ -142,8 +146,10 @@ export default function MyPackagesPage() {
                   <Card key={p.id}>
                     <CardContent className="p-5">
                       <div className="flex items-center justify-between mb-3">
-                        <p className="font-semibold text-foreground">{purchaseLabel(p)}</p>
-                        <span className="text-sm text-muted-foreground">Expira: {format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}</span>
+                        <p className="font-semibold text-foreground">{purchaseLabel(p, locale)}</p>
+                        <span className="text-sm text-muted-foreground">
+                          {t('packs.expires', { date: format(parseISO(p.expires_at), 'd MMM yyyy', { locale: dateLocale }) })}
+                        </span>
                       </div>
                       <div className="w-full bg-border rounded-full h-2 mb-2">
                         <div
@@ -152,7 +158,7 @@ export default function MyPackagesPage() {
                         />
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {formatHours(p.hours_remaining)} restantes de {formatHours(p.hours_total)}
+                        {t('packs.remaining_of', { remaining: formatHours(p.hours_remaining), total: formatHours(p.hours_total) })}
                       </p>
                       <UseHoursPrompt compact className="mt-3 text-muted-foreground" />
                     </CardContent>
@@ -163,11 +169,9 @@ export default function MyPackagesPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-foreground mb-4">Comprar mais horas</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-4">{t('packs.buy_more_title')}</h2>
             {!currentOrgId ? (
-              <p className="text-sm text-muted-foreground">
-                Ainda não pertence a nenhuma organização com pacotes disponíveis.
-              </p>
+              <p className="text-sm text-muted-foreground">{t('packs.no_org')}</p>
             ) : isLoadingAvailable ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
@@ -175,7 +179,7 @@ export default function MyPackagesPage() {
             ) : (availablePackages ?? []).length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
-                  <p>Não há pacotes disponíveis de momento.</p>
+                  <p>{t('packs.none_available')}</p>
                 </CardContent>
               </Card>
             ) : (
@@ -191,7 +195,7 @@ export default function MyPackagesPage() {
                         <p className="font-semibold text-foreground">{pkg.name}</p>
                         <span className="text-lg font-bold text-primary">{formatCurrency(pkg.price)}</span>
                       </div>
-                      <p className="text-sm text-muted-foreground">{pkg.hours}h · válido {pkg.validity_days} dias</p>
+                      <p className="text-sm text-muted-foreground">{t('packs.pack_meta', { hours: pkg.hours, days: pkg.validity_days })}</p>
                       <PackageBuyButton pkg={pkg} />
                     </CardContent>
                   </Card>

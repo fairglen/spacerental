@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { Providers } from './providers'
 import pt from '@/lib/i18n/pt.json'
-import { getServerLocale } from '@/lib/i18n/server'
+import { getServerCatalog, getServerLocale } from '@/lib/i18n/server'
 import { ROBOTS_APP, metadataBaseFrom } from '@/lib/seo'
 import { publicApiOrigin } from '@/lib/backendProxy'
 import { BrandSymbols } from '@/components/brand/BrandSymbols'
@@ -70,7 +70,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         {/* B51: the brand mark and wordmark, inlined once for every <use> on the page. */}
         <BrandSymbols />
-        <Providers initialLocale={locale}>{children}</Providers>
+        {/* B65: the English catalog rides in the HTML only for an English
+            visitor; everyone else keeps the bundled Portuguese. */}
+        <Providers initialLocale={locale} initialCatalog={getServerCatalog(locale)}>{children}</Providers>
       </body>
     </html>
   )

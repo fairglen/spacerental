@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
-import { HelpDialog } from '@/components/help/HelpDialog'
+import { FAQ_URL, HelpDialog, SUPPORT_CATEGORY_LABELS, supportCategoryLabel } from '@/components/help/HelpDialog'
 import { HelpProvider, useHelp } from '@/components/help/HelpProvider'
 import { bookingsApi, supportApi } from '@/lib/api'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { Booking } from '@/types'
 
 vi.mock('next-auth/react', () => ({ useSession: vi.fn() }))
@@ -213,5 +214,59 @@ describe('HelpDialog — the FAQ link', () => {
     await user.click(within(dialog()).getByRole('button', { name: 'Enviar' }))
     await screen.findByRole('status')
     expect(within(dialog()).getByRole('link', { name: /Perguntas frequentes/ })).toHaveAttribute('href', 'https://flowspace.pt/#faq')
+  })
+})
+
+describe('HelpDialog — in English (B65)', () => {
+  afterEach(() => resetLocaleForTests())
+  const enDialog = () => screen.getByRole('dialog', { name: 'Help' })
+
+  it('renders the English form, validation, booking list and confirmation without Portuguese', async () => {
+    setLocale('en')
+    signedIn()
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([upcoming('b-next', 'Sala Calma', 3)])
+    const user = userEvent.setup()
+    renderDialog()
+    expect(within(enDialog()).getByText(/Tell us what is going on/)).toBeVisible()
+    expect(within(enDialog()).getByRole('link', { name: /Frequently asked questions/ })).toHaveAttribute('href', FAQ_URL)
+    const subject = within(enDialog()).getByLabelText('Subject')
+    expect(within(subject).getAllByRole('option').map((o) => o.textContent)).toEqual(['Technical problem', 'Booking', 'Payment', 'Pack', 'Other'])
+    const booking = await within(enDialog()).findByLabelText('Booking (optional)')
+    const options = within(booking).getAllByRole('option').map((o) => o.textContent)
+    expect(options[0]).toBe('Not about a booking')
+    // The date follows the locale too: an English month abbreviation, not "out.".
+    expect(options[1]).toMatch(/^Sala Calma — \d+ [A-Z][a-z]{2}, \d{2}:\d{2}$/)
+
+    await user.click(within(enDialog()).getByRole('button', { name: 'Send' }))
+    expect(await within(enDialog()).findByRole('alert')).toHaveTextContent('Write at least 20 characters.')
+    await user.click(within(enDialog()).getByText('What we send with the request'))
+    expect(within(enDialog()).getByText('What we send with the request').closest('details')).toHaveTextContent(/the app version \(dev\) and the time it was sent, and your account's user identifier\. Nothing else/)
+
+    await user.type(within(enDialog()).getByLabelText('Message'), MESSAGE)
+    await user.click(within(enDialog()).getByRole('button', { name: 'Send' }))
+    const status = await within(enDialog()).findByRole('status')
+    expect(status).toHaveTextContent('Reference #3F9A12BC. We sent a copy to ana@example.com; we will reply by email to the same address.')
+    // The primitive's X is also named "Close"; the footer's is the one with visible text.
+    expect(within(enDialog()).getAllByRole('button', { name: 'Close' }).filter((b) => !b.querySelector('.sr-only'))).toHaveLength(1)
+    expect(enDialog().textContent).not.toMatch(/Ajuda|Enviar|Reserva|Mensagem|Assunto|Referência/)
+  })
+
+  it('explains a failed send and a bad email in English', async () => {
+    setLocale('en')
+    vi.mocked(supportApi.create).mockRejectedValueOnce({ response: { status: 429 } })
+    const user = userEvent.setup()
+    renderDialog()
+    await user.type(within(enDialog()).getByLabelText('Message'), MESSAGE)
+    await user.click(within(enDialog()).getByRole('button', { name: 'Send' }))
+    expect(await within(enDialog()).findByRole('alert')).toHaveTextContent('Enter a valid email so we can reply to you.')
+    await user.type(within(enDialog()).getByLabelText('Email'), 'visitante@example.com')
+    await user.click(within(enDialog()).getByRole('button', { name: 'Send' }))
+    expect(await within(enDialog()).findByRole('alert')).toHaveTextContent('Too many requests in a row. Wait a moment and try again.')
+  })
+
+  it('keeps the Portuguese labels the admin reads as values, whatever the locale', () => {
+    setLocale('en')
+    expect(SUPPORT_CATEGORY_LABELS).toEqual({ technical: 'Problema técnico', booking: 'Reserva', payment: 'Pagamento', package: 'Pack', other: 'Outro' })
+    expect(supportCategoryLabel('technical')).toBe('Technical problem')
   })
 })

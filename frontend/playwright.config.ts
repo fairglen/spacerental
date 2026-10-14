@@ -22,6 +22,10 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
+    // The suite's customer is Portuguese: the browser's Accept-Language
+    // decides the stub Checkout page's language (B65), and Chromium's default
+    // is en-US. locale.spec.ts sets the cookie and the header for English.
+    locale: 'pt-PT',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },

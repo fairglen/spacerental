@@ -1,6 +1,4 @@
 import { useSyncExternalStore } from 'react'
-import ptCatalog from './pt.json'
-import enCatalog from './en.json'
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
@@ -14,6 +12,8 @@ import {
   type Locale,
 } from './locale'
 import { LocaleProvider, useInitialLocale } from './LocaleProvider'
+import { ensureCatalog, registerCatalog, type Catalog } from './registry'
+import { t, tFor, translate } from './translate'
 
 export {
   DEFAULT_LOCALE,
@@ -21,58 +21,16 @@ export {
   LOCALE_LABELS,
   LocaleProvider,
   SUPPORTED_LOCALES,
+  ensureCatalog,
   getLocale,
   localeFromCookieString,
+  registerCatalog,
   resetLocaleForTests,
   setLocale,
+  t,
+  tFor,
+  type Catalog,
   type Locale,
-}
-
-const catalogs: Record<Locale, unknown> = { pt: ptCatalog, en: enCatalog }
-
-/**
- * Translate a key to its value in the currently selected locale (see
- * `useLocale`/`setLocale`). Defaults to Portuguese until a visitor switches.
- *
- * Supports dot notation for nested keys, e.g. 't("hero.headline_start")'
- * Also supports string interpolation for placeholders like {year}, {name}, etc.
- *
- * @example
- * t('hero.cta_primary') // 'Ver Espaços'
- * t('footer.copyright', { year: 2025, brand: t('brand.name') }) // '© 2025 FlowSpace. Todos os direitos reservados.'
- */
-export function t(
-  key: string,
-  replacements?: Record<string, string | number>
-): string {
-  return translate(getLocale(), key, replacements)
-}
-
-function translate(
-  locale: Locale,
-  key: string,
-  replacements?: Record<string, string | number>,
-): string {
-  let value: unknown = catalogs[locale]
-  for (const part of key.split('.')) {
-    value = value !== null && typeof value === 'object' && Object.hasOwn(value, part)
-      ? (value as Record<string, unknown>)[part]
-      : undefined
-  }
-
-  if (typeof value !== 'string') {
-    console.warn(`Translation key not found: ${key}`)
-    return key
-  }
-
-  // Apply string replacements if provided
-  if (replacements) {
-    return Object.entries(replacements).reduce((acc, [k, v]) => {
-      return acc.split(`{${k}}`).join(String(v))
-    }, value)
-  }
-
-  return value
 }
 
 /**

@@ -45,6 +45,24 @@ describe('PaymentNotice', () => {
     expect(screen.getByTestId('use-hours-prompt')).toHaveTextContent(/To use the hours, book a room/)
   })
 
+  // B65: the notice itself — two contexts, two outcomes — and its close button.
+  it('says the notice in English in both contexts and outcomes', () => {
+    setLocale('en')
+    const { rerender } = render(<PaymentNotice outcome="sucesso" onClose={vi.fn()} />)
+    const status = () => screen.getByRole('status')
+    expect(status()).toHaveTextContent(/^Payment complete\. Thank you! A booking appears below as confirmed/)
+    expect(within(status()).getByRole('link', { name: 'My packs' })).toHaveAttribute('href', '/dashboard/packages')
+    expect(screen.getByRole('button', { name: 'Close notice' })).toBeVisible()
+    rerender(<PaymentNotice outcome="cancelado" onClose={vi.fn()} />)
+    expect(status()).toHaveTextContent(/^Payment not completed\. Nothing was charged\. If it was a booking/)
+    expect(within(status()).getByRole('link', { name: 'My packs' })).toHaveAttribute('href', '/dashboard/packages')
+    rerender(<PaymentNotice outcome="sucesso" onClose={vi.fn()} context="booking" />)
+    expect(status()).toHaveTextContent(/^Payment complete\. The pack is available right away \(usually\)\. Confirm the booking below with the pack's hours\.$/)
+    rerender(<PaymentNotice outcome="cancelado" onClose={vi.fn()} context="booking" />)
+    expect(status()).toHaveTextContent(/^Payment not completed\. Nothing was charged\. You can confirm the booking below another way or try buying the pack again\.$/)
+    expect(status()).not.toHaveTextContent(/Pagamento|Os meus|Reserva|Fechar/)
+  })
+
   it('closes', () => {
     const onClose = vi.fn()
     render(<PaymentNotice outcome="cancelado" onClose={onClose} />)

@@ -14,9 +14,21 @@ import { BookingModal } from '@/components/booking/BookingModal'
 import { ContactNote } from '@/components/booking/ContactNote'
 import { PaymentNotice, paymentOutcomeOf, type PaymentOutcome } from '@/components/booking/PaymentNotice'
 import { parseSlotParams } from '@/lib/bookingDeepLink'
+import { useT } from '@/lib/i18n'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Room } from '@/types'
+
+// A component, not an inline element: next/dynamic renders `loading` as one,
+// so it may read the locale (B65).
+function CalendarLoading() {
+  const t = useT()
+  return (
+    <p role="status" className="mb-3 text-sm text-muted-foreground bg-background rounded-lg px-3 py-2">
+      {t('spaces.calendar_loading')}
+    </p>
+  )
+}
 
 // The calendar and what it drags in (react-big-calendar, lodash, react-overlays,
 // its date-fns localizer — ~62 KB gzipped) load only once a room is picked
@@ -24,11 +36,7 @@ import type { Room } from '@/types'
 // on is chosen from the viewport (useCalendarView).
 const BookingCalendar = dynamic(() => import('@/components/booking/BookingCalendar').then((m) => m.BookingCalendar), {
   ssr: false,
-  loading: () => (
-    <p role="status" className="mb-3 text-sm text-muted-foreground bg-background rounded-lg px-3 py-2">
-      A carregar o calendário…
-    </p>
-  ),
+  loading: CalendarLoading,
 })
 
 export function SpaceRoomsSkeleton() {
@@ -51,6 +59,7 @@ export function SpaceRoomsSkeleton() {
  * card on the landing page lands here. It works on either URL.
  */
 export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
+  const t = useT()
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
   const [bookingStart, setBookingStart] = useState<Date | null>(null)
   const [bookingEnd, setBookingEnd] = useState<Date | null>(null)
@@ -169,7 +178,7 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
         </div>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
           {paymentNotice && <PaymentNotice outcome={paymentNotice} context="booking" onClose={() => setPaymentNotice(null)} />}
-          <h2 className="text-xl font-semibold text-foreground mb-6">Salas Disponíveis</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-6">{t('spaceCards.rooms_title')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
             {rooms.filter((r) => r.is_active).map((room) => (
               <RoomCard key={room.id} room={room} onBook={handleBook} selected={calendarRoom?.id === room.id} />
@@ -197,10 +206,10 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
                 }
               />
               <h3 ref={calendarHeadingRef} tabIndex={-1} className="text-lg font-semibold text-foreground mb-2 outline-hidden focus-visible:ring-2 focus-visible:ring-primary rounded">
-                Disponibilidade — {calendarRoom.name}
+                {t('spaces.availability_heading', { room: calendarRoom.name })}
               </h3>
               <p data-testid="calendar-help" className="text-sm text-muted-foreground mb-3">
-                Clique numa hora livre para reservar 1 hora, ou arraste para reservar várias seguidas.
+                {t('spaces.calendar_help')}
               </p>
               <ContactNote roomName={calendarRoom.name} className="mb-4" />
               <BookingCalendar

@@ -367,7 +367,7 @@ function UserDetail({ userId }: { userId: string }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Definir password</DialogTitle>
-            <DialogDescription>Pelo menos 8 caracteres. As sessões atuais da pessoa terminam.</DialogDescription>
+            <DialogDescription>Pelo menos 10 caracteres. As sessões atuais da pessoa terminam.</DialogDescription>
           </DialogHeader>
           <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (pw.password !== pw.confirm) { setPwError('As passwords não coincidem.'); return } const problems = passwordProblems(pw.password, user.email); if (problems.length) { setPwError(problems.join(' ')); return } setPassword.mutate() }}>
             <div><Label htmlFor="new-password">Nova password</Label><Input id="new-password" type="password" autoComplete="new-password" value={pw.password} onChange={(e) => setPw({ ...pw, password: e.target.value })} className="mt-1" aria-describedby="new-password-hint" /><p id="new-password-hint" className="text-xs text-muted-foreground mt-1">{PASSWORD_HINT}</p></div>

@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import MyPackagesPage from '@/app/dashboard/packages/page'
 import { packagesApi } from '@/lib/api'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { MyPackages, Package, UserPackagePurchase } from '@/types'
 import { addDays, format } from 'date-fns'
-import { pt } from 'date-fns/locale'
+import { enGB, pt } from 'date-fns/locale'
 
 let searchParams = new URLSearchParams()
 
@@ -179,5 +180,49 @@ describe('Packages page — how to use the hours (B70)', () => {
     for (const prompt of prompts) {
       expect(within(prompt).getByRole('link', { name: /Reservar uma sala/ })).toHaveAttribute('href', '/spaces')
     }
+  })
+})
+
+// B65: the bank, a Checkout left open (B68), the pack cards and the buy
+// section, all in English — the testids and links stay what the e2e suite knows.
+describe('Packages page — English (B65)', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('renders the bank, a pending purchase and the buy section in English', async () => {
+    setLocale('en')
+    const soon = addDays(new Date(), 5)
+    mine([
+      { ...activePurchase, id: 'soon', hours_remaining: 2, hours_used: 8, expires_at: soon.toISOString() },
+      { ...activePurchase, id: 'open', status: 'pending', checkout_url: 'http://localhost:8000/checkout/stub/cs_open' },
+    ])
+    vi.mocked(packagesApi.list).mockResolvedValue([pack10])
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'My Packs' })).toBeVisible()
+    const bank = await screen.findByRole('region', { name: 'Hour bank' })
+    expect(bank).toHaveTextContent(/2h available/)
+    expect(bank).toHaveTextContent(`2h expire on ${format(soon, 'd MMM', { locale: enGB })}.`)
+    const pendingBlock = screen.getByTestId('pending-purchases')
+    expect(pendingBlock).toHaveTextContent('Pending payment')
+    expect(pendingBlock).toHaveTextContent('The payment was not completed. Resume it or cancel the purchase.')
+    expect(within(pendingBlock).getByRole('link', { name: 'Resume payment' })).toHaveAttribute('href', 'http://localhost:8000/checkout/stub/cs_open')
+    expect(within(pendingBlock).getByRole('button', { name: 'Cancel' })).toBeEnabled()
+    expect(screen.getByText('2h of 10h left')).toBeVisible()
+    expect(screen.getByText(`Expires: ${format(soon, 'd MMM yyyy', { locale: enGB })}`)).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Buy more hours' })).toBeVisible()
+    expect(screen.getByText('10h · valid for 365 days')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Buy Pack' })).toBeVisible()
+    expect(screen.getByTestId('use-hours-prompt')).toHaveTextContent(/To use the hours, book a room/)
+    expect(document.body.textContent).not.toMatch(/Reservar|Comprar|Os meus|Não tem|restantes|Pagamento|Cancelar|Expira:|disponíveis/)
+  })
+
+  it('says the empty state in English', async () => {
+    setLocale('en')
+    mine([])
+    vi.mocked(packagesApi.list).mockResolvedValue([])
+    renderPage()
+    expect(await screen.findByText('You have no hour packs.')).toBeVisible()
+    expect(screen.getByText('No packs available at the moment.')).toBeVisible()
+    expect(document.body.textContent).not.toMatch(/Não tem|Não há/)
   })
 })

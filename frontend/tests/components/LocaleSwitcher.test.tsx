@@ -64,6 +64,10 @@ describe('LocaleSwitcher (9.2)', () => {
     // scratch, the same way it would on a fresh page load/remount — proving
     // the persisted value (not just in-memory state) drives the next render.
     vi.resetModules()
+    // A fresh page load in EN gets the catalog from the server's render
+    // (Providers → LocaleProvider, B65); here that is the registry call.
+    const { registerCatalog: registerFresh } = await import('@/lib/i18n/registry')
+    registerFresh('en', (await import('@/lib/i18n/en.json')).default)
     const { Hero: RehydratedHero } = await import('@/components/landing/Hero')
 
     render(<RehydratedHero />)
