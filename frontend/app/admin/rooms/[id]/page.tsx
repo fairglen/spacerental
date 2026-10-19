@@ -38,7 +38,8 @@ const schema = z.object({
   color: z.string().min(1),
   amenities: z.string(),
 })
-type FormValues = z.infer<typeof schema>
+type FormValues = z.output<typeof schema>
+type FormInput = z.input<typeof schema>
 
 function toForm(room: Room): FormValues {
   return {
@@ -80,7 +81,7 @@ function RoomDetail({ roomId }: { roomId: string }) {
   })
   useEffect(() => { if (asSpace) router.replace(`/admin/spaces/${roomId}`) }, [asSpace, roomId, router])
 
-  const form = useForm<FormValues>({ resolver: zodResolver(schema) })
+  const form = useForm<FormInput, unknown, FormValues>({ resolver: zodResolver(schema) })
   useEffect(() => { if (data) form.reset(toForm(data.room)) }, [data, form])
   const [days, setDays] = useState<DayRow[] | null>(null)
   useEffect(() => { if (data) setDays(rowsFromRules(data.rules)) }, [data])

@@ -43,7 +43,8 @@ const roomSchema = z.object({
   hourly_rate: z.coerce.number().min(0, 'Valor inválido'),
   capacity: z.coerce.number().min(1, 'Pelo menos 1'),
 })
-type RoomValues = z.infer<typeof roomSchema>
+type RoomValues = z.output<typeof roomSchema>
+type RoomInput = z.input<typeof roomSchema>
 
 function toForm(space: Space): FormValues {
   return {
@@ -77,7 +78,7 @@ function SpaceDetail({ spaceId }: { spaceId: string }) {
   useEffect(() => { if (data) form.reset(toForm(data.space)) }, [data, form])
   const [photos, setPhotos] = useState<Space['photos'] | null>(null)
   const [toggling, setToggling] = useState<Room | null>(null)
-  const roomForm = useForm<RoomValues>({ resolver: zodResolver(roomSchema), defaultValues: { name: '', hourly_rate: 11, capacity: 1 } })
+  const roomForm = useForm<RoomInput, unknown, RoomValues>({ resolver: zodResolver(roomSchema), defaultValues: { name: '', hourly_rate: 11, capacity: 1 } })
   const [showNewRoom, setShowNewRoom] = useState(false)
 
   const toggleRoom = useMutation({

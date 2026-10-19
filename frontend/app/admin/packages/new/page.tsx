@@ -1,20 +1,20 @@
 'use client'
 import { useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { useForm } from 'react-hook-form'
+import { useForm, type UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { adminApi } from '@/lib/api'
 import { useCrud } from '@/components/admin/crud/useCrud'
 import { EntityForm, FormField, FormSection } from '@/components/admin/crud/EntityForm'
 import { PageHeader } from '@/components/admin/crud/PageHeader'
 import { Input } from '@/components/ui/input'
-import { packageSchema, type PackageFormValues } from '@/lib/admin/packageForm'
+import { packageSchema, type PackageFormInput, type PackageFormValues } from '@/lib/admin/packageForm'
 import type { Package } from '@/types'
 
 export default function NewPackagePage() {
   const router = useRouter()
   const { api, invalidate } = useCrud('packages')
-  const form = useForm<PackageFormValues>({ resolver: zodResolver(packageSchema), defaultValues: { name: '', hours: 10, price: 100, validity_days: 365 } })
+  const form = useForm<PackageFormInput, unknown, PackageFormValues>({ resolver: zodResolver(packageSchema), defaultValues: { name: '', hours: 10, price: 100, validity_days: 365 } })
   const created = useRef<string | null>(null)
   return (
     <div className="p-8 pb-28 max-w-3xl">
@@ -33,7 +33,7 @@ export default function NewPackagePage() {
   )
 }
 
-function PackageFields({ form }: { form: ReturnType<typeof useForm<PackageFormValues>> }) {
+function PackageFields({ form }: { form: UseFormReturn<PackageFormInput, unknown, PackageFormValues> }) {
   const e = form.formState.errors
   return (
     <FormSection title="Pack">
