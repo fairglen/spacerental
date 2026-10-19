@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatHours } from '@/lib/utils'
-import { packageSchema, packageToForm, type PackageFormValues } from '@/lib/admin/packageForm'
+import { packageSchema, packageToForm, type PackageFormInput, type PackageFormValues } from '@/lib/admin/packageForm'
 import type { Package } from '@/types'
 
 /** One pack (G06): the form, purchase counts, DangerZone, Histórico. */
@@ -31,7 +31,7 @@ function PackageDetail({ packageId }: { packageId: string }) {
   const { api, enabled, currentOrgId, invalidate } = useCrud('packages')
   const { toast } = useToast()
   const { data, isLoading, isError } = useQuery({ queryKey: ['admin', 'packages', currentOrgId, packageId], queryFn: () => adminApi.getPackage(packageId, api), enabled })
-  const form = useForm<PackageFormValues>({ resolver: zodResolver(packageSchema) })
+  const form = useForm<PackageFormInput, unknown, PackageFormValues>({ resolver: zodResolver(packageSchema) })
   useEffect(() => { if (data) form.reset(packageToForm(data.package)) }, [data, form])
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 rounded-xl" /></div>
   if (isError || !data) return <div className="p-8"><p role="alert" className="text-sm text-red-600">Não foi possível carregar este pack. <Link href="/admin/packages" className="underline">Voltar à lista</Link>.</p></div>

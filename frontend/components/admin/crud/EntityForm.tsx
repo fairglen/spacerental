@@ -14,9 +14,12 @@ import { blockerLines, parseApiError, type FormApiError } from './apiErrors'
  * unsaved-changes guard (beforeunload + in-app links), a success toast, and
  * a refetch after save — never an optimistic write.
  */
-export type EntityFormProps<T extends FieldValues> = {
-  form: UseFormReturn<T>
-  onSubmit: (values: T) => Promise<unknown>
+// TOut is the schema's output: with zod 4 a coerced field's input type is
+// `unknown`, so what the fields hold (T) and what submit receives differ. The
+// output is always a valid field value, which is what lets submit reset to it.
+export type EntityFormProps<T extends FieldValues, TOut extends T = T> = {
+  form: UseFormReturn<T, unknown, TOut>
+  onSubmit: (values: TOut) => Promise<unknown>
   onSaved?: () => void | Promise<void>
   onCancel?: () => void
   successMessage?: string
@@ -48,9 +51,9 @@ export function useUnsavedGuard(isDirty: boolean) {
   }, [isDirty])
 }
 
-export function EntityForm<T extends FieldValues>({
+export function EntityForm<T extends FieldValues, TOut extends T = T>({
   form, onSubmit, onSaved, onCancel, successMessage = 'Guardado.', submitLabel = 'Guardar', children, extra,
-}: EntityFormProps<T>) {
+}: EntityFormProps<T, TOut>) {
   const router = useRouter()
   const { toast } = useToast()
   const [error, setError] = useState<FormApiError | null>(null)
