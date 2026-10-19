@@ -141,6 +141,9 @@ export type UserPackagePurchase = {
   amount_paid: number
   // Hours only become spendable once Stripe confirms the payment.
   status: 'pending' | 'active' | 'cancelled'
+  // B68: a pending purchase listed with `include=pending` carries the
+  // Checkout page to resume; absent otherwise.
+  checkout_url?: string | null
   source: PurchaseSource
   source_booking_id: string | null
   purchased_at: string

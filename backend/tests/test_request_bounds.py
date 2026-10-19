@@ -67,7 +67,7 @@ async def test_anonymous_input_is_refused_not_crashed(
 
     def register(email: str, name: str, operator: bool = False) -> tuple:
         path = f"{API}/auth/register/operator" if operator else f"{API}/auth/register"
-        return ("POST", path, {"json": {"email": email, "password": "password123", "name": name}})
+        return ("POST", path, {"json": {"email": email, "password": "Senha-2026x", "name": name}})
 
     cases = [
         ("register, 300-char name", REFUSED, *register("long@test.com", LONG)),
@@ -80,7 +80,7 @@ async def test_anonymous_input_is_refused_not_crashed(
             REFUSED,
             "POST",
             f"{API}/auth/login",
-            {"json": {"email": f"a{NUL}b@test.com", "password": "password123"}},
+            {"json": {"email": f"a{NUL}b@test.com", "password": "Senha-2026x"}},
         ),
         (
             "availability, year 9999",

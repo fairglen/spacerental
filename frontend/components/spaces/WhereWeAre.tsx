@@ -66,7 +66,7 @@ export function WhereWeAre({ space, rooms = [], contact, headingAs: Heading = 'h
 
   // The name is no longer printed under the heading (M03); it only titles the map frame.
   const name = space.name?.trim()
-  const hours = describeOpeningHours(rooms)
+  const hours = describeOpeningHours(rooms, t)
   const withMap = hasCoordinates(space)
   const lineClass = 'flex items-start gap-2 text-foreground'
   const iconClass = 'mt-0.5 h-4 w-4 shrink-0 text-primary'

@@ -1,6 +1,12 @@
 import '@testing-library/jest-dom/vitest'
 import { vi } from 'vitest'
 import React from 'react'
+import en from '@/lib/i18n/en.json'
+import { registerCatalog } from '@/lib/i18n/registry'
+
+// B65: in the browser the English catalog is a chunk fetched on demand; a
+// test that calls `setLocale('en')` expects the switch to be synchronous.
+registerCatalog('en', en)
 
 // jsdom doesn't implement scrollIntoView; components that scroll a
 // highlighted element into view (e.g. MyPackagesPage, B12) would otherwise

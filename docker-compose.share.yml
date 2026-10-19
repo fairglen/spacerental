@@ -1,0 +1,49 @@
+# Share the local stack with testers on the PRODUCTION build (B63): an overlay
+# on docker-compose.yml that `scripts/remote-up.sh ngrok` (and `lan --prod`)
+# starts as
+#
+#   docker compose -f docker-compose.yml -f docker-compose.share.yml \
+#     --env-file .env --env-file .env.remote up -d --build
+#
+# What it changes, and why:
+# - the frontend is the production build (`frontend/Dockerfile` target
+#   `runner`, `next start`) and the backend runs without `--reload`, both
+#   without the source bind mounts — the same shape as docker-compose.e2e.yml,
+#   so Next's dev overlay never turns an error thrown by a tester's browser
+#   extension into a full-screen error page on their phone;
+# - everything else is the dev stack's: the database and media volumes (the
+#   seed and the testers' data survive `remote-up.sh off`), APP_ENV=development
+#   (the stub gateways and http:// local addresses are allowed — this is the
+#   production BUILD, not production), the frontend published on 3000 (the
+#   port the tunnel points at), NEXTAUTH_URL/FRONTEND_URL from .env.remote.
+# DECISION: on main there is no docker-compose.prod.yml yet (#107 brings it
+# with Caddy, which a tunnel does not need); when it lands, this overlay can
+# move onto it — the tester-facing command stays the script's.
+# NEVER FOR A DEPLOYMENT.
+services:
+  backend:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # The image carries the code; only the seed photos and the media volume
+    # stay mounted.
+    volumes: !override
+      - ./flowspace-site/assets/img/room-photos:/app/seed-photos:ro
+      - media:/var/lib/spacerental/media
+
+  frontend:
+    build:
+      context: ./frontend
+      target: runner
+      args:
+        # Inlined into the bundle at build time (see frontend/Dockerfile); the
+        # relative default goes through the /backend proxy (D20).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/backend/api/v1}
+        NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED: ${RECURRING_BOOKINGS_ENABLED:-false}
+        NEXT_PUBLIC_BOOKING_MAX_ADVANCE_DAYS: ${BOOKING_MAX_ADVANCE_DAYS:-30}
+        NEXT_PUBLIC_CONTACT_PHONE: ${CONTACT_PHONE:-}
+        NEXT_PUBLIC_CANCELLATION_CREDIT_VALIDITY_DAYS: ${CANCELLATION_CREDIT_VALIDITY_DAYS:-365}
+        NEXT_PUBLIC_MEDIA_ORIGIN: ${NEXT_PUBLIC_MEDIA_ORIGIN:-}
+        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-share}
+    environment:
+      APP_ENV: development
+    command: ["npm", "run", "start"]
+    volumes: !override []

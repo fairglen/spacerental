@@ -86,7 +86,7 @@ async def _db_booking(db_session, booking_id: str) -> Booking:
 
 @pytest_asyncio.fixture
 async def other_headers(db_session, test_org):
-    u = User(email="other@test.com", name="Other", password_hash=hash_password("password123"))
+    u = User(email="other@test.com", name="Other", password_hash=hash_password("Senha-2026x"))
     db_session.add(u)
     await db_session.flush()
     db_session.add(OrganizationMember(org_id=test_org.id, user_id=u.id, role=MemberRole.member))
@@ -397,7 +397,7 @@ class TestReviewFindings:
 
 
 async def _admin_headers(db_session, test_org):
-    u = User(email="op@test.com", name="Operator", password_hash=hash_password("password123"))
+    u = User(email="op@test.com", name="Operator", password_hash=hash_password("Senha-2026x"))
     db_session.add(u)
     await db_session.flush()
     db_session.add(OrganizationMember(org_id=test_org.id, user_id=u.id, role=MemberRole.owner))

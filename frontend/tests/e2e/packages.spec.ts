@@ -49,8 +49,10 @@ function apiUrl(path: string): string {
   return `${API_URL}${path}`
 }
 
+/** The customer's purchases, the pending ones included (B68: the default
+ *  lists active packs only; a cancelled one is never listed). */
 async function myPurchases(api: APIRequestContext, token: string): Promise<ApiPurchase[]> {
-  const res = await api.get(apiUrl('/packages/me'), { headers: auth(token) })
+  const res = await api.get(apiUrl('/packages/me?include=pending'), { headers: auth(token) })
   expect(res.ok()).toBeTruthy()
   return (await res.json()).purchases
 }
@@ -233,8 +235,8 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
       const email = `pack-buyer-${Date.now()}@example.com`
       await visitor.getByLabel('Nome').fill('Pack Buyer')
       await visitor.getByLabel('Email').fill(email)
-      await visitor.getByLabel('Password', { exact: true }).fill('password123')
-      await visitor.getByLabel('Confirmar password').fill('password123')
+      await visitor.getByLabel('Password', { exact: true }).fill('uma frase comprida e so minha')
+      await visitor.getByLabel('Confirmar password').fill('uma frase comprida e so minha')
       await visitor.getByRole('button', { name: /Criar Conta/i }).click()
 
       // This is the actual B12 deliverable: the chosen package id rides
@@ -282,6 +284,43 @@ test.describe('Comprar pacotes — fluxos reais (B12)', () => {
       expect(Number(restored.find(p => p.id === purchaseId)?.hours_remaining)).toBe(10)
     } finally {
       await visitorContext.close()
+    }
+  })
+
+  test('a purchase cancelled on the stub page is no pack — nothing listed, the bank reads 0h; paid, it is one (B68)', async ({ browser }) => {
+    const buyer = await createCustomer(api, { tag: 'cancel' })
+    const pkg10h = await packageByHours(api, buyer.orgId, 10)
+    const ctx = await browser.newContext({ storageState: await loginAs(buyer) })
+    const tab = await ctx.newPage()
+    try {
+      const buy = async () => {
+        await tab.goto('/dashboard/packages')
+        const card = tab.locator('div.rounded-xl').filter({ hasText: `${pkg10h.hours}h ·` })
+        await card.getByRole('button', { name: /Comprar Pack/i }).click()
+        await tab.waitForURL(/\/checkout\/stub\/cs_stub_/, { timeout: 20000 })
+        return decodeCheckoutUrl(tab.url()).purchaseId
+      }
+      const abandoned = await buy()
+      await tab.getByRole('button', { name: /^Cancelar$/ }).click()
+      await tab.waitForURL(/\/dashboard/, { timeout: 20000 })
+      await tab.goto('/dashboard/packages')
+      await expect(tab.getByText('Não tem pacotes de horas.')).toBeVisible({ timeout: 10000 })
+      await expect(tab.getByText('0h disponíveis')).toBeVisible()
+      await expect(tab.getByTestId('pending-purchases')).toHaveCount(0)
+      // Cancelled is never listed, with or without the pending ones.
+      expect(await myPurchases(api, buyer.token)).toEqual([])
+      const withPending = await api.get(apiUrl('/packages/me?include=pending'), { headers: auth(buyer.token) })
+      expect((await withPending.json()).purchases.map((p: ApiPurchase) => p.id)).not.toContain(abandoned)
+
+      const paid = await buy()
+      await payOnStubCheckoutPage(tab)
+      await tab.goto('/dashboard/packages')
+      await expect(tab.locator('div.rounded-xl').filter({ hasText: pkg10h.name }).first()).toContainText(`restantes de ${pkg10h.hours}h`)
+      await expect(tab.getByText(`${pkg10h.hours}h disponíveis`)).toBeVisible()
+      const mine = await myPurchases(api, buyer.token)
+      expect(mine.map(p => p.id)).toEqual([paid])
+    } finally {
+      await ctx.close()
     }
   })
 })

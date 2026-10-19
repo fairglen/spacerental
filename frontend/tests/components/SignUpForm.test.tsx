@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { signIn } from 'next-auth/react'
 import SignUpPage from '@/app/(auth)/sign-up/[[...sign-up]]/page'
 import { authApi } from '@/lib/api'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 
 const push = vi.fn()
 const refresh = vi.fn()
@@ -86,5 +87,38 @@ describe('Customer signup failures', () => {
     expect(screen.getByRole('button', { name: /Criar Conta/i })).toBeDisabled()
     expect(screen.getByRole('link', { name: /Entrar/i })).toHaveAttribute('href', '/sign-in?packageId=pkg-10h')
     expect(authApi.register).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Sign-up page in English (B65)', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('renders the English copy, the password rules and the recovery notice without Portuguese', async () => {
+    setLocale('en')
+    vi.mocked(signIn).mockResolvedValue({ ok: false, error: 'CredentialsSignin', status: 401, url: null })
+    const user = userEvent.setup()
+    render(<SignUpPage />)
+    expect(screen.getByText('Create account')).toBeInTheDocument()
+    expect(screen.getByText(/^Between 10 and 128 characters; a phrase only you know/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Password', { exact: true })).toHaveAttribute('placeholder', 'At least 10 characters')
+
+    await user.type(screen.getByLabelText('Name'), 'Test User')
+    await user.type(screen.getByLabelText('Email'), 'test@example.com')
+    await user.type(screen.getByLabelText('Password', { exact: true }), 'short')
+    await user.type(screen.getByLabelText('Confirm password'), 'other')
+    await user.click(screen.getByRole('button', { name: 'Create Account' }))
+    expect(await screen.findByText('The password must be between 10 and 128 characters.')).toBeInTheDocument()
+    expect(screen.getByText('The passwords do not match')).toBeInTheDocument()
+    expect(authApi.register).not.toHaveBeenCalled()
+
+    await user.clear(screen.getByLabelText('Password', { exact: true }))
+    await user.type(screen.getByLabelText('Password', { exact: true }), 'password123')
+    await user.clear(screen.getByLabelText('Confirm password'))
+    await user.type(screen.getByLabelText('Confirm password'), 'password123')
+    await user.click(screen.getByRole('button', { name: 'Create Account' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Account created')
+    expect(screen.getByRole('alert')).toHaveTextContent('could not sign you in')
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in')
+    expect(document.body.textContent).not.toMatch(/Criar|Entrar|Nome|coincidem|caracteres/)
   })
 })

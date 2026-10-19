@@ -104,7 +104,7 @@ export async function createCustomer(
 ): Promise<Customer> {
   const tag = opts.tag ?? 'e2e'
   const email = `${tag}-${randomUUID().slice(0, 12)}@example.com`
-  const password = opts.password ?? 'Password123!'
+  const password = opts.password ?? 'Cliente-Teste-2026!'
   const name = opts.name ?? `Cliente ${tag} ${randomUUID().slice(0, 4)}`
   const registered = await okJson<{ access_token: string; user: { id: string } }>(
     await api.post(`${API_URL}/auth/register`, { data: { email, password, name } }),

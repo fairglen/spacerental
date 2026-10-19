@@ -95,7 +95,7 @@ class TestTokenValidation:
     async def test_a_token_stops_working_when_its_user_is_deleted(self, client, db_session):
         # There is no revocation list (a held decision); the per-request user
         # lookup is what ends a deleted account's session.
-        user = User(email="gone@test.com", name="Gone", password_hash=hash_password("password123"))
+        user = User(email="gone@test.com", name="Gone", password_hash=hash_password("Senha-2026x"))
         db_session.add(user)
         await db_session.commit()
         headers = _bearer(_sign(_claims(user)))
@@ -145,14 +145,14 @@ class TestLoginGivesNothingAway:
     async def test_an_account_without_a_password_cannot_log_in(self, client, db_session):
         db_session.add(User(email="nopass@test.com", name="No Password", password_hash=None))
         await db_session.commit()
-        for password in ("password123", "None", "null"):
+        for password in ("Senha-2026x", "None", "null"):
             resp = await client.post(LOGIN, json={"email": "nopass@test.com", "password": password})
             assert resp.status_code == 401, resp.text
 
     async def test_issued_claims_are_bounded_and_carry_no_secret(
         self, client, test_user, test_member
     ):
-        resp = await client.post(LOGIN, json={"email": test_user.email, "password": "password123"})
+        resp = await client.post(LOGIN, json={"email": test_user.email, "password": "Senha-2026x"})
         assert resp.status_code == 200, resp.text
         claims = jwt.decode(
             resp.json()["access_token"], settings.SECRET_KEY, algorithms=[ALGORITHM]
@@ -185,7 +185,7 @@ class TestLoginGivesNothingAway:
             (f"{REGISTER}/operator", "claims-operator@test.com", "owner"),
         ):
             resp = await client.post(
-                path, json={"email": email, "password": "password123", "name": "Claims"}
+                path, json={"email": email, "password": "Senha-2026x", "name": "Claims"}
             )
             assert resp.status_code == 201, resp.text
             claims = jwt.decode(

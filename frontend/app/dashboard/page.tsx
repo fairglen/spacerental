@@ -6,12 +6,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, isPast } from 'date-fns'
-import { pt } from 'date-fns/locale'
 import { Calendar, Clock, Building2, KeyRound, Package } from 'lucide-react'
 import type { Booking } from '@/types'
 import { bookingsApi, packagesApi } from '@/lib/api'
 import { useApi } from '@/lib/hooks/useApi'
-import { formatBookingCost, formatHours, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS, isUnpaidHold } from '@/lib/utils'
+import { useLocale, useT } from '@/lib/i18n'
+import { formatBookingCost, formatHours, statusLabels, STATUS_COLORS, cancellationEligibility, CANCELLATION_WINDOW_HOURS, isUnpaidHold, dateFnsLocale } from '@/lib/utils'
 import { cancellationErrorMessage, bookingErrorMessage } from '@/lib/httpError'
 import { creditExpiry, creditHoursFor, purchaseLabel } from '@/lib/cancellationCredit'
 import { Navbar } from '@/components/layout/Navbar'
@@ -29,6 +29,10 @@ export default function DashboardPage() {
   const { data: session } = useSession()
   const api = useApi()
   const queryClient = useQueryClient()
+  const t = useT()
+  const [locale] = useLocale()
+  const dateLocale = dateFnsLocale(locale)
+  const labels = statusLabels(locale)
   const [cancelId, setCancelId] = useState<string | null>(null)
   const HISTORY_PREVIEW = 5
   const [showAllHistory, setShowAllHistory] = useState(false)
@@ -109,46 +113,42 @@ export default function DashboardPage() {
       <main className="min-h-screen bg-background">
         <div className="bg-white border-b border-border py-8">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-            <h1 className="text-2xl font-bold text-foreground">Olá, {session?.user?.name ?? 'Bem-vindo'} 👋</h1>
-            <p className="text-muted-foreground mt-1">As suas reservas e pacotes num só lugar.</p>
+            <h1 className="text-2xl font-bold text-foreground">{t('dashboard.greeting', { name: session?.user?.name ?? t('dashboard.greeting_fallback_name') })}</h1>
+            <p className="text-muted-foreground mt-1">{t('dashboard.subtitle')}</p>
           </div>
         </div>
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
           {paymentNotice && <PaymentNotice outcome={paymentNotice} onClose={() => setPaymentNotice(null)} />}
-          <section aria-label="Os seus packs" className="mb-8 rounded-xl border border-border bg-white p-4">
+          <section aria-label={t('dashboard.packs_title')} className="mb-8 rounded-xl border border-border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Package className="h-4 w-4 text-primary" /> Os seus packs
+                <Package className="h-4 w-4 text-primary" /> {t('dashboard.packs_title')}
               </h2>
               <Link href="/dashboard/packages" className="text-sm font-medium text-primary hover:underline">
-                {activePacks.length > 0 ? 'Ver e comprar packs' : 'Ver packs'}
+                {activePacks.length > 0 ? t('dashboard.packs_link_buy') : t('dashboard.packs_link_view')}
               </Link>
             </div>
             {purchasesFailed ? (
-              <p className="mt-2 text-sm text-red-700">
-                Não foi possível carregar os seus packs. Tente de novo mais tarde ou abra a página dos packs.
-              </p>
+              <p className="mt-2 text-sm text-red-700">{t('dashboard.packs_error')}</p>
             ) : purchases === undefined ? (
               <Skeleton className="mt-3 h-5 w-48" />
             ) : activePacks.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">
-                Ainda não tem packs de horas. Um pack fica mais barato do que pagar à hora.
-              </p>
+              <p className="mt-2 text-sm text-muted-foreground">{t('dashboard.packs_empty')}</p>
             ) : (
               <ul className="mt-2 divide-y divide-border text-sm">
                 {activePacks.map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
-                    <span className="font-medium text-foreground">{purchaseLabel(p)}</span>
+                    <span className="font-medium text-foreground">{purchaseLabel(p, locale)}</span>
                     <span className="text-muted-foreground">
-                      <span className="font-semibold text-primary">{formatHours(p.hours_remaining)}</span> restantes ·
-                      expira {format(parseISO(p.expires_at), 'd MMM yyyy', { locale: pt })}
+                      <span className="font-semibold text-primary">{formatHours(p.hours_remaining)}</span> {t('dashboard.pack_remaining')} ·{' '}
+                      {t('dashboard.pack_expires', { date: format(parseISO(p.expires_at), 'd MMM yyyy', { locale: dateLocale }) })}
                     </span>
                   </li>
                 ))}
               </ul>
             )}
           </section>
-          <h2 className="text-lg font-semibold text-foreground mb-4">Próximas Reservas</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-4">{t('dashboard.upcoming_title')}</h2>
           {payMutation.isError && (
             <p role="alert" className="mb-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
               {bookingErrorMessage(payMutation.error, 'hourly')}
@@ -162,8 +162,8 @@ export default function DashboardPage() {
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
                 <Calendar className="h-10 w-10 mx-auto mb-3 text-primary-light" />
-                <p>Não tem reservas futuras.</p>
-                <Button className="mt-4" asChild><a href="/spaces">Reservar uma sala</a></Button>
+                <p>{t('dashboard.upcoming_empty')}</p>
+                <Button className="mt-4" asChild><a href="/spaces">{t('packs.use_hours_cta')}</a></Button>
               </CardContent>
             </Card>
           ) : (
@@ -176,45 +176,41 @@ export default function DashboardPage() {
                         <Building2 className="h-5 w-5 text-primary" />
                       </div>
                       <div>
-                        <p className="font-medium text-foreground text-sm">{b.room?.name ?? 'Sala'}</p>
+                        <p className="font-medium text-foreground text-sm">{b.room?.name ?? t('dashboard.room_fallback')}</p>
                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                           <Clock className="h-3 w-3" />
-                          {format(parseISO(b.start_time), "d MMM yyyy, HH:mm", { locale: pt })} – {format(parseISO(b.end_time), 'HH:mm')}
+                          {format(parseISO(b.start_time), "d MMM yyyy, HH:mm", { locale: dateLocale })} – {format(parseISO(b.end_time), 'HH:mm')}
                         </p>
                         {isUnpaidHold(b) && b.hold_expires_at && (
                           <p className="text-xs text-amber-800 mt-1">
-                            Horário reservado até às {format(parseISO(b.hold_expires_at), 'HH:mm', { locale: pt })}. Pague para confirmar.
+                            {t('dashboard.hold_until', { time: format(parseISO(b.hold_expires_at), 'HH:mm', { locale: dateLocale }) })}
                           </p>
                         )}
                         {b.status === 'expired' && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            O tempo para pagar terminou e o horário ficou livre. Pode tentar de novo se ainda estiver disponível.
-                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">{t('dashboard.expired_note')}</p>
                         )}
                         {b.status === 'paid_unfulfilled' && (
-                          <p className="text-xs text-orange-800 mt-1">
-                            Pagamento recebido, mas o horário já não está disponível. O espaço vai contactá-lo.
-                          </p>
+                          <p className="text-xs text-orange-800 mt-1">{t('dashboard.paid_unfulfilled_note')}</p>
                         )}
                         {b.status === 'confirmed' && (
                           b.access_code ? (
                             <p className="text-xs text-foreground flex items-center gap-1 mt-1">
                               <KeyRound className="h-3 w-3 text-primary" />
-                              Código de acesso: <span className="font-mono font-semibold tracking-wider">{b.access_code}</span>
+                              {t('dashboard.access_code')} <span className="font-mono font-semibold tracking-wider">{b.access_code}</span>
                             </p>
                           ) : (
                             <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                               <KeyRound className="h-3 w-3" />
-                              Código de acesso ainda não disponível. Contacte o espaço se não o tiver antes da reserva.
+                              {t('dashboard.access_code_pending')}
                             </p>
                           )
                         )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold text-primary">{formatBookingCost(b)}</span>
+                      <span className="font-semibold text-primary">{formatBookingCost(b, locale)}</span>
                       <Badge className={STATUS_COLORS[b.status]}>
-                        {isUnpaidHold(b) ? 'A aguardar pagamento' : STATUS_LABELS[b.status]}
+                        {isUnpaidHold(b) ? t('status.awaiting_payment') : labels[b.status]}
                       </Badge>
                       {(isUnpaidHold(b) || b.status === 'expired') && (
                         <Button
@@ -222,11 +218,11 @@ export default function DashboardPage() {
                           onClick={() => payMutation.mutate(b.id)}
                           disabled={payMutation.isPending}
                         >
-                          {b.status === 'expired' ? 'Tentar pagar de novo' : 'Pagar agora'}
+                          {b.status === 'expired' ? t('dashboard.pay_retry') : t('dashboard.pay_now')}
                         </Button>
                       )}
                       {(() => {
-                        const eligibility = cancellationEligibility(b)
+                        const eligibility = cancellationEligibility(b, new Date(), locale)
                         return (
                           <div className="flex flex-col items-end">
                             <Button
@@ -236,7 +232,7 @@ export default function DashboardPage() {
                               onClick={() => setCancelId(b.id)}
                               disabled={!eligibility.eligible}
                             >
-                              Cancelar
+                              {t('dashboard.cancel')}
                             </Button>
                             {!eligibility.eligible && eligibility.reason && (
                               <span className="text-[11px] text-muted-foreground text-right max-w-44">{eligibility.reason}</span>
@@ -248,7 +244,7 @@ export default function DashboardPage() {
                                 onClick={() => openHelp({ category: 'booking', bookingId: b.id })}
                                 className="text-[11px] font-medium text-primary underline underline-offset-2 text-right"
                               >
-                                Precisa de cancelar? Fale connosco
+                                {t('dashboard.cancel_help_link')}
                               </button>
                             )}
                           </div>
@@ -262,18 +258,18 @@ export default function DashboardPage() {
           )}
           {past.length > 0 && (
             <>
-              <h2 className="text-lg font-semibold text-foreground mt-8 mb-4">Histórico</h2>
+              <h2 className="text-lg font-semibold text-foreground mt-8 mb-4">{t('dashboard.history_title')}</h2>
               <div className="space-y-2">
                 {(showAllHistory ? past : past.slice(0, HISTORY_PREVIEW)).map((b) => (
                   <Card key={b.id} className="opacity-70">
                     <CardContent className="p-4 flex items-center justify-between gap-4">
                       <div>
-                        <p className="text-sm font-medium text-foreground">{b.room?.name ?? 'Sala'}</p>
-                        <p className="text-xs text-muted-foreground">{format(parseISO(b.start_time), "d MMM yyyy, HH:mm", { locale: pt })}</p>
+                        <p className="text-sm font-medium text-foreground">{b.room?.name ?? t('dashboard.room_fallback')}</p>
+                        <p className="text-xs text-muted-foreground">{format(parseISO(b.start_time), "d MMM yyyy, HH:mm", { locale: dateLocale })}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-muted-foreground">{formatBookingCost(b)}</span>
-                        <Badge className={STATUS_COLORS[b.status]} variant="secondary">{STATUS_LABELS[b.status]}</Badge>
+                        <span className="text-sm font-medium text-muted-foreground">{formatBookingCost(b, locale)}</span>
+                        <Badge className={STATUS_COLORS[b.status]} variant="secondary">{labels[b.status]}</Badge>
                       </div>
                     </CardContent>
                   </Card>
@@ -281,7 +277,7 @@ export default function DashboardPage() {
               </div>
               {!showAllHistory && past.length > HISTORY_PREVIEW && (
                 <Button variant="outline" size="sm" className="mt-3" onClick={() => setShowAllHistory(true)}>
-                  Ver mais ({past.length - HISTORY_PREVIEW})
+                  {t('dashboard.show_more', { count: past.length - HISTORY_PREVIEW })}
                 </Button>
               )}
             </>
@@ -293,18 +289,18 @@ export default function DashboardPage() {
       <Dialog open={!!cancelId} onOpenChange={closeCancelDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cancelar reserva</DialogTitle>
+            <DialogTitle>{t('dashboard.cancel_dialog_title')}</DialogTitle>
             <DialogDescription>
-              Tem a certeza de que quer cancelar esta reserva? Esta ação não pode ser desfeita.
-              Os cancelamentos são aceites até {CANCELLATION_WINDOW_HOURS} horas antes do início; as horas
-              pagas com um pack voltam ao seu saldo.
+              {t('dashboard.cancel_dialog_description', { hours: CANCELLATION_WINDOW_HOURS })}
             </DialogDescription>
           </DialogHeader>
           {creditHours !== null && (
             // The paid hours are not refunded: they stay spendable in the bank (K01).
             <p className="text-sm text-foreground rounded-lg bg-accent px-3 py-2">
-              Ao cancelar, as {formatHours(creditHours)} pagas ficam no seu banco de horas
-              (válidas até {format(creditExpiry(), 'd MMM yyyy', { locale: pt })}).
+              {t('dashboard.cancel_credit_line', {
+                hours: formatHours(creditHours),
+                date: format(creditExpiry(), 'd MMM yyyy', { locale: dateLocale }),
+              })}
             </p>
           )}
           {cancelMutation.isError && (
@@ -314,26 +310,26 @@ export default function DashboardPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={closeCancelDialog} disabled={cancelMutation.isPending}>
-              Manter reserva
+              {t('dashboard.cancel_keep')}
             </Button>
             <Button
               variant="destructive"
               onClick={() => cancelId && cancelMutation.mutate(cancelId)}
               disabled={cancelMutation.isPending}
             >
-              {cancelMutation.isPending ? 'A cancelar...' : 'Sim, cancelar'}
+              {cancelMutation.isPending ? t('dashboard.cancelling') : t('dashboard.cancel_confirm')}
             </Button>
           </DialogFooter>
           {paidMoney && (
             // Money never comes back by itself; a person can find another way.
             <p className="text-xs text-muted-foreground">
-              Precisa de outra solução?{' '}
+              {t('dashboard.other_solution')}{' '}
               <button
                 type="button"
                 onClick={() => { closeCancelDialog(); openHelp({ category: 'payment', bookingId: cancelling.id }) }}
                 className="font-medium text-primary underline underline-offset-2"
               >
-                Fale connosco
+                {t('contactNote.cta')}
               </button>
             </p>
           )}

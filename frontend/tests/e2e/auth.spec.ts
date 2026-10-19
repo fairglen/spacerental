@@ -34,8 +34,21 @@ test.describe('Authentication', () => {
     await page.goto('/sign-up')
     await page.getByLabel('Nome').fill('Test User')
     await page.getByLabel('Email').fill(email)
+    // B66: a breached password is refused by the server with its reason shown
+    // verbatim (the browser cannot know the list); a short one never leaves
+    // the browser.
+    await page.getByLabel('Password', { exact: true }).fill('curta1234')
+    await page.getByLabel('Confirmar password').fill('curta1234')
+    await page.getByRole('button', { name: /Criar Conta/i }).click()
+    await expect(page.getByText('A password tem de ter entre 10 e 128 caracteres.')).toBeVisible()
     await page.getByLabel('Password', { exact: true }).fill('password123')
     await page.getByLabel('Confirmar password').fill('password123')
+    const refused = page.waitForResponse(r => r.url().endsWith('/api/v1/auth/register') && r.request().method() === 'POST')
+    await page.getByRole('button', { name: /Criar Conta/i }).click()
+    expect((await refused).status()).toBe(422)
+    await expect(page.getByText(/demasiado comum/)).toBeVisible()
+    await page.getByLabel('Password', { exact: true }).fill('uma frase comprida e so minha')
+    await page.getByLabel('Confirmar password').fill('uma frase comprida e so minha')
     // The browser's own call goes through the frontend origin (/backend, D20),
     // so it is matched by path, not by API_URL (which the API-level calls below use).
     const registered = page.waitForResponse(r => r.url().endsWith('/api/v1/auth/register') && r.request().method() === 'POST')

@@ -11,6 +11,7 @@ import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { adminApi } from '@/lib/api'
 import { detailOf } from '@/lib/httpError'
+import { PASSWORD_HINT, passwordProblems, passwordReasonsOf } from '@/lib/password'
 import { useCrud } from '@/components/admin/crud/useCrud'
 import { EntityForm, FormField, FormSection } from '@/components/admin/crud/EntityForm'
 import { DangerZone } from '@/components/admin/crud/DangerZone'
@@ -108,7 +109,7 @@ function UserDetail({ userId }: { userId: string }) {
   const setPassword = useMutation({
     mutationFn: () => adminApi.setPassword(userId, pw.password, api),
     onSuccess: async () => { setPwOpen(false); setPw({ password: '', confirm: '' }); await done('Password definida. As sessões anteriores foram terminadas.') },
-    onError: (err) => setPwError(detailOf(err) ?? 'Não foi possível definir a password.'),
+    onError: (err) => setPwError(passwordReasonsOf(err)?.join(' ') ?? detailOf(err) ?? 'Não foi possível definir a password.'),
   })
   const removeMembership = useMutation({
     mutationFn: () => adminApi.removeMembership(userId, data?.user.email ?? '', api),
@@ -366,10 +367,10 @@ function UserDetail({ userId }: { userId: string }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Definir password</DialogTitle>
-            <DialogDescription>Pelo menos 8 caracteres. As sessões atuais da pessoa terminam.</DialogDescription>
+            <DialogDescription>Pelo menos 10 caracteres. As sessões atuais da pessoa terminam.</DialogDescription>
           </DialogHeader>
-          <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (pw.password !== pw.confirm) { setPwError('As passwords não coincidem.'); return } if (pw.password.length < 8) { setPwError('Pelo menos 8 caracteres.'); return } setPassword.mutate() }}>
-            <div><Label htmlFor="new-password">Nova password</Label><Input id="new-password" type="password" autoComplete="new-password" value={pw.password} onChange={(e) => setPw({ ...pw, password: e.target.value })} className="mt-1" /></div>
+          <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (pw.password !== pw.confirm) { setPwError('As passwords não coincidem.'); return } const problems = passwordProblems(pw.password, user.email); if (problems.length) { setPwError(problems.join(' ')); return } setPassword.mutate() }}>
+            <div><Label htmlFor="new-password">Nova password</Label><Input id="new-password" type="password" autoComplete="new-password" value={pw.password} onChange={(e) => setPw({ ...pw, password: e.target.value })} className="mt-1" aria-describedby="new-password-hint" /><p id="new-password-hint" className="text-xs text-muted-foreground mt-1">{PASSWORD_HINT}</p></div>
             <div><Label htmlFor="confirm-password">Confirmar</Label><Input id="confirm-password" type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} className="mt-1" /></div>
             {pwError && <p role="alert" className="text-sm text-red-600">{pwError}</p>}
             <DialogFooter>

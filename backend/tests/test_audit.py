@@ -78,7 +78,7 @@ async def w(db_session, monkeypatch) -> SimpleNamespace:
     # A customer who registers through the public form lands in org A.
     monkeypatch.setattr(settings, "CUSTOMER_ENROLLMENT_ORG_SLUG", "org-a")
     w = SimpleNamespace()
-    password = hash_password("password123")
+    password = hash_password("Senha-2026x")
     w.org = Organization(name="Org A", slug="org-a", plan=OrgPlan.starter, settings={})
     w.other_org = Organization(name="Org B", slug="org-b", plan=OrgPlan.starter, settings={})
     db_session.add_all([w.org, w.other_org])
@@ -273,7 +273,7 @@ async def _expire_pending(client, w):
 
 async def _fresh_user(client, w):
     resp = await client.post(
-        f"{API}/auth/register", json={"email": "fresh@test.com", "password": "password123"}
+        f"{API}/auth/register", json={"email": "fresh@test.com", "password": "Senha-2026x"}
     )
     assert resp.status_code == 201, resp.text
     w.fresh = SimpleNamespace(id=resp.json()["user"]["id"])

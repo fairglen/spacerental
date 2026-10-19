@@ -50,7 +50,8 @@ class AdminUserCreate(BaseModel):
 
     email: EmailStr
     name: PersonName | None = None
-    password: str | None = Field(default=None, min_length=8, max_length=128)
+    # The policy (app/passwords.py, B66) answers 422 with its reasons.
+    password: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class AdminUserUpdate(BaseModel):

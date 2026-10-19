@@ -23,7 +23,7 @@ class TestRegister:
             "/api/v1/auth/register",
             json={
                 "email": "new@user.com",
-                "password": "password123",
+                "password": "Senha-2026x",
                 "name": "New User",
             },
         )
@@ -52,7 +52,7 @@ class TestRegister:
         assert denied.status_code == 403
 
     async def test_register_duplicate_email_returns_400(self, client):
-        payload = {"email": "dup@user.com", "password": "password123", "name": "Dup"}
+        payload = {"email": "dup@user.com", "password": "Senha-2026x", "name": "Dup"}
         first = await client.post("/api/v1/auth/register", json=payload)
         assert first.status_code == 201
         second = await client.post("/api/v1/auth/register", json=payload)
@@ -69,7 +69,7 @@ class TestRegister:
     async def test_register_invalid_email_returns_422(self, client):
         resp = await client.post(
             "/api/v1/auth/register",
-            json={"email": "not-an-email", "password": "password123", "name": "A"},
+            json={"email": "not-an-email", "password": "Senha-2026x", "name": "A"},
         )
         assert resp.status_code == 422
 
@@ -87,7 +87,7 @@ class TestRegister:
         and both attempt the INSERT — the loser must get the same clean 400,
         not an unhandled IntegrityError/500, and leave no partial row.
         """
-        payload = {"email": "race@user.com", "password": "password123", "name": "Race"}
+        payload = {"email": "race@user.com", "password": "Senha-2026x", "name": "Race"}
         responses = await asyncio.gather(
             *[client.post("/api/v1/auth/register", json=payload) for _ in range(2)]
         )
@@ -118,11 +118,11 @@ class TestLogin:
     async def test_login_success_returns_token(self, client):
         await client.post(
             "/api/v1/auth/register",
-            json={"email": "li@user.com", "password": "password123", "name": "Li"},
+            json={"email": "li@user.com", "password": "Senha-2026x", "name": "Li"},
         )
         resp = await client.post(
             "/api/v1/auth/login",
-            json={"email": "li@user.com", "password": "password123"},
+            json={"email": "li@user.com", "password": "Senha-2026x"},
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -133,7 +133,7 @@ class TestLogin:
     async def test_login_wrong_password_returns_401(self, client):
         await client.post(
             "/api/v1/auth/register",
-            json={"email": "wp@user.com", "password": "password123", "name": "Wp"},
+            json={"email": "wp@user.com", "password": "Senha-2026x", "name": "Wp"},
         )
         resp = await client.post(
             "/api/v1/auth/login",
@@ -144,7 +144,7 @@ class TestLogin:
     async def test_login_nonexistent_email_returns_401(self, client):
         resp = await client.post(
             "/api/v1/auth/login",
-            json={"email": "nobody@nowhere.com", "password": "password123"},
+            json={"email": "nobody@nowhere.com", "password": "Senha-2026x"},
         )
         assert resp.status_code == 401
 
@@ -166,12 +166,12 @@ class TestDefaultOrgSlug:
     async def test_duplicate_user_name_dedupes_org_slug(self, client, db_session):
         a = await client.post(
             "/api/v1/auth/register/operator",
-            json={"email": "a@user.com", "password": "password123", "name": "Maria Silva"},
+            json={"email": "a@user.com", "password": "Senha-2026x", "name": "Maria Silva"},
         )
         assert a.status_code == 201, a.text
         b = await client.post(
             "/api/v1/auth/register/operator",
-            json={"email": "b@user.com", "password": "password123", "name": "Maria Silva"},
+            json={"email": "b@user.com", "password": "Senha-2026x", "name": "Maria Silva"},
         )
         assert b.status_code == 201, b.text
 
@@ -188,12 +188,12 @@ class TestDefaultOrgSlug:
         """
         payload_a = {
             "email": "concurrent-a@user.com",
-            "password": "password123",
+            "password": "Senha-2026x",
             "name": "Concurrent Ops",
         }
         payload_b = {
             "email": "concurrent-b@user.com",
-            "password": "password123",
+            "password": "Senha-2026x",
             "name": "Concurrent Ops",
         }
         responses = await asyncio.gather(
@@ -235,9 +235,9 @@ class TestDefaultOrgSlug:
 
 class TestPasswordHashing:
     def test_password_hash_is_argon2(self):
-        h = hash_password("password123")
+        h = hash_password("Senha-2026x")
         assert h.startswith("$argon2"), f"Expected Argon2 hash, got: {h[:20]}"
-        assert verify_password("password123", h) is True
+        assert verify_password("Senha-2026x", h) is True
         assert verify_password("wrong", h) is False
 
 
@@ -253,7 +253,7 @@ async def test_unavailable_enrollment_creates_nothing(
         "/api/v1/auth/register",
         json={
             "email": "closed@example.com",
-            "password": "password123",
+            "password": "Senha-2026x",
         },
     )
     assert response.status_code == expected
@@ -267,7 +267,7 @@ async def test_operator_registration_is_explicit_and_independent(client, test_or
         "/api/v1/auth/register/operator",
         json={
             "email": "operator@example.com",
-            "password": "password123",
+            "password": "Senha-2026x",
             "name": "Operator",
         },
     )
@@ -283,7 +283,7 @@ async def test_operator_registration_is_explicit_and_independent(client, test_or
         "/api/v1/auth/register/operator",
         json={
             "email": "operator@example.com",
-            "password": "password123",
+            "password": "Senha-2026x",
         },
     )
     assert duplicate.status_code == 400
@@ -308,7 +308,7 @@ async def test_enrollment_preserves_legacy_org_and_existing_owner(client, test_o
         "/api/v1/auth/register/operator",
         json={
             "email": "legacy@example.com",
-            "password": "password123",
+            "password": "Senha-2026x",
         },
     )
     headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
@@ -325,7 +325,7 @@ async def test_enrollment_preserves_legacy_org_and_existing_owner(client, test_o
     again = await client.post("/api/v1/auth/enroll", headers=headers)
     assert again.json()["membership"]["role"] == "admin"
     login = await client.post(
-        "/api/v1/auth/login", json={"email": "legacy@example.com", "password": "password123"}
+        "/api/v1/auth/login", json={"email": "legacy@example.com", "password": "Senha-2026x"}
     )
     assert login.json()["role"] == "owner"
 
@@ -355,7 +355,7 @@ async def test_customer_can_book_and_purchase_only_at_enrolled_org(
         "/api/v1/auth/register",
         json={
             "email": "customer@example.com",
-            "password": "password123",
+            "password": "Senha-2026x",
             "org_id": str(other.id),
             "role": "owner",
         },

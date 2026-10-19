@@ -278,12 +278,18 @@ export const packagesApi = {
   listMine: (api: Api) =>
     api.get<{ purchases: UserPackagePurchase[] }>('/packages/me').then(r => r.data.purchases.map(normPurchase)),
 
-  // H02: the purchases AND the bank they form, for the packs page.
-  myPackages: (api: Api): Promise<MyPackages> =>
-    api.get<MyPackages>('/packages/me').then(r => ({
+  // H02: the purchases AND the bank they form, for the packs page. Only
+  // active packs unless `includePending` (B68): then the ones whose Checkout
+  // is still open come too, each with its `checkout_url` to resume.
+  myPackages: (api: Api, opts: { includePending?: boolean } = {}): Promise<MyPackages> =>
+    (opts.includePending ? api.get<MyPackages>('/packages/me', { params: { include: 'pending' } }) : api.get<MyPackages>('/packages/me')).then(r => ({
       purchases: r.data.purchases.map(normPurchase),
       balance: normBalance(r.data.balance),
     })),
+
+  // B68: "Cancelar" on a pending purchase — the caller's own, pending only.
+  cancelPurchase: (purchaseId: string, api: Api): Promise<UserPackagePurchase> =>
+    api.post<{ purchase: UserPackagePurchase }>(`/packages/purchases/${purchaseId}/cancel`).then(r => normPurchase(r.data.purchase)),
 
   // K02: `returnTo` is the relative path Checkout comes back to (the booking
   // page with its slot) instead of the dashboard.

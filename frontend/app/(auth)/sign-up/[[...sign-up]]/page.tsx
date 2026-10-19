@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -14,21 +14,33 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authApi } from '@/lib/api'
 import { safeInternalPath } from '@/lib/navigation'
-import { useT } from '@/lib/i18n'
+import { tFor, useLocale, useT, type Locale } from '@/lib/i18n'
+import { PASSWORD_MIN_LENGTH, passwordHint, passwordProblems, passwordReasonsOf } from '@/lib/password'
 
-const schema = z.object({
-  name: z.string().min(2, 'Nome obrigatório'),
-  email: z.string().email('Email inválido'),
-  password: z.string().min(8, 'Mínimo 8 caracteres'),
-  confirmPassword: z.string(),
-}).refine(d => d.password === d.confirmPassword, {
-  message: 'As passwords não coincidem',
-  path: ['confirmPassword'],
-})
-type FormData = z.infer<typeof schema>
+// B65: built per locale so the field errors follow the language switcher;
+// useForm re-reads its resolver on every render.
+function schemaFor(locale: Locale) {
+  const t = tFor(locale)
+  return z.object({
+    name: z.string().min(2, t('auth.name_required')),
+    email: z.string().email(t('auth.email_invalid')),
+    password: z.string(),
+    confirmPassword: z.string(),
+  }).refine(d => d.password === d.confirmPassword, {
+    message: t('auth.passwords_mismatch'),
+    path: ['confirmPassword'],
+  }).superRefine((d, ctx) => {
+    // B66: the same rules the server applies, said before the request.
+    for (const problem of passwordProblems(d.password, d.email, t)) {
+      ctx.addIssue({ code: 'custom', path: ['password'], message: problem })
+    }
+  })
+}
+type FormData = z.infer<ReturnType<typeof schemaFor>>
 
 export default function SignUpPage() {
   const t = useT()
+  const [locale] = useLocale()
   const router = useRouter()
   const searchParams = useSearchParams()
   // Set when arriving from a "Comprar Pack" click while signed out (B12) — the
@@ -39,6 +51,7 @@ export default function SignUpPage() {
   const [error, setError] = useState('')
   const [accountCreated, setAccountCreated] = useState(false)
   const [loading, setLoading] = useState(false)
+  const schema = useMemo(() => schemaFor(locale), [locale])
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
 
   const onSubmit = async (data: FormData) => {
@@ -49,16 +62,18 @@ export default function SignUpPage() {
       setAccountCreated(true)
       const result = await signIn('credentials', { email: data.email, password: data.password, redirect: false })
       if (!result?.ok || result.error) {
-        setError('A conta foi criada, mas não foi possível iniciar sessão. Use o link Entrar abaixo.')
+        setError(t('auth.sign_up_session_failed'))
         return
       }
       router.push(packageId ? `/dashboard/packages?packageId=${packageId}` : callbackUrl ?? '/dashboard')
       router.refresh()
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail || 'Erro ao criar conta.')
+        // B66: a refused password comes back as the list of reasons.
+        const reasons = passwordReasonsOf(err)
+        setError(reasons ? reasons.join(' ') : (typeof err.response?.data?.detail === 'string' ? err.response.data.detail : t('auth.sign_up_failed')))
       } else {
-        setError('Erro de ligação. Tente novamente.')
+        setError(t('auth.connection_error'))
       }
     }
     finally {
@@ -76,39 +91,40 @@ export default function SignUpPage() {
         </div>
         <Card>
           <CardHeader className="text-center pb-2">
-            <CardTitle>Criar conta</CardTitle>
-            <p className="text-sm text-muted-foreground">Crie uma conta de cliente para reservar salas e comprar packs de horas</p>
+            <CardTitle>{t('auth.sign_up_title')}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t('auth.sign_up_subtitle')}</p>
           </CardHeader>
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
-                <Label htmlFor="name">Nome</Label>
-                <Input id="name" {...register('name')} className="mt-1" placeholder="O seu nome" autoComplete="name" />
+                <Label htmlFor="name">{t('auth.name_label')}</Label>
+                <Input id="name" {...register('name')} className="mt-1" placeholder={t('auth.name_placeholder')} autoComplete="name" />
                 {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>}
               </div>
               <div>
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...register('email')} className="mt-1" placeholder="nome@exemplo.pt" autoComplete="email" />
+                <Label htmlFor="email">{t('auth.email_label')}</Label>
+                <Input id="email" type="email" {...register('email')} className="mt-1" placeholder={t('auth.email_placeholder')} autoComplete="email" />
                 {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
               </div>
               <div>
-                <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" {...register('password')} className="mt-1" placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
+                <Label htmlFor="password">{t('auth.password_label')}</Label>
+                <Input id="password" type="password" {...register('password')} className="mt-1" placeholder={t('auth.password_new_placeholder', { min: PASSWORD_MIN_LENGTH })} autoComplete="new-password" aria-describedby="password-hint" />
+                <p id="password-hint" className="text-xs text-muted-foreground mt-1">{passwordHint(t)}</p>
                 {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
               </div>
               <div>
-                <Label htmlFor="confirmPassword">Confirmar password</Label>
-                <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="mt-1" placeholder="Repita a password" autoComplete="new-password" />
+                <Label htmlFor="confirmPassword">{t('auth.confirm_password_label')}</Label>
+                <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="mt-1" placeholder={t('auth.confirm_password_placeholder')} autoComplete="new-password" />
                 {errors.confirmPassword && <p className="text-xs text-red-500 mt-1">{errors.confirmPassword.message}</p>}
               </div>
-              {accountCreated && <p role="status" className="text-sm">Conta criada. Se a sessão não iniciou, use o link Entrar abaixo.</p>}
+              {accountCreated && <p role="status" className="text-sm">{t('auth.account_created_notice')}</p>}
               {error && <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading || accountCreated}>
-                {loading ? 'A criar conta...' : 'Criar Conta'}
+                {loading ? t('auth.sign_up_submitting') : t('auth.sign_up_submit')}
               </Button>
             </form>
             <p className="text-center text-sm text-muted-foreground mt-4">
-              Já tem conta?{' '}
+              {t('auth.have_account')}{' '}
               <Link
                 href={
                   packageId
@@ -119,7 +135,7 @@ export default function SignUpPage() {
                 }
                 className="text-primary font-medium hover:underline"
               >
-                Entrar
+                {t('auth.sign_in')}
               </Link>
             </p>
           </CardContent>

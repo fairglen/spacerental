@@ -7,6 +7,7 @@ import hashlib
 import re
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from app import clock
 from app.auth import create_access_token, verify_password
 from app.config import settings
@@ -18,6 +19,7 @@ from app.routing_inventory import iter_api_routes
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 API = "/api/v1"
 REQUEST = f"{API}/auth/password-reset/request"
@@ -94,19 +96,22 @@ class TestRequest:
         assert resp.status_code == 202
         assert len(emails.sent) == 1
 
-    async def test_two_accounts_differing_only_by_case_get_the_exact_one_or_nobody(
+    async def test_one_mailbox_is_one_account_whatever_the_spelling(
         self, client, emails, db_session, test_user
     ):
-        # B37: `users.email` is unique case-sensitively, so this can exist.
-        db_session.add(User(email=test_user.email.upper(), name="Shouty", password_hash="x"))
-        await db_session.commit()
-        exact = await client.post(REQUEST, json={"email": test_user.email})
-        assert exact.status_code == 202
-        assert [m.to for m in emails.sent] == [test_user.email]
-        emails.sent.clear()
-        neither = await client.post(REQUEST, json={"email": test_user.email.title()})
-        assert neither.status_code == 202
-        assert emails.sent == []
+        # B67 (closing B37): a second account differing only by case cannot
+        # exist — the unique index on the normalised address refuses it —
+        # and any spelling of the address reaches the one account.
+        email = test_user.email
+        db_session.add(User(email=email.upper(), name="Shouty", password_hash="x"))
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+        await db_session.rollback()
+        for spelling in (email, email.upper(), email.title()):
+            emails.sent.clear()
+            resp = await client.post(REQUEST, json={"email": spelling})
+            assert resp.status_code == 202
+            assert [m.to for m in emails.sent] == [email], spelling
 
     async def test_a_new_request_invalidates_the_older_unused_token(
         self, client, emails, db_session, test_user
@@ -146,7 +151,7 @@ class TestConfirm:
         assert resp.status_code == 200, resp.text
         user = await _fresh(db_session, test_user.id)
         assert verify_password("novapass123", user.password_hash)
-        assert not verify_password("password123", user.password_hash)
+        assert not verify_password("Senha-2026x", user.password_hash)
         rows = await _tokens(db_session, test_user.id)
         assert rows[0].used_at is not None
         again = await client.post(CONFIRM, json={"token": token, "password": "outrapass123"})
@@ -168,7 +173,7 @@ class TestConfirm:
         assert resp.status_code == 400
         assert resp.json()["detail"] == "A ligação é inválida ou já expirou."
         user = await _fresh(db_session, test_user.id)
-        assert verify_password("password123", user.password_hash)
+        assert verify_password("Senha-2026x", user.password_hash)
 
     async def test_a_made_up_token_and_a_short_password_are_refused(self, client, test_user):
         resp = await client.post(CONFIRM, json={"token": "not-a-token", "password": "novapass123"})
@@ -203,7 +208,7 @@ class TestDisabledAccount:
         test_user.disabled_at = datetime.now(tz=UTC)
         await db_session.commit()
         resp = await client.post(
-            f"{API}/auth/login", json={"email": test_user.email, "password": "password123"}
+            f"{API}/auth/login", json={"email": test_user.email, "password": "Senha-2026x"}
         )
         assert resp.status_code == 401
         assert resp.json()["detail"] == "A conta está desativada."
