@@ -2,18 +2,21 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Calendar, dateFnsLocalizer, type Event, type SlotInfo, type ToolbarProps } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay, parseISO } from 'date-fns'
-import { pt } from 'date-fns/locale'
+import { enGB } from 'date-fns/locale'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { spacesApi } from '@/lib/api'
 import { ptMonday } from '@/lib/dateLocale'
+import { tFor, useLocale, useT, type Locale } from '@/lib/i18n'
 import { CALENDAR_VIEWS, useCalendarView, type CalendarView } from '@/lib/hooks/useCalendarView'
 import { bookingWindowEnd, datesWithinWindow, isBeyondWindow, nextPeriodIsBeyondWindow } from '@/lib/bookingWindow'
 import { availabilityQueryKey, availabilitySpan, datesForView } from '@/lib/availabilitySpan'
 import type { Room, AvailabilitySlot } from '@/types'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
-const locales = { 'pt': ptMonday }
-const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
+// B65: one date-fns locale per UI locale; `culture` picks it. enGB already
+// starts the week on Monday, which is why `pt` alone needed ptMonday (D21).
+const DATE_LOCALES: Record<Locale, typeof ptMonday> = { pt: ptMonday, en: enGB }
+const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales: DATE_LOCALES })
 
 interface BookingCalendarProps {
   room: Room
@@ -128,17 +131,18 @@ function visibleRange(slots: AvailabilitySlot[]): { min: Date; max: Date } {
   return { min: day(minHour), max: maxHour === 24 ? day(23, 59) : day(maxHour) }
 }
 
-const CALENDAR_MESSAGES = {
-  today: 'Hoje',
-  previous: '‹',
-  next: '›',
-  day: 'Dia',
-  week: 'Semana',
-  noEventsInRange: 'Sem reservas.',
-  showMore: (total: number) => `+${total} mais`,
+/** react-big-calendar's labels in the UI locale (B65). */
+function calendarMessages(t: ReturnType<typeof tFor>) {
+  return {
+    today: t('booking.cal_today'),
+    previous: '‹',
+    next: '›',
+    day: t('booking.cal_day'),
+    week: t('booking.cal_week'),
+    noEventsInRange: t('booking.cal_no_events'),
+    showMore: (total: number) => t('booking.cal_show_more', { count: total }),
+  }
 }
-
-const VIEW_LABELS: Record<CalendarView, string> = { day: CALENDAR_MESSAGES.day, week: CALENDAR_MESSAGES.week }
 
 /**
  * react-big-calendar's own toolbar, with one difference: › is disabled once
@@ -147,19 +151,22 @@ const VIEW_LABELS: Record<CalendarView, string> = { day: CALENDAR_MESSAGES.day, 
  * default, so the existing styling and specs keep addressing it.
  */
 export function BookingToolbar({ date, view, onNavigate, onView, label }: ToolbarProps) {
+  const t = useT()
+  const messages = calendarMessages(t)
+  const viewLabels: Record<CalendarView, string> = { day: messages.day, week: messages.week }
   const nextDisabled = nextPeriodIsBeyondWindow(date, view as CalendarView)
   return (
     <div className="rbc-toolbar">
       <span className="rbc-btn-group">
-        <button type="button" onClick={() => onNavigate('TODAY')}>{CALENDAR_MESSAGES.today}</button>
-        <button type="button" onClick={() => onNavigate('PREV')}>{CALENDAR_MESSAGES.previous}</button>
+        <button type="button" onClick={() => onNavigate('TODAY')}>{messages.today}</button>
+        <button type="button" onClick={() => onNavigate('PREV')}>{messages.previous}</button>
         <button
           type="button"
           onClick={() => onNavigate('NEXT')}
           disabled={nextDisabled}
-          title={nextDisabled ? 'Não é possível reservar para além desta data.' : undefined}
+          title={nextDisabled ? t('booking.cal_next_disabled') : undefined}
         >
-          {CALENDAR_MESSAGES.next}
+          {messages.next}
         </button>
       </span>
       <span className="rbc-toolbar-label">{label}</span>
@@ -171,7 +178,7 @@ export function BookingToolbar({ date, view, onNavigate, onView, label }: Toolba
             className={view === name ? 'rbc-active' : undefined}
             onClick={() => onView(name)}
           >
-            {VIEW_LABELS[name]}
+            {viewLabels[name]}
           </button>
         ))}
       </span>
@@ -182,6 +189,12 @@ export function BookingToolbar({ date, view, onNavigate, onView, label }: Toolba
 const CALENDAR_COMPONENTS = { toolbar: BookingToolbar }
 
 export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReopenDone }: BookingCalendarProps) {
+  // `tFor(locale)` is stable per locale, so the callbacks and the messages
+  // below can depend on it without being rebuilt on every render.
+  const [locale] = useLocale()
+  const t = useMemo(() => tFor(locale), [locale])
+  const dateLocale = DATE_LOCALES[locale]
+  const messages = useMemo(() => calendarMessages(t), [t])
   const [selectedDate, setSelectedDate] = useState(initialDate ?? new Date())
   // K02: the slot normally arrives before this mounts, through `initialDate`.
   // It can also land afterwards — React holds the rooms view's reopen state
@@ -235,7 +248,7 @@ export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReo
   const events: Event[] = allSlots
     .filter((s) => !s.available && !isPastSlot(s, new Date()) && !isBeyondWindow(s))
     .map((s) => ({
-      title: 'Ocupado',
+      title: t('booking.cal_busy'),
       start: parseISO(s.start),
       end: parseISO(s.end),
     }))
@@ -250,13 +263,16 @@ export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReo
       }
       if (resolution.kind === 'taken') {
         setSelectionError(
-          `A hora ${format(resolution.from, 'HH:mm', { locale: pt })}–${format(resolution.to, 'HH:mm', { locale: pt })} já está reservada. Escolha um intervalo livre.`,
+          t('booking.slot_taken', {
+            from: format(resolution.from, 'HH:mm', { locale: dateLocale }),
+            to: format(resolution.to, 'HH:mm', { locale: dateLocale }),
+          }),
         )
         return true
       }
       return false
     },
-    [allSlots, onSlotSelect],
+    [allSlots, onSlotSelect, t, dateLocale],
   )
 
   // K02: back from buying a pack, the slot is selected again as soon as its
@@ -267,35 +283,35 @@ export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReo
   useEffect(() => {
     if (!reopen || !reopenLoaded) return
     if (!settle(reopen.start, reopen.end)) {
-      setSelectionError('Esse horário já não está disponível. Escolha um intervalo livre.')
+      setSelectionError(t('booking.slot_gone'))
     }
     onReopenDone?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reopen, reopenLoaded])
+
+  const windowEndLabel = format(bookingWindowEnd(), t('booking.window_date_format'), { locale: dateLocale })
 
   const handleSelectSlot = useCallback(
     ({ start, end }: SlotInfo) => {
       if (settle(start, end)) return
       const resolution = resolveSelection(allSlots, start, end, new Date())
       if (resolution.kind === 'past') {
-        setSelectionError('Essa hora já passou. Escolha um horário a partir de agora.')
+        setSelectionError(t('booking.slot_past'))
         return
       }
       if (resolution.kind === 'beyond') {
-        setSelectionError(
-          `As reservas estão abertas até ${format(bookingWindowEnd(), "d 'de' MMMM", { locale: pt })}. Escolha um horário até essa data.`,
-        )
+        setSelectionError(t('booking.slot_beyond', { date: windowEndLabel }))
         return
       }
       if (resolution.kind === 'closed') {
-        setSelectionError('O intervalo escolhido inclui horas fora do horário de funcionamento.')
+        setSelectionError(t('booking.slot_closed_gap'))
         return
       }
       // 'none': nothing bookable under the selection at all (closed day or
       // hours outside every open window).
-      setSelectionError('Esse período está fora do horário de funcionamento. Escolha uma hora a verde.')
+      setSelectionError(t('booking.slot_outside'))
     },
-    [allSlots, settle]
+    [allSlots, settle, t, windowEndLabel]
   )
 
   return (
@@ -307,26 +323,24 @@ export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReo
       )}
       {isLoadingSlots && (
         <p role="status" className="mb-3 text-sm text-muted-foreground bg-background rounded-lg px-3 py-2">
-          A carregar disponibilidade…
+          {t('booking.availability_loading')}
         </p>
       )}
       {failed && (
         <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
-          <span>Não foi possível carregar a disponibilidade desta sala.</span>
+          <span>{t('booking.availability_error')}</span>
           <button type="button" onClick={retryFailed} className="font-medium underline">
-            Tentar novamente
+            {t('booking.retry')}
           </button>
         </div>
       )}
       {isClosed && (
         <p role="status" className="mb-3 text-sm text-foreground bg-accent rounded-lg px-3 py-2">
-          {view === 'week'
-            ? 'Fechado nesta semana. Use as setas para ver outra semana.'
-            : 'Fechado neste dia. Use as setas para ver outro dia.'}
+          {view === 'week' ? t('booking.closed_week') : t('booking.closed_day')}
         </p>
       )}
       <p data-testid="booking-window-hint" className="mb-2 text-xs text-muted-foreground">
-        Reservas abertas até {format(bookingWindowEnd(), "d 'de' MMMM", { locale: pt })}.
+        {t('booking.window_hint', { date: windowEndLabel })}
       </p>
       <div className="h-[600px] [&_.rbc-today]:bg-accent [&_.rbc-selected]:bg-primary/20 [&_.rbc-event]:bg-muted-foreground [&_.rbc-toolbar-label]:font-semibold [&_.rbc-toolbar-label]:text-foreground">
         <Calendar
@@ -343,14 +357,14 @@ export function BookingCalendar({ room, onSlotSelect, initialDate, reopen, onReo
           max={range.max}
           step={60}
           timeslots={1}
-          culture="pt"
+          culture={locale}
           formats={{
             // Default rbc labels come out as "sexta-feira set 18" (B33d).
-            dayHeaderFormat: (date, culture, loc) => loc!.format(date, "EEEE, d 'de' MMMM", culture),
+            dayHeaderFormat: (date, culture, loc) => loc!.format(date, t('booking.cal_day_header_format'), culture),
             dayRangeHeaderFormat: ({ start, end }, culture, loc) =>
-              `${loc!.format(start, "d 'de' MMM", culture)} – ${loc!.format(end, "d 'de' MMM", culture)}`,
+              `${loc!.format(start, t('booking.cal_range_date_format'), culture)} – ${loc!.format(end, t('booking.cal_range_date_format'), culture)}`,
           }}
-          messages={CALENDAR_MESSAGES}
+          messages={messages}
           components={CALENDAR_COMPONENTS}
           eventPropGetter={() => ({
             style: { backgroundColor: '#6B7280', border: 'none', borderRadius: '4px', opacity: 0.85 },

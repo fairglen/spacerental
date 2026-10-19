@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
 import { PackageBuyButton } from '@/components/packages/PackageBuyButton'
 import { packagesApi } from '@/lib/api'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { Package, UserPackagePurchase } from '@/types'
 
 vi.mock('next-auth/react', () => ({
@@ -171,5 +172,46 @@ describe('PackageBuyButton — signed out', () => {
     const link = screen.getByRole('link', { name: /Comprar Pack/i })
     expect(link).toHaveAttribute('href', `/sign-up?packageId=${pkg.id}`)
     expect(packagesApi.purchase).not.toHaveBeenCalled()
+  })
+})
+
+// B65: the default label, the errors and the re-sign-in path in English; a
+// caller's own `label` still wins.
+describe('PackageBuyButton — English (B65)', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('labels the button and its errors in English when signed in', async () => {
+    setLocale('en')
+    vi.mocked(useSession).mockReturnValue({
+      data: { accessToken: 'jwt-token', user: { id: 'user-1', email: 'admin@demo.com', name: 'Demo Admin' }, role: 'member', memberships: [], expires: '2099-01-01' },
+      update: vi.fn(),
+      status: 'authenticated',
+    })
+    vi.mocked(packagesApi.purchase).mockRejectedValue({ response: { status: 404 } })
+    const { unmount } = renderButton()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Buy Pack' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This pack is no longer available.')
+    unmount()
+
+    vi.mocked(packagesApi.purchase).mockRejectedValue({ response: { status: 401 } })
+    renderButton()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Buy Pack' }))
+    expect(await screen.findByRole('link', { name: 'Sign in and continue the purchase' })).toHaveAttribute('href', `/sign-in?packageId=${pkg.id}`)
+    expect(screen.getByRole('alert')).toHaveTextContent('Your session is no longer valid. Sign in again to continue the purchase.')
+    expect(document.body.textContent).not.toMatch(/Comprar|Entrar|sessão|disponível/)
+  })
+
+  it('signed out, the sign-up link carries the English label unless the caller names one', () => {
+    setLocale('en')
+    vi.mocked(useSession).mockReturnValue({ data: null, status: 'unauthenticated', update: vi.fn() })
+    const { unmount } = renderButton()
+    expect(screen.getByRole('link', { name: 'Buy Pack' })).toHaveAttribute('href', `/sign-up?packageId=${pkg.id}`)
+    unmount()
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <PackageBuyButton pkg={pkg} label="Choose" />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByRole('link', { name: 'Choose' })).toBeVisible()
   })
 })

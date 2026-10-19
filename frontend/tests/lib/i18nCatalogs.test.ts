@@ -39,4 +39,21 @@ describe('i18n catalogs', () => {
       .map(([key, value]) => `${key}: ${value}`)
     expect(offenders).toEqual([])
   })
+
+  // B65: the English journey must not leak Portuguese — the words the tester
+  // met in EN mode, plus the ones every customer page used to carry.
+  it('the EN catalog carries no Portuguese', () => {
+    const portuguese = /\b(Reservar|Comprar|Os meus|Os seus|A sua|As suas|Não tem|Não há|Entrar|Terminar sessão|Faturação|Pagamento|Reserva|Salas?|Horas?|Preços|Ajuda|Obrigad[oa]|Cancelar|Guardar|Voltar|Enviar|Fechar|disponíve(l|is)|restantes|expira)\b/
+    const offenders = Object.entries(enFlat)
+      .filter(([, value]) => portuguese.test(value))
+      .map(([key, value]) => `${key}: ${value}`)
+    expect(offenders).toEqual([])
+  })
+
+  it('the PT catalog keeps the formal register', () => {
+    const offenders = Object.entries(ptFlat)
+      .filter(([, value]) => /\bvocê\b/i.test(value))
+      .map(([key, value]) => `${key}: ${value}`)
+    expect(offenders).toEqual([])
+  })
 })

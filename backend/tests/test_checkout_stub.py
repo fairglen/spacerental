@@ -11,8 +11,13 @@ import uuid
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
+import pytest
 from app.main import app
 from app.payments import PaymentGateway, get_payment_gateway
+from app.routers.checkout_stub import negotiate_language
+
+ENGLISH = {"Accept-Language": "en-GB,en;q=0.9,pt;q=0.8"}
+PORTUGUESE = {"Accept-Language": "pt-PT,pt;q=0.9,en;q=0.5"}
 
 
 def _future_slot(duration_hours: int = 2):
@@ -86,6 +91,60 @@ class TestShowCheckoutPage:
         resp = await client.get("/checkout/stub/cs_stub_never_seen")
         assert resp.status_code == 404
 
+    # B65: the page follows Accept-Language. English when that is the best
+    # match, otherwise the Portuguese page exactly as it was before.
+    async def test_english_accept_language_renders_the_english_page(
+        self, client, auth_headers, test_room, test_member, payments
+    ):
+        body = await _create_pending_booking(client, auth_headers, test_room)
+        session_id = _session_id_from_checkout_url(body["checkout_url"])
+
+        resp = await client.get(f"/checkout/stub/{session_id}", headers=ENGLISH)
+        assert resp.status_code == 200, resp.text
+        assert '<html lang="en">' in resp.text
+        assert "<title>Complete payment (test mode) — " in resp.text
+        assert '<button type="submit" class="pay">Pay</button>' in resp.text
+        assert '<button type="submit" class="cancel">Cancel</button>' in resp.text
+        assert "Room booking" in resp.text
+        assert "Pagar" not in resp.text
+        # The actions and the amount do not move with the language.
+        assert f'action="{session_id}/pay"' in resp.text
+        assert "22,00 €" in resp.text
+        # The gzip layer may append Accept-Encoding to the same header.
+        assert "accept-language" in resp.headers["vary"].lower()
+
+    async def test_portuguese_accept_language_renders_the_portuguese_page(
+        self, client, auth_headers, test_room, test_member, payments
+    ):
+        body = await _create_pending_booking(client, auth_headers, test_room)
+        session_id = _session_id_from_checkout_url(body["checkout_url"])
+
+        resp = await client.get(f"/checkout/stub/{session_id}", headers=PORTUGUESE)
+        assert resp.status_code == 200, resp.text
+        assert '<html lang="pt">' in resp.text
+        assert "<title>Finalizar pagamento (modo teste) — " in resp.text
+        assert '<button type="submit" class="pay">Pagar</button>' in resp.text
+        assert '<button type="submit" class="cancel">Cancelar</button>' in resp.text
+        assert "Reserva de sala" in resp.text
+        assert "accept-language" in resp.headers["vary"].lower()
+        # Byte-identical to the page a client with no preference gets.
+        no_preference = await client.get(f"/checkout/stub/{session_id}")
+        assert resp.text == no_preference.text
+
+    async def test_no_accept_language_renders_the_portuguese_page(
+        self, client, auth_headers, test_room, test_member, payments
+    ):
+        body = await _create_pending_booking(client, auth_headers, test_room)
+        session_id = _session_id_from_checkout_url(body["checkout_url"])
+
+        resp = await client.get(f"/checkout/stub/{session_id}")
+        assert "accept-language" not in resp.request.headers  # httpx sends none by default
+        assert resp.status_code == 200, resp.text
+        assert '<html lang="pt">' in resp.text
+        assert "<title>Finalizar pagamento (modo teste) — " in resp.text
+        assert '<button type="submit" class="pay">Pagar</button>' in resp.text
+        assert "accept-language" in resp.headers["vary"].lower()
+
     async def test_live_mode_gateway_404s_instead_of_leaking_the_page(
         self, client, auth_headers, test_room, test_member, payments
     ):
@@ -99,6 +158,61 @@ class TestShowCheckoutPage:
         finally:
             app.dependency_overrides.pop(get_payment_gateway, None)
         assert resp.status_code == 404
+
+
+class TestNegotiateLanguage:
+    """Unit coverage of the Accept-Language parser (B65): pure, no I/O."""
+
+    @pytest.mark.parametrize(
+        ("header", "expected"),
+        [
+            # No header, or nothing in it, is Portuguese.
+            (None, "pt"),
+            ("", "pt"),
+            ("   ", "pt"),
+            # Exact and regional tags.
+            ("en", "en"),
+            ("en-GB", "en"),
+            ("EN-us", "en"),
+            ("pt-BR", "pt"),
+            # The task's two canonical headers.
+            ("en-GB,en;q=0.9,pt;q=0.8", "en"),
+            ("pt-PT,pt;q=0.9,en;q=0.5", "pt"),
+            # The weight ranks, not the header order.
+            ("pt;q=0.5,en", "en"),
+            ("en;q=0.4,pt;q=0.6", "pt"),
+            # The first *supported* language wins, past any we lack.
+            ("fr,en;q=0.3,pt;q=0.2", "en"),
+            ("de-DE,de;q=0.9,pt;q=0.1,en;q=0.8", "en"),
+            # Only unsupported languages, or the wildcard, fall back.
+            ("fr,de;q=0.9", "pt"),
+            ("*", "pt"),
+            ("fr,*;q=0.5", "pt"),
+            # q=0 opts a language out.
+            ("en;q=0,pt;q=0.1", "pt"),
+            ("en;q=0", "pt"),
+            ("en;q=0,pt;q=0", "pt"),
+            # Whitespace around separators is tolerated.
+            ("en ; q = 0.7 , pt ; q = 0.6", "en"),
+            # A malformed q drops that range and nothing else.
+            ("en;q=abc,pt;q=0.1", "pt"),
+            ("xx;q=abc,en;q=0.1", "en"),
+            ("en;q=1.5,pt;q=0.1", "pt"),
+            ("en;q=nan,pt;q=0.1", "pt"),
+            ("en;q=0.1234,pt;q=0.1", "pt"),
+            ("en;q=", "pt"),
+            # Unknown parameters are ignored, q still read.
+            ("en;foo=bar;q=0.2,pt;q=0.1", "en"),
+            # Garbage never raises.
+            (";;;", "pt"),
+            (",,,", "pt"),
+            ("q=0.5", "pt"),
+            ("=", "pt"),
+            ("en_GB", "pt"),
+        ],
+    )
+    def test_picks_the_best_supported_language(self, header, expected):
+        assert negotiate_language(header) == expected
 
 
 class TestPayCheckout:

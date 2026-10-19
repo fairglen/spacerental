@@ -1,11 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AxiosError, AxiosHeaders } from 'axios'
 import ForgotPasswordPage from '@/app/(auth)/forgot-password/page'
 import ResetPasswordPage from '@/app/(auth)/reset-password/[token]/page'
 import SignInPage from '@/app/(auth)/sign-in/[[...sign-in]]/page'
+import { generateMetadata as forgotPasswordMetadata } from '@/app/(auth)/forgot-password/layout'
+import { generateMetadata as resetPasswordMetadata } from '@/app/(auth)/reset-password/[token]/layout'
+import { generateMetadata as signInMetadata } from '@/app/(auth)/sign-in/layout'
+import { generateMetadata as signUpMetadata } from '@/app/(auth)/sign-up/layout'
 import { authApi } from '@/lib/api'
+import { LOCALE_COOKIE, resetLocaleForTests, setLocale } from '@/lib/i18n'
 
 const push = vi.fn()
 let searchParams = new URLSearchParams()
@@ -15,6 +20,14 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/forgot-password',
   useSearchParams: () => searchParams,
   redirect: vi.fn(),
+}))
+
+// The layouts' titles read the request's locale cookie on the server (B65).
+const requestCookies = vi.hoisted(() => ({ locale: undefined as string | undefined }))
+vi.mock('next/headers', () => ({
+  cookies: () => ({
+    get: (name: string) => (name === LOCALE_COOKIE && requestCookies.locale ? { name, value: requestCookies.locale } : undefined),
+  }),
 }))
 
 const NEUTRAL = 'Se existir uma conta com este email, vai receber uma ligação para repor a password.'
@@ -33,6 +46,7 @@ function axios400(): AxiosError {
 beforeEach(() => {
   vi.clearAllMocks()
   searchParams = new URLSearchParams()
+  requestCookies.locale = undefined
 })
 
 describe('Sign-in page and the reset flow (G03)', () => {
@@ -134,5 +148,85 @@ describe('Reset password page', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar a nova password' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível alterar a password')
     expect(screen.getByLabelText('Nova password')).toBeInTheDocument()
+  })
+})
+
+describe('Password pages in English (B65)', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('sign-in explains a signed-out stale session in English', () => {
+    setLocale('en')
+    searchParams = new URLSearchParams('session=expired')
+    render(<SignInPage />)
+    expect(screen.getByRole('status')).toHaveTextContent('Your session has ended')
+    expect(screen.getByRole('status')).not.toHaveTextContent(/sessão/)
+  })
+
+  it('forgot-password: English copy, and the neutral notice when the API answers without text', async () => {
+    setLocale('en')
+    const request = vi.spyOn(authApi, 'requestPasswordReset').mockResolvedValue('')
+    const user = userEvent.setup()
+    render(<ForgotPasswordPage />)
+    expect(screen.getByText('Recover your password')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Email'), 'a@b')
+    await user.click(screen.getByRole('button', { name: 'Send link' }))
+    expect(await screen.findByText('Invalid email')).toBeInTheDocument()
+    expect(request).not.toHaveBeenCalled()
+    await user.clear(screen.getByLabelText('Email'))
+    await user.type(screen.getByLabelText('Email'), 'nobody@test.com')
+    await user.click(screen.getByRole('button', { name: 'Send link' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('If an account exists for this email, you will receive a link to reset your password.')
+    expect(screen.getByText(/valid for 60 minutes/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Request another link' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to sign in' })).toHaveAttribute('href', '/sign-in')
+    expect(document.body.textContent).not.toMatch(/ligação|Entrar|Voltar|inválido/)
+  })
+
+  it('reset-password: English rules, mismatch and the invalid-link notice', async () => {
+    setLocale('en')
+    const confirm = vi.spyOn(authApi, 'confirmPasswordReset').mockRejectedValue(axios400())
+    const user = userEvent.setup()
+    render(<ResetPasswordPage params={{ token: 'stale' }} />)
+    expect(screen.getByText('Choose a new password')).toBeInTheDocument()
+    expect(screen.getByText(/^Between 10 and 128 characters; a phrase only you know/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('New password'), 'short'.repeat(1))
+    await user.type(screen.getByLabelText('Confirm the new password'), 'different')
+    await user.click(screen.getByRole('button', { name: 'Save the new password' }))
+    expect(await screen.findByText('The password must be between 10 and 128 characters.')).toBeInTheDocument()
+    expect(screen.getByText('The passwords do not match')).toBeInTheDocument()
+    expect(confirm).not.toHaveBeenCalled()
+
+    await user.clear(screen.getByLabelText('New password'))
+    await user.type(screen.getByLabelText('New password'), 'novapass123')
+    await user.clear(screen.getByLabelText('Confirm the new password'))
+    await user.type(screen.getByLabelText('Confirm the new password'), 'novapass123')
+    await user.click(screen.getByRole('button', { name: 'Save the new password' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('This link is invalid or has expired')
+    expect(screen.getByRole('link', { name: 'Request a new link' })).toHaveAttribute('href', '/forgot-password')
+    expect(document.body.textContent).not.toMatch(/ligação|Entrar|Guardar|caracteres/)
+  })
+
+  it('reset-password: the reasons a 422 carries are shown as the API wrote them, whatever the locale', async () => {
+    setLocale('en')
+    vi.spyOn(authApi, 'confirmPasswordReset').mockRejectedValue({ response: { status: 422, data: { detail: ['Esta password é demasiado comum.'] } } })
+    const user = userEvent.setup()
+    render(<ResetPasswordPage params={{ token: 'tok' }} />)
+    await user.type(screen.getByLabelText('New password'), 'novapass123')
+    await user.type(screen.getByLabelText('Confirm the new password'), 'novapass123')
+    await user.click(screen.getByRole('button', { name: 'Save the new password' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Esta password é demasiado comum.')
+  })
+})
+
+describe('Auth tab titles follow the locale cookie (B65)', () => {
+  it.each([
+    [undefined, ['Entrar', 'Criar conta', 'Recuperar password', 'Nova password']],
+    ['en', ['Sign in', 'Create account', 'Recover password', 'New password']],
+  ])('cookie %s', (cookie, titles) => {
+    requestCookies.locale = cookie
+    expect([signInMetadata(), signUpMetadata(), forgotPasswordMetadata(), resetPasswordMetadata()].map((m) => m.title)).toEqual(titles)
+    // The private pages stay out of search results in both languages.
+    expect(signInMetadata().robots).toBeDefined()
+    expect(resetPasswordMetadata().robots).toBeDefined()
   })
 })

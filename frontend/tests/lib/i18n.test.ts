@@ -1,9 +1,16 @@
-import { describe, it, expect, vi } from 'vitest'
-import { t } from '@/lib/i18n'
+import { beforeAll, describe, it, expect, vi } from 'vitest'
 
 vi.mock('@/lib/i18n/pt.json', () => ({
   default: { sample: { nested: 'Olá', repeated: '{name}: {name} ({count})' } },
 }))
+
+// tests/setup.ts already loaded the real catalog into the registry (B65);
+// a fresh module graph is the one that sees the mock above.
+let t: typeof import('@/lib/i18n').t
+beforeAll(async () => {
+  vi.resetModules()
+  ;({ t } = await import('@/lib/i18n'))
+})
 
 describe('translation lookup', () => {
   it('resolves nested strings', () => {

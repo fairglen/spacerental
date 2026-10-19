@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { WhereWeAre } from '@/components/spaces/WhereWeAre'
 import { CONTACT_EMAIL } from '@/lib/contact'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { OpeningWindow } from '@/types'
 
 const full = {
@@ -174,6 +175,30 @@ describe('WhereWeAre', () => {
       const { container } = render(<WhereWeAre space={{ name: 'Sem morada' }} rooms={rooms} />)
       expect(container).toBeEmptyDOMElement()
     })
+  })
+})
+
+// B65: the heading, the hours and the links in English; the address is data.
+describe('WhereWeAre in English', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('says the heading, the hours, the address label and the links in English', () => {
+    setLocale('en')
+    const rules = [...[0, 1, 2, 3, 4].map((d) => w(d, '08:00:00', '20:00:00')), w(5, '09:00:00', '13:00:00')]
+    const { container, unmount } = render(<WhereWeAre space={full} rooms={[{ availability_rules: rules }]} />)
+    const section = screen.getByRole('region', { name: 'Where we are' })
+    const items = within(screen.getByTestId('opening-hours')).getAllByRole('listitem').map((li) => li.textContent?.trim())
+    expect(items).toEqual(['Mon–Fri 08:00–20:00', 'Sat 09:00–13:00', 'Sun Closed'])
+    expect(within(section).getByRole('group', { name: 'Address' })).toHaveTextContent('2745-841 Queluz')
+    expect(screen.getByRole('link', { name: 'Get directions' })).toHaveAttribute('href', expect.stringContaining('destination=38.755723,-9.279799'))
+    expect(screen.getByRole('link', { name: 'Open the full map' })).toBeInTheDocument()
+    expect(container.querySelector('iframe')!.getAttribute('title')).toBe('Map of Espaço Calmo')
+    expect(section.textContent).not.toMatch(/Seg|Sáb|Dom|Encerrado|Todos os dias|Como chegar|Onde estamos/)
+    unmount()
+
+    render(<WhereWeAre space={full} rooms={[{ availability_rules: allWeek('08:00:00', '20:00:00') }, { availability_rules: allWeek('10:00:00', '22:00:00') }]} />)
+    expect(screen.getByTestId('opening-hours')).toHaveTextContent('Every day 08:00–22:00')
+    expect(screen.getByText('Hours vary by room; see the calendar.')).toBeVisible()
   })
 })
 
