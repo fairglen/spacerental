@@ -75,3 +75,13 @@ backend/media/
 
 # flowspace-site: verification tokens rendered into index.html by scripts/render-static.py (S1.6)
 flowspace-site/site.env.json
+
+# Terraform (E04): infra/bootstrap's state stays on the owner's laptop, never
+# in git; the .terraform.lock.hcl files ARE committed (provider versions,
+# kept current by Dependabot).
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/*.tfplan
+infra/**/plan.txt
+infra/**/*.tfvars
