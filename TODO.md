@@ -1919,6 +1919,48 @@ the pages that use it, the landing's own sections inlined), measure, and
 only then decide whether the budgets move. Not built; the budgets were not
 touched.
 
+### D26 — Take date-fns off the landing (the perf budget red on `main`)
+
+**Priority: P2. State: DONE 2026-10-20 (PR `fix/landing-perf-date-fns`).**
+`perf / perf-web` has been red on `main` since the Dependabot merges of
+2026-10-19 (#115, #116, #119): the landing's JS before `load` measured
+220.4 KB against the 220 budget — B65 had left 3.3 KB of room and
+lucide-react 1.x's shared icon chunk and the Radix/tanstack bumps took it.
+Cause found in the graph, not the deps: `lib/utils.ts` (every page imports
+`cn`/`formatCurrency`/`formatHours`) and `lib/httpError.ts` (every page that
+calls the API, the landing's "Comprar" button included) imported date-fns
+for helpers the landing never calls. **Fix:** `lib/dates.ts` now holds
+`dateFnsLocale`, `formatDate`, `formatDateShort`, `packSplitLine(s)`;
+`lib/bookingErrors.ts` holds `bookingErrorMessage` (the booking window's
+date); `cancellationEligibility` uses `Date.parse`. Eleven callers repointed,
+no behaviour change, Portuguese byte-identical. A plain-`main` stack showed
+every other page at or over its line too (spaces 252.9/252, space-week/day
+252/252, dashboard 246.5/246, admin-calendar 343.5/342), and the split alone
+re-chunked date-fns onto `/spaces` (+3.7 KB): `SpaceRoomsView` now loads the
+booking modal on demand (next/dynamic, rendered once a slot is picked, warmed
+on the first hover/touch of the calendar) — its Dialog primitive, date-fns,
+payment plan and booking errors leave `/spaces`'s first JS. (Tried and
+dropped: shipping en-GB only with the English bundle — date-fns's `format`
+carries its default en-US locale regardless, so it saved nothing; and
+`prefetch={false}` on the links to the landing — the harness counts no
+prefetch.) And enforced webpack
+chunks for date-fns and the shared lib modules — the real stack measured
+them worse on `/spaces` and the dashboard than webpack's own cut.)
+`tests/lib/landingGraph.test.ts`
+pins the landing-graph modules as date-fns-free so the regression is a Vitest
+failure, not a CI perf surprise. The budgets were not touched. **Validation:**
+Vitest 837 passed / 82 files (the guard, `utils`, `httpError`,
+the three `SpaceRoomsView` suites); tsc, lint clean; Playwright 90 passed +
+8 skipped on a fresh stack; the perf harness on that stack (budgets set
+aside so every page is measured): landing **210.4/220** (main 220.4),
+spaces **248.6/252** (main 252.9), space-week/day **247.7/252** (main 252),
+dashboard **253.3/246** (main 246.5), admin-calendar **350.1/342** (main
+343.5). The landing and the rooms are green by weight; the dashboard and
+the admin calendar were over on `main` before this PR and end ~6.5 KB
+heavier through webpack's re-cut of date-fns — whether those two are
+re-baselined (measured + 5%: 266 and 368) or wait for D25 is the owner's
+call; the budgets were not touched here.
+
 ## Production on AWS, Phase 0 (E-series) — owner assignment 2026-10-13 (PR A `feat/prod-stack` on `main`; PR B `feat/aws-infra` stacked on it)
 
 Owner's ask: make the repository deploy itself from GitHub to AWS — a
