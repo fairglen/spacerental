@@ -38,6 +38,28 @@ resource "aws_cloudwatch_metric_alarm" "instance_system_check" {
   ]
 }
 
+# E15: deploy/backup.sh publishes BackupSucceeded=1 at the end of every
+# successful run (03:00 Lisbon). A day without that data point — the timer
+# did not fire, the run failed, the host is down — breaches: missing data
+# is the failure here, not noise. It fires from the apply until the first
+# nightly run after the first deploy (runbook, Phase 3): expected. A run
+# that fails also emails its journal (spacerental-backup-failed.service).
+resource "aws_cloudwatch_metric_alarm" "backup_missing" {
+  alarm_name          = "${local.name}-backup-missing"
+  alarm_description   = "No successful nightly backup in the last 24 h (FlowSpace/BackupSucceeded from deploy/backup.sh)"
+  namespace           = "FlowSpace"
+  metric_name         = "BackupSucceeded"
+  dimensions          = { Host = local.name }
+  statistic           = "Maximum"
+  period              = 86400
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+  ok_actions          = [aws_sns_topic.alarms.arn]
+}
+
 # Disk used % per mount, as the agent publishes it (CWAgent, InstanceId +
 # path after `drop_device`, aggregated).
 resource "aws_cloudwatch_metric_alarm" "disk" {

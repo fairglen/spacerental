@@ -47,10 +47,12 @@ data "aws_iam_policy_document" "instance" {
     resources = [aws_s3_bucket.backups.arn]
   }
 
+  # No s3:DeleteObject (E11): the host only ever adds — dumps every night,
+  # media additively — and the lifecycle rules do the expiring.
   statement {
     sid       = "BackupsBucketReadWrite"
     effect    = "Allow"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    actions   = ["s3:GetObject", "s3:PutObject"]
     resources = ["${aws_s3_bucket.backups.arn}/*"]
   }
 
@@ -68,11 +70,36 @@ data "aws_iam_policy_document" "instance" {
     resources = [data.aws_kms_alias.ssm.target_key_arn]
   }
 
+  # The app role's secret only (E09): read on every deploy, written once by
+  # db-bootstrap.sh when it has no value yet. The master secret is RDS's and
+  # the host never reads it.
   statement {
-    sid       = "ReadTheDatabasePassword"
+    sid       = "TheAppDatabaseSecret"
     effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_db_instance.main.master_user_secret[0].secret_arn]
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:DescribeSecret"]
+    resources = [aws_secretsmanager_secret.db_app.arn]
+  }
+
+  # E15: backup.sh's BackupSucceeded data point, in the one namespace the
+  # alarm reads, and the failed-backup unit's email through the topic.
+  statement {
+    sid       = "BackupMetric"
+    effect    = "Allow"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["FlowSpace"]
+    }
+  }
+
+  statement {
+    sid       = "BackupFailedEmail"
+    effect    = "Allow"
+    actions   = ["sns:Publish"]
+    resources = [aws_sns_topic.alarms.arn]
   }
 }
 
@@ -109,13 +136,18 @@ resource "aws_instance" "app" {
   }
 
   user_data = templatefile("${path.module}/../../deploy/cloud-init.yaml", {
-    deploy_ref    = var.deploy_ref
-    repo          = var.github_repo
-    backup_bucket = aws_s3_bucket.backups.bucket
-    aws_region    = var.region
-    ecr_registry  = local.ecr_registry
-    app_domain    = var.domain
-    log_group     = local.log_group
+    deploy_ref        = var.deploy_ref
+    repo              = var.github_repo
+    backup_bucket     = aws_s3_bucket.backups.bucket
+    aws_region        = var.region
+    ecr_registry      = local.ecr_registry
+    app_domain        = var.domain
+    log_group         = local.log_group
+    db_host           = aws_db_instance.main.address
+    db_port           = aws_db_instance.main.port
+    db_name           = aws_db_instance.main.db_name
+    db_app_secret_arn = aws_secretsmanager_secret.db_app.arn
+    alarm_topic_arn   = aws_sns_topic.alarms.arn
   })
   user_data_replace_on_change = false
 

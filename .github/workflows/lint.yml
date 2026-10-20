@@ -76,7 +76,9 @@ jobs:
         run: |
           # koalaman/shellcheck v0.11.0
           docker run --rm -v "$PWD:/mnt" koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
-            -x deploy/*.sh scripts/*.sh scripts/tests/*.sh backend/docker-entrypoint.sh
+            -x deploy/*.sh scripts/*.sh scripts/tests/*.sh tests/infra/*.sh backend/docker-entrypoint.sh
+      - name: backups bucket policy (E11)
+        run: tests/infra/policies.test.sh
       - name: actionlint
         run: |
           # rhysd/actionlint 1.7.11
@@ -90,4 +92,6 @@ jobs:
         run: |
           DEPLOY_DRY_RUN=1 DEPLOY_DIR=. BACKUP_BUCKET=example-bucket AWS_REGION=eu-west-1 \
             ECR_REGISTRY=123456789012.dkr.ecr.eu-west-1.amazonaws.com \
+            DB_HOST=spacerental-prod.example.eu-west-1.rds.amazonaws.com DB_PORT=5432 DB_NAME=spacerental \
+            DB_APP_SECRET_ARN=arn:aws:secretsmanager:eu-west-1:123456789012:secret:spacerental/prod/db-app-AbCdEf \
             deploy/deploy.sh 0123456789abcdef0123456789abcdef01234567
