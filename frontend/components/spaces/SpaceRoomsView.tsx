@@ -10,7 +10,6 @@ import { useCalendarView } from '@/lib/hooks/useCalendarView'
 import { RoomCard } from '@/components/spaces/RoomCard'
 import { WhereWeAre } from '@/components/spaces/WhereWeAre'
 import { PhotoMosaic } from '@/components/spaces/PhotoMosaic'
-import { BookingModal } from '@/components/booking/BookingModal'
 import { ContactNote } from '@/components/booking/ContactNote'
 import { PaymentNotice, paymentOutcomeOf, type PaymentOutcome } from '@/components/booking/PaymentNotice'
 import { parseSlotParams } from '@/lib/bookingDeepLink'
@@ -34,6 +33,12 @@ function CalendarLoading() {
 // its date-fns localizer — ~62 KB gzipped) load only once a room is picked
 // (P1.3); the rooms page paints without them. Client only: the view it opens
 // on is chosen from the viewport (useCalendarView).
+// D26: the modal's graph — the Dialog primitive, date-fns, the payment plan,
+// the booking errors — arrives on the first selection (warmed on the first
+// hover or touch of the calendar), not with the page: /spaces's JS budget.
+const BookingModal = dynamic(() => import('@/components/booking/BookingModal').then((m) => m.BookingModal), { ssr: false })
+const warmBookingModal = () => { void import('@/components/booking/BookingModal') }
+
 const BookingCalendar = dynamic(() => import('@/components/booking/BookingCalendar').then((m) => m.BookingCalendar), {
   ssr: false,
   loading: CalendarLoading,
@@ -212,24 +217,28 @@ export function SpaceRoomsView({ spaceId }: { spaceId: string }) {
                 {t('spaces.calendar_help')}
               </p>
               <ContactNote roomName={calendarRoom.name} className="mb-4" />
-              <BookingCalendar
-                room={calendarRoom}
-                onSlotSelect={handleSlotSelect}
-                initialDate={reopen?.start}
-                reopen={reopen}
-                onReopenDone={() => setReopen(null)}
-              />
+              <div onPointerEnter={warmBookingModal} onTouchStart={warmBookingModal}>
+                <BookingCalendar
+                  room={calendarRoom}
+                  onSlotSelect={handleSlotSelect}
+                  initialDate={reopen?.start}
+                  reopen={reopen}
+                  onReopenDone={() => setReopen(null)}
+                />
+              </div>
             </div>
           )}
         </div>
       </main>
-      <BookingModal
-        room={selectedRoom}
-        start={bookingStart}
-        end={bookingEnd}
-        awaitingPurchase={awaitingPurchase}
-        onClose={() => { setSelectedRoom(null); setBookingStart(null); setBookingEnd(null); setAwaitingPurchase(false) }}
-      />
+      {selectedRoom && (
+        <BookingModal
+          room={selectedRoom}
+          start={bookingStart}
+          end={bookingEnd}
+          awaitingPurchase={awaitingPurchase}
+          onClose={() => { setSelectedRoom(null); setBookingStart(null); setBookingEnd(null); setAwaitingPurchase(false) }}
+        />
+      )}
     </>
   )
 }

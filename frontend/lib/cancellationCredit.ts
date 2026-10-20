@@ -1,5 +1,6 @@
 import { addDays, format, parseISO } from 'date-fns'
-import { catalog, dateFnsLocale, fillTemplate, isUnpaidHold } from '@/lib/utils'
+import { catalog, fillTemplate, isUnpaidHold } from '@/lib/utils'
+import { dateFnsLocale } from '@/lib/dates'
 import type { Locale } from '@/lib/i18n/locale'
 import type { Booking, UserPackagePurchase } from '@/types'
 

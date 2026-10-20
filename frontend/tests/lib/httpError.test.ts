@@ -35,7 +35,7 @@ describe('cancellationErrorMessage (C07)', () => {
   })
 })
 
-import { bookingErrorMessage } from '@/lib/httpError'
+import { bookingErrorMessage } from '@/lib/bookingErrors'
 
 describe('bookingErrorMessage (B31)', () => {
   it('keeps the 409 distinction between a taken slot and missing pack hours', () => {

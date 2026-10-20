@@ -1,7 +1,8 @@
 'use client'
 import { format } from 'date-fns'
 import { useLocale, useT } from '@/lib/i18n'
-import { dateFnsLocale, formatCurrency, formatHours } from '@/lib/utils'
+import { formatCurrency, formatHours } from '@/lib/utils'
+import { dateFnsLocale } from '@/lib/dates'
 import type { PaymentPlan as Plan } from '@/lib/paymentSplit'
 import type { Room } from '@/types'
 
