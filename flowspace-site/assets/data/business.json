@@ -72,7 +72,7 @@
   ],
   "booking": {
     "url": "https://flowspace.pt/#contacto",
-    "app_url": null,
+    "app_url": "https://app.flowspace.pt",
     "api_url": null,
     "deep_link_format": "<app>/spaces/<space-id>?room=<room-id>&start=<ISO 8601>&end=<ISO 8601>",
     "public_openapi_path": "/openapi-public.json"

@@ -1,0 +1,13 @@
+# E06: the nightly backup, 03:00 in Lisbon whatever the host's clock says;
+# a run missed while the host was off happens at the next boot.
+# `systemctl list-timers spacerental-backup.timer` shows the next one.
+[Unit]
+Description=Daily FlowSpace backup at 03:00 Europe/Lisbon
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Europe/Lisbon
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

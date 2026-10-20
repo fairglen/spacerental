@@ -4,9 +4,18 @@ import { internalApiUrl } from '@/lib/backendProxy'
 
 type SessionMembership = { org_id: string; role: 'owner' | 'admin' | 'member' }
 
+// The value .env.example ships: fine on a laptop, refused where it would
+// protect real sessions (E02; the backend's interlock is app/config.py).
+export const DEV_NEXTAUTH_SECRET = 'dev-nextauth-secret-change-in-production'
+
 const secret = process.env.NEXTAUTH_SECRET
 if (!secret?.trim()) {
   throw new Error('NEXTAUTH_SECRET is required; configure it before starting or building the frontend')
+}
+if (process.env.APP_ENV === 'production' && secret === DEV_NEXTAUTH_SECRET) {
+  throw new Error(
+    'NEXTAUTH_SECRET is the development default; generate one (openssl rand -base64 48) for APP_ENV=production',
+  )
 }
 
 // Server-side calls (this file runs in Next.js server/container, not the

@@ -1,0 +1,135 @@
+#cloud-config
+# E08: the first boot of the production host — Ubuntu 24.04 arm64, EC2
+# `user_data` rendered by Terraform's templatefile() (infra/prod, E04) with
+# `deploy_ref` (the commit whose files are fetched), `repo`
+# (fairglen/spacerental), `backup_bucket`, `aws_region`, `ecr_registry`,
+# `app_domain` and `log_group`. A dollar-brace placeholder is Terraform's —
+# everywhere in this file, comments included, which is why none appears in
+# the prose; a `$` meant for the shell or the CloudWatch agent is written
+# `$$`. Validated as it is here by `cloud-init schema --config-file
+# deploy/cloud-init.yaml` (the lint job) and rendered by `terraform
+# validate` in infra/prod.
+#
+# What it leaves behind: Docker Engine + the compose plugin, the AWS CLI v2,
+# the CloudWatch agent (disk used % on / and /srv/media, memory), the data
+# volume formatted once and mounted at /srv/media (fstab by UUID, nofail),
+# /srv/spacerental with deploy.sh, backup.sh, restore.sh, the Compose files
+# and deploy/Caddyfile from the public repository at `deploy_ref`, the backup
+# timer enabled, unattended-upgrades. It deploys nothing: the first
+# `deploy.sh <sha>` comes from deploy.yml (E05), after the images exist.
+
+timezone: Europe/Lisbon
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+  - unzip
+  - unattended-upgrades
+
+write_files:
+  # Read by deploy.sh, backup.sh and the backup service (EnvironmentFile).
+  - path: /etc/spacerental/deploy.env
+    permissions: "0644"
+    content: |
+      BACKUP_BUCKET=${backup_bucket}
+      AWS_REGION=${aws_region}
+      ECR_REGISTRY=${ecr_registry}
+      APP_DOMAIN=${app_domain}
+      AWS_LOG_GROUP=${log_group}
+      DEPLOY_REF=${deploy_ref}
+
+  # The data volume: /dev/sdf on the API side is nvme1n1 on a Nitro instance.
+  # Formatted only when it carries no filesystem, mounted by UUID with nofail
+  # so a missing volume never blocks the boot.
+  - path: /usr/local/sbin/spacerental-mount-media
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      DEV=""
+      for candidate in /dev/nvme1n1 /dev/sdf /dev/xvdf; do
+        if [ -b "$candidate" ]; then DEV="$candidate"; break; fi
+      done
+      if [ -z "$DEV" ]; then echo "no data volume found" >&2; exit 1; fi
+      if ! blkid "$DEV" > /dev/null 2>&1; then mkfs.ext4 -L media "$DEV"; fi
+      UUID=$(blkid -s UUID -o value "$DEV")
+      mkdir -p /srv/media
+      if ! grep -q "UUID=$UUID" /etc/fstab; then
+        echo "UUID=$UUID /srv/media ext4 defaults,nofail 0 2" >> /etc/fstab
+      fi
+      mount -a
+      findmnt /srv/media
+
+  # The CloudWatch agent: the two disks and memory, one minute apart, under
+  # CWAgent with InstanceId (+ path for the disks) — the dimensions the
+  # alarms in infra/prod read (E04).
+  - path: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    permissions: "0644"
+    content: |
+      {
+        "agent": { "metrics_collection_interval": 60 },
+        "metrics": {
+          "namespace": "CWAgent",
+          "append_dimensions": { "InstanceId": "$${aws:InstanceId}" },
+          "aggregation_dimensions": [["InstanceId"], ["InstanceId", "path"]],
+          "metrics_collected": {
+            "disk": {
+              "resources": ["/", "/srv/media"],
+              "measurement": ["used_percent"],
+              "drop_device": true
+            },
+            "mem": { "measurement": ["mem_used_percent"] }
+          }
+        }
+      }
+
+  # Security updates on their own; the kernel reboot stays manual (runbook, Phase 5).
+  - path: /etc/apt/apt.conf.d/52spacerental-unattended
+    permissions: "0644"
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "false";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+runcmd:
+  # Docker Engine and the compose plugin from Docker's own repository.
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - sh -c 'echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list'
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - systemctl enable --now docker
+  # AWS CLI v2 (arm64).
+  - curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip -o /tmp/awscliv2.zip
+  - unzip -q /tmp/awscliv2.zip -d /tmp
+  - /tmp/aws/install
+  - rm -rf /tmp/aws /tmp/awscliv2.zip
+  # The CloudWatch agent, with the config written above.
+  - curl -fsSL https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/arm64/latest/amazon-cloudwatch-agent.deb -o /tmp/amazon-cloudwatch-agent.deb
+  - dpkg -i /tmp/amazon-cloudwatch-agent.deb
+  - rm -f /tmp/amazon-cloudwatch-agent.deb
+  - /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
+  # The data volume.
+  - /usr/local/sbin/spacerental-mount-media
+  # The deployment directory, from the repository at deploy_ref.
+  - mkdir -p /srv/spacerental/deploy
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/docker-compose.prod.yml -o /srv/spacerental/docker-compose.prod.yml
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/docker-compose.prod.awslogs.yml -o /srv/spacerental/docker-compose.prod.awslogs.yml
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/Caddyfile -o /srv/spacerental/deploy/Caddyfile
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/deploy.sh -o /srv/spacerental/deploy.sh
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/backup.sh -o /srv/spacerental/backup.sh
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/restore.sh -o /srv/spacerental/restore.sh
+  - chmod 755 /srv/spacerental/deploy.sh /srv/spacerental/backup.sh /srv/spacerental/restore.sh
+  - chmod 700 /srv/spacerental
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/spacerental-backup.service -o /etc/systemd/system/spacerental-backup.service
+  - curl -fsSL https://raw.githubusercontent.com/${repo}/${deploy_ref}/deploy/spacerental-backup.timer -o /etc/systemd/system/spacerental-backup.timer
+  - systemctl daemon-reload
+  - systemctl enable --now spacerental-backup.timer
+  # Security updates on a timer (the package ships the apt timers enabled).
+  - dpkg-reconfigure -f noninteractive unattended-upgrades
+  - systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+
+final_message: "spacerental host ready after $UPTIME seconds (deploy_ref ${deploy_ref})"

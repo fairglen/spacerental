@@ -21,8 +21,11 @@ services:
       SECRET_KEY: test-secret-key-32-chars-min-test-test
       # The seed tests copy the room illustrations (V01); the image holds only backend/.
       SEED_PHOTOS_DIR: /app/seed-photos
+      # tests/test_bootstrap.py pins the bootstrap defaults to the site's facts (E03).
+      BUSINESS_JSON: /app/business.json
     volumes:
       - ./flowspace-site/assets/img/room-photos:/app/seed-photos:ro
+      - ./flowspace-site/assets/data/business.json:/app/business.json:ro
     depends_on:
       test-db:
         condition: service_healthy

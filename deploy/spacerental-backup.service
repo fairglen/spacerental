@@ -1,0 +1,17 @@
+# E06: one backup run (deploy/backup.sh). Started by spacerental-backup.timer;
+# `systemctl start spacerental-backup.service` runs one by hand and
+# `journalctl -t spacerental-backup` shows what every run did.
+[Unit]
+Description=FlowSpace backup: pg_dump to S3 and the media directory synced
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# BACKUP_BUCKET, AWS_REGION and the rest, written by cloud-init (E08).
+EnvironmentFile=/etc/spacerental/deploy.env
+Environment=ENV_FILE=/srv/spacerental/.env
+Environment=MEDIA_DIR=/srv/media
+WorkingDirectory=/srv/spacerental
+ExecStart=/srv/spacerental/backup.sh

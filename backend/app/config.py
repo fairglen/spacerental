@@ -1,3 +1,8 @@
+import logging
+import os
+from pathlib import Path
+from urllib.parse import urlsplit
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
@@ -10,11 +15,24 @@ BRAND_NAME = "FlowSpace"
 # browser-facing URL this app builds for itself goes through it by default.
 PROXY_PREFIX = "/backend"
 
+# The deployment kind that arms the interlock below (E02, S17).
+PRODUCTION = "production"
+# The signing key .env.example ships. Named so the interlock can refuse it
+# by value, not only by length.
+DEV_SECRET_KEY = "dev-secret-key-change-this-in-production-min-32-chars"
+SECRET_KEY_MIN_LENGTH = 32
+# The modes a production `.env` must name explicitly (stub is allowed, but
+# never by omission — a stub running in production by default is the
+# failure CLAUDE.md §10.3 forbids).
+EXPLICIT_MODES = ("EMAIL_MODE", "STRIPE_MODE")
+_LOCAL_DB_HOSTS = frozenset({"", "localhost", "127.0.0.1", "::1"})
+
 
 class Settings(BaseSettings):
     # What kind of deployment this is (G03). Only `production` is special:
     # the local-only test hooks (`app.routers.test_hooks`) are never mounted
-    # there, whatever EMAIL_MODE says.
+    # there, whatever EMAIL_MODE says, `app.seed` refuses to run (E03), and
+    # the settings below are checked at import (E02, `production_problems`).
     APP_ENV: str = "development"
     # The local-only test hooks (`GET /__test__/emails`): an explicit opt-in,
     # off by default, and even then only with EMAIL_MODE=stub outside
@@ -177,4 +195,61 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+def production_problems(current: Settings) -> list[str]:
+    """What stops a production start (E02, S17); empty when nothing does.
+
+    Every development default that works silently on a laptop — the
+    published signing key, the test hooks, http:// return URLs, a stub
+    gateway nobody chose, a localhost database, a media directory the
+    process cannot write — is refused here, all at once, so the operator
+    reads one list instead of one failure per deploy.
+    """
+    problems: list[str] = []
+    if current.SECRET_KEY == DEV_SECRET_KEY or len(current.SECRET_KEY) < SECRET_KEY_MIN_LENGTH:
+        problems.append(
+            f"SECRET_KEY must be a generated value of at least {SECRET_KEY_MIN_LENGTH} "
+            "characters, not the development default"
+        )
+    if current.TEST_HOOKS_ENABLED:
+        problems.append("TEST_HOOKS_ENABLED must be false")
+    if not current.FRONTEND_URL.startswith("https://"):
+        problems.append(f"FRONTEND_URL must be an https:// address, got {current.FRONTEND_URL!r}")
+    for origin in current.cors_origins_list:
+        if not origin.startswith("https://"):
+            problems.append(f"every CORS_ORIGINS entry must be https://, got {origin!r}")
+    for name in EXPLICIT_MODES:
+        if name not in current.model_fields_set:
+            problems.append(
+                f"{name} must be set explicitly (stub or live), not left to its default"
+            )
+    if (urlsplit(current.DATABASE_URL).hostname or "") in _LOCAL_DB_HOSTS:
+        problems.append("DATABASE_URL must not point at localhost")
+    root = Path(current.MEDIA_ROOT)
+    if not root.is_dir() or not os.access(root, os.W_OK):
+        problems.append(
+            f"MEDIA_ROOT {current.MEDIA_ROOT!r} must be an existing, writable directory"
+        )
+    return problems
+
+
+def enforce_production_settings(current: Settings) -> None:
+    """Refuse to start on a development default under APP_ENV=production;
+    say so at WARNING when a gateway is deliberately the stub."""
+    if current.APP_ENV != PRODUCTION:
+        return
+    problems = production_problems(current)
+    if problems:
+        raise RuntimeError(f"APP_ENV={PRODUCTION} refuses to start:\n- " + "\n- ".join(problems))
+    for name in EXPLICIT_MODES:
+        if getattr(current, name) == "stub":
+            logging.getLogger("app").warning(
+                "%s=stub under APP_ENV=%s: the %s gateway is the local stub, "
+                "nothing leaves the host",
+                name,
+                PRODUCTION,
+                name.split("_")[0].lower(),
+            )
+
+
 settings = Settings()
+enforce_production_settings(settings)

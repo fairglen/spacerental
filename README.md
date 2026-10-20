@@ -555,6 +555,37 @@ cd frontend && npx playwright test tests/e2e/pack-upsell.spec.ts
 
 ---
 
+## Production (AWS)
+
+The repository deploys itself to one arm64 EC2 instance behind Caddy with
+RDS, backups and CloudWatch, from GitHub, once the owner arms it — nothing
+runs in AWS until the repository variables `INFRA_ENABLED` and
+`DEPLOY_ENABLED` are set. The owner's manual, phase by phase, is
+[docs/runbooks/aws.md](docs/runbooks/aws.md). The pieces:
+
+- `docker-compose.prod.yml` + `docker-compose.prod.awslogs.yml`, `deploy/`
+  (Caddyfile, `deploy.sh`, `backup.sh`, `restore.sh`, the backup timer,
+  `cloud-init.yaml`) and `.env.production.example`, every variable
+  documented. With `APP_ENV=production` the backend refuses to start on a
+  development default (`backend/app/config.py`) and the frontend refuses the
+  development `NEXTAUTH_SECRET`.
+- `python -m app.bootstrap --name FlowSpace --slug flowspace --admin-email …`
+  creates a real organisation once — space, rooms, pack, the first admin
+  without a password and the "Defina a sua password" link printed (and
+  emailed in live mode); `--room "Nome:preço"` and `--pack
+  "Nome:horas:preço:dias"` override the site's defaults. `python -m app.seed`
+  (demo data, a published password) refuses to run in production.
+- The whole stack runs on a laptop without AWS, exactly as CI runs it:
+
+  ```bash
+  KEEP=1 PROD_STACK_HTTPS_PORT=8443 PROD_STACK_HTTP_PORT=8080 scripts/tests/prod-stack.sh
+  PROD_STACK_HTTPS_PORT=8443 PROD_STACK_HTTP_PORT=8080 scripts/tests/backup-restore.sh
+  scripts/tests/prod-stack.sh down
+  ```
+
+  (health through Caddy, bootstrap, sign-up, a booking, the rate limiter's
+  proxy identity, a signed Stripe webhook; then dump → drop → restore).
+
 ## Testing
 
 The project has three layers of automated tests plus a pre-commit hook system.
@@ -734,13 +765,17 @@ pre-commit install -t pre-push  # installs the pre-push hook
 One workflow, `checks.yml`, runs on every pull request and on pushes to
 `main`. Its `changes` job classifies the diff and calls the real workflows as
 reusable workflows only where their area changed: `lint.yml` (Ruff check +
-format, ESLint, `tsc`), `backend-tests.yml` (`pytest -n auto`),
+format, ESLint, `tsc`, the Compose render check, and shellcheck /
+actionlint / the cloud-init schema / `deploy.sh`'s dry run for the
+production files), `backend-tests.yml` (`pytest -n auto`),
 `migrations.yml` (upgrade → check → downgrade → upgrade on an empty
 PostgreSQL), `frontend-tests.yml` (Vitest + `next build`), `e2e.yml` (two
 shards of the Playwright suite, 4 workers each, against the e2e stack built
 with `docker buildx bake` and the Actions layer cache; `merge-reports` joins
 the shards into one HTML report, uploaded on every run, with stack logs and
-traces on a failure) and `docs-sync.yml` (AGENTS.md = CLAUDE.md). It ends in
+traces on a failure), `prod-stack.yml` (the production Compose stack behind
+Caddy, end to end, then a backup → restore round trip — see "Production
+(AWS)") and `docs-sync.yml` (AGENTS.md = CLAUDE.md). It ends in
 **`required-checks`**, which passes when every area either succeeded or was
 skipped because its paths did not change — so a docs-only PR is never blocked
 by a status that will not be reported.
