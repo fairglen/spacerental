@@ -1,11 +1,11 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format, parseISO, type Locale as DateFnsLocale } from 'date-fns'
-import { enGB, pt } from 'date-fns/locale'
 import type { Locale } from '@/lib/i18n/locale'
 import { catalogFor, type Catalog } from '@/lib/i18n/registry'
-import type { Booking, BookingPackageDebit } from '@/types'
+import type { Booking } from '@/types'
 
+// D26: no date-fns in this module — `cn` is in every page's graph, the
+// landing's included; the date helpers live in lib/dates.ts.
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
@@ -23,21 +23,8 @@ export function fillTemplate(template: string, values: Record<string, string | n
   return Object.entries(values).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), template)
 }
 
-/** The date-fns locale for the UI locale (B65): month names follow the language. */
-export function dateFnsLocale(locale: Locale): DateFnsLocale {
-  return locale === 'en' ? enGB : pt
-}
-
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(amount)
-}
-
-export function formatDate(dateStr: string, locale: Locale = 'pt'): string {
-  return format(parseISO(dateStr), catalog(locale).dashboard.long_datetime_format, { locale: dateFnsLocale(locale) })
-}
-
-export function formatDateShort(dateStr: string, locale: Locale = 'pt'): string {
-  return format(parseISO(dateStr), 'dd/MM/yyyy HH:mm', { locale: dateFnsLocale(locale) })
 }
 
 /** The booking status labels in one language (B65). */
@@ -94,7 +81,7 @@ export function cancellationEligibility(
   }
   // Nothing was paid for an unpaid hold, so letting it go is always allowed (C03).
   if (isUnpaidHold(booking)) return { eligible: true }
-  const hoursAhead = (parseISO(booking.start_time).getTime() - now.getTime()) / 3_600_000
+  const hoursAhead = (Date.parse(booking.start_time) - now.getTime()) / 3_600_000
   if (hoursAhead < CANCELLATION_WINDOW_HOURS) {
     return {
       eligible: false,
@@ -125,24 +112,6 @@ export function formatBookingCost(
   // A01: arranged with the operator; the amount is the slot's value, not a charge.
   if (b.payment_method === 'manual') return p.cost_on_site
   return formatCurrency(b.total_amount)
-}
-
-/**
- * The operator's per-pack split of a booking's hours (H02): one line per
- * purchase, "2h · Pack 10h · expira 3 out". Empty when the booking holds no
- * hours or the response did not carry the split.
- */
-export function packSplitLine(d: BookingPackageDebit, locale: Locale = 'pt'): string {
-  const packs = catalog(locale).packs
-  const parts = [formatHours(d.hours), d.package_name ?? packs.pack_fallback]
-  if (d.expires_at) {
-    parts.push(fillTemplate(packs.split_expires, { date: format(parseISO(d.expires_at), 'd MMM', { locale: dateFnsLocale(locale) }) }))
-  }
-  return parts.join(' · ')
-}
-
-export function packSplitLines(debits: BookingPackageDebit[] | undefined, locale: Locale = 'pt'): string[] {
-  return (debits ?? []).map((d) => packSplitLine(d, locale))
 }
 
 /** "10h", "7,5h" — a whole number of hours has no fraction, a real fraction

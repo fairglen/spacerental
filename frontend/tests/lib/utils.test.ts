@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   cn, formatCurrency, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, formatHours,
-  statusLabels, formatBookingCost, packSplitLine, packSplitLines, formatDate, formatDateShort, dateFnsLocale, fillTemplate,
+  statusLabels, formatBookingCost, fillTemplate,
 } from '@/lib/utils'
+import { packSplitLine, packSplitLines, formatDate, formatDateShort, dateFnsLocale } from '@/lib/dates'
 
 describe('cn', () => {
   it('merges class names', () => {
