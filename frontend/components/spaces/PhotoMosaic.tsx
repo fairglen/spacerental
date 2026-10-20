@@ -2,6 +2,7 @@
 import { useState, type ReactNode } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { LayoutGrid, X } from 'lucide-react'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { PhotoCarousel } from '@/components/spaces/PhotoCarousel'
 import type { Photo } from '@/types'
@@ -46,6 +47,7 @@ const CELLS: Record<Layout, string[]> = {
  * tile, and the "Mostrar todas as fotos" button, open the full-screen gallery.
  */
 export function PhotoMosaic({ photos, label, placeholder, className }: PhotoMosaicProps) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [start, setStart] = useState(0)
 
@@ -60,7 +62,7 @@ export function PhotoMosaic({ photos, label, placeholder, className }: PhotoMosa
   }
 
   return (
-    <div role="region" aria-label={`${label} — fotografias`} className={cn('relative', className)}>
+    <div role="region" aria-label={t('photos.region_label', { label })} className={cn('relative', className)}>
       {/* ≥1024px: the mosaic. */}
       <div
         data-testid="photo-mosaic"
@@ -78,7 +80,7 @@ export function PhotoMosaic({ photos, label, placeholder, className }: PhotoMosa
               // tile instead of the 1600px original.
               srcSet={`${photo.thumb_url} 480w, ${photo.url} 1600w`}
               sizes={i === 0 ? '50vw' : '25vw'}
-              alt={`${label} — fotografia ${i + 1} de ${count}`}
+              alt={t('photos.alt', { label, index: i + 1, count })}
               width={photo.width ?? 1600}
               height={photo.height ?? 1200}
               loading={i === 0 ? 'eager' : 'lazy'}
@@ -96,7 +98,7 @@ export function PhotoMosaic({ photos, label, placeholder, className }: PhotoMosa
           onClick={() => openAt(0)}
           className="absolute bottom-3 right-3 z-10 hidden lg:inline-flex items-center gap-2 rounded-lg border border-border bg-white/95 px-3 py-1.5 text-sm font-medium text-foreground shadow-sm hover:bg-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary"
         >
-          <LayoutGrid className="h-4 w-4" aria-hidden="true" /> Mostrar todas as fotos
+          <LayoutGrid className="h-4 w-4" aria-hidden="true" /> {t('photos.show_all')}
         </button>
       )}
 
@@ -105,7 +107,7 @@ export function PhotoMosaic({ photos, label, placeholder, className }: PhotoMosa
         <PhotoCarousel
           photos={photos}
           label={label}
-          regionLabel={`${label} — carrossel de fotografias`}
+          regionLabel={t('photos.carousel_region_label', { label })}
           placeholder={null}
           size="page"
           indicator="counter"
@@ -132,6 +134,7 @@ interface PhotoGalleryProps {
  * body scroll lock — and a thumbnail strip below on desktop.
  */
 function PhotoGallery({ photos, label, open, onOpenChange, start }: PhotoGalleryProps) {
+  const t = useT()
   const [index, setIndex] = useState(start)
   // Reopening on another tile: the carousel and the strip start there.
   const [seenStart, setSeenStart] = useState(start)
@@ -145,15 +148,15 @@ function PhotoGallery({ photos, label, open, onOpenChange, start }: PhotoGallery
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/95" />
         <DialogPrimitive.Content
-          aria-label={`${label} — fotografias`}
+          aria-label={t('photos.region_label', { label })}
           className="fixed inset-0 z-50 flex flex-col focus:outline-hidden"
         >
-          <DialogPrimitive.Title className="sr-only">{label} — fotografias</DialogPrimitive.Title>
+          <DialogPrimitive.Title className="sr-only">{t('photos.region_label', { label })}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Galeria de fotografias. Use as setas para mudar de fotografia e Escape para fechar.
+            {t('photos.gallery_description')}
           </DialogPrimitive.Description>
           <DialogPrimitive.Close
-            aria-label="Fechar"
+            aria-label={t('photos.close')}
             className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary"
           >
             <X className="h-5 w-5" aria-hidden="true" />
@@ -170,13 +173,13 @@ function PhotoGallery({ photos, label, open, onOpenChange, start }: PhotoGallery
               className="h-full bg-transparent"
             />
           </div>
-          <div role="tablist" aria-label="Miniaturas" className="hidden md:flex shrink-0 justify-center gap-2 overflow-x-auto px-4 pb-4">
+          <div role="tablist" aria-label={t('photos.thumbnails')} className="hidden md:flex shrink-0 justify-center gap-2 overflow-x-auto px-4 pb-4">
             {photos.map((photo, i) => (
               <button
                 key={photo.id}
                 type="button"
                 role="tab"
-                aria-label={`Fotografia ${i + 1} de ${photos.length}`}
+                aria-label={t('photos.position', { index: i + 1, count: photos.length })}
                 aria-selected={i === index}
                 tabIndex={i === index ? 0 : -1}
                 onClick={() => setIndex(i)}

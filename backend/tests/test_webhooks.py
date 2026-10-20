@@ -198,7 +198,8 @@ class TestBookingWebhook:
             kind=CheckoutKind.booking,
             reference_id=booking["id"],
             org_id=test_room.org_id,
-            event_type="checkout.session.expired",
+            # `checkout.session.expired` is handled since B68; this one is not.
+            event_type="payment_intent.created",
         )
 
         resp = await client.post(
@@ -292,7 +293,9 @@ class TestPackagePurchaseWebhook:
         )
         assert resp.status_code == 400, resp.text
 
-        mine = await client.get("/api/v1/packages/me", headers=auth_headers)
+        mine = await client.get(
+            "/api/v1/packages/me", params={"include": "pending"}, headers=auth_headers
+        )
         assert mine.json()["purchases"][0]["status"] == "pending"
 
 

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { cn, formatCurrency, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, formatHours } from '@/lib/utils'
+import {
+  cn, formatCurrency, STATUS_LABELS, STATUS_COLORS, cancellationEligibility, formatHours,
+  statusLabels, formatBookingCost, packSplitLine, packSplitLines, formatDate, formatDateShort, dateFnsLocale, fillTemplate,
+} from '@/lib/utils'
 
 describe('cn', () => {
   it('merges class names', () => {
@@ -100,5 +103,57 @@ describe('formatBookingCost for manual bookings', () => {
   it('says it was paid on site rather than showing an amount', async () => {
     const { formatBookingCost } = await import('@/lib/utils')
     expect(formatBookingCost({ payment_method: 'manual', duration_hours: 2, total_amount: 22 })).toBe('Pago no local')
+  })
+})
+
+// B65: the same helpers in English when a customer page passes its locale;
+// the operator pages keep calling them without one and stay Portuguese.
+describe('locale-aware labels (B65)', () => {
+  const now = new Date('2026-09-17T12:00:00Z')
+
+  it('statusLabels follows the locale and STATUS_LABELS is the Portuguese map', () => {
+    expect(statusLabels('en')).toEqual({
+      pending: 'Pending', confirmed: 'Confirmed', cancelled: 'Cancelled',
+      completed: 'Completed', expired: 'Expired', paid_unfulfilled: 'Paid, no slot',
+    })
+    expect(statusLabels('pt')).toEqual(STATUS_LABELS)
+  })
+
+  it('cancellationEligibility gives its reason in English when asked', () => {
+    expect(cancellationEligibility({ start_time: '2026-09-18T11:59:59Z', status: 'confirmed' }, now, 'en').reason)
+      .toBe('Cancellation is only possible up to 24 hours before the start.')
+    expect(cancellationEligibility({ start_time: '2026-09-25T12:00:00Z', status: 'cancelled' }, now, 'en').reason).toBe('Booking already cancelled.')
+    expect(cancellationEligibility({ start_time: '2026-09-25T12:00:00Z', status: 'paid_unfulfilled' }, now, 'en').reason)
+      .toBe('The space will contact you about this payment.')
+    expect(cancellationEligibility({ start_time: '2026-09-18T11:59:59Z', status: 'confirmed' }, now).reason)
+      .toBe('Só é possível cancelar até 24 horas antes do início.')
+  })
+
+  it('formatBookingCost speaks English when asked', () => {
+    expect(formatBookingCost({ payment_method: 'package', duration_hours: 3, total_amount: 33, package_hours_used: 3 }, 'en')).toBe('3h from the pack')
+    expect(formatBookingCost({ payment_method: 'package', duration_hours: 12, total_amount: 132, package_hours_used: 11 }, 'en')).toBe('11h from the pack + 1h to settle')
+    expect(formatBookingCost({ payment_method: 'mixed', duration_hours: 3, total_amount: 11, package_hours_used: 2 }, 'en')).toMatch(/^2h from the pack \+ 11,00\s€$/)
+    expect(formatBookingCost({ payment_method: 'manual', duration_hours: 2, total_amount: 22 }, 'en')).toBe('Paid on site')
+    expect(formatBookingCost({ payment_method: 'hourly', duration_hours: 2, total_amount: 22 }, 'en')).toMatch(/^22,00\s€$/)
+  })
+
+  it('packSplitLine keeps the Portuguese line by default and follows the locale when given', () => {
+    const debit = { purchase_id: 'p-1', hours: 2, package_name: null, expires_at: '2026-10-03T12:00:00Z' }
+    expect(packSplitLine(debit)).toBe('2h · Pack · expira 3 out')
+    expect(packSplitLine(debit, 'en')).toBe('2h · Pack · expires 3 Oct')
+    expect(packSplitLines([{ ...debit, package_name: 'Pack 10h', expires_at: null }], 'en')).toEqual(['2h · Pack 10h'])
+  })
+
+  it('formatDate and formatDateShort take the month names from the locale', () => {
+    expect(formatDate('2026-10-03T12:30:00Z')).toMatch(/^3 de outubro de 2026, \d\d:\d\d$/)
+    expect(formatDate('2026-10-03T12:30:00Z', 'en')).toMatch(/^3 October 2026, \d\d:\d\d$/)
+    expect(formatDateShort('2026-10-03T12:30:00Z', 'en')).toMatch(/^03\/10\/2026 \d\d:\d\d$/)
+    expect(dateFnsLocale('en').code).toBe('en-GB')
+    expect(dateFnsLocale('pt').code).toBe('pt')
+  })
+
+  it('fillTemplate replaces every placeholder the way t() does', () => {
+    expect(fillTemplate('{hours} do pack + {hours}', { hours: '2h' })).toBe('2h do pack + 2h')
+    expect(fillTemplate('no placeholders', { hours: 1 })).toBe('no placeholders')
   })
 })

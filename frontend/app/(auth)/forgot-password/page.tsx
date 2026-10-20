@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -10,21 +10,22 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authApi } from '@/lib/api'
-import { useT } from '@/lib/i18n'
+import { tFor, useLocale, useT, type Locale } from '@/lib/i18n'
 
-const schema = z.object({ email: z.string().email('Email inválido') })
-type FormData = z.infer<typeof schema>
-
-// What the API answers whatever the email; shown as-is so the page never says
-// more than the API does (G03).
-const NEUTRAL_NOTICE =
-  'Se existir uma conta com este email, vai receber uma ligação para repor a password.'
+// B65: built per locale so the field error follows the language switcher;
+// useForm re-reads its resolver on every render.
+function schemaFor(locale: Locale) {
+  return z.object({ email: z.string().email(tFor(locale)('auth.email_invalid')) })
+}
+type FormData = z.infer<ReturnType<typeof schemaFor>>
 
 export default function ForgotPasswordPage() {
   const t = useT()
+  const [locale] = useLocale()
   const [sent, setSent] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const schema = useMemo(() => schemaFor(locale), [locale])
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
 
   const onSubmit = async (data: FormData) => {
@@ -32,9 +33,12 @@ export default function ForgotPasswordPage() {
     setError('')
     try {
       const detail = await authApi.requestPasswordReset(data.email)
-      setSent(detail || NEUTRAL_NOTICE)
+      // What the API answers whatever the email, shown as-is so the page never
+      // says more than the API does (G03); the catalog's line stands in when
+      // the answer carries no text.
+      setSent(detail || t('auth.forgot_neutral_notice'))
     } catch {
-      setError('Não foi possível enviar o pedido. Tente novamente dentro de instantes.')
+      setError(t('auth.forgot_send_failed'))
     } finally {
       setLoading(false)
     }
@@ -50,37 +54,33 @@ export default function ForgotPasswordPage() {
         </div>
         <Card>
           <CardHeader className="text-center pb-2">
-            <CardTitle>Recuperar a password</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Indique o email da sua conta e enviamos-lhe uma ligação para escolher uma nova password.
-            </p>
+            <CardTitle>{t('auth.forgot_title')}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t('auth.forgot_subtitle')}</p>
           </CardHeader>
           <CardContent className="pt-4">
             {sent ? (
               <div className="space-y-4">
                 <p role="status" className="text-sm text-primary bg-primary/10 rounded-lg px-3 py-2">{sent}</p>
-                <p className="text-sm text-muted-foreground">
-                  A ligação é válida durante 60 minutos. Se não receber nada, verifique a pasta de spam ou peça uma nova ligação.
-                </p>
+                <p className="text-sm text-muted-foreground">{t('auth.forgot_link_validity')}</p>
                 <Button type="button" variant="outline" className="w-full" onClick={() => setSent(null)}>
-                  Pedir outra ligação
+                  {t('auth.forgot_request_another')}
                 </Button>
               </div>
             ) : (
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" {...register('email')} className="mt-1" placeholder="nome@exemplo.pt" autoComplete="email" />
+                  <Label htmlFor="email">{t('auth.email_label')}</Label>
+                  <Input id="email" type="email" {...register('email')} className="mt-1" placeholder={t('auth.email_placeholder')} autoComplete="email" />
                   {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
                 </div>
                 {error && <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'A enviar...' : 'Enviar ligação'}
+                  {loading ? t('auth.forgot_submitting') : t('auth.forgot_submit')}
                 </Button>
               </form>
             )}
             <p className="text-center text-sm text-muted-foreground mt-4">
-              <Link href="/sign-in" className="text-primary font-medium hover:underline">Voltar a entrar</Link>
+              <Link href="/sign-in" className="text-primary font-medium hover:underline">{t('auth.back_to_sign_in')}</Link>
             </p>
           </CardContent>
         </Card>

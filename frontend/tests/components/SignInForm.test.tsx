@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import SignInPage from '@/app/(auth)/sign-in/[[...sign-in]]/page'
 import { signIn } from 'next-auth/react'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 
 const push = vi.fn()
 let searchParams = new URLSearchParams()
@@ -98,5 +99,32 @@ describe('Sign-in returns to where the customer was (B28)', () => {
     searchParams = new URLSearchParams('callbackUrl=%2Fspaces%2Fspace-1')
     render(<SignInPage />)
     expect(screen.getByRole('link', { name: /Registar/i })).toHaveAttribute('href', '/sign-up?callbackUrl=%2Fspaces%2Fspace-1')
+  })
+})
+
+describe('Sign-in page in English (B65)', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('renders the English copy, field errors and the failed sign-in without Portuguese', async () => {
+    setLocale('en')
+    searchParams = new URLSearchParams('password=reset')
+    vi.mocked(signIn).mockResolvedValue({ ok: false, error: 'CredentialsSignin', status: 401, url: null })
+    const user = userEvent.setup()
+    render(<SignInPage />)
+    expect(screen.getByText('Sign in to your account')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Your password has been changed')
+    expect(screen.getByRole('link', { name: 'Forgot your password?' })).toHaveAttribute('href', '/forgot-password')
+    expect(screen.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', '/sign-up')
+
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(await screen.findByText('Invalid email')).toBeInTheDocument()
+    expect(screen.getByText('Password is required')).toBeInTheDocument()
+    expect(signIn).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('Email'), 'me@test.com')
+    await user.type(screen.getByLabelText('Password'), 'wrong-one')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(await screen.findByText('Incorrect email or password.')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Entrar|Registar|Esqueceu|incorretos/)
   })
 })

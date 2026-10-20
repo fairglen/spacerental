@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import Link from 'next/link'
 import { Building2, MapPin } from 'lucide-react'
 import { useSingleSpace } from '@/lib/hooks/useSingleSpace'
+import { useT } from '@/lib/i18n'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { SpaceRoomsSkeleton, SpaceRoomsView } from '@/components/spaces/SpaceRoomsView'
@@ -12,12 +13,13 @@ import { Button } from '@/components/ui/button'
 import type { Space } from '@/types'
 
 function SpacesList({ spaces }: { spaces: Space[] }) {
+  const t = useT()
   return (
     <main className="min-h-screen bg-background">
       <div className="bg-white border-b border-border py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-foreground">Todos os Espaços</h1>
-          <p className="text-muted-foreground mt-2">Encontre a sala perfeita para a sua prática.</p>
+          <h1 className="text-3xl font-bold text-foreground">{t('spaces.list_title')}</h1>
+          <p className="text-muted-foreground mt-2">{t('spaces.list_subtitle')}</p>
         </div>
       </div>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
@@ -41,7 +43,7 @@ function SpacesList({ spaces }: { spaces: Space[] }) {
                   ))}
                 </div>
                 <Link href={`/spaces/${space.id}`}>
-                  <Button className="w-full">Ver Salas e Reservar</Button>
+                  <Button className="w-full">{t('spaces.list_cta')}</Button>
                 </Link>
               </CardContent>
             </Card>
@@ -72,6 +74,7 @@ function Notice({ children, testId }: { children: React.ReactNode; testId?: stri
  */
 export default function SpacesPage() {
   const { mode, space, spaces, retry } = useSingleSpace()
+  const t = useT()
 
   return (
     <>
@@ -85,14 +88,15 @@ export default function SpacesPage() {
       {mode === 'multi' && <SpacesList spaces={spaces} />}
       {mode === 'empty' && (
         <Notice testId="spaces-empty">
-          <p>Ainda não há salas disponíveis. Volte em breve.</p>
+          <p>{t('spaces.empty')}</p>
         </Notice>
       )}
       {mode === 'error' && (
         <Notice>
           <div role="alert" className="space-y-3">
-            <p>Não foi possível carregar as salas.</p>
-            <Button variant="outline" onClick={retry}>Tentar novamente</Button>
+            {/* B65: the same words as the landing page's room list, so one key. */}
+            <p>{t('spaceCards.error')}</p>
+            <Button variant="outline" onClick={retry}>{t('spaceCards.retry')}</Button>
           </div>
         </Notice>
       )}

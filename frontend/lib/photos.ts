@@ -1,3 +1,5 @@
+import { t } from '@/lib/i18n'
+
 /**
  * The upload limits, mirrored from `backend/app/media.py` so an operator gets
  * the answer before the round trip. The API remains the authority: it judges a
@@ -8,13 +10,15 @@ export const MAX_PHOTO_BYTES = 8 * 1024 * 1024
 export const MAX_PHOTOS = 10
 export const ACCEPTED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
+// B65: getters, so each message is read from the catalog of the moment it is
+// shown (an upload is a client event) and the callers keep `PHOTO_MESSAGES.x`.
 export const PHOTO_MESSAGES = {
-  type: 'Formato não suportado. Use JPEG, PNG ou WebP.',
-  size: 'A imagem tem mais de 8 MB.',
-  limit: 'Já tem o máximo de 10 fotografias. Apague uma primeiro.',
-  throttled: 'Demasiados envios seguidos. Aguarde um momento e tente de novo.',
-  generic: 'Não foi possível enviar a fotografia. Tente novamente.',
-} as const
+  get type() { return t('photos.error_type') },
+  get size() { return t('photos.error_size') },
+  get limit() { return t('photos.error_limit') },
+  get throttled() { return t('photos.error_throttled') },
+  get generic() { return t('photos.error_generic') },
+}
 
 /** Why this file cannot be uploaded, or null if it can be tried. */
 export function photoFileProblem(file: File): string | null {

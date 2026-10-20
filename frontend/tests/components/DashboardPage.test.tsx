@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DashboardPage from '@/app/dashboard/page'
 import { bookingsApi, packagesApi } from '@/lib/api'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { Booking } from '@/types'
 
 let searchParams = new URLSearchParams()
@@ -484,5 +485,61 @@ describe('Dashboard — cancellation credit in hours (K01)', () => {
     expect(summary).toHaveTextContent('2h')
     expect(summary).toHaveTextContent(/expira 1 out 2027/)
     expect(summary).not.toHaveTextContent('Pack')
+  })
+})
+
+// B65: the same page in English — the labels, the status badges, the dates
+// and the cancel dialog all come from the catalog, with nothing left behind.
+describe('Dashboard — English (B65)', () => {
+  afterEach(() => resetLocaleForTests())
+
+  it('renders the bookings, the pack bank and the cancel dialog in English', async () => {
+    setLocale('en')
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([
+      booking({ id: 'b-en', access_code: '482913' }),
+      booking({ id: 'b-hold', status: 'pending', hold_expires_at: new Date(Date.now() + 600_000).toISOString() }),
+    ])
+    vi.mocked(packagesApi.listMine).mockResolvedValue([
+      {
+        id: 'c-1', user_id: 'user-1', package_id: null, org_id: 'org-1',
+        hours_total: 2, hours_used: 0, hours_remaining: 2, amount_paid: 22, status: 'active',
+        source: 'cancellation_credit' as const, source_booking_id: 'b-old',
+        purchased_at: '2026-10-01T10:00:00Z', expires_at: '2027-10-01T10:00:00Z', package: null,
+      },
+    ])
+    renderPage()
+    expect(await screen.findByText('Upcoming Bookings')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Hello, Demo 👋' })).toBeVisible()
+    expect(await screen.findByText('482913')).toBeVisible()
+    expect(screen.getByText(/Access code/)).toBeVisible()
+    expect(screen.getByText('Confirmed')).toBeVisible()
+    expect(screen.getByText('Awaiting payment')).toBeVisible()
+    expect(screen.getByText(/Slot held until \d\d:\d\d\. Pay to confirm it\./)).toBeVisible()
+    expect(screen.getByRole('button', { name: /Pay now/ })).toBeVisible()
+    const summary = screen.getByRole('region', { name: 'Your packs' })
+    await within(summary).findByText(/Credit — cancellation of 1 Oct/)
+    expect(summary).toHaveTextContent(/2h left · expires 1 Oct 2027/)
+    expect(summary.querySelector('a[href="/dashboard/packages"]')).toHaveTextContent('View and buy packs')
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^Cancel$/ })[0])
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent(/Cancel booking/)
+    expect(dialog).toHaveTextContent(/up to 24 hours before the start/)
+    expect(within(dialog).getByText(/When you cancel, the 1h you paid for stay in your hour bank/)).toBeVisible()
+    expect(within(dialog).getByRole('button', { name: /Yes, cancel/ })).toBeEnabled()
+    expect(within(dialog).getByRole('button', { name: 'Keep booking' })).toBeVisible()
+    expect(within(dialog).getByRole('button', { name: 'Talk to us' })).toBeVisible()
+    expect(document.body.textContent).not.toMatch(/Reservar|Cancelar|Os seus|Não tem|Próximas|Pendente|Confirmado|A aguardar|expira |restantes/)
+  })
+
+  it('says the empty states in English and offers the way to the rooms', async () => {
+    setLocale('en')
+    vi.mocked(bookingsApi.listMine).mockResolvedValue([])
+    vi.mocked(packagesApi.listMine).mockResolvedValue([])
+    renderPage()
+    expect(await screen.findByText('You have no upcoming bookings.')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Book a room' })).toHaveAttribute('href', '/spaces')
+    expect(screen.getByRole('region', { name: 'Your packs' })).toHaveTextContent(/You don't have any hour packs yet/)
+    expect(document.body.textContent).not.toMatch(/Reservar|Não tem|Ainda não/)
   })
 })

@@ -22,7 +22,7 @@ def _login_payload(email: str = "user@test.com", password: str = "wrong-password
 
 
 def _register_payload(email: str):
-    return {"email": email, "password": "password123", "name": "Rate Limited"}
+    return {"email": email, "password": "Senha-2026x", "name": "Rate Limited"}
 
 
 @pytest.fixture
@@ -102,7 +102,7 @@ class TestAuthTierThrottling:
 
         for _ in range(limit - 1):
             resp = await client.post(
-                LOGIN_URL, json=_login_payload("under@limit.com", "password123")
+                LOGIN_URL, json=_login_payload("under@limit.com", "Senha-2026x")
             )
             assert resp.status_code == 200, resp.text
             assert resp.json()["access_token"]

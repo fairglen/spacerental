@@ -3,9 +3,11 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useMutation } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { pt } from 'date-fns/locale'
 import { bookingsApi, recurrencesApi, createAuthenticatedApi } from '@/lib/api'
-import { formatCurrency, formatHours } from '@/lib/utils'
+import { useLocale, useT } from '@/lib/i18n'
+// `pt` alone: the parked series copy below is Portuguese-only (R02/R03/R99).
+import { pt } from 'date-fns/locale'
+import { dateFnsLocale, formatCurrency, formatHours } from '@/lib/utils'
 import { statusOf, conflictsOf, bookingErrorMessage } from '@/lib/httpError'
 import { signInHref } from '@/lib/navigation'
 import { expandWeeklyOccurrences } from '@/lib/recurrence'
@@ -39,6 +41,9 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
   const recurrenceEnabled = process.env.NEXT_PUBLIC_RECURRING_BOOKINGS_ENABLED === 'true'
   const [repeatWeekly, setRepeatWeekly] = useState(false)
   const [untilDate, setUntilDate] = useState('')
+  const t = useT()
+  const [locale] = useLocale()
+  const dateLocale = dateFnsLocale(locale)
   const {
     session, status, pathname, queryClient,
     duration, total, purchases,
@@ -114,6 +119,8 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
   const untilBeforeStart = repeatWeekly && !!untilDate && occurrences.length === 0
   const canSubmit = !repeatWeekly || (!!untilDate && occurrences.length > 0)
 
+  // The weekly series is parked behind its flag (R02): its words stay inline,
+  // Portuguese, and out of the catalogs (B65).
   if (mutation.isSuccess && 'recurrence' in mutation.data) {
     return (
       <Dialog open onOpenChange={onClose}>
@@ -143,38 +150,38 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
       <Dialog open onOpenChange={onClose}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reserva confirmada</DialogTitle>
+            <DialogTitle>{t('booking.confirmed_title')}</DialogTitle>
             <DialogDescription>
-              As horas foram descontadas do seu pack. Não há nada a pagar agora.
+              {t('booking.confirmed_description')}
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-lg bg-accent p-4 space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Sala</span>
+              <span className="text-muted-foreground">{t('booking.room')}</span>
               <span className="font-medium text-foreground">{room.name}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Data</span>
-              <span className="font-medium text-foreground">{format(new Date(booked.start_time), "d 'de' MMMM 'de' yyyy", { locale: pt })}</span>
+              <span className="text-muted-foreground">{t('booking.date')}</span>
+              <span className="font-medium text-foreground">{format(new Date(booked.start_time), t('booking.long_date_format'), { locale: dateLocale })}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Horário</span>
+              <span className="text-muted-foreground">{t('booking.time')}</span>
               <span className="font-medium text-foreground">{format(new Date(booked.start_time), 'HH:mm')} – {format(new Date(booked.end_time), 'HH:mm')}</span>
             </div>
             <div className="flex justify-between border-t border-primary-light pt-2">
-              <span className="text-muted-foreground">Horas usadas</span>
-              <span className="font-semibold text-foreground">{formatHours(booked.duration_hours)} do seu pack</span>
+              <span className="text-muted-foreground">{t('booking.hours_used')}</span>
+              <span className="font-semibold text-foreground">{t('booking.hours_used_value', { hours: formatHours(booked.duration_hours) })}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Horas restantes</span>
+              <span className="text-muted-foreground">{t('booking.hours_remaining')}</span>
               <span className="font-semibold text-primary">{formatHours(remaining)}</span>
             </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" asChild>
-              <Link href="/dashboard">Ver as minhas reservas</Link>
+              <Link href="/dashboard">{t('booking.view_my_bookings')}</Link>
             </Button>
-            <Button onClick={onClose}>Fechar</Button>
+            <Button onClick={onClose}>{t('booking.close')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -185,9 +192,9 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
     <Dialog open={!!room && !!start} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Confirmar Reserva</DialogTitle>
+          <DialogTitle>{t('booking.confirm_booking')}</DialogTitle>
           <DialogDescription>
-            Reveja a sala, o horário e a forma de pagamento antes de confirmar esta reserva.
+            {t('booking.confirm_description')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -248,21 +255,18 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
           )}
           {waitingForPack && (
             <p role="status" data-testid="pack-settling" className="text-sm text-muted-foreground">
-              A confirmar o pagamento do seu pack… As horas aparecem aqui assim que o pagamento for registado.
+              {t('booking.pack_settling')}
             </p>
           )}
           {packUnconfirmed && (
             <div role="alert" data-testid="pack-unconfirmed" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
-              <p>
-                Ainda não recebemos a confirmação do pagamento do seu pack. Pode verificar de novo daqui a instantes
-                ou pagar esta reserva agora — as horas do pack ficam na sua conta para a próxima.
-              </p>
-              <Button type="button" variant="outline" size="sm" onClick={checkBankAgain}>Verificar de novo</Button>
+              <p>{t('booking.pack_unconfirmed')}</p>
+              <Button type="button" variant="outline" size="sm" onClick={checkBankAgain}>{t('booking.check_again')}</Button>
             </div>
           )}
           {!waitingForPack && options.length > 1 && (
             <fieldset className="space-y-2">
-              <legend className="text-sm font-medium text-foreground mb-1">Pagamento</legend>
+              <legend className="text-sm font-medium text-foreground mb-1">{t('booking.payment_legend')}</legend>
               {options.map((option) => option === 'pack' ? (
                 <label key={option} className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
@@ -275,8 +279,8 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
                   />
                   <span>
                     {canPayWithPackage
-                      ? `Usar horas do pack (${formatHours(hoursLeft)} disponíveis)`
-                      : 'Usar as horas do pack e pagar o resto'}
+                      ? t('booking.use_pack_full', { hours: formatHours(hoursLeft) })
+                      : t('booking.use_pack_partial')}
                   </span>
                 </label>
               ) : option === 'hourly' ? (
@@ -289,7 +293,7 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
                     onChange={() => setChoice('hourly')}
                     disabled={mutation.isPending || purchase.isPending}
                   />
-                  <span>{plan.kind === 'none' ? `Pagar ${formatCurrency(total)} agora` : canPayWithPackage ? `Pagar ${formatCurrency(total)} agora` : 'Pagar tudo agora'}</span>
+                  <span>{plan.kind === 'none' || canPayWithPackage ? t('booking.pay_amount_now', { amount: formatCurrency(total) }) : t('booking.pay_all_now')}</span>
                 </label>
               ) : (
                 <PackUpsell key={option} packages={packages} buying={buying} onChoose={() => setChoice('buy')} purchase={purchase} disabled={mutation.isPending || purchase.isPending} isUnauthenticated={isUnauthenticated} />
@@ -298,9 +302,9 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
           )}
           {isUnauthenticated && (
             <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-              Precisa de estar autenticado para reservar.{' '}
+              {t('booking.sign_in_required')}{' '}
               <Link href={signInHref(pathname)} className="font-medium underline" onClick={onClose}>
-                Entrar na conta
+                {t('booking.sign_in_link')}
               </Link>
             </p>
           )}
@@ -322,7 +326,7 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
                   <>
                     {' '}
                     <Link href={signInHref(pathname)} className="font-medium underline" onClick={onClose}>
-                      Entrar na conta
+                      {t('booking.sign_in_link')}
                     </Link>
                   </>
                 )}
@@ -332,7 +336,7 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
           <ContactNote roomName={room.name} variant="inline" />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>{t('booking.cancel')}</Button>
           <Button
             onClick={() => mutation.mutate()}
             // While a pack purchase is in flight the booking must not be confirmed
@@ -340,7 +344,7 @@ export function BookingModal({ room, start, end, onClose, awaitingPurchase = fal
             // Nor while the bank is still being polled for the pack just bought.
             disabled={mutation.isPending || purchase.isPending || isUnauthenticated || !canSubmit || buying || waitingForPack}
           >
-            {mutation.isPending ? 'A confirmar...' : repeatWeekly ? 'Confirmar Série' : 'Confirmar Reserva'}
+            {mutation.isPending ? t('booking.confirming') : repeatWeekly ? 'Confirmar Série' : t('booking.confirm_booking')}
           </Button>
         </DialogFooter>
       </DialogContent>

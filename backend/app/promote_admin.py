@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
+from app.emails import normalize_email
 from app.models.organization import MemberRole, Organization, OrganizationMember
 from app.models.user import User
 
@@ -64,7 +65,9 @@ async def promote_admin(
 async def _promote_admin(
     session: AsyncSession, *, email: str, role: MemberRole, org_slug: str
 ) -> OrganizationMember:
-    user_result = await session.execute(select(User).where(User.email == email))
+    user_result = await session.execute(
+        select(User).where(User.email_normalized == normalize_email(email))
+    )
     user = user_result.scalar_one_or_none()
     if user is None:
         raise PromoteAdminError(f"No user found with email {email!r}.")

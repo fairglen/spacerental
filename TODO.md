@@ -902,7 +902,9 @@ token still passes.
 
 ### B37 — Email addresses are case-sensitive at login and registration
 
-**Priority: P2. State: TODO (queued for the fix phase of the security loop).**
+**Priority: P2. State: DONE by reference — B67 (tester round 1, PR A
+`fix/tester-round-1-backend`): `users.email_normalized` with a unique index,
+every lookup through it, the migration failing loudly on a collision.**
 Bug (2026-09-18, authentication audit): the local part of an email is compared
 exactly, so a customer who registered as `Ana@…` cannot sign in as `ana@…`,
 and one mailbox can hold two accounts that differ only by case. There is no
@@ -1687,6 +1689,235 @@ No Copilot review: none in 6 minutes of polling (GraphQL `reviews` +
 `reviewThreads`), the one-time request registered no reviewer, none in the
 4 minutes after — as on #91–#96, this repository has no Copilot code
 review. Zero review threads, no fix commits.
+
+## Tester round 1 (B63–B70) — owner assignment 2026-10-14 (PR A `fix/tester-round-1-backend` on `main`; PR B `fix/tester-round-1-i18n-ui` stacked on it)
+
+Owner's ask: the seven findings of the first tester round, in the fewest
+sensible PRs — the production build for testers, a real password policy,
+one mailbox = one account (closes B37), abandoned pack checkouts cancelled,
+the locale surviving a reload, EN across the customer journey (closes D02
+for customers; admin stays PT), a mobile menu that works at any height plus
+an account menu, and a line that says how a pack is used. Same rules as
+every loop: conservative reading of anything ambiguous, recorded under the
+item and tagged `DECISION:` in the commit body; one commit per item; the
+owner's default Compose project untouched; never merged by the loop.
+Finding → item map: #1 dev overlay on testers' phones → B63; #2 weak
+passwords → B66; #3 `+tag`/case duplicates → B67; #4 a cancelled pack
+checkout stays "pending" → B68; #5 the language flips back → B64; #6 EN
+stops at the landing → B65; #7 the mobile menu cut off / no account menu →
+B69; #7b "what do I do with the pack?" → B70. Backlog only, not built: D23
+and D24 below. The tester's "Rooms opens a separate page" remark is by
+design (the room page carries the calendar, photos and the pack upsell) —
+noted under D02's outcome.
+
+### B63 — Testers get the production build, never the dev overlay
+
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** `scripts/remote-up.sh` started
+`docker-compose.yml` (`npm run dev`), so Next's dev overlay turned an error
+thrown by a tester's browser extension (`window.__firefox__.reader`,
+`window.ethereum` injected by Brave) into a full-screen error on their
+phone. **Scope:** a `--prod` flag, the default for `ngrok` mode (`lan` keeps
+the dev stack unless `--prod`; `--dev` opts ngrok out): the production
+images from `docker-compose.prod.yml` built locally through the new
+overlay `docker-compose.share.yml` (the dev Postgres and media volumes, no
+Caddy — the tunnel terminates TLS and the frontend publishes 3000,
+`APP_ENV=development` so E02 accepts the stub modes and `http://` local
+addresses, `NEXTAUTH_URL`/`FRONTEND_URL` from `.env.remote` as today), the
+dev seed run after `up`; `--dry-run` prints the compose command; README and
+`usage` say which build testers get. **Validation:**
+`scripts/tests/remote-env.sh` gains the share render and the three dry
+runs; a manual check that `/` through the share stack carries no
+`__nextjs` overlay script (PR body).
+
+### B66 — Password policy: length and blocklists, not composition rules
+
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** Any 8 characters were accepted.
+**DECISION:** NIST SP 800-63B — length 10–128; a password in the bundled
+top-20 000 breached list (`backend/app/data/common-passwords.txt`,
+lowercase, loaded once) is refused; one containing the address's local part
+or the word "flowspace" (case-insensitive) is refused; no character-class
+rules. The tester's "letters + numbers + a special character" is the
+rejected alternative: composition rules push people to `Password1!`, which
+the blocklist refuses anyway, and NIST's evidence is that length and
+blocklists do the work. **Scope:** `app/passwords.py:check_password(password,
+email) -> list[str]` used by register, reset-password, set-password and the
+admin set-password, each failure a 422 whose `detail` lists the reasons in
+formal Portuguese; the frontend mirrors the length and email-part rules in
+`lib/password.ts` with an inline hint under every password field and shows
+the server's reasons verbatim (the list check is server-side only).
+**Validation:** pytest per rule and per route; Vitest for the helper;
+`auth.spec.ts` with one rejected and one accepted password.
+
+### B67 — One mailbox, one account (closes B37, covers `+tag`)
+
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** **Scope:**
+`users.email_normalized` (migration 0019, unique index), computed by
+`app/emails.py:normalize_email`: trim, lowercase, the `+tag` stripped from
+the local part on every domain, and for `gmail.com`/`googlemail.com` the
+dots in the local part removed. **DECISION:** subaddressing is stripped
+rather than refused — a `+` is legitimate and widely used, and refusing it
+would block real addresses; the typed address stays in `users.email` and is
+what we send to. Registration, login, forgot-password, the enrollment path,
+admin user creation/update and the admin search look up by
+`email_normalized`; the duplicate message stays "Este email já está
+registado." The migration backfills and **fails loudly** on a collision
+(two existing rows normalising to one), naming both addresses — never a
+merge (B37's acceptance). **Validation:** `a+test@x.pt` then `A@x.pt` →
+400; `an.a@gmail.com` vs `ana@gmail.com` → 400; login with any case; a
+pre-existing mixed-case account still signs in; the migration round trip on
+an empty database and a collision fixture that is expected to fail.
+
+### B68 — A cancelled or abandoned pack checkout is cancelled; only active packs are packs
+
+**Priority: P1. State: DONE 2026-10-14 (PR A `fix/tester-round-1-backend`, base `main`; merged by the owner, never by the loop).** **Scope:** (1) the stub
+checkout's cancel sets a `pending` purchase to `cancelled` (locked by its
+session id, idempotent, the booking branch's shape); (2) the webhook handles
+`checkout.session.expired`: a `pending` purchase → `cancelled`, a `pending`
+booking hold → the same `expired` path the stub cancel uses; (3) the sweeper
+also cancels `pending` purchases older than `PACKAGE_CHECKOUT_MINUTES` (new
+setting, default 60); (4) `GET /packages/me` returns `active` purchases by
+default, `?include=pending` adds pending ones with their `checkout_url`
+("Retomar pagamento"), `cancelled` never reaches a customer, the hour-bank
+numbers unchanged (they already ignore non-active rows — asserted); the admin
+purchases list shows a status badge; (5) the packs page shows pending ones
+in a "Pagamento pendente" block with "Retomar pagamento" and "Cancelar"
+(`POST /packages/purchases/{id}/cancel`, owner-only, pending-only, 409
+otherwise). **Validation:** pytest for the stub cancel, the expired webhook,
+the sweeper, the list filter and the cancel route (403/409); Playwright
+`packages.spec.ts`: buy → "Cancelar" on the stub page → no pack and 0h; buy
+→ pay → one pack.
+
+**PR A validation (2026-10-14, local):** `scripts/tests/remote-env.sh`
+54/54 (the share render and the four dry runs) and the share build served
+`/` with no `react-refresh`/`__nextjs`/`nextjs-portal` reference and hashed
+`webpack-<hash>.js` chunks, where the dev stack's `/` has `webpack.js?v=`
+(project `spacerental-share-check` on 3063, torn down); backend suite in
+`spacerental-tester-tests` 1087 passed, 4 subtests (the authz matrix classifies the new route and names its isolation test; four tests that pinned the pending-by-default list, the "cancelled" row in a customer list or the expired event as unrelated were moved to the new rules); migration round trip on an empty
+PostgreSQL 18 with 0019 (upgrade → check → downgrade → no leftover →
+upgrade → check) clean; Ruff 0.16.5 clean; shellcheck clean; `tsc`,
+`next lint`, `next build` clean, Vitest 767/767 (78 files); Playwright on the
+worktree's own e2e stack (3110/8110) 85 passed + 8 skipped — `auth.spec.ts` with the
+refused/accepted passwords and `packages.spec.ts` with the cancelled
+purchase among them. Found on the way: `password123`/`Password123!`
+(every fixture) are in the breached list, so the fixtures moved to
+`Senha-2026x` and a phrase; three component/e2e specs pinned the old
+8-character rule or the pending-by-default list and were updated to the
+new rules, never weakened. **Review rounds (PR A):** round 1 (head `fe58dd0`) — CI green (Security; Checks: 15 pass, 2 skipping); no Copilot review (none in 6 min, requested, none 4 min later); nothing to address. The record commit's own push is polled the same way and its outcome goes in the PR body.
+
+### B64 — The locale survives a reload without a flash
+
+**Priority: P2. State: DONE 2026-10-14 (PR B `fix/tester-round-1-i18n-ui`, commit `B64: …`).** **Scope:** the locale in a
+cookie `flowspace.locale` (SameSite=Lax, path `/`, one year) written by
+`setLocale`; the root layout reads it with `cookies()` and renders `<html
+lang="pt-PT"|"en">` with the initial locale, so the first paint is already in
+the chosen language; `getServerLocale()`; the old `localStorage` key read
+once as a migration. **DECISION:** a first visit stays PT — no
+`Accept-Language` sniffing. **Validation:** Vitest for the cookie round
+trip; `landing-ssr.spec.ts` asserts the EN headline and `lang="en"` in the
+server HTML with the cookie set.
+
+### B65 — EN covers the whole customer journey (closes D02 for customers)
+
+**Priority: P2. State: DONE 2026-10-14 (PR B, commit `B65: …`).** **Scope:** every page a
+customer reaches — landing, spaces and rooms (`SpaceRoomsView`, the "Onde
+estamos" lines), the pricing CTAs, the booking calendar and modal, the auth
+pages, the help dialog, the dashboard, packs, billing, the 404 page, the
+stub checkout page (EN when `Accept-Language` prefers it; dev-only, Stripe
+localises the real one); amenities are operator-entered strings shown as they are (there is no
+`lib/amenities.ts`; nothing to translate). **DECISION:** emails stay PT —
+a per-customer language is a later item. Admin stays PT (D02's scope for
+operators is not implied). **Validation:** the catalog parity test; a
+Vitest guard rendering each customer page in EN and refusing a short list of
+PT-only words; Playwright `locale.spec.ts` through the journey in EN.
+
+### B69 — A mobile menu that works at any height, and an account menu
+
+**Priority: P2. State: DONE 2026-10-14 (PR B, commit `B69: …`).** **Scope:** `Navbar.tsx` — the
+mobile menu is a fixed sheet below the bar (`fixed inset-x-0 top-16
+bottom-0`, its own scroll, body scroll locked, closes on route change and
+Escape, focus trapped) with the account actions first when signed in; on
+desktop the signed-in links collapse into an account menu (avatar → name,
+email, Reservas, Packs, Faturação, Terminar sessão); "Reservar" stays the
+signed-out CTA. **Validation:** Vitest for open/close/Escape and the
+grouping; Playwright at 320×480 and 640×360 — every entry reachable by
+scrolling inside the sheet while `document.body` does not scroll.
+
+### B70 — Say how a pack is used
+
+**Priority: P3. State: DONE 2026-10-14 (PR B, commit `B70: …`).** **Scope:** after a purchase (the
+"Pagamento concluído" banner), in the packs page's empty state and on the
+pack cards: "Para usar as horas, reserve uma sala: escolha a sala e o
+horário; as horas do pack são descontadas automaticamente." with the CTA
+"Reservar uma sala" → `/spaces`, in EN too; the help dialog links "Perguntas
+frequentes" to `https://flowspace.pt/#faq`. **Validation:** Vitest for both
+states.
+
+**PR B validation (2026-10-14, head of `fix/tester-round-1-i18n-ui`, stacked on
+PR A `8a4da7f`):** catalogs 111 → 435 keys per language (324 added by B65,
+3 by B70), parity and the two new guards (no Portuguese in EN, formal register
+in PT) green; Vitest 828 passed / 81 files; `tsc --noEmit`, `next lint` and
+`next build` clean (Server Components read `tFor` from `lib/i18n/server`;
+`lib/i18n/translate.ts` keeps React out of their graph); backend suite
+1122 passed + 4 subtests (test_checkout_stub 44, incl. 32 parsed
+`Accept-Language` headers; OpenAPI snapshot unchanged, no schema change so
+no migration); Playwright on a fresh PR-B stack (`-p spacerental-tester-e2e-b`,
+3120/8120): 90 passed, 8 skipped (35.3 s, after the perf fix) — `locale.spec.ts` (the EN journey + the stub page's two
+languages), `navbar.spec.ts` (320×480, 640×360, desktop account menu),
+`landing-ssr.spec.ts` (EN cookie → `lang="en"` in the first HTML).
+`playwright.config.ts` now sets the browser locale to pt-PT: Chromium's en-US
+default rendered the stub Checkout page in English and ten checkout specs
+could not find "Pagar". Two specs fail only on a stack with rooms left by
+earlier aborted runs (per-room hours add "Horário por sala no calendário";
+a cross-spec room cleanup race) — data, not code; green on a fresh seed.
+**Perf budgets (round 1 of the PR's CI):** `perf / perf-web` failed —
+the landing's JS before `load` was 252.7 KB against 220 (PR A: 207.3):
+B69's Radix dropdown/dialog stack on every page (~31 KB gz), both catalogs
+shipped to everyone (+7.5 KB), B65's code. Fixed by weight, not budget: a
+hand-rolled account menu (`components/layout/AccountMenu.tsx`) and the
+mobile sheet's Dialog primitive loaded on the first tap
+(`components/layout/MobileMenu.tsx`, next/dynamic); the English catalog as
+a chunk of its own (`lib/i18n/registry.ts` — Portuguese always bundled,
+English registered from the server's render for an EN cookie, fetched by
+`setLocale` on a switch). The perf harness on the PR-B stack then passed all
+six pages: landing 216.7/220, spaces 249/252, space-week/day 248.2/252,
+dashboard 242.6/246, admin-calendar 337/342 — ~3 KB of room each, from the
+Portuguese catalog's own growth; D25 is the structural fix. Screenshots in
+`docs/ui-evidence/B63-B70/`. Found on the way: the reset page
+and the admin user page said "Pelo menos 8 caracteres" (10 since B66);
+"esperavas"/"procuras" were informal and now read "esperava"/"procura";
+`customer-billing.spec.ts` reached Faturação through the navbar link B69 moved
+into the account menu. **DECISION:** emails and the admin stay Portuguese;
+backend `detail` text is shown as it arrives (Portuguese); amounts keep pt-PT
+formatting in both languages. **Review rounds (PR B):** recorded in the last
+commit of the PR.
+
+### D23 — Customer flags for operators
+
+**Priority: P3. State: QUEUED (backlog only, tester round 1).** The tester's
+"orange/red flag" idea: an operator marks a customer (late payer, no-show,
+damage) with a colour and a note that shows on their bookings and in the
+users list; visible to operators only, audited. Not built.
+
+### D24 — In-app FAQ page
+
+**Priority: P3. State: QUEUED (backlog only, tester round 1).** The static
+site's FAQ (`https://flowspace.pt/#faq`, linked from the help dialog by B70)
+as a page inside the app, in PT and EN, so a signed-in customer never leaves
+the app for it. Not built.
+
+### D25 — Catalog chunks per section, so the JS budgets get their headroom back
+
+**Priority: P3. State: QUEUED (found by B65's perf run).** B65 grew the
+Portuguese catalog from 111 to 435 keys (+5.9 KB gz) and every page carries
+all of it — the landing ships `booking`, `auth`, `billing`, `help`, `errors`
+it never reads. The English catalog already loads on demand
+(`lib/i18n/registry.ts`); the perf budgets (`frontend/perf-budget.json`,
+"measured + ~5%") now have ~3 KB of room on every page (landing 216.7/220,
+spaces 249/252, dashboard 242.6/246, admin-calendar 337/342 on the PR-B
+stack). Split the catalogs by section (one chunk per top-level key, loaded by
+the pages that use it, the landing's own sections inlined), measure, and
+only then decide whether the budgets move. Not built; the budgets were not
+touched.
 
 ## Production on AWS, Phase 0 (E-series) — owner assignment 2026-10-13 (PR A `feat/prod-stack` on `main`; PR B `feat/aws-infra` stacked on it)
 
@@ -3691,7 +3922,12 @@ nothing in the PR touches the frontend or the backend code): (1)
 expected the first "Onde estamos" line to be "Todos os dias 08:00–22:00" and
 got it with "Horário por sala no calendário." appended, i.e. another
 worker's room with different hours was alive in the shared seeded space at
-that moment. Both are ordering-dependent; a rerun passed. Acceptance: the
+that moment. Both are ordering-dependent; a rerun passed. Seen again on
+2026-10-13 (D21): #102's first run (`pay-mixed.spec.ts:33`,
+`packages.spec.ts:157`) and #101's rebased head (`customer-billing.spec.ts:14`
+— the same `404 Room not found` right after `createRoom` —, `booking.spec.ts:403`
+"no booking behind checkout session"), each green on re-run; nothing in
+either PR touches the browser stack. Acceptance: the
 room fixture tolerates (or explains) the 404, the single-space spec asserts
 on its own space or waits for a quiet window, and ten consecutive sharded
 CI runs stay green.
@@ -4009,6 +4245,145 @@ first (the dev server adds `x-forwarded-for`; S12 governs which entry is
 trusted). Acceptance: the e2e suite green with `NEXT_PUBLIC_API_URL=/api/backend`,
 D19's shell test extended with the one-URL layer, the rate-limit tests still
 proving per-client budgets.
+
+## Dependabot batch #97–#106 (D-series, D21–D22) — owner assignment 2026-10-13
+
+Goal: every open Dependabot PR either green with a "ready to merge" comment
+or closed with a reasoned one, each validated locally against the repo
+baseline from its own worktree and Compose project; a merge order for the
+owner; nothing merged by the loop (`main` is protected and merges are the
+owner's). D11 (Node major) and D12 (SQLAlchemy `noload`) were read first and
+hold. Fixes go to the Dependabot branch as `<ID>: <what>` commits and are
+described in a PR comment so they survive `@dependabot rebase`; `@dependabot
+recreate` is never used.
+
+### D21 — Dependabot batch #97–#106: outcomes, evidence, decisions
+
+**Priority: P1. State: DONE 2026-10-13 (seven PRs ready, three closed; merges
+by the owner, never by the loop).** All ten branches already sat on `main`
+= `02a0365`, so no rebase was needed. None of the PRs received a Copilot
+review (the repository has never had one); zero review threads anywhere.
+Local runs used Node 24.21 (D11), Compose projects `spacerental-pr<n>-tests`
+/ `-mig` / `-e2e` and ports 3<n>/8<n> — the owner's stack on 3000/8000/5432
+and the loop stack on 3100/8100/55432 were not touched.
+
+Per PR:
+
+- **#100 tzdata 2024.2 → 2026.5 — READY.** Backend suite 1044 passed, 4
+  subtests (R01's `test_local_opening_hours.py` 26 and `test_recurrences.py`
+  86 among them); CI green. No fix.
+- **#101 argon2-cffi 23.1 → 25.1 — READY.** Suite 1044 passed on the re-run
+  (the first run: 1043 + one timing assertion in `test_hold_sweep.py`,
+  `assert 2 >= 3`, while three suites shared the machine). Explicit check in
+  `python:3.12-slim`: a hash made by 23.1.0 with the app's parameters
+  (`app/auth.py:21`) verifies under 25.1.0, a wrong password raises
+  `VerifyMismatchError`, `check_needs_rehash()` is `False`, a fresh hash
+  carries the same `m=65536,t=3,p=4` header; `argon2-cffi-bindings` 26.1.0
+  both sides. 25.1 deprecates `argon2.__version__` (unused here). CI green.
+  No fix. On the head rebased onto `main` for the merge, `e2e (1/2)` failed
+  once with the D15 signature (`customer-billing.spec.ts:14`: `404 Room not
+  found` right after `createRoom`; `booking.spec.ts:403`: no booking behind
+  the stub checkout session) and was green on re-run.
+- **#99 pip group (fastapi 0.143.0, sqlalchemy 2.1.4, asyncpg 0.32.0,
+  pydantic 2.14.0, orjson 3.13.0) — READY.** Suite 1044 passed, with
+  `test_openapi_stable.py` (the snapshot is unchanged) and
+  `test_openapi_public.py`; migration round trip on an empty PostgreSQL 18
+  (upgrade → check → downgrade → no leftover table or enum → upgrade →
+  check) clean; CI green including `migrations / migrate`. FastAPI
+  0.143 **deprecates `ORJSONResponse`** ("FastAPI now serializes data
+  directly to JSON bytes via Pydantic when a return type or response_model
+  is declared") — a `DeprecationWarning` only: no failure, no snapshot diff,
+  so `app/main.py:75` (`default_response_class=ORJSONResponse`, P2.3) is
+  left as it is, per the assignment. When FastAPI removes it, drop the
+  class and the `orjson` pin together and re-measure P2.3's payload
+  timings. The starlette status-constant renames in the warnings
+  (`HTTP_422_UNPROCESSABLE_ENTITY` → `…_CONTENT`, `HTTP_413_…`) predate this
+  PR (starlette 1.8.0 on both sides). No fix.
+- **#106 actions group (setup-node v7.1.0, upload-artifact v7.0.2,
+  download-artifact v8.0.2, codeql-action v4.38.3 init + analyze) — READY.**
+  Every pin is the commit its tag resolves to (checked through the API);
+  no unpinned `uses:` remains; `actionlint` 1.7.11 reports nothing new (its
+  three shellcheck notes are identical on `main` and fixed by #107/E08);
+  every workflow that uses the actions ran green on the PR. No fix.
+- **#98 @playwright/test 1.63 → 1.64 — READY.** `tsc`, Vitest 756/756 (76
+  files), `next lint`, `next build`; full Playwright suite against the
+  production-build e2e stack (`docker-compose.e2e.yml`) 84 passed + 8
+  skipped on 1.64.0 (Chromium build 1248 fetched by the same command);
+  `npx playwright install chromium` in the baseline is unchanged (the
+  `e2e.yml` browser cache key follows the version). CI green. No fix.
+- **#103 date-fns 3.6 → 4.4 — READY after one fix.** CI was red on
+  `booking-window.spec.ts:22` and `week-view.spec.ts:35`: the toolbar read
+  "8 de nov – 14 de nov" instead of "9 de nov …" and the third column was
+  "13 ter" instead of 14 — both calendars had moved to a **Sunday** week.
+  Cause: date-fns 4 changed the `pt` locale's `weekStartsOn` from 1 to 0
+  (CLDR's territory data for Portugal); the two react-big-calendar
+  localizers (`components/booking/BookingCalendar.tsx`,
+  `app/admin/calendar/page.tsx`) hand `locales: { pt }` + `culture="pt"` to
+  `dateFnsLocalizer`, whose first-day-of-week is
+  `getDay(startOfWeek(new Date(), { locale }))`. Audit of the 41 importing
+  files: every other `startOfWeek`/`endOfWeek` already says `weekStartsOn:
+  1` (`lib/bookingWindow.ts`, `lib/availabilitySpan.ts`, the admin range);
+  no `format` string uses a week-dependent token (`w`, `e`, `c`, `I`, `Y`,
+  `R`); no `isSameWeek`/`setDay`/`getWeek`/`formatDistance`/`formatRelative`
+  call; `lib/billingPeriods.ts` does not use date-fns; `constructNow`/
+  `constructFrom`/`date-fns/constants` exist in 4. Fix (commit
+  `0fd5067` on the Dependabot branch): `lib/dateLocale.ts` exports
+  `ptMonday` — the stock `pt` with `weekStartsOn: 1` — and both localizers
+  use it; `tests/lib/dateLocale.test.ts` (3: Monday from every day of a
+  week, otherwise the stock locale, the real `dateFnsLocalizer` reports
+  first day 1). The component test mocks `dateFnsLocalizer`, which is why
+  the unit suite stayed green and only the browser suite caught it.
+  Evidence: `tsc`, Vitest 759/759 (77 files), `next lint`, `next build`,
+  Playwright 84 passed + 8 skipped (the two red specs among them) against
+  the production-build e2e stack on 3103/8103; CI on `0fd5067` green
+  (`Checks` + `Security`, `required-checks` ✓, both e2e shards), one
+  review round, no Copilot review within the 6-minute poll, no thread.
+  **DECISION (loop, D21):** the Monday start is pinned in the locale object
+  the calendars receive, not by wrapping `startOfWeek`, so the same locale
+  also drives `loc.format(…, culture)` and there is one place to read.
+  Reverse: a `startOfWeek` wrapper with `weekStartsOn: 1` in the localizer.
+- **#102 vite 7 → 8 — READY.** `vitest@5.0.3` peers `vite ^6.4.0 || ^7.0.0
+  || ^8.0.0`, `@vitejs/plugin-react@5.2.0` up to `^8.0.0`; `npm ls vite` =
+  one `vite@8.3.4` deduped, `npm ci` without peer warnings; `tsc`, Vitest
+  756/756, `next lint`, `next build`. CI's first `e2e (2/2)` failure
+  (`pay-mixed.spec.ts:33`, `packages.spec.ts:157`/B14) is the D15 signature
+  — vite drives Vitest only — and the re-run is green. No fix.
+- **#104 react / @types/react 18 → 19 — CLOSED,** `@dependabot ignore this
+  major version`. `next@14.2.35` peers `react ^18.2.0`; `npm ci` fails with
+  `ERESOLVE` (`@types/react-dom@18.3.7` vs `@types/react@19.3.0`), so lint,
+  unit, e2e and perf-web were red. React 19 comes with D22.
+- **#105 eslint 8 → 10 — CLOSED,** `@dependabot ignore this major version`.
+  `eslint-config-next@14.2.35` peers `eslint ^7.23.0 || ^8.0.0`; `npm ci`
+  fails with `ERESOLVE`. ESLint 9+/flat config comes with D22.
+- **#97 node:24-alpine → node:26-alpine — CLOSED, no ignore.** D11 holds:
+  Node 26 is Current until **2026-10-28** (nodejs/Release `schedule.json`;
+  Node 24 enters Maintenance on 2026-10-20), and the PR moves the image
+  without CI's `setup-node` steps. Retry after that date with the image
+  and the seven `setup-node` steps in one PR, gated on Vitest, `tsc`,
+  `next build`, the image build and Playwright. Dependabot proposes it
+  again on its own.
+
+Merge order handed to the owner: #100 → #101 → #99 (if GitHub reports a
+`requirements.txt` conflict after one merges, `@dependabot rebase` the next)
+→ #106 → #98 → `@dependabot rebase` #103 → #103 → `@dependabot rebase`
+#102 → #102. #97 after 2026-10-28; #104/#105 through D22.
+
+### D22 — Next 15 + React 19 + ESLint 9/10 upgrade
+
+**Priority: P2. State: QUEUED.** The three majors are one change because of
+the peer ranges found in D21: `next@14.2.35` peers `react ^18.2.0` (#104)
+and `eslint-config-next@14.2.35` peers `eslint ^7.23.0 || ^8.0.0` (#105),
+and `next lint` on 14 is the legacy ESLint 8 config. Scope: Next 15 (the
+request APIs `cookies()`/`headers()`/`params`/`searchParams` become
+Promises, `fetch` and GET route handlers stop being cached by default, the
+custom `server.js` and `lib/backendProxy.js` rewrite re-checked), React 19
+with `@types/react` 19 (`@testing-library/react` ≥ 16, `tests/setup.ts`'s
+act environment), ESLint 9+ with `eslint-config-next` 15's flat config
+replacing `next lint`, then `npm audit` re-read (D17's PostCSS findings
+follow Next). Acceptance: `npm ci` clean, `tsc`, Vitest, `next build`, the
+D16 visual gate, Playwright green, the audit clean at `--audit-level=high`.
+When it lands, reopen the Dependabot topics ignored in D21 (#104, #105) by
+bumping the ranges in the same PR.
 
 ## Reusable agent assignments
 

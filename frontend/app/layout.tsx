@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { Providers } from './providers'
 import pt from '@/lib/i18n/pt.json'
+import { getServerCatalog, getServerLocale } from '@/lib/i18n/server'
 import { ROBOTS_APP, metadataBaseFrom } from '@/lib/seo'
 import { publicApiOrigin } from '@/lib/backendProxy'
 import { BrandSymbols } from '@/components/brand/BrandSymbols'
@@ -55,8 +56,12 @@ const API_ORIGIN = publicApiOrigin()
 const SITE_ORIGIN = process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL).origin : null
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // B64: the cookie `setLocale` wrote decides the language of the first
+  // paint and the document's `lang`; a first visit is Portuguese. Reading
+  // it makes every route render per request, which the session already did.
+  const locale = getServerLocale()
   return (
-    <html lang="pt-PT">
+    <html lang={locale === 'en' ? 'en' : 'pt-PT'}>
       {API_ORIGIN && API_ORIGIN !== SITE_ORIGIN && (
         <head>
           <link rel="preconnect" href={API_ORIGIN} />
@@ -65,7 +70,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         {/* B51: the brand mark and wordmark, inlined once for every <use> on the page. */}
         <BrandSymbols />
-        <Providers>{children}</Providers>
+        {/* B65: the English catalog rides in the HTML only for an English
+            visitor; everyone else keeps the bundled Portuguese. */}
+        <Providers initialLocale={locale} initialCatalog={getServerCatalog(locale)}>{children}</Providers>
       </body>
     </html>
   )

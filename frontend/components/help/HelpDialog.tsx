@@ -3,15 +3,20 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { format, isPast, parseISO } from 'date-fns'
-import { pt } from 'date-fns/locale'
+import { ExternalLink } from 'lucide-react'
 import { bookingsApi, createAuthenticatedApi, supportApi } from '@/lib/api'
+import { dateFnsLocale } from '@/lib/utils'
 import { statusOf } from '@/lib/httpError'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { t, tFor, useLocale, useT } from '@/lib/i18n'
 import type { SupportCategory, SupportRequestBody } from '@/types'
+
+/** B70: the static site's FAQ answers most of what reaches this form. */
+export const FAQ_URL = 'https://flowspace.pt/#faq'
 
 interface HelpDialogProps {
   open: boolean
@@ -21,12 +26,20 @@ interface HelpDialogProps {
   initialBookingId?: string
 }
 
+/** A category's label in the browser's locale unless the caller binds one (B65). */
+export function supportCategoryLabel(category: SupportCategory, translate: typeof t = t): string {
+  return translate(`help.category_${category}`)
+}
+
+// B65: the admin's support screens are Portuguese only (D02) and read the
+// labels as values; the dialog goes through `supportCategoryLabel`.
+const ptLabel = (category: SupportCategory) => supportCategoryLabel(category, tFor('pt'))
 export const SUPPORT_CATEGORY_LABELS: Record<SupportCategory, string> = {
-  technical: 'Problema técnico',
-  booking: 'Reserva',
-  payment: 'Pagamento',
-  package: 'Pack',
-  other: 'Outro',
+  technical: ptLabel('technical'),
+  booking: ptLabel('booking'),
+  payment: ptLabel('payment'),
+  package: ptLabel('package'),
+  other: ptLabel('other'),
 }
 
 const MIN_MESSAGE = 20
@@ -36,14 +49,14 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Baked in at build time by next.config.js; "dev" when nothing is set.
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
 
-function submitErrorMessage(error: unknown): string {
+function submitErrorMessage(error: unknown, translate: typeof t): string {
   switch (statusOf(error)) {
-    case 401: return 'A sua sessão expirou. Entre de novo, ou envie sem sessão iniciada com o seu email.'
-    case 404: return 'Essa reserva já não existe. Escolha outra ou envie sem reserva.'
-    case 422: return 'Verifique os campos: a mensagem precisa de 20 a 2000 caracteres e o email de ser válido.'
-    case 429: return 'Demasiados pedidos seguidos. Aguarde um momento e tente de novo.'
-    case undefined: return 'Sem ligação ao servidor. Verifique a internet e tente novamente.'
-    default: return 'Não foi possível enviar o pedido. Tente novamente daqui a pouco.'
+    case 401: return translate('help.error_401')
+    case 404: return translate('help.error_404')
+    case 422: return translate('help.error_422', { min: MIN_MESSAGE, max: MAX_MESSAGE })
+    case 429: return translate('errors.too_many_requests')
+    case undefined: return translate('errors.offline')
+    default: return translate('help.error_default')
   }
 }
 
@@ -55,6 +68,8 @@ function submitErrorMessage(error: unknown): string {
 export function HelpDialog({ open, onOpenChange, initialCategory, initialBookingId }: HelpDialogProps) {
   const { data: session, status } = useSession()
   const signedIn = status === 'authenticated'
+  const t = useT()
+  const [locale] = useLocale()
   const api = useMemo(() => createAuthenticatedApi(session?.accessToken), [session?.accessToken])
 
   const [category, setCategory] = useState<SupportCategory>(initialCategory ?? 'technical')
@@ -85,9 +100,9 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
   function validate(): boolean {
     const next: typeof errors = {}
     const trimmed = message.trim()
-    if (trimmed.length < MIN_MESSAGE) next.message = `Escreva pelo menos ${MIN_MESSAGE} caracteres.`
-    else if (trimmed.length > MAX_MESSAGE) next.message = `No máximo ${MAX_MESSAGE} caracteres.`
-    if (!signedIn && !EMAIL_PATTERN.test(email.trim())) next.email = 'Indique um email válido para lhe respondermos.'
+    if (trimmed.length < MIN_MESSAGE) next.message = t('help.message_too_short', { min: MIN_MESSAGE })
+    else if (trimmed.length > MAX_MESSAGE) next.message = t('help.message_too_long', { max: MAX_MESSAGE })
+    if (!signedIn && !EMAIL_PATTERN.test(email.trim())) next.email = t('help.email_invalid')
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -114,23 +129,30 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-labelledby="help-title" aria-describedby="help-description">
         <DialogHeader>
-          <DialogTitle id="help-title">Ajuda</DialogTitle>
+          <DialogTitle id="help-title">{t('help.title')}</DialogTitle>
           <DialogDescription id="help-description">
-            {mutation.isSuccess
-              ? 'O seu pedido foi enviado.'
-              : 'Conte-nos o que se passa. Respondemos por email, normalmente no mesmo dia útil.'}
+            {mutation.isSuccess ? t('help.sent') : t('help.description')}
           </DialogDescription>
         </DialogHeader>
+        <p className="text-sm">
+          <a
+            href={FAQ_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {t('help.faq_link')}
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+          </a>
+        </p>
 
         {mutation.isSuccess ? (
           <div className="space-y-3">
             <p role="status" className="rounded-lg bg-accent p-4 text-sm text-foreground">
-              Referência <strong>#{mutation.data.reference}</strong>. Enviámos uma cópia para{' '}
-              {signedIn ? session?.user?.email : email.trim()}; respondemos por email para o mesmo endereço.
-              Guarde a referência se quiser perguntar por ele.
+              {t('help.success_reference_label')} <strong>#{mutation.data.reference}</strong>. {t('help.success_copy', { email: signedIn ? session?.user?.email ?? '' : email.trim() })}
             </p>
             <DialogFooter>
-              <Button onClick={() => onOpenChange(false)}>Fechar</Button>
+              <Button onClick={() => onOpenChange(false)}>{t('help.close')}</Button>
             </DialogFooter>
           </div>
         ) : (
@@ -140,7 +162,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
             noValidate
           >
             <div>
-              <Label htmlFor="help-category">Assunto</Label>
+              <Label htmlFor="help-category">{t('help.category_label')}</Label>
               <select
                 id="help-category"
                 value={category}
@@ -148,24 +170,24 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
                 className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
               >
                 {(Object.keys(SUPPORT_CATEGORY_LABELS) as SupportCategory[]).map((value) => (
-                  <option key={value} value={value}>{SUPPORT_CATEGORY_LABELS[value]}</option>
+                  <option key={value} value={value}>{supportCategoryLabel(value, t)}</option>
                 ))}
               </select>
             </div>
 
             {signedIn && upcoming.length > 0 && (
               <div>
-                <Label htmlFor="help-booking">Reserva (opcional)</Label>
+                <Label htmlFor="help-booking">{t('help.booking_label')}</Label>
                 <select
                   id="help-booking"
                   value={bookingId}
                   onChange={(e) => setBookingId(e.target.value)}
                   className="mt-1 flex h-10 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                 >
-                  <option value="">Não é sobre uma reserva</option>
+                  <option value="">{t('help.booking_none')}</option>
                   {upcoming.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.room?.name ?? 'Sala'} — {format(parseISO(b.start_time), "d MMM, HH:mm", { locale: pt })}
+                      {b.room?.name ?? t('help.room_fallback')} — {format(parseISO(b.start_time), "d MMM, HH:mm", { locale: dateFnsLocale(locale) })}
                     </option>
                   ))}
                 </select>
@@ -173,7 +195,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
             )}
 
             <div>
-              <Label htmlFor="help-message">Mensagem</Label>
+              <Label htmlFor="help-message">{t('help.message_label')}</Label>
               <Textarea
                 id="help-message"
                 value={message}
@@ -183,7 +205,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
                 aria-invalid={!!errors.message}
                 aria-describedby={errors.message ? 'help-message-error' : 'help-message-hint'}
                 className="mt-1"
-                placeholder="O que aconteceu, e o que esperavas que acontecesse?"
+                placeholder={t('help.message_placeholder')}
               />
               {errors.message ? (
                 <p id="help-message-error" role="alert" className="mt-1 text-xs text-red-600">{errors.message}</p>
@@ -193,7 +215,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
             </div>
 
             <div>
-              <Label htmlFor="help-email">Email</Label>
+              <Label htmlFor="help-email">{t('help.email_label')}</Label>
               <Input
                 id="help-email"
                 type="email"
@@ -203,7 +225,7 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
                 aria-invalid={!!errors.email}
                 aria-describedby={errors.email ? 'help-email-error' : undefined}
                 className={signedIn ? 'mt-1 bg-accent/50' : 'mt-1'}
-                placeholder="o-seu@email.pt"
+                placeholder={t('help.email_placeholder')}
                 autoComplete="email"
               />
               {errors.email && <p id="help-email-error" role="alert" className="mt-1 text-xs text-red-600">{errors.email}</p>}
@@ -216,21 +238,19 @@ export function HelpDialog({ open, onOpenChange, initialCategory, initialBooking
             </div>
 
             <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">O que enviamos com o pedido</summary>
+              <summary className="cursor-pointer">{t('help.context_summary')}</summary>
               <p className="mt-1">
-                Para percebermos o problema, o pedido leva o endereço da página onde está, o tamanho do ecrã,
-                o browser que usa, a versão da app ({APP_VERSION}) e a hora do envio
-                {signedIn ? ', e o identificador de utilizador da sua conta' : ''}. Nada mais: sem capturas de ecrã.
+                {t('help.context_body', { version: APP_VERSION, user: signedIn ? t('help.context_user') : '' })}
               </p>
             </details>
 
             {mutation.isError && (
-              <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitErrorMessage(mutation.error)}</p>
+              <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitErrorMessage(mutation.error, t)}</p>
             )}
 
             <DialogFooter className="gap-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancelar</Button>
-              <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? 'A enviar…' : 'Enviar'}</Button>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{t('help.cancel')}</Button>
+              <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? t('help.submitting') : t('help.submit')}</Button>
             </DialogFooter>
           </form>
         )}

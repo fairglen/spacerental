@@ -8,6 +8,7 @@ import withDragAndDrop, { type EventInteractionArgs } from 'react-big-calendar/l
 import { addDays, endOfDay, endOfWeek, format, getDay, parse, parseISO, startOfDay, startOfWeek } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { adminApi } from '@/lib/api'
+import { ptMonday } from '@/lib/dateLocale'
 import { useApi } from '@/lib/hooks/useApi'
 import { useOrg } from '@/contexts/OrgContext'
 import { adminBookingErrorMessage } from '@/lib/adminBookingErrors'
@@ -22,7 +23,7 @@ import type { Booking, Room, RoomBlock, Space } from '@/types'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css'
 
-const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales: { pt } })
+const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales: { pt: ptMonday } })
 
 type CalEvent = {
   id: string

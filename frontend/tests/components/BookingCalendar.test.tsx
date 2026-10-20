@@ -1,12 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, act, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { addDays, format, parseISO } from 'date-fns'
 import { bookingWindowLastDay } from '@/lib/bookingWindow'
-import { pt } from 'date-fns/locale'
+import { enGB, pt } from 'date-fns/locale'
 import type { ToolbarProps } from 'react-big-calendar'
 import { BookingCalendar } from '@/components/booking/BookingCalendar'
 import { spacesApi } from '@/lib/api'
+import { resetLocaleForTests, setLocale } from '@/lib/i18n'
 import type { AvailabilitySlot, Room } from '@/types'
 
 // react-big-calendar computes selections from real element geometry, which jsdom
@@ -32,6 +33,7 @@ type CapturedCalendarProps = {
   onNavigate: (date: Date) => void
   onDrillDown?: unknown
   selectable: boolean
+  culture: string
   messages: Record<string, unknown>
   formats: Record<string, unknown>
   components: { toolbar: React.ComponentType<ToolbarProps> }
@@ -129,6 +131,8 @@ beforeEach(() => {
   // A phone: the day view, which is what every test below was written against.
   setViewportWidth(390)
 })
+
+afterEach(() => resetLocaleForTests())
 
 describe('BookingCalendar selection', () => {
   it('books the whole dragged range, not just the first hour (B1)', async () => {
@@ -610,6 +614,58 @@ describe('BookingCalendar booking window (H01)', () => {
       expect(screen.getByRole('button', { name: 'Semana' })).toHaveClass('rbc-active')
       expect(screen.getByRole('button', { name: 'Dia' })).not.toHaveClass('rbc-active')
     })
+  })
+})
+
+// B65: the UI locale reaches react-big-calendar (culture, labels, formats)
+// and every notice the calendar itself prints.
+describe('BookingCalendar in English', () => {
+  type FormatProps = {
+    formats?: { dayHeaderFormat?: (date: Date, culture: string, localizer: { format: (d: Date, f: string, c?: string) => string }) => string }
+  }
+
+  it('hands react-big-calendar the English culture, labels and formats, and names a taken hour in English', async () => {
+    setLocale('en')
+    const taken = '2030-08-12T10:00:00Z'
+    const { onSlotSelect } = await renderCalendar([
+      slot('2030-08-12T09:00:00Z', '2030-08-12T10:00:00Z'),
+      slot(taken, '2030-08-12T11:00:00Z', false),
+    ])
+    expect(calendar!.culture).toBe('en')
+    expect(calendar!.messages).toMatchObject({ today: 'Today', day: 'Day', week: 'Week', noEventsInRange: 'No bookings.' })
+    expect(calendar!.events[0].title).toBe('Busy')
+    const enLocalizer = { format: (d: Date, f: string) => format(d, f, { locale: enGB }) }
+    expect((calendar as unknown as FormatProps).formats?.dayHeaderFormat?.(new Date(2026, 8, 18), 'en', enLocalizer)).toBe('Friday, 18 September')
+    const lastDay = format(bookingWindowLastDay(), 'd MMMM', { locale: enGB })
+    expect(screen.getByTestId('booking-window-hint')).toHaveTextContent(`Bookings open until ${lastDay}.`)
+
+    select('2030-08-12T09:00:00Z', '2030-08-12T11:00:00Z')
+    expect(onSlotSelect).not.toHaveBeenCalled()
+    const alert = await screen.findByRole('alert')
+    const from = format(parseISO(taken), 'HH:mm')
+    const to = format(parseISO('2030-08-12T11:00:00Z'), 'HH:mm')
+    expect(alert).toHaveTextContent(`The ${from}–${to} hour is already booked. Choose a free slot.`)
+    expect(document.body.textContent).not.toMatch(/reservad|Escolha|Reservas abertas|Hoje/)
+  })
+
+  it('names a closed day, and the toolbar, in English', async () => {
+    setLocale('en')
+    vi.mocked(spacesApi.getAvailabilityRange).mockResolvedValue([])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BookingCalendar room={room} onSlotSelect={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('Closed on this day. Use the arrows to see another day.')).toBeVisible()
+    const Toolbar = calendar!.components.toolbar
+    const localizer = { messages: {} } as ToolbarProps['localizer']
+    render(<Toolbar date={addDays(new Date(), 30)} view="day" views={['day', 'week']} label="x" localizer={localizer} onNavigate={vi.fn()} onView={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Today' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Day' })).toHaveClass('rbc-active')
+    expect(screen.getByRole('button', { name: 'Week' })).not.toHaveClass('rbc-active')
+    expect(screen.getByRole('button', { name: '›' })).toHaveAttribute('title', 'Bookings cannot be made beyond this date.')
+    expect(document.body.textContent).not.toMatch(/Fechado|Hoje|Semana|Dia\b/)
   })
 })
 

@@ -55,10 +55,11 @@ class BillingDetailsUpdate(BaseModel):
         return _blank_is_none(value)
 
 
+# The password policy lives in app/passwords.py (B66): the routes answer 422
+# with its reasons, so the schema only bounds the field's size.
 class UserRegister(BaseModel):
     email: EmailStr
-    # NIST SP 800-63B: min 8, accept up to at least 64 (we allow 128)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
     name: PersonName | None = None
 
 
@@ -73,13 +74,13 @@ class PasswordResetRequest(BaseModel):
 
 class PasswordResetConfirm(BaseModel):
     token: str = Field(min_length=1, max_length=200)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class PasswordSet(BaseModel):
     """An operator setting a customer's password directly (G03)."""
 
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class TokenOut(BaseModel):
