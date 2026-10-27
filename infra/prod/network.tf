@@ -48,7 +48,7 @@ resource "aws_vpc_security_group_ingress_rule" "web" {
 
 resource "aws_vpc_security_group_egress_rule" "web_v4" {
   security_group_id = aws_security_group.web.id
-  description       = "everything out (apt, Docker Hub, ECR, S3, SSM, Let's Encrypt, Stripe, Resend)"
+  description       = "everything out (apt, Docker Hub, ECR, S3, SSM, Lets Encrypt, Stripe, Resend)"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
