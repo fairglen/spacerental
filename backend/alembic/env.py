@@ -13,8 +13,11 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 config = context.config
 
-# Override sqlalchemy.url from app settings so .env is respected
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Override sqlalchemy.url from app settings so .env is respected. The value
+# goes through ConfigParser interpolation, where a bare `%` is a syntax
+# error: a percent-encoded password (deploy.sh composes one, E09) is
+# escaped as `%%` and read back intact.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

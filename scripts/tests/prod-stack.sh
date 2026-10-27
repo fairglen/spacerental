@@ -44,10 +44,20 @@ compose() {
     -f "$ROOT/docker-compose.prod.yml" -f "$ROOT/scripts/tests/prod-stack.compose.yml" "$@"
 }
 
+# The app role's password, as deploy/db-bootstrap.sh sets it: deliberately
+# full of the characters a URL must encode (+ / = @), so the percent-encoded
+# DATABASE_URL below exercises deploy.sh's composition, the backend's URL
+# parsing and alembic's `%%` escape (E09) end to end.
+APP_ROLE=spacerental_app
+APP_PASSWORD="pw+/=@$(openssl rand -hex 6)"
+url_encode() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
+
 write_env() {
   # The example as the template, so a variable the stack needs and the
-  # example forgot surfaces here; the local values replace its lines.
-  mkdir -p "$WORK/media"
+  # example forgot surfaces here; the local values replace its lines. The
+  # example carries no DATABASE_URL (deploy.sh composes it on the host, E09):
+  # here the composed shape, for the role db-bootstrap.sh creates below.
+  mkdir -p "$WORK/media" "$WORK/certs"
   local overrides=(
     "APP_ENV=production"
     "SECRET_KEY=$(openssl rand -hex 32)"
@@ -56,7 +66,7 @@ write_env() {
     "FRONTEND_URL=$BASE"
     "NEXTAUTH_URL=$BASE"
     "CORS_ORIGINS=$BASE"
-    "DATABASE_URL=postgresql+asyncpg://spacerental:spacerental@db:5432/spacerental"
+    "DATABASE_URL=postgresql+asyncpg://$APP_ROLE:$(url_encode "$APP_PASSWORD")@db:5432/spacerental?ssl=require"
     "CUSTOMER_ENROLLMENT_ORG_SLUG=flowspace"
     "STRIPE_MODE=stub"
     "STRIPE_WEBHOOK_SECRET=whsec_prod_stack_$(openssl rand -hex 8)"
@@ -68,6 +78,7 @@ write_env() {
     "PROD_STACK_ENV_FILE=$ENV_FILE"
     "PROD_STACK_HTTP_PORT=$HTTP_PORT"
     "PROD_STACK_HTTPS_PORT=$HTTPS_PORT"
+    "PROD_STACK_CERTS=$WORK/certs"
   )
   local keys
   keys=$(printf '%s\n' "${overrides[@]}" | cut -d= -f1 | paste -sd'|' -)
@@ -76,9 +87,12 @@ write_env() {
   chmod 600 "$ENV_FILE"
 }
 
+# The images deploy.sh is handed in section 8, named as ECR would name them.
+REG=prod-stack.invalid
 down() {
   [ -f "$ENV_FILE" ] || write_env
   compose down -v --remove-orphans
+  docker images --format '{{.Repository}}:{{.Tag}}' --filter "reference=$REG/spacerental/*" | xargs -r docker rmi > /dev/null 2>&1 || true
   # The media directory belongs to the backend's user after the chown below.
   docker run --rm -v "$WORK:/work" "$PG_IMAGE" sh -c 'rm -rf /work/media /work/backups'
   rm -rf "$WORK"
@@ -116,6 +130,23 @@ docker compose version
 if [ "${PROD_STACK_BUILD:-1}" = 1 ]; then
   compose build
 fi
+# The database first, with TLS as RDS enforces it (a self-signed pair the
+# overlay hands to the server), then the app role the way the host gets it:
+# deploy/db-bootstrap.sh as the master user, exactly as runbook 2.4 runs it
+# through Session Manager — DB_APP_PASSWORD standing in for the secret.
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=db \
+  -keyout "$WORK/certs/server.key" -out "$WORK/certs/server.crt" 2> /dev/null
+chmod 644 "$WORK/certs/server.key" "$WORK/certs/server.crt"
+compose up -d --no-build --wait --wait-timeout 120 db
+printf 'DB_HOST=db\nDB_PORT=5432\nDB_NAME=spacerental\n' > "$WORK/deploy.env"
+db_bootstrap() {
+  DEPLOY_CONF="$WORK/deploy.env" DB_APP_PASSWORD="$APP_PASSWORD" DB_BOOTSTRAP_DOCKER_NETWORK="${PROJECT}_default" \
+    MASTER_URL=postgresql://spacerental:spacerental@db:5432/spacerental "$ROOT/deploy/db-bootstrap.sh"
+}
+first_bootstrap=$(db_bootstrap)
+check "db-bootstrap.sh hands the database to $APP_ROLE" "$(grep -c "owner of spacerental: $APP_ROLE" <<< "$first_bootstrap")" 1
+check "db-bootstrap.sh connects as $APP_ROLE with that password" "$(grep -c "connected as $APP_ROLE" <<< "$first_bootstrap")" 1
+check "db-bootstrap.sh a second time changes nothing and still passes" "$(db_bootstrap | grep -c "connected as $APP_ROLE")" 1
 # The media directory is owned by the image's `app` user, as deploy.sh does
 # on the host, so APP_ENV=production's writable-MEDIA_ROOT check is real.
 compose run --rm --no-deps --user root --entrypoint chown backend app:app /app/media
@@ -131,11 +162,16 @@ wait_for() { # url label
 wait_for "$HEALTH" "the API through Caddy"
 wait_for "$BASE/api/auth/providers" "the frontend through Caddy"
 
-echo "── 1. health probes through Caddy"
+echo "── 1. health probes through Caddy; the database side of E09"
 check "GET / (the landing page)" "$(status_of -o /dev/null "$BASE/")" 200
 check "GET /backend/health (the API through the Next.js proxy)" "$(status_of -o /dev/null "$HEALTH")" 200
 check "health body" "$(curl -ksS "$HEALTH")" '{"status":"ok"}'
 check "GET /api/auth/providers (NextAuth)" "$(status_of -o /dev/null "$BASE/api/auth/providers")" 200
+sql() { compose exec -T db psql -U spacerental -d spacerental -tAc "$1"; }
+check "the migrations ran as $APP_ROLE (every public table is its)" \
+  "$(sql "select count(*) > 0 and count(*) = count(*) filter (where tableowner = '$APP_ROLE') from pg_tables where schemaname = 'public'")" t
+check "the backend's connections are TLS (pg_stat_ssl; the URL says ssl=require)" \
+  "$(sql "select count(*) > 0 and bool_and(s.ssl) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.usename = '$APP_ROLE'")" t
 
 echo "── 2. bootstrap once (E03): the organisation, its space, rooms, pack and admin; the seed refuses"
 bootstrap() {
@@ -297,6 +333,62 @@ echo "── 7. the production interlock is armed (E02): the backend logs the ex
 # Once per process that imports app.config (the migration, each worker).
 warned=$(compose logs --no-color backend | grep -c 'EMAIL_MODE=stub under APP_ENV=production' || true)
 check "EMAIL_MODE=stub warning in the backend log" "$([ "$warned" -ge 1 ] && echo yes || echo no)" yes
+
+echo "── 8. deploy/deploy.sh on this stack (DEPLOY_LOCAL): a healthy deploy, then a broken release that rolls back by itself (E14)"
+# The images the stack was built with, tagged as deploy.sh expects ECR's:
+# aaaaaaa and ccccccc are the real images; bbbbbbb's frontend is the same
+# image with an entrypoint that exits at once — a release that never gets
+# healthy. (A Compose overlay could not play that part: it would still apply
+# to the rollback, which on the host runs the same files with older images.)
+# docker-compose.prod.yml's defaults for BACKEND_IMAGE/FRONTEND_IMAGE — what
+# `compose build` and CI's bake produced for this stack.
+BACKEND_LOCAL=spacerental-backend:local
+FRONTEND_LOCAL=spacerental-frontend:local
+# Each release's images appear right before its deploy, as on the host
+# (step 4 pulls them): a deploy's retention step (E13) keeps the current and
+# the previous release only, so images tagged ahead of time would be gone.
+tag_release() { # sha
+  docker tag "$BACKEND_LOCAL" "$REG/spacerental/backend:sha-$1"
+  docker tag "$FRONTEND_LOCAL" "$REG/spacerental/frontend:sha-$1"
+}
+deploy_local() { # sha → deploy.sh's stdout in $WORK/deploy-<sha>.out, stderr in .err, its exit code returned
+  DEPLOY_LOCAL=1 DEPLOY_LOCAL_ENV="$ENV_FILE" DEPLOY_DIR="$WORK" DEPLOY_CONF="$WORK/deploy.env" ECR_REGISTRY="$REG" \
+    DEPLOY_COMPOSE_PROJECT="$PROJECT" DEPLOY_COMPOSE_FILES="$ROOT/docker-compose.prod.yml $ROOT/scripts/tests/prod-stack.compose.yml" \
+    HEALTH_TIMEOUT=60 MEDIA_HOST_DIR="$WORK/media" "$ROOT/deploy/deploy.sh" "$1" > "$WORK/deploy-$1.out" 2> "$WORK/deploy-$1.err"
+}
+frontend_image() { docker inspect --format '{{.Config.Image}}' "$(compose ps -q frontend)"; }
+deploy_err() { # sha — deploy.sh's stderr, for the log when a check fails
+  sed 's/^/      deploy.sh: /' "$WORK/deploy-$1.err" | tail -40
+}
+tag_release aaaaaaa
+deploy_local aaaaaaa && DEPLOY_EXIT=0 || DEPLOY_EXIT=$?
+[ "$DEPLOY_EXIT" = 0 ] || deploy_err aaaaaaa
+check "deploy.sh aaaaaaa exits 0" "$DEPLOY_EXIT" 0
+check "…and reports the deploy" "$(grep -c '^deployed aaaaaaa' "$WORK/deploy-aaaaaaa.out")" 1
+check "CURRENT_SHA = aaaaaaa" "$(cat "$WORK/CURRENT_SHA")" aaaaaaa
+check "the frontend runs the aaaaaaa image" "$(frontend_image)" "$REG/spacerental/frontend:sha-aaaaaaa"
+docker tag "$BACKEND_LOCAL" "$REG/spacerental/backend:sha-bbbbbbb"
+printf 'FROM %s\nENTRYPOINT ["sh", "-c", "exit 1"]\n' "$FRONTEND_LOCAL" | docker build -q -t "$REG/spacerental/frontend:sha-bbbbbbb" - > /dev/null
+deploy_local bbbbbbb && DEPLOY_EXIT=0 || DEPLOY_EXIT=$?
+grep -q '^rolled back to aaaaaaa' "$WORK/deploy-bbbbbbb.out" || deploy_err bbbbbbb
+check "deploy.sh bbbbbbb (a frontend that exits) exits 1" "$DEPLOY_EXIT" 1
+check "…after rolling back" "$(grep -c '^rolled back to aaaaaaa' "$WORK/deploy-bbbbbbb.out")" 1
+check "the frontend runs the aaaaaaa image again" "$(frontend_image)" "$REG/spacerental/frontend:sha-aaaaaaa"
+check "CURRENT_SHA is still aaaaaaa" "$(cat "$WORK/CURRENT_SHA")" aaaaaaa
+check "the site answers after the rollback" "$(status_of -o /dev/null "$HEALTH")" 200
+
+echo "── 9. a third release: the host keeps this one and the previous one, the broken one's images go (E13)"
+tag_release ccccccc
+deploy_local ccccccc && DEPLOY_EXIT=0 || DEPLOY_EXIT=$?
+[ "$DEPLOY_EXIT" = 0 ] || deploy_err ccccccc
+check "deploy.sh ccccccc exits 0" "$DEPLOY_EXIT" 0
+check "PREVIOUS_SHA = aaaaaaa" "$(cat "$WORK/PREVIOUS_SHA")" aaaaaaa
+check "CURRENT_SHA = ccccccc" "$(cat "$WORK/CURRENT_SHA")" ccccccc
+check "the frontend runs the ccccccc image" "$(frontend_image)" "$REG/spacerental/frontend:sha-ccccccc"
+check "deploy.sh reports the removals" "$(grep -c "^removed $REG/spacerental/.*:sha-bbbbbbb" "$WORK/deploy-ccccccc.out")" 2
+check "only the current and the previous images remain under $REG/spacerental/*" \
+  "$(docker images --format '{{.Repository}}:{{.Tag}}' --filter "reference=$REG/spacerental/*" | sort | paste -sd' ' -)" \
+  "$REG/spacerental/backend:sha-aaaaaaa $REG/spacerental/backend:sha-ccccccc $REG/spacerental/frontend:sha-aaaaaaa $REG/spacerental/frontend:sha-ccccccc"
 
 trap - ERR
 if [ "$fail" -ne 0 ]; then

@@ -1,0 +1,14 @@
+# E15: runs when spacerental-backup.service fails (its OnFailure=): the last
+# 50 journal lines of that backup go to the alarms topic, so a failed backup
+# is an email in the owner's inbox, not a line on the host. The missing-run
+# case (nothing ran at all) is the CloudWatch alarm on FlowSpace/BackupSucceeded.
+[Unit]
+Description=FlowSpace backup failed: notify the alarms topic
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# AWS_REGION and ALARM_TOPIC_ARN, written by cloud-init (E08, E09).
+EnvironmentFile=/etc/spacerental/deploy.env
+ExecStart=/bin/sh -c 'aws sns publish --region "$AWS_REGION" --topic-arn "$ALARM_TOPIC_ARN" --subject "FlowSpace backup FAILED" --message "$(journalctl -t spacerental-backup -n 50 --no-pager)"'

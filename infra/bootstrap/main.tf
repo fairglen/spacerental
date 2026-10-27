@@ -75,10 +75,14 @@ resource "aws_iam_openid_connect_provider" "github" {
 # whole authorisation model, so the subject patterns are deliberately exact
 # (`StringEquals`, no wildcards).
 data "aws_iam_policy_document" "assume_from_github" {
+  # E10: the deploy role answers to one GitHub environment, `production-app`,
+  # and nothing else — not a branch (any workflow on main could claim it),
+  # not the infrastructure environment. The owner creates it without
+  # reviewers (continuous deploys) or with one (every deploy waits).
   for_each = {
     plan   = ["repo:${var.github_repo}:pull_request"]
     apply  = ["repo:${var.github_repo}:environment:production"]
-    deploy = ["repo:${var.github_repo}:ref:refs/heads/main", "repo:${var.github_repo}:environment:production", "repo:${var.github_repo}:environment:production-app"]
+    deploy = ["repo:${var.github_repo}:environment:production-app"]
   }
 
   statement {
@@ -138,6 +142,40 @@ resource "aws_iam_role_policy" "plan_state" {
   policy = data.aws_iam_policy_document.plan_state.json
 }
 
+# E11: ReadOnlyAccess can read every object and parameter in the account,
+# and the plan job runs a pull request's own workflow file. What a plan must
+# never read is denied explicitly, over the managed policy: the dumps and
+# media in the backups bucket, the production .env, every secret, every KMS
+# decryption. The state bucket grant above is untouched — a plan needs it.
+data "aws_iam_policy_document" "plan_deny" {
+  statement {
+    sid       = "NoBackupsBucketObjects"
+    effect    = "Deny"
+    actions   = ["s3:GetObject*"]
+    resources = ["arn:aws:s3:::${local.backups_bucket}/*"]
+  }
+
+  statement {
+    sid       = "NoProductionParameters"
+    effect    = "Deny"
+    actions   = ["ssm:GetParameter*"]
+    resources = ["arn:aws:ssm:${var.region}:${local.account_id}:parameter/spacerental/prod/*"]
+  }
+
+  statement {
+    sid       = "NoSecretsNoDecryption"
+    effect    = "Deny"
+    actions   = ["secretsmanager:GetSecretValue", "kms:Decrypt"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "plan_deny" {
+  name   = "deny-production-data"
+  role   = aws_iam_role.plan.id
+  policy = data.aws_iam_policy_document.plan_deny.json
+}
+
 # ── spacerental-gh-apply: `terraform apply` behind the production
 #    environment's approval ───────────────────────────────────────────────────
 #
@@ -158,11 +196,19 @@ resource "aws_iam_role_policy_attachment" "apply_admin" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-# ── spacerental-gh-deploy: push images, run deploy.sh on the instance ───────
+# ── spacerental-gh-deploy: push images, run the deploy document on the
+#    instance ──────────────────────────────────────────────────────────────
+#
+# E10: the only command this role can send is the `spacerental-deploy` SSM
+# document (infra/prod), whose single parameter is a git sha and whose only
+# step is `/srv/spacerental/deploy.sh <sha>`; AWS-RunShellScript is not
+# allowed, so a compromised workflow can deploy a commit, not run a shell.
+# The document's ARN is written out rather than read from infra/prod: the
+# two modules share no state.
 
 resource "aws_iam_role" "deploy" {
   name                 = "spacerental-gh-deploy"
-  description          = "deploy.yml: ECR push, SSM RunCommand on the tagged instance, the deploy/ prefix of the backups bucket"
+  description          = "deploy.yml (environment production-app): ECR push, the spacerental-deploy SSM document on the tagged instance, the deploy/ prefix of the backups bucket"
   assume_role_policy   = data.aws_iam_policy_document.assume_from_github["deploy"].json
   max_session_duration = 3600
 }
@@ -219,10 +265,10 @@ data "aws_iam_policy_document" "deploy" {
   }
 
   statement {
-    sid       = "RunShellScriptDocument"
+    sid       = "RunTheDeployDocumentOnly"
     effect    = "Allow"
     actions   = ["ssm:SendCommand"]
-    resources = ["arn:aws:ssm:${var.region}::document/AWS-RunShellScript"]
+    resources = ["arn:aws:ssm:${var.region}:${local.account_id}:document/spacerental-deploy"]
   }
 
   statement {
