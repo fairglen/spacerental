@@ -1960,6 +1960,9 @@ the admin calendar were over on `main` before this PR and end ~6.5 KB
 heavier through webpack's re-cut of date-fns — whether those two are
 re-baselined (measured + 5%: 266 and 368) or wait for D25 is the owner's
 call; the budgets were not touched here.
+**DECISION (owner, 2026-10-21): re-baseline.** PR `chore/perf-budget-rebaseline`
+sets dashboard 246 → 266 and admin-calendar 342 → 368 (measured + ~5%,
+the `_comment` says what moved them); D25 stays the way back down.
 
 ## Production on AWS, Phase 0 (E-series) — owner assignment 2026-10-13 (PR A `feat/prod-stack` on `main`; PR B `feat/aws-infra` stacked on it)
 
