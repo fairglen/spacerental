@@ -24,9 +24,14 @@ resource "aws_db_parameter_group" "main" {
   name   = local.name
   family = "postgres${var.db_engine_version}"
 
+  # `rds.force_ssl` is static: RDS stores it as pending-reboot whatever the
+  # request said, so the provider's default (immediate) was an in-place
+  # change on every plan and apply (E17). Saying pending-reboot ends that;
+  # the value has been 1 since the first apply.
   parameter {
-    name  = "rds.force_ssl"
-    value = "1"
+    name         = "rds.force_ssl"
+    value        = "1"
+    apply_method = "pending-reboot"
   }
 
   parameter {
