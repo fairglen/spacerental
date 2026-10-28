@@ -129,7 +129,7 @@ class TestPostgresStore:
         assert await db_session.scalar(count) == 1
         # The next check after CLEANUP_EVERY_SECONDS sweeps rows older than
         # two hours; the current window's row stays.
-        pg_limiter._last_cleanup = 0.0
+        pg_limiter._next_cleanup = 0.0
         await pg_limiter.acheck("t", "fresh", 5, 60)
         rows = (await db_session.execute(select(RateLimitHit.identity))).scalars().all()
         assert rows == ["fresh"]

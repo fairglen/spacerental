@@ -207,7 +207,10 @@ class PostgresRateLimiter:
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
-        self._last_cleanup = 0.0
+        # A monotonic deadline, 0 = on the first check: an uptime-based
+        # "last time" would skip the first ten minutes of a freshly booted
+        # host (and of a CI runner).
+        self._next_cleanup = 0.0
 
     @staticmethod
     def _window_start(now: float, window_seconds: int) -> datetime:
@@ -229,8 +232,8 @@ class PostgresRateLimiter:
                     _UPSERT,
                     {"scope": tier, "identity": identity, "window_start": window_start},
                 )
-                if time.monotonic() - self._last_cleanup > CLEANUP_EVERY_SECONDS:
-                    self._last_cleanup = time.monotonic()
+                if time.monotonic() >= self._next_cleanup:
+                    self._next_cleanup = time.monotonic() + CLEANUP_EVERY_SECONDS
                     await conn.execute(_CLEANUP)
                 await conn.commit()
         except (SQLAlchemyError, OSError) as exc:
