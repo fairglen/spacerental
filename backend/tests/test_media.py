@@ -389,7 +389,9 @@ class TestStorageSeam:
     def test_an_unimplemented_backend_fails_loudly_instead_of_falling_back(self, monkeypatch):
         from app import media
 
-        monkeypatch.setattr(settings, "MEDIA_STORAGE", "s3")
+        # "s3" is implemented since E18 (tests/test_media_s3.py); anything
+        # else still stops the app rather than writing to local disk.
+        monkeypatch.setattr(settings, "MEDIA_STORAGE", "r2")
         with pytest.raises(RuntimeError, match="not implemented"):
             media.build_media_storage()
 

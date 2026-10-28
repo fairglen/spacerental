@@ -13,6 +13,8 @@ python-multipart==0.0.32
 # Image validation and processing for uploaded room/space photos (C14).
 pillow==13.0.0
 stripe==16.0.0
+# E18: MEDIA_STORAGE=s3 — the only AWS SDK use, inside app/media.py.
+boto3==1.42.97
 # P2.3: the JSON renderer (ORJSONResponse) — the performance work's one new runtime dependency.
 orjson==3.13.0
 tzdata==2026.5

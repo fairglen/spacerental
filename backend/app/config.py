@@ -99,12 +99,20 @@ class Settings(BaseSettings):
     RATE_LIMIT_SUPPORT_MAX_REQUESTS: int = 5
     RATE_LIMIT_SUPPORT_WINDOW_SECONDS: int = 3600
 
-    # ── Media (room and space photos, C14) ───────────────────────────────
+    # ── Media (room and space photos, C14; private invoice PDFs, I05) ────
     # "local" writes processed photos under MEDIA_ROOT and the API serves them
-    # read-only at /media. There is no other implementation yet; anything else
-    # stops the app at startup (see app.media.build_media_storage).
+    # read-only at /media — the default, what development and the tests run.
+    # "s3" (E18) puts them in MEDIA_S3_BUCKET under MEDIA_S3_PREFIX, served
+    # by the CloudFront distribution MEDIA_BASE_URL names (then mandatory);
+    # credentials come from the environment (the instance role), never from
+    # here. Anything else stops the app at startup
+    # (app.media.validate_media_settings).
     MEDIA_STORAGE: str = "local"
     MEDIA_ROOT: str = "./media"
+    MEDIA_S3_BUCKET: str | None = None
+    MEDIA_S3_PREFIX: str = "media/"
+    # boto3's region; the awslogs overlay reads the same variable on the host.
+    AWS_REGION: str | None = None
     # Browser-facing URL that maps to MEDIA_ROOT, handed to the visitor's
     # browser inside API responses. Empty (the default) = derived from
     # FRONTEND_URL as `<FRONTEND_URL>/backend/media` — the API's /media reached
@@ -178,7 +186,10 @@ class Settings(BaseSettings):
         """One variable drives every browser-facing URL (D20): FRONTEND_URL —
         localhost, a LAN IP or an ngrok domain — unless a value is explicit."""
         base = self.FRONTEND_URL.rstrip("/")
-        if not self.MEDIA_BASE_URL.strip():
+        # In s3 mode (E18) nothing answers at the API's /media, so there is
+        # no default to derive: an empty value stays empty and stops the app
+        # (app.media.validate_media_settings) instead of serving 404s.
+        if not self.MEDIA_BASE_URL.strip() and self.MEDIA_STORAGE != "s3":
             self.MEDIA_BASE_URL = f"{base}{PROXY_PREFIX}/media"
         if not self.STRIPE_STUB_CHECKOUT_BASE_URL.strip():
             self.STRIPE_STUB_CHECKOUT_BASE_URL = f"{base}{PROXY_PREFIX}"
@@ -224,11 +235,22 @@ def production_problems(current: Settings) -> list[str]:
             )
     if (urlsplit(current.DATABASE_URL).hostname or "") in _LOCAL_DB_HOSTS:
         problems.append("DATABASE_URL must not point at localhost")
-    root = Path(current.MEDIA_ROOT)
-    if not root.is_dir() or not os.access(root, os.W_OK):
-        problems.append(
-            f"MEDIA_ROOT {current.MEDIA_ROOT!r} must be an existing, writable directory"
-        )
+    if current.MEDIA_STORAGE == "local":
+        root = Path(current.MEDIA_ROOT)
+        if not root.is_dir() or not os.access(root, os.W_OK):
+            problems.append(
+                f"MEDIA_ROOT {current.MEDIA_ROOT!r} must be an existing, writable directory"
+            )
+    elif current.MEDIA_STORAGE == "s3":
+        # The same checks app.media.validate_media_settings() makes, listed
+        # here with the rest so the operator reads one list (E02).
+        if not (current.MEDIA_S3_BUCKET or "").strip():
+            problems.append("MEDIA_STORAGE=s3 requires MEDIA_S3_BUCKET")
+        if not current.MEDIA_BASE_URL.strip():
+            problems.append(
+                "MEDIA_STORAGE=s3 requires MEDIA_BASE_URL (the CloudFront origin in front of "
+                "the bucket)"
+            )
     return problems
 
 
