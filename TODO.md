@@ -4897,6 +4897,79 @@ that touches only `infra/**` still runs `Checks` + `Deploy` on `main`
 the `production-app` environment is reviewer-less by design (E10), the
 `production` one is not.
 
+## Safe for more than one process (N-series, N01–N03) — owner assignment 2026-10-28 (PR 3, `fix/multi-worker`)
+
+Finding: production runs `WEB_CONCURRENCY=2`, so the in-process rate
+limiter counted per worker (every limit effectively 2× the `.env`) and the
+lifespan started one hold sweeper per worker. After this series the API is
+safe for N workers and N replicas: the limits are the deployment's and one
+sweep runs per tick. **Still single-instance:** the deploy itself
+(`deploy.sh` on one host, one Compose project) and the backup timer (one
+host's systemd unit publishes the one `BackupSucceeded` data point).
+
+### N01 — One hold sweeper per deployment (advisory lock)
+
+**Priority: P1. State: IN PROGRESS 2026-10-28 (PR `fix/multi-worker`).**
+`app/holds.py`: every process still starts the task, but a sweep first
+takes `pg_try_advisory_xact_lock(7120001)` in its own session; a process
+that finds it taken skips the tick and logs at DEBUG
+(`sweep_lapsed_holds_once` → `None`). Transaction-level, so the lock lives
+exactly as long as the sweep's transaction and a worker that dies mid-sweep
+leaves nothing behind. **DECISION (loop):** the transaction lock over the
+session lock the assignment named — same key, same scope (the sweep), no
+explicit unlock to forget, and the sweep already is one transaction.
+**Validation:** `tests/test_hold_sweep.py::TestOneSweeperPerDeployment` —
+a sweep skips while another session holds the lock (the hold stays
+`pending`, the DEBUG line is logged) and sweeps once the lock is released;
+two concurrent sweeps (the first slowed inside `_expire_lapsed_holds`)
+return `[1, None]`, the credit path runs once, a third sweep finds nothing.
+The existing sweeper and read-path tests are unchanged.
+
+### N02 — Rate limiter: a PostgreSQL store shared by every worker and replica
+
+**Priority: P1. State: IN PROGRESS 2026-10-28 (PR `fix/multi-worker`).**
+`RATE_LIMIT_STORE=memory|postgres` (`app/config.py`, default `memory`;
+`.env.production.example` says `postgres`); anything else stops the app.
+`app/ratelimit.py`: `PostgresRateLimiter` keeps fixed-window counters in
+`rate_limit_hits (scope, identity, window_start, hits)` — one `INSERT … ON
+CONFLICT DO UPDATE … RETURNING hits` per throttled request on a
+short-lived connection from the engine (the middleware runs before any
+dependency resolves, so no request session exists yet), plus one `DELETE`
+of rows older than two hours at most every 10 minutes per process. The
+middleware awaits `acheck()` on either store; `RateLimiter` (memory,
+sliding) keeps its sync `check()` for the existing unit tests. Migration
+`0020_rate_limit_hits` (expand-only) and the `RateLimitHit` model.
+**DECISION (loop):** fixed windows in SQL (one row per client and window,
+one statement) rather than the memory store's sliding log; the cost is up
+to 2× the limit across a window boundary, accepted at 10/min.
+**DECISION (loop, as the module docstring asks):** a store that cannot be
+reached fails **closed** for `auth` and `support` — 503 `Service
+unavailable`, `Retry-After: 5`, an ERROR line — because those tiers gate
+Argon2 and an outgoing email; and fails **open** with a WARNING for
+`public` and `upload` (reads; operator uploads behind a session). A
+database the limiter cannot reach is one the endpoint cannot reach either.
+**Validation:** `tests/test_ratelimit_store.py` — the contract both stores
+keep (parametrised: limit then reject, remaining, independent identities
+and tiers); the postgres store's fixed window and `retry_after`; **two
+limiter instances on one database count together** (remaining 2 → 1 → 0,
+then both refuse); the periodic cleanup; the setting selects the store and
+an unknown one stops the app; through the real routes with the store
+swapped under the middleware: the auth limit is exactly
+`RATE_LIMIT_AUTH_MAX_REQUESTS`, public and auth budgets independent; an
+unreachable store (connection refused) → login 503, support 503, spaces
+200 with the WARNING. Migration round trip (upgrade → check → downgrade →
+upgrade → check) on a fresh database: clean. **Acceptance after the
+deploy (owner or loop, from outside):** `RATE_LIMIT_AUTH_MAX_REQUESTS`+1
+wrong-password logins → the last one 429 (today the 11th passes); the
+backend log shows one "hold sweep" line per interval, not two.
+
+### N03 — Drop `msw` (never imported; D27 follow-up)
+
+**Priority: P3. State: IN PROGRESS 2026-10-28 (PR `fix/multi-worker`).**
+`frontend/package.json` loses `msw`; the lockfile regenerated with npm 11
+(543 lines, msw's own tree, nothing else). Vitest, lint and the e2e shards
+prove nothing used it.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are

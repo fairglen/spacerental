@@ -407,8 +407,12 @@ changing it, and move a task there yourself when it reaches DONE.
 - **Email:** stub/live gateway and Portuguese confirmation/cancellation messages
   run through in-process BackgroundTasks. A durable outbox and retries remain O01.
 - **Pagination:** admin booking pagination is implemented; wider coverage is D05.
-- **Rate limiting:** auth/public in-process limits and explicit Compose settings
-  are implemented. Preserve their coverage when changing authentication.
+- **Rate limiting:** tiered limits with two stores (`RATE_LIMIT_STORE`):
+  `memory` per process for development, `postgres` shared by every worker and
+  replica for production (N02). The hold sweeper runs once per deployment
+  under an advisory lock (N01). Preserve their coverage when changing
+  authentication; what is still single-instance is the deploy itself and the
+  backup timer.
 - **i18n:** marketing/layout copy uses PT/EN catalogs with a persisted locale
   switcher. Booking/admin copy remains Portuguese; further expansion is D02.
 - **RLS and audit:** manual tenant filters remain mandatory. PostgreSQL RLS is D01;
