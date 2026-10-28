@@ -9,16 +9,21 @@
 #   BACKUP_BUCKET          the backups bucket; unset = write under BACKUP_DIR
 #                          instead (the local test, scripts/tests/backup-restore.sh)
 #   BACKUP_DIR             local target without a bucket (default ./backups)
-#   ENV_FILE               the app's .env, read for DATABASE_URL only
-#                          (default: .env next to this script); absent =
-#                          nothing is deployed yet, exit 0 without a backup
-#   MEDIA_DIR              what to copy (default /srv/media)
+#   ENV_FILE               the app's .env, read for DATABASE_URL and the
+#                          MEDIA_* keys (default: .env next to this script);
+#                          absent = nothing is deployed yet, exit 0 without
+#                          a backup
+#   MEDIA_DIR              what to copy under MEDIA_STORAGE=local (default
+#                          /srv/media). Under MEDIA_STORAGE=s3 (E18) the
+#                          media bucket is copied bucket-to-bucket instead —
+#                          MEDIA_S3_BUCKET/MEDIA_S3_PREFIX from the .env —
+#                          still additively
 #   BACKUP_DOCKER_NETWORK  the network the dump container joins (default
 #                          bridge — reaches RDS; the local test passes its
 #                          Compose project's network)
 #   AWS_REGION             for the CLI
-#   BACKUP_DRY_RUN         1 = print the CloudWatch metric call instead of
-#                          making it (the local test)
+#   BACKUP_DRY_RUN         1 = print every aws call instead of making it
+#                          (the local test)
 #
 # Non-zero on any failure; every step is also logged with
 # `logger -t spacerental-backup` for the host's journal. A success ends with
@@ -63,7 +68,36 @@ database_url() {
   echo "${raw/&ssl=/&sslmode=}"
 }
 
+# A plain KEY=value from the .env (no quotes, no export): what the
+# application reads, as deploy.sh writes it.
+env_value() { # key [default]
+  local raw
+  raw=$(grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2-)
+  raw=${raw#\"}
+  raw=${raw%\"}
+  echo "${raw:-${2:-}}"
+}
+
+aws() {
+  if [ "${BACKUP_DRY_RUN:-0}" = 1 ]; then
+    printf '+ aws'
+    printf ' %q' "$@"
+    echo
+  else
+    command aws "$@"
+  fi
+}
+
 URL=$(database_url)
+MEDIA_STORAGE=$(env_value MEDIA_STORAGE local)
+MEDIA_S3_BUCKET=$(env_value MEDIA_S3_BUCKET)
+MEDIA_S3_PREFIX=$(env_value MEDIA_S3_PREFIX media/)
+MEDIA_S3_PREFIX=${MEDIA_S3_PREFIX#/}
+MEDIA_S3_PREFIX=${MEDIA_S3_PREFIX%/}/
+if [ "$MEDIA_STORAGE" = s3 ] && [ -z "$MEDIA_S3_BUCKET" ]; then
+  log "MEDIA_STORAGE=s3 but MEDIA_S3_BUCKET is empty in $ENV_FILE"
+  exit 1
+fi
 DATE=$(date -u +%F)
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
@@ -78,9 +112,20 @@ chmod 600 "$STAGE/$DATE.dump" 2> /dev/null || true
 if [ -n "${BACKUP_BUCKET:-}" ]; then
   log "uploading $DATE.dump to s3://$BACKUP_BUCKET/dumps/"
   aws s3 cp "$STAGE/$DATE.dump" "s3://$BACKUP_BUCKET/dumps/$DATE.dump" --only-show-errors
-  log "syncing $MEDIA_DIR to s3://$BACKUP_BUCKET/media/ (additive, never --delete)"
-  aws s3 sync "$MEDIA_DIR" "s3://$BACKUP_BUCKET/media/" --only-show-errors
+  if [ "$MEDIA_STORAGE" = s3 ]; then
+    # E18: the photos are already in S3; the copy the backups bucket keeps
+    # (lifecycle: versions for 90 days, never expired) is made bucket to
+    # bucket, additively, without the bytes touching the host.
+    log "syncing s3://$MEDIA_S3_BUCKET/$MEDIA_S3_PREFIX to s3://$BACKUP_BUCKET/media/ (additive, never --delete)"
+    aws s3 sync "s3://$MEDIA_S3_BUCKET/$MEDIA_S3_PREFIX" "s3://$BACKUP_BUCKET/media/" --only-show-errors
+  else
+    log "syncing $MEDIA_DIR to s3://$BACKUP_BUCKET/media/ (additive, never --delete)"
+    aws s3 sync "$MEDIA_DIR" "s3://$BACKUP_BUCKET/media/" --only-show-errors
+  fi
   log "done: s3://$BACKUP_BUCKET/dumps/$DATE.dump ($(du -h "$STAGE/$DATE.dump" | cut -f1))"
+elif [ "$MEDIA_STORAGE" = s3 ]; then
+  echo "$TAG: MEDIA_STORAGE=s3 needs BACKUP_BUCKET (a bucket-to-bucket copy has no local form)" >&2
+  exit 1
 else
   mkdir -p "$BACKUP_DIR/dumps" "$BACKUP_DIR/media"
   cp "$STAGE/$DATE.dump" "$BACKUP_DIR/dumps/$DATE.dump"
@@ -89,11 +134,6 @@ else
 fi
 
 # E15: the one data point the backup-missing alarm watches for.
-metric=(aws cloudwatch put-metric-data --region "${AWS_REGION:-}" --namespace FlowSpace
-  --metric-name BackupSucceeded --value 1 --dimensions "Host=$METRIC_HOST")
-if [ "${BACKUP_DRY_RUN:-0}" = 1 ]; then
-  echo "+ ${metric[*]}"
-else
-  "${metric[@]}"
-  log "BackupSucceeded=1 published (FlowSpace, Host=$METRIC_HOST)"
-fi
+aws cloudwatch put-metric-data --region "${AWS_REGION:-}" --namespace FlowSpace \
+  --metric-name BackupSucceeded --value 1 --dimensions "Host=$METRIC_HOST"
+[ "${BACKUP_DRY_RUN:-0}" = 1 ] || log "BackupSucceeded=1 published (FlowSpace, Host=$METRIC_HOST)"
