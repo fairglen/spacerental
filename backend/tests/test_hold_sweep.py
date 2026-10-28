@@ -1,7 +1,9 @@
 """P2.2: lapsed unpaid holds are reconciled by the sweeper, and a read that
-finds nothing lapsed writes nothing."""
+finds nothing lapsed writes nothing. N01: one sweeper per deployment —
+a sweep takes an advisory lock, and a concurrent one skips its tick."""
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -116,6 +118,69 @@ class TestSweeper:
             await task
         assert len(calls) >= 2
         assert "hold sweep failed" in caplog.text
+
+
+class TestOneSweeperPerDeployment:
+    """N01: every worker and replica starts the sweeper task; the advisory
+    lock makes all but one skip each tick."""
+
+    def _lapsed(self, room, user, now):
+        return _booking(
+            room, user, now + timedelta(days=2), hold_expires_at=now - timedelta(minutes=1)
+        )
+
+    async def test_a_sweep_skips_its_tick_while_another_session_holds_the_lock(
+        self, db_session, session_factory, test_room, test_user, monkeypatch, caplog
+    ):
+        now = datetime.now(UTC).replace(microsecond=0)
+        monkeypatch.setattr(clock, "utcnow", lambda: now)
+        lapsed = self._lapsed(test_room, test_user, now)
+        db_session.add(lapsed)
+        await db_session.commit()
+
+        async with session_factory() as other_process:
+            assert await holds.try_sweep_lock(other_process) is True
+            with caplog.at_level(logging.DEBUG, logger=holds.__name__):
+                assert await holds.sweep_lapsed_holds_once(session_factory) is None
+            assert "skipping" in caplog.text
+            status = await db_session.scalar(
+                select(Booking.status)
+                .where(Booking.id == lapsed.id)
+                .execution_options(populate_existing=True)
+            )
+            assert status is BookingStatus.pending
+            await other_process.rollback()  # releases the transaction lock
+        assert await holds.sweep_lapsed_holds_once(session_factory) == 1
+
+    async def test_two_concurrent_sweeps_do_the_work_once(
+        self, db_session, session_factory, test_room, test_user, monkeypatch
+    ):
+        """Two workers tick at the same instant: one sweeps, the other skips.
+        The RETURNING already credited a hold once; the lock also removes
+        the duplicate statements and log lines."""
+        now = datetime.now(UTC).replace(microsecond=0)
+        monkeypatch.setattr(clock, "utcnow", lambda: now)
+        db_session.add(self._lapsed(test_room, test_user, now))
+        await db_session.commit()
+
+        real_expire = holds._expire_lapsed_holds
+        credits = []
+
+        async def slow_expire(db, when, *scope):
+            # Long enough for the other sweep to try the lock meanwhile.
+            await asyncio.sleep(0.3)
+            flipped = await real_expire(db, when, *scope)
+            credits.append(flipped)
+            return flipped
+
+        monkeypatch.setattr(holds, "_expire_lapsed_holds", slow_expire)
+        results = await asyncio.gather(
+            holds.sweep_lapsed_holds_once(session_factory),
+            holds.sweep_lapsed_holds_once(session_factory),
+        )
+        assert sorted(results, key=lambda r: (r is None, r)) == [1, None]
+        assert credits == [1]
+        assert await holds.sweep_lapsed_holds_once(session_factory) == 0
 
 
 class TestReadsDoNotWrite:

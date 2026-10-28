@@ -1,36 +1,61 @@
-"""In-process, tier-based request throttling.
+"""Tier-based request throttling, with two stores.
 
-Kept in-process (no Redis) on purpose: the API runs as a single uvicorn process
-per container today, so a shared store would add an operational dependency for
-no gain. `RateLimiter` is the only thing that has to change when we scale to
-multiple workers — the middleware and the endpoint markers stay as they are.
+`RATE_LIMIT_STORE=memory` (the default, development and tests): the
+in-process sliding window — exact, free, and per process, so with
+WEB_CONCURRENCY=2 every limit was effectively doubled (Q55, N02).
+`RATE_LIMIT_STORE=postgres` (production): fixed-window counters in one small
+table shared by every worker and replica, one `INSERT … ON CONFLICT DO
+UPDATE … RETURNING` per throttled request. No Redis: the database is the one
+shared thing a deployment already has.
 
 Enforcement lives in ASGI middleware rather than in a route dependency because
 the limit has to reject *before* the endpoint's dependencies resolve — no DB
 session, no query, and above all no Argon2 hash (64MB of memory per call) burnt
-on traffic we are about to refuse.
+on traffic we are about to refuse. That is why the postgres store opens its
+own short-lived connection from the engine instead of a request session.
+
+DECISION (N02): a store that cannot be reached fails CLOSED for the tiers
+that gate expensive or outward-facing work — `auth` (Argon2, account
+enumeration) and `support` (emails a person) answer 503 — and fails OPEN,
+with a WARNING, for `public` and `upload` (reads and operator uploads behind
+a session). A database the limiter cannot reach is a database the endpoint
+cannot reach either; the open tiers only lose their throttle for as long as
+that lasts.
 """
 
+import logging
 import math
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from threading import Lock
 from typing import TypeVar
 
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.responses import JSONResponse
 from starlette.routing import BaseRoute, Match
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from app import database
 from app.config import settings
 from app.routing_inventory import iter_api_routes, route_matcher
 from app.trusted_proxies import trusted_proxies_for
+
+logger = logging.getLogger(__name__)
 
 AUTH_TIER = "auth"
 PUBLIC_TIER = "public"
 UPLOAD_TIER = "upload"
 SUPPORT_TIER = "support"
+# The tiers a store failure refuses (see the module docstring).
+FAIL_CLOSED_TIERS = frozenset({AUTH_TIER, SUPPORT_TIER})
+
+MEMORY_STORE = "memory"
+POSTGRES_STORE = "postgres"
 
 _TIER_ATTR = "__rate_limit_tier__"
 
@@ -89,12 +114,18 @@ class RateLimitResult:
     retry_after: int
 
 
+class RateLimitStoreError(RuntimeError):
+    """The shared store could not answer; the middleware decides per tier."""
+
+
 class RateLimiter:
-    """Sliding-window request log keyed by (tier, client identity).
+    """Sliding-window request log keyed by (tier, client identity), in
+    this process's memory.
 
     A sliding window rather than a fixed one: with fixed windows a caller can
     fire 2x the limit across a window boundary, which for the auth tier is
-    exactly the burst we are trying to stop.
+    exactly the burst we are trying to stop. Per process: with several
+    workers each keeps its own log (RATE_LIMIT_STORE=postgres shares one).
     """
 
     def __init__(self) -> None:
@@ -129,13 +160,114 @@ class RateLimiter:
             hits.append(current)
             return RateLimitResult(allowed=True, remaining=limit - len(hits), retry_after=0)
 
+    async def acheck(
+        self, tier: str, identity: str, limit: int, window_seconds: int
+    ) -> RateLimitResult:
+        """What the middleware calls; the memory store needs no I/O."""
+        return self.check(tier, identity, limit, window_seconds)
+
     def reset(self) -> None:
         """Drop all recorded hits. Used by tests between cases."""
         with self._lock:
             self._hits.clear()
 
 
-limiter = RateLimiter()
+_UPSERT = text(
+    """
+    INSERT INTO rate_limit_hits (scope, identity, window_start, hits)
+    VALUES (:scope, :identity, :window_start, 1)
+    ON CONFLICT (scope, identity, window_start)
+    DO UPDATE SET hits = rate_limit_hits.hits + 1
+    RETURNING hits
+    """
+)
+# Rows older than the longest window (support: 3600 s) plus slack; the
+# cleanup is one DELETE every CLEANUP_EVERY_SECONDS per process, on the
+# connection a check already holds.
+_CLEANUP = text("DELETE FROM rate_limit_hits WHERE window_start < now() - interval '2 hours'")
+CLEANUP_EVERY_SECONDS = 600
+
+
+class PostgresRateLimiter:
+    """Fixed-window counters in `rate_limit_hits`, shared by every process
+    that uses the same database (N02).
+
+    One statement per throttled request: the row for (scope, identity, the
+    window this instant falls in) is created or incremented and its count
+    comes back. Every attempt counts, allowed or not, which cannot extend a
+    fixed window. The connection is the engine's, short-lived, outside any
+    request session — the middleware runs before dependencies resolve.
+
+    DECISION: fixed windows, not the memory store's sliding log. A sliding
+    window in SQL is a row per hit plus a count and a prune per request; the
+    fixed window is one row per (client, window) and one upsert. The cost is
+    the burst at a boundary — up to 2x the limit across two adjacent
+    windows — accepted for limits of 10/min on auth.
+    """
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+        self._last_cleanup = 0.0
+
+    @staticmethod
+    def _window_start(now: float, window_seconds: int) -> datetime:
+        return datetime.fromtimestamp(now - (now % window_seconds), tz=UTC)
+
+    async def acheck(
+        self,
+        tier: str,
+        identity: str,
+        limit: int,
+        window_seconds: int,
+        now: float | None = None,
+    ) -> RateLimitResult:
+        current = time.time() if now is None else now
+        window_start = self._window_start(current, window_seconds)
+        try:
+            async with self._engine.connect() as conn:
+                hits = await conn.scalar(
+                    _UPSERT,
+                    {"scope": tier, "identity": identity, "window_start": window_start},
+                )
+                if time.monotonic() - self._last_cleanup > CLEANUP_EVERY_SECONDS:
+                    self._last_cleanup = time.monotonic()
+                    await conn.execute(_CLEANUP)
+                await conn.commit()
+        except (SQLAlchemyError, OSError) as exc:
+            # OSError: asyncpg's connection refused/reset arrive unwrapped.
+            raise RateLimitStoreError(str(exc)) from exc
+        hits = int(hits or 0)
+        if hits > limit:
+            window_end = window_start.timestamp() + window_seconds
+            retry_after = max(1, math.ceil(window_end - current))
+            return RateLimitResult(allowed=False, remaining=0, retry_after=retry_after)
+        return RateLimitResult(allowed=True, remaining=limit - hits, retry_after=0)
+
+    async def areset(self) -> None:
+        """Drop every counter. Used by tests between cases."""
+        async with self._engine.connect() as conn:
+            await conn.execute(text("DELETE FROM rate_limit_hits"))
+            await conn.commit()
+
+    def reset(self) -> None:
+        """The memory store's reset is a no-op here: the counters live in the
+        database the test fixtures recreate; `areset()` empties them."""
+
+
+def build_limiter() -> RateLimiter | PostgresRateLimiter:
+    """The store RATE_LIMIT_STORE names; anything else stops the app (no
+    silent fallback to a per-process limiter in a multi-worker deployment)."""
+    store = settings.RATE_LIMIT_STORE
+    if store == MEMORY_STORE:
+        return RateLimiter()
+    if store == POSTGRES_STORE:
+        return PostgresRateLimiter(database.engine)
+    raise RuntimeError(
+        f"RATE_LIMIT_STORE={store!r} is not implemented; use {MEMORY_STORE!r} or {POSTGRES_STORE!r}"
+    )
+
+
+limiter = build_limiter()
 
 
 def _forwarded_chain(scope: Scope) -> list[str]:
@@ -188,7 +320,7 @@ class RateLimitMiddleware:
         app: ASGIApp,
         *,
         routes: Iterable[BaseRoute],
-        limiter: RateLimiter,
+        limiter: RateLimiter | PostgresRateLimiter,
     ) -> None:
         self.app = app
         # Held by reference, not copied: routers included after this middleware
@@ -216,7 +348,23 @@ class RateLimitMiddleware:
             return
 
         limit, window = tier_limits(tier)
-        result = self.limiter.check(tier, client_identity(scope), limit, window)
+        try:
+            result = await self.limiter.acheck(tier, client_identity(scope), limit, window)
+        except RateLimitStoreError as exc:
+            if tier in FAIL_CLOSED_TIERS:
+                logger.error("rate limit store unavailable; refusing a %s request: %s", tier, exc)
+                response = JSONResponse(
+                    {"detail": "Service unavailable"},
+                    status_code=503,
+                    headers={"Retry-After": "5"},
+                )
+                await response(scope, receive, send)
+                return
+            logger.warning(
+                "rate limit store unavailable; letting a %s request through: %s", tier, exc
+            )
+            await self.app(scope, receive, send)
+            return
 
         if not result.allowed:
             response = JSONResponse(

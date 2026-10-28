@@ -4,6 +4,7 @@ from app.models.invoice import Invoice, InvoiceItem
 from app.models.organization import Organization, OrganizationMember
 from app.models.package import BookingPackageDebit, Package, PurchaseSource, UserPackagePurchase
 from app.models.password_reset import PasswordResetToken
+from app.models.rate_limit import RateLimitHit
 from app.models.recurrence import RecurrenceFrequency, RecurrenceRule
 from app.models.room_block import RoomBlock
 from app.models.space import AvailabilityRule, Room, Space
@@ -22,6 +23,7 @@ __all__ = [
     "Package",
     "PasswordResetToken",
     "PurchaseSource",
+    "RateLimitHit",
     "RecurrenceFrequency",
     "RecurrenceRule",
     "Room",
