@@ -4729,6 +4729,174 @@ D16 visual gate, Playwright green, the audit clean at `--audit-level=high`.
 When it lands, reopen the Dependabot topics ignored in D21 (#104, #105) by
 bumping the ranges in the same PR.
 
+## Dependabot batch #123–#135 (D-series, D27) — owner assignment 2026-10-27
+
+Goal: every open Dependabot PR either fixed, green and **merged** (the owner
+authorised merging for this assignment only), or closed with a reasoned
+comment. Production is live and every merge to `main` deploys itself
+(`deploy.yml` after a green `Checks`), so merges went one at a time: merge →
+`Checks` on `main` → `Deploy` green → `GET /backend/health` = `{"status":"ok"}`
+and the homepage 200 → the next one. No deploy went red; `deploy.sh` never
+rolled back. Fixes would have gone to the Dependabot branch as `D27: <what>`
+commits; none was needed on a Dependabot branch. `@dependabot recreate` was
+never used. Lockfiles were judged with npm 11 / Node 24 (D11).
+
+### D27 — Dependabot batch #123–#135: outcomes, evidence, decisions
+
+**Priority: P1. State: DONE 2026-10-28 — two PRs left open for the owner
+(#132, #134), each with its reason in a PR comment.** Merged in this order,
+each deployed and probed before the next: #125 → #135 → #137 (replaces #123
++ #124) → #126 → #128 → #133. Closed with `@dependabot ignore this major
+version`: #130, #129, #131. Closed by Dependabot itself: #123, #124. Open
+for the owner: #132 (token scope), #134 (environment gate missing).
+
+Per PR:
+
+- **#125 pip group (fastapi 0.143.2 → 0.162.0, sqlalchemy 2.1.4 → 2.1.6,
+  alembic 1.20.0 → 1.20.1, pydantic-settings 2.16.0 → 2.16.1) — MERGED
+  `bd3e519`.** CI green on the head (`backend / test` full suite incl.
+  `test_openapi_stable.py`, `migrations / migrate`, `perf-api`,
+  `prod-stack`, both e2e shards). No fix. Deploy run 40605780665 green.
+- **#135 npm minor/patch group (@tanstack/react-query 5.104.5, lucide-react
+  1.61.0, react-hook-form 7.91.0, postcss 8.5.31, vite 8.3.5) — MERGED
+  `f2d33e3`.** Lockfile diff confined to the five entries (204 lines); CI
+  green incl. `perf / perf-web`. No fix. Deploy green.
+- **#123 postgres:18-alpine digest and #124 caddy:2 digest — CLOSED BY
+  DEPENDABOT, landed through #137 (`59a036a`).** Both sat on the pre-#122
+  base (perf-web red; #124 also red on e2e (1/2) + `required-checks`).
+  `@dependabot rebase` made Dependabot close them ("postgres/caddy is
+  up-to-date now") — not because `main` had the digests, but because both
+  tags had moved again (postgres 2026-10-26 → `sha256:10a5c69a…`, caddy
+  2026-10-27 → `sha256:5e5286cb…`), so the PRs' digests were stale. #137
+  (branch `chore/docker-digests`, commit `D27: pin postgres:18-alpine and
+  caddy:2 to their current digests`) pins what the tags resolve to today,
+  checked against `registry-1.docker.io`'s `Docker-Content-Digest`, in all
+  eight places: `docker-compose.yml`, `docker-compose.test.yml`,
+  `deploy/backup.sh`, `deploy/restore.sh`, `deploy/db-bootstrap.sh`,
+  `scripts/tests/prod-stack.compose.yml`, `scripts/tests/prod-stack.sh`
+  (postgres — the dump/restore helpers must run the database's image) and
+  `docker-compose.prod.yml` (caddy). CI: `backend / test`, `migrations`,
+  both e2e shards, `prod-stack` (boots Caddy on the new digest) green;
+  e2e (2/2) failed once with the D15 signature (`pay-mixed.spec.ts:33`,
+  `packages.spec.ts:131`: `409 No active package with 3.0 hours remaining`
+  behind the stub checkout) and was green on re-run. Deploy green; the
+  new Caddy served the health probe and the homepage straight after.
+  **DECISION (loop, D27):** Dependabot only sees the two compose files; the
+  five script/test pins follow by hand on every future digest PR — the
+  `deploy/backup.sh` header says why. Dependabot keeps proposing the compose
+  pins weekly.
+- **#126 pillow 12.3 → 13.0 (major) — MERGED `7dfc969`.** Release notes
+  read against `app/media.py`, `app/seed.py`, `tests/test_media.py`,
+  `tests/test_audit.py`: the removals (Python 3.10 — the images are
+  `python:3.14-slim`; `Image._show`; `ImageCms` `product_name`/
+  `product_info`; `ExifTags.IFD.Makernote`; `get_child_images()` moved to
+  `ImageFile`) and behaviour changes (PNG `I`-mode save, `fromarray(mode=)`,
+  duplicate TIFF tags, tiny ICO sizes, premultiplied `ImageColor.getcolor`)
+  touch nothing the app calls (`Image.open`/`verify`,
+  `ImageOps.exif_transpose`, `convert`, `thumbnail` + `Resampling.LANCZOS`,
+  `save(format="WEBP", exif=b"", icc_profile=None)`, `Image.Exif`,
+  `getexif`, `DecompressionBombError`). CI green on the rebased head
+  `ab104fe`: full backend suite (upload, EXIF/GPS stripping, orientation,
+  thumbnail sizes, audit), both e2e shards (room photo upload), prod-stack.
+  No fix. Deploy green. (The first `@dependabot rebase` got no reply for
+  12 minutes; the second one was processed.)
+- **#128 msw 2.15 → 3.0.3 (major, dev) — MERGED `318857e`.** Finding: msw
+  is declared since the initial commit and **never imported** (no `msw`
+  import, no `setupServer`, nothing in `vitest.config`/`tests/setup.ts`),
+  so there were no handlers to migrate; the 353-line lockfile diff is
+  msw's own transitive tree. CI green on the rebased head `d1d5b9a`
+  (Vitest, lint, both e2e shards, prod-stack, perf-web). No fix. Deploy
+  green. **Follow-up:** drop `msw` from `devDependencies` in the next
+  frontend clean-up instead of bumping it again (one line + lockfile; not
+  done here to keep the Dependabot PR a bump).
+- **#133 hashicorp/aws 6.68.0 → 6.70.0 in `infra/bootstrap` — MERGED
+  `5d69996`.** Lock file only (`versions.tf` constraint `~> 6.0`). 6.69/6.70
+  release notes: one breaking change (`aws_route53domains_delegation_signer_
+  record` import ID), two notes (Go 1.26.10 CA trust, `aws_dx_macsec_key_
+  association`), nothing on the resources either module uses. `validate`
+  green. **Takes effect only when the owner re-runs the bootstrap from the
+  laptop** (`cd infra/bootstrap && terraform init -upgrade && terraform
+  plan`; its state lives on the laptop, runbook 2.1) — said in the PR
+  comment. The merge ran `Checks` + `Deploy` (no-op, green) and
+  `Infrastructure` on `main` (run 40610994446): its `apply (production)`
+  job **did not wait for anyone** — see #134 — and applied `infra/prod`
+  unchanged: `Plan: 0 to add, 1 to change, 0 to destroy`, the perpetual
+  `rds.force_ssl` diff again, `Apply complete! 0 added, 1 changed,
+  0 destroyed`.
+- **#134 hashicorp/aws 6.68.0 → 6.70.0 in `infra/prod` — HELD FOR THE
+  OWNER, not merged.** The plan is clean; the gate the assignment relied on
+  is missing: **the `production` environment has no required reviewer**
+  (`GET /repos/…/environments/production` → `protection_rules: []`,
+  `pending_deployments` empty), so #133's merge applied unattended and this
+  merge would apply the provider bump the same way, against the runbook
+  (2.2, E05: "the required reviewer there is the gate"). Owner's choice,
+  written in the PR comment: restore the reviewer (Settings → Environments
+  → `production`) and then `gh pr merge 134 --squash` + approve the apply,
+  or merge as is accepting the unattended apply. `infra.yml`'s `plan (pull request)` is skipped for
+  `dependabot[bot]` by design (E12: no repository variables, no AWS role
+  for its runs), so the plan was obtained through a throwaway draft PR
+  (#138, `chore/plan-aws-6.70`, the same lockfile commit pushed from the
+  owner's account; closed once the sticky plan comment landed, Infrastructure
+  run 40606375237): **`Plan: 0 to add, 1 to change, 0 to destroy`** — no
+  replacement, no destroy. Two things in that plan are not the provider's:
+  1. The one in-place change — `aws_db_parameter_group.main`,
+     `rds.force_ssl` `apply_method` `pending-reboot` → `immediate` — is a
+     **perpetual diff that main already has on 6.68**: the latest apply on
+     `main` (run 40601191196 at `04def32`) planned and applied the same
+     change. `infra/prod/database.tf` leaves `apply_method` unset (provider
+     default `immediate`) while RDS reports the static parameter as
+     `pending-reboot`. Fix when convenient: `apply_method = "pending-reboot"`
+     on that `parameter` block (no behaviour change; `rds.force_ssl` is
+     already `1`).
+  2. The job then exits 1 on `Error: reading SSM Parameter
+     (/spacerental/prod/env) … AccessDeniedException … explicit deny`:
+     `infra/prod/config.tf` manages the `.env` SecureString as a Terraform
+     **resource**, so every plan must refresh (read) it, and the plan role's
+     `NoProductionParameters` deny in `infra/bootstrap/main.tf` (E09–E16,
+     #110) forbids exactly that. **Every PR plan of `infra/prod` has failed
+     this way since #110**; the apply role is unaffected (main's applies
+     succeed). Owner's call — proposed disposition: stop managing the
+     parameter in Terraform (the owner writes it by hand anyway, runbook
+     2.4: `terraform state rm aws_ssm_parameter.env` + delete the resource,
+     keep the KMS/IAM references), or accept that PR plans stay red.
+- **#130 typescript 5.9 → 7.0 (major) — CLOSED,** `@dependabot ignore this
+  major version`. Tried on the head with npm 11 / Node 24: `tsc --noEmit`
+  fails on removed options (`TS5108 target=ES5`, `TS5102 baseUrl`) —
+  fixable — but `next lint` crashes in Next's
+  `verify-typescript-setup.js` and `next build` fails with `Module not
+  found: Can't resolve '@/components/ui/label'`: Next 14 resolves the `@/`
+  alias and type-checks through TypeScript's JavaScript compiler API, and
+  `typescript@7.0.2` no longer ships one (its `exports` map is `"."` →
+  `lib/version.cjs`; the compiler sits behind `./unstable/*` native-bridge
+  entry points). Vitest alone was fine (839/839). Comes with D22.
+- **#129 react-dom + @types/react-dom 18 → 19 — CLOSED,** `@dependabot
+  ignore this major version`. `npm ci` `ERESOLVE` (`@types/react-dom@19.3.0`
+  vs `@types/react@18.3.31`, job 121346775217), as #104 in D21. D22.
+- **#131 eslint-config-next 14 → 16 — CLOSED,** `@dependabot ignore this
+  major version`. `npm ci` `ERESOLVE` (`eslint-config-next@16.4.2` vs
+  `eslint@8.57.1`, job 121346571047), as #105 in D21. D22.
+- **#132 actions group (docker/bake-action v7.5.0, actions/setup-python
+  v7.1.0 ×6, github/codeql-action init + analyze v4.39.1) — READY, HELD
+  BY THE TOKEN SCOPE, not merged.** Every pin is the commit its tag resolves to (checked
+  through the API), no unpinned `uses:` remains, every workflow that uses
+  them ran green on the head, `required-checks` ✓. `gh pr merge` was
+  refused: *"refusing to allow an OAuth App to create or update workflow
+  `.github/workflows/lint.yml` without `workflow` scope"* — the laptop's
+  `gh` token lacks the `workflow` scope, which GitHub requires to merge
+  anything touching `.github/workflows/`. **Owner:** `gh auth refresh -h
+  github.com -s workflow`, then `gh pr merge 132 --squash` (or the Merge
+  button), then watch the deploy as above.
+
+Observed along the way, not fixed: (a) the D15 e2e flake hit once (#137,
+e2e (2/2)); (b) `main` is protected by rulesets, not classic protection
+(`required-checks` only, `strict` off, squash only, thread resolution
+required) — `gh api …/branches/main/protection` answers 404; (c) a merge
+that touches only `infra/**` still runs `Checks` + `Deploy` on `main`
+(a no-op rebuild and redeploy of the same application commit, ~10 min);
+(d) the `production` environment's required reviewer is gone (above) —
+the `production-app` environment is reviewer-less by design (E10), the
+`production` one is not.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are
