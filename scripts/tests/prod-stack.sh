@@ -37,7 +37,7 @@ API="$BASE/backend/api/v1"
 HEALTH="$BASE/backend/health"
 # postgres:18-alpine, the same digest as the Compose files (Q53): a shell
 # with root for the scratch files the containers chowned.
-PG_IMAGE=postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+PG_IMAGE=postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
 
 compose() {
   docker compose -p "$PROJECT" --env-file "$ENV_FILE" \

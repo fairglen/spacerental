@@ -25,7 +25,7 @@ ENV_FILE=${ENV_FILE:-$HERE/.env}
 MEDIA_DIR=${MEDIA_DIR:-/srv/media}
 MEDIA_OWNER=${MEDIA_OWNER:-999:999}
 NETWORK=${BACKUP_DOCKER_NETWORK:-bridge}
-PG_IMAGE=postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+PG_IMAGE=postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
 TAG=spacerental-restore
 
 DUMP=${1:?usage: restore.sh <dump> [media-prefix]}
