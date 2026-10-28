@@ -1,0 +1,39 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudFrontReadsThePublicPrefix",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudfront.amazonaws.com"
+      },
+      "Action": "s3:GetObject",
+      "Resource": "${bucket_arn}/${prefix}/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "${distribution_arn}"
+        }
+      }
+    },
+    {
+      "Sid": "ThePrivatePrefixOnlyForTheHostAndTheOwner",
+      "Effect": "Deny",
+      "NotPrincipal": {
+        "AWS": "arn:aws:iam::${account_id}:root"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion"
+      ],
+      "Resource": "${bucket_arn}/${prefix}/private/*",
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "${instance_role_arn}",
+            "arn:aws:iam::${account_id}:role/aws-reserved/sso.amazonaws.com/*AdministratorAccess*"
+          ]
+        }
+      }
+    }
+  ]
+}

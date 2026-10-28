@@ -56,6 +56,24 @@ data "aws_iam_policy_document" "instance" {
     resources = ["${aws_s3_bucket.backups.arn}/*"]
   }
 
+  # E18: the media bucket is the application's own storage — it adds,
+  # reads back the private PDFs and deletes what an operator removes
+  # (a delete marker; the previous version stays 30 days). Both lists so
+  # `aws s3 sync` (deploy/media-migrate.sh, deploy/backup.sh) can compare.
+  statement {
+    sid       = "MediaBucketList"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+    resources = [aws_s3_bucket.media.arn]
+  }
+
+  statement {
+    sid       = "MediaObjects"
+    effect    = "Allow"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.media.arn}/${local.media_prefix}/*"]
+  }
+
   statement {
     sid       = "ReadTheEnv"
     effect    = "Allow"
