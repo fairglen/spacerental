@@ -4897,6 +4897,142 @@ that touches only `infra/**` still runs `Checks` + `Deploy` on `main`
 the `production-app` environment is reviewer-less by design (E10), the
 `production` one is not.
 
+## Production platform follow-ups (E-series, E17–E19) — owner assignment 2026-10-28
+
+Owner's ask, three PRs in order, each merged and deployed before the next
+(the owner authorised merging all three): the two infrastructure bugs D27
+documented plus runbook corrections (E17, `fix/infra-followups`); the
+photos and the private invoice PDFs to S3 behind CloudFront so the host
+keeps no state (E18, `feat/media-s3`; the volume's removal is E19, a
+separate PR behind an explicit OK); the API safe for more than one worker
+or replica (N-series, `fix/multi-worker`). Production is live and every
+merge deploys itself: merge → `Checks` → `Deploy` → health and homepage
+probed → the next. A merge touching `infra/**` also plans and applies
+behind the `production` environment's reviewer — E17 was the first merge
+that proved the reviewer is back (its apply waited).
+
+### E17 — PR plans can run again; no perpetual `rds.force_ssl` diff; runbook fixes
+
+**Priority: P1. State: DONE 2026-10-28 (PR #140 `fix/infra-followups`,
+merged `a9d0342`; Checks + Deploy green, health `{"status":"ok"}`, homepage
+200; Infrastructure run 40778894667 — `apply (production)` WAITING for the
+owner's approval at the time of writing).** Why: D27 found every
+`infra/prod` pull-request plan failing since #110 (`AccessDeniedException`
+reading `/spacerental/prod/env` — the plan role's E11 deny against a
+Terraform-managed `aws_ssm_parameter`) and an in-place change on
+`aws_db_parameter_group.main` on every plan and apply (`rds.force_ssl`
+`apply_method` `pending-reboot` → `immediate`). **Scope:**
+`infra/prod/config.tf`: the parameter is no longer a resource — a `removed
+{ from = aws_ssm_parameter.env  lifecycle { destroy = false } }` block
+forgets it without deleting it; the owner's `put-parameter` (runbook 2.4,
+now `--tier Advanced`) creates and updates it; the E11 deny is untouched.
+**DECISION (loop):** removal over a narrower allow — the resource is a
+SecureString, so Terraform's refresh is `GetParameter --with-decryption`;
+no read-but-not-the-value grant satisfies it without exposing the `.env`
+to a pull request's workflow file. `infra/prod/database.tf`:
+`apply_method = "pending-reboot"` on `rds.force_ssl` (what RDS reports for
+the static parameter; the value has been `1` since the first apply).
+Runbook: `terraform init -upgrade` in 2.1 and why (#133 moved the bootstrap
+lock file to 6.70; the laptop state is behind); the master URL with `jq -r
+'.password | @uri'`; environments on **Selected branches: `main`** (`main`
+is protected by a ruleset, which "protected branches only" does not
+recognise), the `gh api` line that verifies the required reviewer, and the
+record that #136/#133/#134 applied unattended (reviewer missing); a section
+on the "Sign up for AWS (new)" account (advanced features, the `RegionFloor`
+SCP and `eu-west-1`, SCP edits from the management account only, CloudShell
+landing in the Identity delegated-admin account). **Evidence:** the PR's
+own `plan (pull request)` job — the first to finish since #110 — exit 0,
+`Plan: 0 to add, 0 to change, 0 to destroy`, "aws_ssm_parameter.env will
+no longer be managed by Terraform, but will not be destroyed"; the
+parameter group showed no diff (the refreshed state already reads
+`pending-reboot`). `terraform fmt -check`, `validate` ×2,
+`tests/infra/policies.test.sh` green. **Owner:** approve the waiting apply
+(a forget + nothing else), then `cd infra/bootstrap && terraform init
+-upgrade && terraform plan` from the laptop (expected "No changes").
+
+### E18 — Photos and private PDFs in S3 behind CloudFront (`MEDIA_STORAGE=s3`)
+
+**Priority: P1. State: IN PROGRESS 2026-10-28 (PR `feat/media-s3`).** Why:
+the host holds the only copy of the photos and the invoice PDFs on an EBS
+volume; every platform move (a second instance, containers elsewhere, a
+rebuild) starts with getting state off the host. **Scope:**
+- Backend: `S3MediaStorage(MediaStorage)` in `app/media.py` only — boto3
+  run in a worker thread (`asyncio.to_thread`), one client per process;
+  settings `MEDIA_S3_BUCKET`, `MEDIA_S3_PREFIX` (default `media/`),
+  `AWS_REGION`; credentials from the environment (the instance role), never
+  a key in the `.env`. Public keys are written `image/webp` with
+  `Cache-Control: public, max-age=31536000, immutable` (random keys, never
+  reused); `private/…` keys `application/pdf`, `private, no-store`. Storage
+  failures are `OSError` (a `FileNotFoundError` for a missing key) so the
+  routes see the same family as on disk. `validate_media_settings()` at
+  import, like payments: `s3` without `MEDIA_S3_BUCKET` or without an
+  explicit `MEDIA_BASE_URL` stops the app; `production_problems` lists the
+  same (E02). **DECISION (loop):** in `s3` mode `MEDIA_BASE_URL` is not
+  derived from `FRONTEND_URL` (the `/media` mount does not exist in that
+  mode) — empty stays empty and is refused. **DECISION (loop):** boto3 in a
+  thread rather than `aioboto3`: one dependency, the one moto mocks
+  natively, no aiobotocore version lock-step; the storage does two small
+  calls per upload. `local` stays the default for development and tests
+  (CLAUDE.md §10.3); the `/media` mount is only made in `local` mode (as
+  before).
+- Serving: the browser reads `MEDIA_BASE_URL/<key>`; in `s3` mode that is
+  the CloudFront distribution with an origin path equal to the prefix, so a
+  key is the same string in the URL, the bucket and the database. Invoice
+  PDFs keep going through `storage.read()` + `pdf_response` (the API, after
+  the ownership check); the bucket policy denies `media/private/*` to
+  CloudFront and to everyone but the host, the owner's Identity Center role
+  and the account root. CSP: `NEXT_PUBLIC_MEDIA_ORIGIN` already feeds
+  `img-src` (Q52); `deploy.yml` now passes it from the repository variable
+  `MEDIA_ORIGIN`. `next.config.js` `images.domains` is irrelevant: the admin
+  renders uploads with `<img>` (PhotoManager), not `next/image`.
+- Terraform (`infra/prod/media.tf`, `policies/media-bucket.json.tftpl`):
+  the media bucket (private, versioned, SSE-S3, public-access block,
+  noncurrent versions 30 days, multipart abort 7 days), the CloudFront
+  distribution (OAC sigv4, `origin_path = /media`, GET/HEAD, managed
+  CachingOptimized policy, HTTPS only, http2+3, PriceClass_100), the
+  instance role's Get/Put/Delete on `media/*` + ListBucket, outputs
+  `media_bucket`, `media_url`, `media_distribution_domain`,
+  `media_certificate_validation`. A `media_domain` variable (default empty)
+  switches to a custom name: ACM certificate in `us-east-1` (provider alias)
+  with DNS validation the apply waits for, the alias on the distribution.
+  **DECISION (loop, the owner decides once):** the default is the
+  distribution's own `*.cloudfront.net` name — no certificate, no DNS, one
+  self-contained apply; `media.flowspace.pt` is one variable away (runbook
+  4.5.4) and old URLs keep working.
+- Migration: `deploy/media-migrate.sh <bucket>` — `aws s3 sync` of
+  `/srv/media` into `media/`, additive and idempotent, two passes (WebP
+  with the immutable header, `private/*.pdf` never cached), a final count;
+  run by the owner once through Session Manager before the `.env` switches.
+- Backups: `deploy/backup.sh` reads `MEDIA_STORAGE`/`MEDIA_S3_*` from the
+  `.env`; under `s3` the media copy is bucket to bucket (media → backups
+  `media/`), still additive; `restore.sh` puts media back into the bucket
+  under `s3`. `BACKUP_DRY_RUN=1` now prints every `aws` call, which is what
+  `scripts/tests/backup-restore.sh` asserts for the `s3` shape and for
+  `media-migrate.sh` (no bucket exists in the test).
+- **Validation:** `tests/test_media_s3.py` (moto, no network): content
+  types and cache headers per key kind, read/delete/missing-key semantics,
+  prefix normalisation, traversal refused, SDK errors as `OSError`,
+  concurrency off the loop, the configuration refusals, and the real upload
+  and delete routes plus `pdf_response` on the S3 storage; the existing
+  media/invoice suites unchanged under `local`; `tests/infra/policies.test.sh`
+  extended to the media bucket policy; `terraform validate`; shellcheck;
+  the stack test's backup section. **Owner, after the merge:** approve the
+  apply (adds the bucket, the distribution, the policies; `0 to destroy`),
+  then runbook Phase 4.5: `media-migrate.sh`, `gh variable set
+  MEDIA_ORIGIN`, the `.env` keys, deploy, the smoke lines.
+
+### E19 — Remove the media volume (after the owner confirms the migration)
+
+**Priority: P2. State: QUEUED — needs an explicit OK before merging.**
+Only after E18 is live and the owner has confirmed the photo and invoice
+smoke lines on `MEDIA_STORAGE=s3`: delete `aws_ebs_volume.media`,
+`aws_volume_attachment.media`, the `/srv/media` disk alarm, the DLM policy
+and its role, the `spacerental-mount-media` cloud-init step and
+`MEDIA_HOST_DIR` in Compose. The plan destroys exactly those resources
+(3–4 plus the alarm and the DLM role) and **the attachment's
+`stop_instance_before_detaching = true` stops the instance briefly** during
+the apply — a short outage to schedule. Say so in the PR; wait for the OK.
+
 ## Reusable agent assignments
 
 Use these when the user is ready to start a delivery assignment. They are

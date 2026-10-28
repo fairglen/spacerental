@@ -14,7 +14,8 @@ What runs where, once it is up:
 browser ──https──▶ Caddy :443 ──▶ frontend :3000 (Next.js) ──/backend/*──▶ backend :8000 (FastAPI)
                    (Let's Encrypt)                                              │
                                                                  RDS PostgreSQL 18 (private)
-/srv/media (EBS 20 GB) = photos + private invoice PDFs   ·   S3 backups (dumps/, media/, deploy/)
+S3 media bucket (photos + private invoice PDFs) ──▶ CloudFront ──▶ browser   ·   S3 backups (dumps/, media/, deploy/)
+/srv/media (EBS 20 GB): the photos before Phase 4.5; empty after it, until E19 removes the volume
 CloudWatch: logs (/spacerental/prod), disk/memory metrics, alarms → your email · Budget USD 55
 ```
 
@@ -309,6 +310,12 @@ Smoke checklist, in the browser and on the host:
 - [ ] The set-password link works; sign in; `/admin` shows the organisation, the rooms, the pack.
 - [ ] As a new customer (another browser): sign up, pick a room, book an hour — the stub checkout page confirms it; the booking shows on `/dashboard` and in `/admin/bookings`.
 - [ ] Upload a photo to a room (`/admin/rooms`); it renders on the public page.
+      With `MEDIA_STORAGE=s3` (Phase 4.5) its URL starts with `MEDIA_BASE_URL`
+      — the CloudFront name — and `curl -sI <that url>` answers 200 with
+      `content-type: image/webp` and `cache-control: public, max-age=31536000, immutable`.
+- [ ] An invoice PDF (`/admin/billing`, or `/dashboard/billing` as the customer)
+      still downloads; its URL is the API's (`/backend/api/v1/…/pdf`), never
+      the media origin, and `curl -sI https://<media origin>/private/` is 403.
 - [ ] The help form (`/ajuda`) accepts a message (stub email: `docker compose … logs backend | grep "STUB EMAIL"`).
 - [ ] `aws logs tail /spacerental/prod --since 10m` shows the three streams; `systemctl list-timers spacerental-backup.timer` shows tonight's run; `sudo /srv/spacerental/backup.sh` once by hand → `aws s3 ls s3://<backups_bucket>/dumps/`.
 - [ ] The alarm email: confirm the SNS subscription from the mail AWS sent you. `spacerental-prod-backup-missing` is in ALARM until the first nightly backup after this deploy (or the manual run above) — expected (E15).
@@ -337,6 +344,54 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
    (`https://app.flowspace.pt`), run `python3 flowspace-site/scripts/render-static.py`,
    commit both through a PR. Every "Reservar" on flowspace.pt, the JSON-LD
    action and `llms.txt` then point at the app.
+5. **Photos to S3 (E18)** — so the host keeps no state and the data volume
+   can go (E19). The apply that merged E18 created the media bucket and the
+   CloudFront distribution in front of it; the outputs name both:
+
+   ```bash
+   terraform -chdir=infra/prod output -raw media_bucket   # MEDIA_S3_BUCKET
+   terraform -chdir=infra/prod output -raw media_url      # MEDIA_BASE_URL, e.g. https://d1234.cloudfront.net
+   ```
+
+   1. Copy what the host holds, once, through Session Manager (additive,
+      idempotent, nothing removed; the keys are unchanged, so every URL in
+      the database keeps working):
+
+      ```bash
+      aws ssm start-session --target "$(terraform -chdir=infra/prod output -raw instance_id)"
+      # on the host:
+      sudo /srv/spacerental/media-migrate.sh <media_bucket>
+      # ends with "done: N file(s) here, N object(s) under s3://…/media/"
+      ```
+
+      (`media-migrate.sh` reaches the host with the next deploy after E18 —
+      `deploy.yml` ships `deploy/` to the bucket and `deploy.sh` installs it;
+      if it is not there yet, `gh workflow run deploy.yml --ref main` first.)
+   2. The frontend's browser policy must allow the new origin: set the
+      repository variable, then the next deploy inlines it into the build.
+
+      ```bash
+      gh variable set MEDIA_ORIGIN --body "$(terraform -chdir=infra/prod output -raw media_url)"
+      ```
+
+   3. The `.env`: `MEDIA_STORAGE=s3`, `MEDIA_S3_BUCKET=<media_bucket>`,
+      `MEDIA_S3_PREFIX=media/`, `MEDIA_BASE_URL=<media_url>` —
+      `put-parameter` (2.4) and `gh workflow run deploy.yml --ref main`. The
+      backend refuses to start with the bucket or the URL missing (E02). Run
+      the smoke checklist's photo and invoice lines (Phase 3). The nightly
+      backup now copies the media bucket to the backups bucket, bucket to
+      bucket; `/srv/media` stays as it is (unused, still snapshotted) until
+      E19 removes the volume — tell the loop, or do E19, only after the
+      photo line passed and `aws s3 ls s3://<media_bucket>/media/ --recursive
+      | wc -l` is at least the file count `media-migrate.sh` printed.
+   4. Optional, a name of your own instead of `*.cloudfront.net`: set
+      `media_domain = "media.flowspace.pt"` in `infra/prod/variables.tf`
+      through a PR. The apply requests the certificate in us-east-1 and
+      **pauses** until the DNS record in the `media_certificate_validation`
+      output exists (CNAME; add it, the job continues within minutes), then
+      the distribution takes the alias; add `media.flowspace.pt CNAME
+      <media_distribution_domain>` and change `MEDIA_BASE_URL`, `MEDIA_ORIGIN`
+      and deploy. Old URLs on the `*.cloudfront.net` name keep working.
 
 ## Phase 5 — running it
 
@@ -344,14 +399,18 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
   `frontend`, `backend`); on the host `docker compose … logs --tail 200 backend`.
 - **Backups:** nightly at 03:00 Lisbon (`journalctl -t spacerental-backup`);
   dumps keep 30 days in `s3://<backups_bucket>/dumps/`, media is synced
-  additively to `media/`, the data volume is snapshotted daily (7 kept).
+  additively to `media/` — from `/srv/media` under `MEDIA_STORAGE=local`,
+  bucket to bucket from the media bucket under `s3` (E18; `backup.sh` reads
+  the mode from the `.env`) — and the data volume is snapshotted daily
+  (7 kept) while it exists (E19).
 - **Restore drill** (do it once before you need it):
 
   ```bash
   # on the host, as root, in /srv/spacerental
   docker compose -f docker-compose.prod.yml -f docker-compose.prod.awslogs.yml stop frontend backend
   BACKUP_BUCKET=<backups_bucket> AWS_REGION=eu-west-1 ./restore.sh 2026-10-13.dump media/
-  #   (prompts for the database name; drops and recreates everything in the dump)
+  #   (prompts for the database name; drops and recreates everything in the dump;
+  #    the media goes back to /srv/media or, under MEDIA_STORAGE=s3, to the media bucket)
   docker compose -f docker-compose.prod.yml -f docker-compose.prod.awslogs.yml start backend frontend
   ```
 
@@ -409,6 +468,7 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
 | Variable | `APP_DOMAIN` | `app.flowspace.pt` |
 | Variable | `INFRA_ENABLED` | `true` to let `infra.yml` plan and apply |
 | Variable | `DEPLOY_ENABLED` | `true` to let `deploy.yml` build and deploy |
+| Variable | `MEDIA_ORIGIN` | the `media_url` output once `MEDIA_STORAGE=s3` (E18); inlined into the frontend build as the browser policy's image origin; empty before |
 | Environment | `production` | required reviewer: fairglen (verify, 2.2); selected branches: `main` |
 | Environment | `production-app` | no reviewers (continuous deploys; add one to gate them); selected branches: `main` |
 
