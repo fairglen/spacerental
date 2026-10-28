@@ -36,11 +36,53 @@ Budget alarm fires at 80 % and 100 % of 55 $.
 
 ## Phase 1 — the account
 
+### 1.0 An account from "Sign up for AWS (new)"
+
+The 2026 sign-up does not hand you one account: it builds a small AWS
+Organization around a *project* — a **management account**
+(`918441610244`), an **Identity delegated-admin account** (IAM Identity
+Center lives there) and the **workload account** the app runs in
+(`628376152856`, the one every other step of this runbook means) — and
+AWS manages that organization's service control policies
+([the policies, verbatim](https://docs.aws.amazon.com/accounts/latest/reference/scps-and-rcps-for-projects.html)).
+Four things cost time the first time:
+
+1. **Activate advanced features** (AWS Settings → Advanced features)
+   before anything else. Until then the project SCP denies `account:*`,
+   `billing:*`, the notification APIs and `iam:PutAccountProperties`;
+   activating removes that policy and makes Organizations, Identity Center
+   and the SCPs yours to edit. `BlockOrgEscape` (no `CloseAccount`, no
+   `LeaveOrganization`, no second Identity Center instance) stays on the
+   root for good — expected.
+2. **Regions: the `RegionFloor` statement.** The region SCP denies every
+   request whose region is not `us-east-1`, `us-west-2` or the one region
+   picked at sign-up. If that was not **eu-west-1**, every command below
+   fails with an explicit-deny `AccessDenied` until `eu-west-1` is added to
+   the `aws:RequestedRegion` list of that statement's `StringNotEquals`
+   condition. Leave `us-east-1` in: CloudFront's certificate must live
+   there (E18).
+3. **SCPs are edited from the management account only** (`918441610244`:
+   Organizations → Policies → Service control policies). The workload and
+   Identity accounts can list them, never change them, and the console
+   shows no edit button there. Sign in to the management account through
+   the Identity Center portal (or its root user, with MFA), not with an
+   IAM user created for the purpose.
+4. **CloudShell opens in the Identity delegated-admin account** when you
+   launch it from the console the Identity Center portal lands you in:
+   `aws sts get-caller-identity` there does not print `628376152856`, and
+   nothing from this runbook works. Use the laptop CLI with the
+   `spacerental` profile (1.3) or switch the console to the workload
+   account first.
+
+### 1.1 The workload account
+
 1. **Root user:** enable MFA (IAM → root → Security credentials), then stop
    using it.
-2. **IAM Identity Center** (one region, eu-west-1): enable it, create a
-   user for yourself, a permission set `AdministratorAccess`, assign it to
-   the account. Sign-in portal URL and your user come from the console.
+2. **IAM Identity Center** (one region, eu-west-1; already enabled in the
+   Identity account by the new sign-up — then only the user and the
+   assignment are yours to make): create a user for yourself, a permission
+   set `AdministratorAccess`, assign it to the workload account. Sign-in
+   portal URL and your user come from the console.
 3. **The CLI as that user:**
 
    ```bash
@@ -58,7 +100,7 @@ Budget alarm fires at 80 % and 100 % of 55 $.
 
 ```bash
 cd infra/bootstrap
-terraform init
+terraform init -upgrade              # also after every provider bump (.terraform.lock.hcl)
 terraform apply                      # ≈ 10 resources; type yes
 terraform output                     # state_bucket, plan_role_arn, apply_role_arn, deploy_role_arn
 ```
@@ -67,6 +109,13 @@ The state file of this module stays on your laptop
 (`infra/bootstrap/terraform.tfstate`, gitignored): keep it — it is the only
 thing that knows these resources. Everything else is in the S3 bucket it
 created.
+
+This module is applied from the laptop only, so a Dependabot bump of
+`infra/bootstrap/.terraform.lock.hcl` (hashicorp/aws 6.70 in #133, for
+example) changes nothing until you run `terraform init -upgrade` here
+again; without `-upgrade`, `init` keeps the provider version already in
+`.terraform/` and `plan` says nothing about it. `terraform plan` afterwards
+must say "No changes".
 
 ### 2.2 GitHub: variables and the `production` environment
 
@@ -79,14 +128,34 @@ gh variable set APP_DOMAIN --body app.flowspace.pt
 # The environment that gates every infrastructure apply: you review it.
 OWNER_ID=$(gh api users/fairglen -q .id)
 gh api -X PUT repos/fairglen/spacerental/environments/production \
-  --input - <<'JSON'
-{"reviewers": [{"type": "User", "id": OWNER_ID_HERE}], "deployment_branch_policy": {"protected_branches": true, "custom_branch_policies": false}}
+  --input - <<JSON
+{"reviewers": [{"type": "User", "id": $OWNER_ID}], "deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
 JSON
+gh api -X POST repos/fairglen/spacerental/environments/production/deployment-branch-policies \
+  -f name=main -f type=branch
 ```
 
-(Replace `OWNER_ID_HERE` with the number `$OWNER_ID` printed, or do it in
-Settings → Environments → New environment → `production` → Required
-reviewers: fairglen; Deployment branches: protected branches only.)
+(Or in Settings → Environments → New environment → `production` →
+Required reviewers: fairglen; Deployment branches and tags: **Selected
+branches and tags**, add `main`. Not "Protected branches only": `main` is
+protected by a **ruleset**, which that option does not recognise, so a
+job in the environment would be refused on `main`.)
+
+**Verify it** — the reviewer is the whole control on `terraform apply`
+(E05, E11); the API answer must list you under `required_reviewers`:
+
+```bash
+gh api repos/fairglen/spacerental/environments/production \
+  --jq '.protection_rules[] | select(.type == "required_reviewers") | .reviewers[].reviewer.login'
+# → fairglen
+```
+
+An empty answer means every merge touching `infra/**` applies unattended.
+That is what happened on 2026-10-27/28: the environment existed without a
+reviewer, and the first applies (`#136`, `#133`, `#134`) ran seconds after
+their `validate` job, with nobody asked (D27). The proof that the gate is
+back is a merge touching `infra/**` whose `apply (production)` job stops at
+"Review deployments" (E17 was the first).
 
 The second environment, `production-app`, is the deploy role's only
 trusted subject (E10): every `deploy.yml` run happens in it. Create it
@@ -96,8 +165,10 @@ switch that makes every deploy wait (Phase 5):
 ```bash
 gh api -X PUT repos/fairglen/spacerental/environments/production-app \
   --input - <<'JSON'
-{"deployment_branch_policy": {"protected_branches": true, "custom_branch_policies": false}}
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
 JSON
+gh api -X POST repos/fairglen/spacerental/environments/production-app/deployment-branch-policies \
+  -f name=main -f type=branch
 ```
 
 Then arm the infrastructure workflow:
@@ -120,8 +191,8 @@ gh run watch                          # or Actions → Infrastructure → the ru
 
 The `apply` job stops at **Review deployments** — read the plan in the job
 before it (≈ 40 resources: the instance, its volumes and profile, the
-security groups, RDS, the bucket, the two ECR repositories, the SSM
-placeholder, the log group, alarms, DLM, the budget), then approve. If the
+security groups, RDS, the bucket, the two ECR repositories, the deploy
+SSM document, the log group, alarms, DLM, the budget), then approve. If the
 plan rejects PostgreSQL `18` for the region, set
 `db_engine_version = "17"` in `infra/prod/variables.tf` (the app needs 16+)
 and run again.
@@ -146,10 +217,11 @@ master URL is read **on the laptop** and pasted into the session; the host
 never stores it:
 
 ```bash
-# On the laptop: the master URL, from the secret RDS manages.
+# On the laptop: the master URL, from the secret RDS manages. The password
+# is percent-encoded (`@uri`): RDS generates characters that break a URL.
 MASTER_URL="postgresql://spacerental:$(aws secretsmanager get-secret-value \
   --secret-id "$(terraform -chdir=infra/prod output -raw rds_secret_arn)" \
-  --query SecretString --output text | jq -r .password)@$(terraform -chdir=infra/prod output -raw rds_endpoint)/spacerental"
+  --query SecretString --output text | jq -r '.password | @uri')@$(terraform -chdir=infra/prod output -raw rds_endpoint)/spacerental"
 echo "$MASTER_URL"      # copy it
 
 aws ssm start-session --target "$(terraform -chdir=infra/prod output -raw instance_id)"
@@ -173,8 +245,14 @@ python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(48))"
 echo "NEXTAUTH_SECRET=$(openssl rand -base64 48)"
 
 aws ssm put-parameter --region eu-west-1 --name /spacerental/prod/env \
-  --type SecureString --value file://.env.production --overwrite
+  --type SecureString --tier Advanced --value file://.env.production --overwrite
 ```
+
+This command creates the parameter the first time and replaces it after
+(Terraform does not manage it — E17: a Terraform-managed parameter had to
+be read by every pull-request plan, and the plan role is denied exactly
+that, E11). `--tier Advanced` is what allows the 8 KB a commented
+template needs; the standard tier stops at 4 KB.
 
 Keep `EMAIL_MODE=stub` and `STRIPE_MODE=stub` for the first deploy: the
 backend logs a WARNING for each and nothing leaves the host. Every later
@@ -331,9 +409,10 @@ Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
 | Variable | `APP_DOMAIN` | `app.flowspace.pt` |
 | Variable | `INFRA_ENABLED` | `true` to let `infra.yml` plan and apply |
 | Variable | `DEPLOY_ENABLED` | `true` to let `deploy.yml` build and deploy |
-| Environment | `production` | required reviewer: fairglen; protected branches only |
-| Environment | `production-app` | no reviewers (continuous deploys; add one to gate them); protected branches only |
+| Environment | `production` | required reviewer: fairglen (verify, 2.2); selected branches: `main` |
+| Environment | `production-app` | no reviewers (continuous deploys; add one to gate them); selected branches: `main` |
 
 No secret is stored in GitHub: the workflows assume the roles
-`infra/bootstrap` created through OIDC, the `.env` lives in SSM, the
-database password in Secrets Manager.
+`infra/bootstrap` created through OIDC, the `.env` lives in SSM (written by
+you, 2.4; not a Terraform resource), the database password in Secrets
+Manager.

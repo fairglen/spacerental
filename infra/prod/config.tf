@@ -1,19 +1,21 @@
-# The production .env lives here, as one SecureString the owner writes with
-# `aws ssm put-parameter … --overwrite` (runbook, Phase 2.4) and deploy.sh
-# reads on every deploy. Terraform creates the parameter with a placeholder
-# and never reads or writes its value again: the real file is not in the
-# state, not in a plan, not in a log. Advanced tier: 8 KB, room for the
-# commented template.
-
-resource "aws_ssm_parameter" "env" {
-  name        = "/spacerental/prod/env"
-  description = "The production .env (docker-compose.prod.yml); written by the owner, read by deploy.sh"
-  type        = "SecureString"
-  tier        = "Advanced"
-  value       = "REPLACE-ME: aws ssm put-parameter --name /spacerental/prod/env --type SecureString --value file://.env.production --overwrite"
+# The production .env is one SecureString, `/spacerental/prod/env`, that
+# the owner writes with `aws ssm put-parameter … --overwrite` (runbook,
+# Phase 2.4) and deploy.sh reads on every deploy. It is NOT a Terraform
+# resource (E17): managing it here meant every `terraform plan` had to read
+# it back, and the plan role is denied `ssm:GetParameter*` on that prefix on
+# purpose (E11) — so every pull-request plan of this module failed with
+# AccessDeniedException from #110 on. The value was never in the state
+# (ignore_changes = [value]); now nothing is. The one-time creation is the
+# same put-parameter the owner runs anyway, with `--tier Advanced` (8 KB).
+#
+# This block takes the existing parameter out of the state without
+# deleting it; it is a no-op once that has happened and can go in a later
+# clean-up.
+removed {
+  from = aws_ssm_parameter.env
 
   lifecycle {
-    ignore_changes = [value]
+    destroy = false
   }
 }
 
