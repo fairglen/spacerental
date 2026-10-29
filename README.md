@@ -337,11 +337,14 @@ inspect the diff before deciding whether a migration or metadata repair is neede
 - Admin booking pagination and PT/EN marketing/layout translation are present.
   Booking and admin copy remain Portuguese. Further pagination/i18n are deferred.
 
-**Rate limiting is per backend process.** The limiter (`backend/app/ratelimit.py`)
-keeps its sliding windows in memory, so its budgets are correct for one
-replica: with two or more backend processes each counts on its own and the
-effective limit multiplies. Move the counters to a shared store (Redis or the
-database) before scaling the API out; until then run one replica (Q55).
+**Rate limiting has two stores** (`RATE_LIMIT_STORE`, `backend/app/ratelimit.py`).
+`memory`, the default, keeps sliding windows in this process: exact for one
+process, multiplied by the number of uvicorn workers otherwise. `postgres`
+(what production runs, N02) keeps fixed-window counters in the
+`rate_limit_hits` table, shared by every worker and replica, so a limit means
+what the `.env` says. The hold sweeper (`backend/app/holds.py`) runs once per
+deployment under a PostgreSQL advisory lock (N01); the deploy itself and the
+backup timer are the parts still bound to one host.
 
 ## Room and space photos
 

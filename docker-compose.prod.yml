@@ -99,9 +99,9 @@ services:
     restart: unless-stopped
     # The image's own CMD: `uvicorn --workers ${WEB_CONCURRENCY} --proxy-headers`
     # (backend/Dockerfile), after `alembic upgrade head` in the entrypoint.
-    # Two workers for a t4g.small; the in-process rate limits are per worker
-    # (Q55), so every limit is effectively doubled — documented in
-    # .env.production.example.
+    # Two workers for a t4g.small; with RATE_LIMIT_STORE=postgres the limits
+    # are the deployment's and one hold sweeper runs (N01/N02) — documented
+    # in .env.production.example.
     env_file: .env
     environment:
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}

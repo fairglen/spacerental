@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     # multiplied by the replica count — move the counters to a shared store
     # before scaling out (Q55).
     RATE_LIMIT_ENABLED: bool = True
+    # Where the counters live (N02): "memory" (the default; this process
+    # only, so with several uvicorn workers every limit multiplies) or
+    # "postgres" (the `rate_limit_hits` table, shared by every worker and
+    # replica — what production runs). Anything else stops the app.
+    RATE_LIMIT_STORE: str = "memory"
     # Auth tier: credential endpoints. Strict, because each accepted request
     # costs an Argon2 hash (m=64MB) and is the surface for credential stuffing.
     RATE_LIMIT_AUTH_MAX_REQUESTS: int = 10
