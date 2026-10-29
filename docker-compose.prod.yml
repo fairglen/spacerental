@@ -105,9 +105,11 @@ services:
     env_file: .env
     environment:
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
-      # Photos and private invoice PDFs, on the host's data volume
-      # (MEDIA_HOST_DIR=/srv/media in production); the app's own name for
-      # it is fixed here so `.env` cannot point the API at another path.
+      # Photos and private invoice PDFs under MEDIA_STORAGE=local, on the
+      # host's data volume (MEDIA_HOST_DIR=/srv/media in production); the
+      # app's own name for it is fixed here so `.env` cannot point the API
+      # at another path. Under MEDIA_STORAGE=s3 (E18) the mount is unused
+      # and goes with the volume (E19).
       MEDIA_ROOT: /app/media
     volumes:
       - ${MEDIA_HOST_DIR:-./data/media}:/app/media

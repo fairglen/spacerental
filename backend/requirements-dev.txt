@@ -5,3 +5,5 @@ pytest-asyncio==1.4.0
 pytest-xdist==3.8.0
 httpx==0.28.1
 aiosqlite==0.22.1
+# E18: an in-process S3 for tests/test_media_s3.py; no network, no account.
+moto[s3]==5.1.22

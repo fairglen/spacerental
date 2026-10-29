@@ -350,15 +350,20 @@ a carousel on the room cards and, for the room being booked, as a mosaic
 (≥1024px: the first photo big on the left, the rest in a grid; below that a
 full-width carousel) with a full-screen gallery behind "Mostrar todas as
 fotos". Storage sits behind a gateway (`backend/app/media.py`) like payments,
-email and locks. `MEDIA_STORAGE=local` is the default and the only implementation
-today: processed photos (WebP, metadata stripped, 1600px + a 480px thumbnail) live
-in the `media` Docker volume and the API serves them read-only at `/media`. No
-account or credentials. The module marks the seam for S3/R2; any other value stops
-the backend at startup rather than quietly writing to local disk.
+email and locks. `MEDIA_STORAGE=local` is the default: processed photos (WebP,
+metadata stripped, 1600px + a 480px thumbnail) live in the `media` Docker volume
+and the API serves them read-only at `/media`. No account or credentials.
+`MEDIA_STORAGE=s3` (E18, what production runs) puts the same keys in
+`MEDIA_S3_BUCKET` under `MEDIA_S3_PREFIX` with the credentials of the
+environment (the instance role) and serves them through a CloudFront
+distribution — `docs/runbooks/aws.md`, Phase 4.5; `tests/test_media_s3.py`
+exercises it against an in-process S3 (moto), no account needed. Any other
+value stops the backend at startup rather than quietly writing to local disk.
 
 - `MEDIA_BASE_URL` (unset = `<FRONTEND_URL>/backend/media`, the API's `/media`
   through the frontend's proxy, D20) is the browser-facing URL of that
-  directory; set it only when the photos are served from somewhere else.
+  directory; under `s3` it is mandatory — the CloudFront origin — and the API
+  mounts no `/media`.
 - Without Docker, files go to `backend/media/` (gitignored).
 - `python -m app.seed` gives each demo room the four illustrated room scenes
   from `flowspace-site/assets/img/room-photos/` (`sala-01..04.webp` and their

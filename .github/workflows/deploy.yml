@@ -113,12 +113,16 @@ jobs:
           IMAGE: ${{ steps.ecr.outputs.registry }}/spacerental/frontend
         # NEXT_PUBLIC_* values are inlined at build time (frontend/Dockerfile):
         # the relative API URL through the /backend proxy, the commit as the
-        # version the help form reports; the product defaults for the rest.
+        # version the help form reports, the media origin when the photos are
+        # served from CloudFront (E18: repository variable MEDIA_ORIGIN, the
+        # `media_url` output — empty until MEDIA_STORAGE=s3); the product
+        # defaults for the rest.
         run: |
           docker buildx build frontend --platform linux/arm64 --target runner --provenance=false \
             --build-arg NEXT_PUBLIC_API_URL=/backend/api/v1 \
             --build-arg INTERNAL_API_URL=http://backend:8000/api/v1 \
             --build-arg "NEXT_PUBLIC_APP_VERSION=sha-${{ steps.sha.outputs.short }}" \
+            --build-arg "NEXT_PUBLIC_MEDIA_ORIGIN=${{ vars.MEDIA_ORIGIN }}" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
             --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
             -t "$IMAGE:sha-${{ steps.sha.outputs.short }}" -t "$IMAGE:main" --push

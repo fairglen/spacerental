@@ -64,6 +64,29 @@ check "the dump exists and is not empty" "$([ -s "$DUMP" ] && echo yes || echo n
 check "the dump is pg_dump's custom format" "$(head -c 5 "$DUMP")" "PGDMP"
 check "the media copy carries the marker" "$(cat "$BACKUP_DIR/media/backup-marker.txt")" "kept through a restore"
 
+echo "── 2b. the S3 shape of the same script (E18): with MEDIA_STORAGE=s3 the media copy is bucket to bucket; media-migrate.sh copies the directory once"
+# Dry runs: every aws call is printed, none is made (no bucket exists here).
+S3_ENV="$WORK/.env.s3-shape"
+{ grep -Ev '^(MEDIA_STORAGE|MEDIA_S3_BUCKET|MEDIA_S3_PREFIX)=' "$ENV_FILE"; echo "MEDIA_STORAGE=s3"; echo "MEDIA_S3_BUCKET=media-bucket-test"; } > "$S3_ENV"
+s3_out=$(ENV_FILE="$S3_ENV" BACKUP_BUCKET=backups-bucket-test BACKUP_DRY_RUN=1 "$ROOT/deploy/backup.sh")
+check "backup.sh (s3): the dump still goes to the backups bucket" \
+  "$(grep -c '^+ aws s3 cp .*/.*\.dump s3://backups-bucket-test/dumps/' <<< "$s3_out")" 1
+check "backup.sh (s3): the media copy is bucket to bucket, additive (no --delete)" \
+  "$(grep -c '^+ aws s3 sync s3://media-bucket-test/media/ s3://backups-bucket-test/media/ --only-show-errors$' <<< "$s3_out")" 1
+check "backup.sh (s3): the metric call still ends the run" \
+  "$(grep -c '^+ aws cloudwatch put-metric-data' <<< "$s3_out")" 1
+grep -v '^MEDIA_S3_BUCKET=' "$S3_ENV" > "$S3_ENV.nobucket"
+check "backup.sh (s3): an .env without the bucket name is refused" \
+  "$(ENV_FILE="$S3_ENV.nobucket" BACKUP_BUCKET=b BACKUP_DRY_RUN=1 "$ROOT/deploy/backup.sh" > /dev/null 2>&1 && echo accepted || echo refused)" refused
+migrate_out=$(MEDIA_MIGRATE_DRY_RUN=1 "$ROOT/deploy/media-migrate.sh" media-bucket-test "$MEDIA_DIR")
+check "media-migrate.sh: the photos go under the application's prefix as immutable image/webp" \
+  "$(grep -c "^+ aws s3 sync $MEDIA_DIR s3://media-bucket-test/media/ .*--include .\*\.webp.*--content-type image/webp --cache-control public.*immutable" <<< "$migrate_out")" 1
+check "media-migrate.sh: the private PDFs go under private/ as application/pdf, never cached" \
+  "$(grep -c "^+ aws s3 sync $MEDIA_DIR s3://media-bucket-test/media/ .*--include private/.\*\.pdf.*--content-type application/pdf --cache-control private.*no-store" <<< "$migrate_out")" 1
+check "media-migrate.sh: never --delete" "$(grep -c -- '--delete' <<< "$migrate_out")" 0
+check "media-migrate.sh: a directory that is not there is refused" \
+  "$(MEDIA_MIGRATE_DRY_RUN=1 "$ROOT/deploy/media-migrate.sh" media-bucket-test "$WORK/no-such-dir" > /dev/null 2>&1 && echo accepted || echo refused)" refused
+
 echo "── 3. lose a table and the media file"
 sql "drop table bookings cascade" > /dev/null
 in_backend rm /app/media/backup-marker.txt

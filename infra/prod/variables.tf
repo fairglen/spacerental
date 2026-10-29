@@ -9,6 +9,12 @@ variable "domain" {
   default     = "app.flowspace.pt"
 }
 
+variable "media_domain" {
+  description = "E18: the public name of the photos (media.flowspace.pt), served by CloudFront with a certificate the owner validates in DNS (output media_certificate_validation) and a CNAME to the distribution. Empty = the distribution's own *.cloudfront.net name: no certificate, no DNS."
+  type        = string
+  default     = ""
+}
+
 variable "instance_type" {
   description = "arm64 (Graviton): the images are built for linux/arm64."
   type        = string

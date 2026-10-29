@@ -1,22 +1,27 @@
-"""Uploaded photos: validate, process, store (C14).
+"""Uploaded photos: validate, process, store (C14); where they live (E18).
 
 Same shape as `app.payments`, `app.email` and `app.locks`: a small gateway
-interface, a local implementation that needs no account, and an explicit
-`MEDIA_STORAGE` switch that fails loudly for anything not built yet. Nothing
-else in the codebase touches the filesystem or, later, a cloud SDK.
+interface, a local implementation that needs no account, an S3
+implementation for production, and an explicit `MEDIA_STORAGE` switch that
+fails loudly for anything else. Nothing outside this module touches the
+filesystem or the vendor SDK.
 
 Uploads are attacker-controlled bytes that get written to disk and served back
 to every visitor, so nothing of the original file survives: it is decoded,
 re-encoded as WebP, and named by us.
 """
 
+import asyncio
 import io
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.config import settings
@@ -120,8 +125,30 @@ def is_pdf(data: bytes) -> bool:
     return data.startswith(_PDF_MAGIC)
 
 
+LOCAL_MODE = "local"
+S3_MODE = "s3"
+# Photo keys are random and never reused (`new_photo_keys`), so a browser or
+# a CDN may keep them for good; a replaced photo is a new key.
+PUBLIC_CACHE_CONTROL = "public, max-age=31536000, immutable"
+PRIVATE_CACHE_CONTROL = "private, no-store"
+_CONTENT_TYPES = {".webp": "image/webp", ".pdf": "application/pdf"}
+
+
+def content_type_for(key: str) -> str:
+    return _CONTENT_TYPES.get(Path(key).suffix.lower(), "application/octet-stream")
+
+
+class MediaNotConfiguredError(RuntimeError):
+    """MEDIA_STORAGE names a storage this process cannot run."""
+
+
 class MediaStorage(ABC):
-    """Where processed photos live. Keys are relative paths we generate."""
+    """Where processed photos live. Keys are relative paths we generate.
+
+    A storage failure is an `OSError` (a `FileNotFoundError` for a key that
+    is not there), whatever the implementation: the routes treat the two
+    kinds the same way for a file on disk and an object in a bucket.
+    """
 
     @abstractmethod
     async def save(self, key: str, data: bytes) -> None: ...
@@ -163,20 +190,100 @@ class LocalMediaStorage(MediaStorage):
         return self._path(key).read_bytes()
 
 
-def build_media_storage() -> MediaStorage:
+class S3MediaStorage(MediaStorage):
+    """Objects under `prefix` in one bucket (E18). The public keys are served
+    by CloudFront in front of the bucket (infra/prod/media.tf; MEDIA_BASE_URL
+    is that origin, the prefix is the distribution's origin path, so a key
+    is the same string in the URL and in the database); the private ones
+    are read back here only. Credentials come from the environment — the
+    instance role in production — never from a setting.
+
+    boto3 is synchronous; every call runs in a worker thread so the event
+    loop never waits on the network. One client per storage, created once:
+    boto3 clients are thread-safe and the storage is a process singleton.
+    """
+
+    def __init__(
+        self, bucket: str, prefix: str = "media/", region: str | None = None, client: Any = None
+    ) -> None:
+        self.bucket = bucket
+        clean = prefix.strip("/")
+        self.prefix = f"{clean}/" if clean else ""
+        self._client = client if client is not None else boto3.client("s3", region_name=region)
+
+    def object_key(self, key: str) -> str:
+        # Keys are ours (`new_photo_keys`, `invoice_pdf_key`), but as in the
+        # local storage a traversal must be impossible by construction.
+        parts = key.split("/")
+        if key.startswith("/") or ".." in parts or "" in parts:
+            raise ValueError(f"media key escapes the media prefix: {key!r}")
+        return f"{self.prefix}{key}"
+
+    async def _call(self, operation: str, **params: Any) -> Any:
+        try:
+            return await asyncio.to_thread(getattr(self._client, operation), **params)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                raise FileNotFoundError(params.get("Key")) from exc
+            raise OSError(f"S3 {operation} {params.get('Key')}: {exc}") from exc
+        except BotoCoreError as exc:
+            raise OSError(f"S3 {operation} {params.get('Key')}: {exc}") from exc
+
+    async def save(self, key: str, data: bytes) -> None:
+        await self._call(
+            "put_object",
+            Bucket=self.bucket,
+            Key=self.object_key(key),
+            Body=data,
+            ContentType=content_type_for(key),
+            CacheControl=PRIVATE_CACHE_CONTROL if is_private_key(key) else PUBLIC_CACHE_CONTROL,
+        )
+
+    async def delete(self, key: str) -> None:
+        # S3 answers 204 for a key that is not there: already idempotent.
+        await self._call("delete_object", Bucket=self.bucket, Key=self.object_key(key))
+
+    async def read(self, key: str) -> bytes:
+        response = await self._call("get_object", Bucket=self.bucket, Key=self.object_key(key))
+        return await asyncio.to_thread(response["Body"].read)
+
+
+def validate_media_settings() -> None:
+    """Fail loudly on an unusable media configuration.
+
+    Called at import time, like `validate_payment_settings`: a production
+    process asked for S3 without a bucket, or with the browser URL still
+    pointing at the API's own `/media` (which S3 mode does not mount), dies
+    at boot instead of quietly serving nothing.
+    """
     mode = settings.MEDIA_STORAGE
-    if mode == "local":
+    if mode == LOCAL_MODE:
+        return
+    if mode != S3_MODE:
+        raise MediaNotConfiguredError(
+            f"MEDIA_STORAGE={mode!r} is not implemented; use {LOCAL_MODE!r} or {S3_MODE!r}"
+        )
+    if not (settings.MEDIA_S3_BUCKET or "").strip():
+        raise MediaNotConfiguredError(f"MEDIA_STORAGE={S3_MODE} requires MEDIA_S3_BUCKET")
+    if not settings.MEDIA_BASE_URL.strip():
+        raise MediaNotConfiguredError(
+            f"MEDIA_STORAGE={S3_MODE} requires MEDIA_BASE_URL, the public origin in front of "
+            "the bucket (the API's /media is not mounted in this mode)"
+        )
+
+
+def build_media_storage() -> MediaStorage:
+    validate_media_settings()
+    if settings.MEDIA_STORAGE == LOCAL_MODE:
         return LocalMediaStorage(settings.MEDIA_ROOT)
-    # ── Seam for object storage (S3 / Cloudflare R2) ──────────────────────
-    # Implement `MediaStorage` with the vendor SDK HERE, in this module only,
-    # require its credentials at startup the way `validate_payment_settings`
-    # does, and point MEDIA_BASE_URL at the bucket's public origin. Until then
-    # an unknown mode stops the app rather than quietly writing to local disk.
-    raise RuntimeError(
-        f"MEDIA_STORAGE={mode!r} is not implemented; the only storage today is 'local'"
+    return S3MediaStorage(
+        settings.MEDIA_S3_BUCKET or "", settings.MEDIA_S3_PREFIX, settings.AWS_REGION
     )
 
 
 @lru_cache(maxsize=1)
 def get_media_storage() -> MediaStorage:
     return build_media_storage()
+
+
+validate_media_settings()

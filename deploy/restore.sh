@@ -6,8 +6,10 @@
 #   <dump>          a local .dump file, or a key under s3://$BACKUP_BUCKET/dumps/
 #                   (2026-10-13.dump) when BACKUP_BUCKET is set
 #   [media-prefix]  where the media comes back from: a local directory, or a
-#                   prefix in the bucket (media/) — synced INTO MEDIA_DIR,
-#                   nothing already there is deleted
+#                   prefix in the bucket (media/) — synced INTO MEDIA_DIR
+#                   under MEDIA_STORAGE=local, or into the media bucket
+#                   (MEDIA_S3_BUCKET/MEDIA_S3_PREFIX from the .env) under
+#                   MEDIA_STORAGE=s3 (E18); nothing already there is deleted
 #
 # `pg_restore --clean --if-exists --no-owner`: every object in the dump is
 # dropped and recreated, data included — the database is the dump afterwards.
@@ -49,7 +51,20 @@ database_url() {
   echo "${raw/&ssl=/&sslmode=}"
 }
 
+env_value() { # key [default]
+  local raw
+  raw=$(grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2-)
+  raw=${raw#\"}
+  raw=${raw%\"}
+  echo "${raw:-${2:-}}"
+}
+
 URL=$(database_url)
+MEDIA_STORAGE=$(env_value MEDIA_STORAGE local)
+MEDIA_S3_BUCKET=$(env_value MEDIA_S3_BUCKET)
+MEDIA_S3_PREFIX=$(env_value MEDIA_S3_PREFIX media/)
+MEDIA_S3_PREFIX=${MEDIA_S3_PREFIX#/}
+MEDIA_S3_PREFIX=${MEDIA_S3_PREFIX%/}/
 # postgresql://user:pass@host:port/name?… → host and name, for the prompt.
 rest=${URL#*://}
 rest=${rest#*@}
@@ -81,7 +96,22 @@ docker run --rm --network "$NETWORK" -v "$STAGE/restore.dump:/restore.dump:ro" -
   pg_restore --clean --if-exists --no-owner --exit-on-error --dbname="$URL" /restore.dump
 log "database restored"
 
-if [ -n "$MEDIA_FROM" ]; then
+if [ -n "$MEDIA_FROM" ] && [ "$MEDIA_STORAGE" = s3 ]; then
+  # E18: the application reads the media bucket, so that is where the copy
+  # goes back to — from a local directory or from the backups bucket.
+  [ -n "$MEDIA_S3_BUCKET" ] || { echo "$TAG: MEDIA_STORAGE=s3 but MEDIA_S3_BUCKET is empty in $ENV_FILE" >&2; exit 1; }
+  if [ -d "$MEDIA_FROM" ]; then
+    log "syncing media from $MEDIA_FROM into s3://$MEDIA_S3_BUCKET/$MEDIA_S3_PREFIX (additive)"
+    aws s3 sync "$MEDIA_FROM" "s3://$MEDIA_S3_BUCKET/$MEDIA_S3_PREFIX" --only-show-errors
+  elif [ -n "${BACKUP_BUCKET:-}" ]; then
+    log "syncing media from s3://$BACKUP_BUCKET/$MEDIA_FROM into s3://$MEDIA_S3_BUCKET/$MEDIA_S3_PREFIX (additive)"
+    aws s3 sync "s3://$BACKUP_BUCKET/$MEDIA_FROM" "s3://$MEDIA_S3_BUCKET/$MEDIA_S3_PREFIX" --only-show-errors
+  else
+    echo "$TAG: $MEDIA_FROM is not a directory and BACKUP_BUCKET is not set" >&2
+    exit 1
+  fi
+  log "media restored to the bucket"
+elif [ -n "$MEDIA_FROM" ]; then
   if [ -d "$MEDIA_FROM" ]; then
     log "copying media from $MEDIA_FROM into $MEDIA_DIR"
     # In a container: the media directory belongs to the backend's user,
