@@ -164,7 +164,7 @@ else
     mv -f "$release/docker-compose.prod.yml" "$release/docker-compose.prod.awslogs.yml" .
     mv -f "$release/deploy/Caddyfile" deploy/Caddyfile
     local script
-    for script in deploy.sh backup.sh restore.sh db-bootstrap.sh; do
+    for script in deploy.sh backup.sh restore.sh db-bootstrap.sh media-migrate.sh; do
       chmod 755 "$release/deploy/$script"
       mv -f "$release/deploy/$script" "./$script"
     done
