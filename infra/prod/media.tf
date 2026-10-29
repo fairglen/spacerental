@@ -77,6 +77,34 @@ resource "aws_s3_bucket_lifecycle_configuration" "media" {
   }
 }
 
+# The cache key is the path alone — no query string, no cookies, no headers
+# — and the objects' own Cache-Control (one year, immutable, app/media.py)
+# sets the TTL between the bounds below. Our own policy rather than the
+# AWS-managed "CachingOptimized" one: the first apply failed with
+# NoSuchCachePolicy on its well-known id in this account (E18), and a
+# resource of ours has no such dependency.
+resource "aws_cloudfront_cache_policy" "media" {
+  name        = "${local.name}-media"
+  comment     = "Path-only key; TTL from the objects' Cache-Control"
+  min_ttl     = 0
+  default_ttl = 86400
+  max_ttl     = 31536000
+
+  parameters_in_cache_key_and_forwarded_to_origin {
+    cookies_config {
+      cookie_behavior = "none"
+    }
+    headers_config {
+      header_behavior = "none"
+    }
+    query_strings_config {
+      query_string_behavior = "none"
+    }
+    enable_accept_encoding_gzip   = false
+    enable_accept_encoding_brotli = false
+  }
+}
+
 resource "aws_cloudfront_origin_access_control" "media" {
   name                              = "${local.name}-media"
   description                       = "CloudFront signs its reads of the media bucket; the bucket stays private"
@@ -107,11 +135,8 @@ resource "aws_cloudfront_distribution" "media" {
     cached_methods         = ["GET", "HEAD"]
     viewer_protocol_policy = "redirect-to-https"
     # WebP is already compressed; gzip would only cost CPU.
-    compress = false
-    # The managed CachingOptimized policy: no query string, no cookies, no
-    # headers in the key; the objects' own Cache-Control (one year,
-    # immutable — app/media.py) sets the TTL.
-    cache_policy_id = "658327ea-f89d-4fbd-85d3-cc2ea17bbf1a"
+    compress        = false
+    cache_policy_id = aws_cloudfront_cache_policy.media.id
   }
 
   restrictions {
