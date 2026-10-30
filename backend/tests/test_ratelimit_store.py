@@ -66,10 +66,14 @@ def _middleware(app) -> RateLimitMiddleware:
 
 @pytest.fixture
 def swap_store(client, monkeypatch):
-    """Put another store behind the app's middleware for one test."""
+    """Put another store behind the app's middleware for one test, with the
+    store's clock frozen: a fixed window that ended halfway through the
+    requests would hand the last one a fresh budget (seen once in CI)."""
     from app.main import app
 
     middleware = _middleware(app)
+    frozen = time.time()
+    monkeypatch.setattr(ratelimit.time, "time", lambda: frozen)
     return lambda limiter: monkeypatch.setattr(middleware, "limiter", limiter)
 
 
