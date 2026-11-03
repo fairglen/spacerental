@@ -3,8 +3,8 @@ uvicorn[standard]==0.54.0
 sqlalchemy[asyncio]==2.1.6
 asyncpg==0.32.0
 alembic==1.20.1
-pydantic==2.14.1
-pydantic-settings==2.16.1
+pydantic==2.14.2
+pydantic-settings==2.16.2
 python-jose[cryptography]==3.5.0
 argon2-cffi==25.1.0
 email-validator==2.3.0
@@ -12,9 +12,9 @@ httpx==0.28.1
 python-multipart==0.0.32
 # Image validation and processing for uploaded room/space photos (C14).
 pillow==13.0.0
-stripe==16.0.0
+stripe==16.1.0
 # E18: MEDIA_STORAGE=s3 — the only AWS SDK use, inside app/media.py.
-boto3==1.42.97
+boto3==1.43.122
 # P2.3: the JSON renderer (ORJSONResponse) — the performance work's one new runtime dependency.
 orjson==3.13.0
-tzdata==2026.5
+tzdata==2026.6
