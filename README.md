@@ -412,7 +412,7 @@ link from the customer's page or set a password directly (`/admin/users/
 {id}/password-reset`, `/set-password`); a suspended account
 (`users.disabled_at`) can do none of it.
 
-### Pôr os emails a funcionar (Resend)
+### Pôr os emails a funcionar (SES ou Resend)
 
 Em modo de teste (`EMAIL_MODE=stub`, o valor por omissão em todo o lado) **nenhum
 email sai da máquina**: a mensagem de reposição de password, as confirmações
@@ -433,7 +433,16 @@ curl -s http://localhost:8000/__test__/emails | jq    # as últimas 20, com as l
 (A segunda rota existe apenas com `TEST_HOOKS_ENABLED=true` — ligado no
 Compose de desenvolvimento — fora de `APP_ENV=production`.)
 
-Para enviar emails a sério, pelo Resend:
+**Em produção o envio é feito pelo Amazon SES** (`EMAIL_MODE=ses`, E20), com
+as credenciais do próprio servidor (a instance role) e sem nenhuma chave no
+`.env`: o Terraform verifica o domínio (`infra/prod/email.tf`), o operador
+acrescenta os registos DNS que ele imprime e pede uma vez a saída da
+"sandbox" do SES — passo a passo em `docs/runbooks/aws.md`, Fase 4.1. A
+API arranca com `Email mode=ses from=…` e recusa-se a arrancar sem
+`AWS_REGION`. Uma recusa do SES (domínio por verificar, conta ainda em
+sandbox) aparece em **Definições → Email** e em "Últimas falhas".
+
+Para enviar emails pelo Resend (o segundo fornecedor, `EMAIL_MODE=live`):
 
 1. Crie uma conta em https://resend.com e, em **Domains → Add domain**,
    adicione `flowspace.pt`.

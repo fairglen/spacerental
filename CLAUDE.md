@@ -404,8 +404,10 @@ changing it, and move a task there yourself when it reaches DONE.
   untouched. Stable Lisbon local times (R01) are not parked.
 - **Smart locks:** the local stub covers confirmation/cancellation transitions.
   Live startup is gated until persistent identifiers and retries ship (O04).
-- **Email:** stub/live gateway and Portuguese confirmation/cancellation messages
-  run through in-process BackgroundTasks. A durable outbox and retries remain O01.
+- **Email:** stub/ses/live gateways (the stub by default; Amazon SES with the
+  instance role in production, E20; Resend as the second provider) and
+  Portuguese confirmation/cancellation messages run through in-process
+  BackgroundTasks. A durable outbox and retries remain O01.
 - **Pagination:** admin booking pagination is implemented; wider coverage is D05.
 - **Rate limiting:** tiered limits with two stores (`RATE_LIMIT_STORE`):
   `memory` per process for development, `postgres` shared by every worker and
