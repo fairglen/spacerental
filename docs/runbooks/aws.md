@@ -325,11 +325,53 @@ Smoke checklist, in the browser and on the host:
 Each `.env` change: edit `.env.production`, `put-parameter` (2.4), then
 `gh workflow run deploy.yml --ref main`.
 
-1. **Email (Resend):** verify `flowspace.pt` at Resend (the SPF/DKIM records
-   it gives you, in your DNS), create an API key, set `EMAIL_MODE=live` and
-   `RESEND_API_KEY=re_…`, deploy. Then Admin → Definições → Email → "Enviar
-   email de teste" to your own address; the card lists delivery failures
-   (README "Pôr os emails a funcionar (Resend)").
+1. **Email (Amazon SES, E20):** no provider account and no key — the
+   instance role sends from the domain Terraform verified. Four steps:
+   1. **DNS.** The apply that merged E20 created the SES identity for
+      `flowspace.pt`. Add the six records it printed — three DKIM CNAMEs,
+      the MAIL FROM `MX` and `TXT` on `mail.flowspace.pt`, and the DMARC
+      `TXT` on `_dmarc.flowspace.pt` — in the same DNS panel as the `A`
+      record of 2.5:
+
+      ```bash
+      terraform -chdir=infra/prod output -json email_dns_records | jq -r '.[] | "\(.type)\t\(.name)\t\(.value)"'
+      ```
+
+      Within minutes to an hour SES marks the identity verified:
+
+      ```bash
+      aws sesv2 get-email-identity --region eu-west-1 --email-identity flowspace.pt \
+        --query '{verified: VerifiedForSendingStatus, dkim: DkimAttributes.Status, mailFrom: MailFromAttributes.MailFromDomainStatus}'
+      ```
+
+      All three must read `true` / `SUCCESS` / `SUCCESS`.
+   2. **Out of the sandbox.** A new SES account may only mail addresses it
+      has verified. Ask for production access once (AWS answers within
+      24 hours, usually sooner; the console path is SES → Account dashboard
+      → Request production access):
+
+      ```bash
+      aws sesv2 put-account-details --region eu-west-1 --production-access-enabled \
+        --mail-type TRANSACTIONAL --website-url https://app.flowspace.pt \
+        --use-case-description "Transactional email for a room-booking web app: booking confirmations and cancellations, password resets, invoice notices and help-form acknowledgements, sent to customers who signed up on the site. Low volume (tens per day)." \
+        --additional-contact-email-addresses geral@flowspace.pt --contact-language EN
+      aws sesv2 get-account --region eu-west-1 --query '{production: ProductionAccessEnabled, enforcement: EnforcementStatus, sending: SendingEnabled}'
+      ```
+
+      Until `production` is `true`, a send to an unverified address fails
+      with `MessageRejected` — visible on the admin card, nothing silent.
+   3. **The `.env`:** `EMAIL_MODE=ses` (`AWS_REGION=eu-west-1` is already
+      there; `EMAIL_FROM_ADDRESS` must be on the verified domain), then
+      `put-parameter` and `gh workflow run deploy.yml --ref main`. The
+      backend's first log line reads `Email mode=ses from=… sending through
+      Amazon SES in eu-west-1`.
+   4. **Test:** Admin → Definições → Email → "Enviar email de teste" to your
+      own address, then a password reset from the sign-in page. The card
+      lists delivery failures with SES's own message (README "Pôr os emails
+      a funcionar").
+
+   Resend remains the second provider (`EMAIL_MODE=live`, `RESEND_API_KEY`,
+   the domain verified at Resend) if SES is ever unavailable.
 2. **Payments (Stripe):** in the Stripe dashboard, live mode: the secret key;
    a webhook endpoint `https://app.flowspace.pt/backend/api/v1/webhooks/stripe`
    listening to `checkout.session.completed` — its signing secret; payment

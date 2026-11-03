@@ -164,6 +164,8 @@ class TestEmailSettingsValidation:
         with pytest.raises(EmailNotConfiguredError):
             validate_email_settings()
 
+    # "ses" is the third mode since E20: tests/test_email_ses.py.
+
 
 class TestBookingConfirmationEmail:
     """Integration — both paths that confirm a booking enqueue a message."""

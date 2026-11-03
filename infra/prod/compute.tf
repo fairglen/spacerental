@@ -74,6 +74,14 @@ data "aws_iam_policy_document" "instance" {
     resources = ["${aws_s3_bucket.media.arn}/${local.media_prefix}/*"]
   }
 
+  # E20: the application's email, from the verified domain only.
+  statement {
+    sid       = "SendEmailFromTheDomain"
+    effect    = "Allow"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = [aws_sesv2_email_identity.domain.arn]
+  }
+
   statement {
     sid       = "ReadTheEnv"
     effect    = "Allow"

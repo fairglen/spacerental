@@ -609,7 +609,7 @@ export type OrganizationSettingsPatch = {
 // B61: the email gateway as the operator sees it — never the provider key.
 export type EmailFailure = { at: string; to: string; subject: string; error: string }
 export type EmailStatus = {
-  mode: 'stub' | 'live'
+  mode: 'stub' | 'ses' | 'live'
   from_address: string
   support_inbox: string
   test_hooks_enabled: boolean

@@ -1570,7 +1570,7 @@ only logged by `_deliver`; nothing tells an operator.
    "Modo de teste: os emails não saem desta máquina", with the two places to
    read them; `live` = the from-address), "Enviar email de teste" with its
    result, "Últimas falhas".
-5. Docs: README "Pôr os emails a funcionar (Resend)" — account, domain
+5. Docs: README "Pôr os emails a funcionar" — account, domain
    `flowspace.pt`, the DNS records Resend gives (SPF/DKIM/DMARC), "Verified",
    API key, `EMAIL_MODE=live`, `RESEND_API_KEY`, `EMAIL_FROM_ADDRESS`,
    restart, the test button; how to read stub emails locally. `.env.example`
@@ -4746,6 +4746,42 @@ that proved the reviewer is back (its apply waited).
 E17 and E18 are DONE and archived in
 [docs/backlog-archive/2026-10.md](docs/backlog-archive/2026-10.md#production-platform-follow-ups-e-series-e17e19--owner-assignment-2026-10-28);
 E19 stays here until the owner's OK.
+
+### E20 — Email through Amazon SES (`EMAIL_MODE=ses`)
+
+**Priority: P1. State: IN PROGRESS 2026-11-03 (PR `feat/email-ses`).**
+**DECISION (owner, 2026-11-03): Amazon SES over Resend** — no third-party
+account, no API key to store or rotate; the instance role sends, like the
+media bucket. Resend stays as the second provider (`live`). **Scope:**
+- Backend: `SesEmailGateway` in `app/email.py` only (boto3 `sesv2`
+  `SendEmail` in a worker thread, UTF-8 subject and both bodies,
+  `ReplyToAddresses` when the message has one); `EMAIL_MODE=ses` needs
+  `AWS_REGION` (`validate_email_settings`, at import, like the other
+  modes); a refusal is `EmailProviderError` with SES's own code and
+  message (`MessageRejected: Email address not verified …`), which the
+  admin card shows; the startup line names SES and the region. `stub` is
+  still the default everywhere a laptop runs.
+- Infra (`infra/prod/email.tf`): `aws_sesv2_email_identity` for
+  `email_domain` (default `flowspace.pt`, Easy DKIM RSA 2048) and the MAIL
+  FROM subdomain `mail.flowspace.pt` (SPF alignment for DMARC); the
+  instance role gets `ses:SendEmail`/`SendRawEmail` on that identity only;
+  output `email_dns_records` lists the three DKIM CNAMEs, the MAIL FROM
+  `MX` + `TXT` and a DMARC `TXT` (`p=none`, reports to the alarm address)
+  for the owner's DNS. The sandbox exit is a one-off request the runbook
+  gives as a CLI command (`put-account-details --production-access-enabled`).
+- Frontend: the Definições → Email card treats every non-stub mode as
+  "Envio real" and names SES; `EmailStatus.mode` gains `'ses'`.
+- Docs: runbook Phase 4.1 rewritten for SES (Resend kept as the fallback),
+  README's email section, both `.env` templates, CLAUDE.md §11.
+- **Validation:** `tests/test_email_ses.py` on moto's in-process SES — the
+  message shape, a verified domain sends, an unverified sender is a
+  provider error in SES's words, the configuration refusals, the startup
+  line, the admin status and test-email routes (200 verified / 502
+  sanitised when refused); the existing stub and Resend tests unchanged;
+  the card's component test gains the `ses` case; `terraform validate`.
+  **Owner, after the merge:** approve the apply (identity + MAIL FROM + the
+  role policy; 0 to destroy), add the DNS records, request production
+  access, set `EMAIL_MODE=ses`, deploy, send the test email.
 
 ### E19 — Remove the media volume (after the owner confirms the migration)
 

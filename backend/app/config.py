@@ -155,10 +155,11 @@ class Settings(BaseSettings):
 
     # ── Email ────────────────────────────────────────────────────────────
     # "stub" (default) records what would be sent (log + in-memory list) with
-    # no account, no credentials, no network; "live" calls the real Resend
-    # API and RESEND_API_KEY then becomes mandatory —
-    # app.email.validate_email_settings() raises at import rather than
-    # letting the stub run in production.
+    # no account, no credentials, no network; "ses" (production, E20) sends
+    # through Amazon SES with the environment's credentials (the instance
+    # role) and needs AWS_REGION; "live" calls the real Resend API and
+    # RESEND_API_KEY then becomes mandatory — app.email.validate_email_settings()
+    # raises at import rather than letting the stub run in production.
     EMAIL_MODE: str = "stub"
     RESEND_API_KEY: str | None = None
     # Live mode requires flowspace.pt to be verified at the email provider
