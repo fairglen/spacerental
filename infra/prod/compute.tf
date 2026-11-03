@@ -149,10 +149,16 @@ resource "aws_instance" "app" {
   associate_public_ip_address = true
   monitoring                  = false
 
+  # IMDSv2 only. Hop limit 2, not 1: the application runs in Docker
+  # containers on the bridge network, one hop away from the metadata
+  # service, and the instance role's credentials (S3 media, SES email —
+  # E18, E20) are read from there by boto3 inside the backend container.
+  # With 1 the host's own aws CLI worked and the container got "Unable to
+  # locate credentials".
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 1
+    http_put_response_hop_limit = 2
   }
 
   root_block_device {
