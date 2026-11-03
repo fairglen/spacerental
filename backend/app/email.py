@@ -1,18 +1,23 @@
 """Email notifications boundary.
 
-Mirrors `app/payments.py`'s shape: an `EmailGateway` interface with two
+Mirrors `app/payments.py`'s shape: an `EmailGateway` interface with three
 implementations chosen by `EMAIL_MODE`, so routers never know which one is
-live. **Nothing outside this module may know about Resend.**
+live. **Nothing outside this module may know about Resend or SES.**
 
 * `stub` (default) — `StubEmailGateway`: no account, no network, no
   credentials. Every "sent" message is appended to an in-memory list and
   logged at INFO, so `docker-compose up` with zero credentials still lets a
   developer (or a test) see exactly what would have gone out.
+* `ses` (production, E20) — `SesEmailGateway`: Amazon SES through boto3,
+  with the credentials of the environment (the instance role) — no key in
+  the `.env`. The sending domain is verified by Terraform (infra/prod/
+  email.tf) and the owner's DNS records; the account must be out of the
+  SES sandbox (runbook, Phase 4). Missing `AWS_REGION` raises at import.
 * `live` — `ResendEmailGateway`: a plain HTTPS POST to Resend's API via
   `httpx` (already a dependency — no vendor SDK needed for a single
   endpoint). Missing `RESEND_API_KEY` raises at import time rather than
   degrading to the stub; a stub silently running in production would be far
-  worse than a crash.
+  worse than a crash. Kept as the second provider.
 
 There is deliberately no real message broker here (no Redis/Celery anywhere
 else in this stack — CLAUDE.md §11). `enqueue_email` schedules delivery on
@@ -23,6 +28,7 @@ real queue later means changing the body of that one function, not every
 router that sends an email.
 """
 
+import asyncio
 import logging
 import re
 import uuid
@@ -33,9 +39,12 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from functools import cache
 from html import escape
+from typing import Any
 from zoneinfo import ZoneInfo
 
+import boto3
 import httpx
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import BackgroundTasks
 
 from app.config import BRAND_NAME, settings
@@ -44,6 +53,7 @@ logger = logging.getLogger("app.email")
 
 STUB_MODE = "stub"
 LIVE_MODE = "live"
+SES_MODE = "ses"
 
 LISBON_TZ = ZoneInfo("Europe/Lisbon")
 
@@ -110,6 +120,47 @@ class ResendEmailGateway(EmailGateway):
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 raise EmailProviderError(str(exc)) from exc
+
+
+class SesEmailGateway(EmailGateway):
+    """Amazon SES (the v2 API). Selected by EMAIL_MODE=ses (E20).
+
+    Credentials come from the environment — the instance role in
+    production, whose policy allows `ses:SendEmail` on the verified domain
+    identity only — so nothing secret lives in the `.env`. boto3 is
+    synchronous; the call runs in a worker thread. One client per gateway,
+    built once (thread-safe).
+    """
+
+    def __init__(self, from_address: str, region: str, client: Any = None) -> None:
+        self._from = from_address
+        self._client = client if client is not None else boto3.client("sesv2", region_name=region)
+
+    async def send(self, message: EmailMessage) -> None:
+        params: dict[str, Any] = {
+            "FromEmailAddress": self._from,
+            "Destination": {"ToAddresses": [message.to]},
+            "Content": {
+                "Simple": {
+                    "Subject": {"Data": message.subject, "Charset": "UTF-8"},
+                    "Body": {
+                        "Text": {"Data": message.text_body, "Charset": "UTF-8"},
+                        "Html": {"Data": message.html_body, "Charset": "UTF-8"},
+                    },
+                }
+            },
+        }
+        if message.reply_to:
+            params["ReplyToAddresses"] = [message.reply_to]
+        try:
+            await asyncio.to_thread(self._client.send_email, **params)
+        except ClientError as exc:
+            error = exc.response.get("Error", {})
+            raise EmailProviderError(
+                f"{error.get('Code', 'ClientError')}: {error.get('Message', str(exc))}"
+            ) from exc
+        except BotoCoreError as exc:
+            raise EmailProviderError(str(exc)) from exc
 
 
 class StubEmailGateway(EmailGateway):
@@ -588,6 +639,11 @@ def describe_mode() -> str:
             "this machine (STUB EMAIL lines below; GET /__test__/emails when the test "
             "hooks are on) and never leave it"
         )
+    if settings.EMAIL_MODE == SES_MODE:
+        return (
+            f"Email mode=ses from={settings.EMAIL_FROM_ADDRESS!r}: sending through Amazon SES "
+            f"in {settings.AWS_REGION} with the environment's credentials"
+        )
     return f"Email mode=live from={settings.EMAIL_FROM_ADDRESS!r}: sending through Resend"
 
 
@@ -624,27 +680,42 @@ def validate_email_settings() -> None:
     at boot instead of quietly running on the stub.
     """
     mode = settings.EMAIL_MODE
-    if mode not in (STUB_MODE, LIVE_MODE):
+    if mode not in (STUB_MODE, LIVE_MODE, SES_MODE):
         raise EmailNotConfiguredError(
-            f"EMAIL_MODE must be '{STUB_MODE}' or '{LIVE_MODE}', got {mode!r}"
+            f"EMAIL_MODE must be '{STUB_MODE}', '{SES_MODE}' or '{LIVE_MODE}', got {mode!r}"
         )
     if mode == STUB_MODE:
+        return
+    if mode == SES_MODE:
+        if not (settings.AWS_REGION or "").strip():
+            raise EmailNotConfiguredError(
+                f"EMAIL_MODE={SES_MODE} but AWS_REGION is not set (the region of the SES identity)"
+            )
         return
     if not settings.RESEND_API_KEY:
         raise EmailNotConfiguredError(f"EMAIL_MODE={LIVE_MODE} but RESEND_API_KEY is not set")
 
 
 @cache
-def _build_gateway(mode: str, api_key: str | None, from_address: str) -> EmailGateway:
+def _build_gateway(
+    mode: str, api_key: str | None, from_address: str, region: str | None
+) -> EmailGateway:
     if mode == LIVE_MODE:
         return ResendEmailGateway(api_key=api_key, from_address=from_address)
+    if mode == SES_MODE:
+        return SesEmailGateway(from_address=from_address, region=region or "")
     return StubEmailGateway()
 
 
 def get_email_gateway() -> EmailGateway:
     """FastAPI dependency returning the configured gateway."""
     validate_email_settings()
-    return _build_gateway(settings.EMAIL_MODE, settings.RESEND_API_KEY, settings.EMAIL_FROM_ADDRESS)
+    return _build_gateway(
+        settings.EMAIL_MODE,
+        settings.RESEND_API_KEY,
+        settings.EMAIL_FROM_ADDRESS,
+        settings.AWS_REGION,
+    )
 
 
 validate_email_settings()

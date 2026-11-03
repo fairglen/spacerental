@@ -65,6 +65,15 @@ describe('EmailStatusCard', () => {
     expect(screen.queryByText('GET /__test__/emails')).toBeNull()
   })
 
+  it('in ses mode says Amazon SES sends for real and shows the sender', async () => {
+    vi.mocked(adminApi.getEmailStatus).mockResolvedValue({ ...stub, mode: 'ses', test_hooks_enabled: false })
+    renderCard()
+    expect(await screen.findByTestId('email-mode')).toHaveTextContent('Envio real')
+    expect(screen.getByText('Envio real através do Amazon SES.')).toBeInTheDocument()
+    expect(screen.getByText('FlowSpace <no-reply@flowspace.pt>')).toBeInTheDocument()
+    expect(screen.queryByText('GET /__test__/emails')).toBeNull()
+  })
+
   it('"Enviar email de teste" sends to the admin only and reports the address it went to', async () => {
     vi.mocked(adminApi.getEmailStatus).mockResolvedValue(stub)
     vi.mocked(adminApi.sendTestEmail).mockResolvedValue({ delivered: true, to: 'admin@demo.com' })

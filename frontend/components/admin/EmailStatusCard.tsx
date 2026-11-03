@@ -32,8 +32,8 @@ export function EmailStatusCard({ api, enabled, orgId }: { api: Api; enabled: bo
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="email-card-title" className="text-lg font-semibold text-foreground">Email</h2>
         {status.data && (
-          <Badge variant={status.data.mode === 'live' ? 'default' : 'secondary'} data-testid="email-mode">
-            {status.data.mode === 'live' ? 'Envio real' : 'Modo de teste'}
+          <Badge variant={status.data.mode === 'stub' ? 'secondary' : 'default'} data-testid="email-mode">
+            {status.data.mode === 'stub' ? 'Modo de teste' : 'Envio real'}
           </Badge>
         )}
       </div>
@@ -55,11 +55,11 @@ export function EmailStatusCard({ api, enabled, orgId }: { api: Api; enabled: bo
                     : <>a rota <code className="rounded bg-[#F8FAF9] px-1">/__test__/emails</code>, quando os ganchos de teste estão ativos</>}
                 </li>
               </ul>
-              <p className="mt-2 text-muted-foreground">Para enviar emails a sério, siga &quot;Pôr os emails a funcionar (Resend)&quot; no README.</p>
+              <p className="mt-2 text-muted-foreground">Para enviar emails a sério, siga &quot;Pôr os emails a funcionar&quot; no README.</p>
             </div>
           ) : (
             <div>
-              <p className="font-medium text-foreground">Envio real através do fornecedor de email.</p>
+              <p className="font-medium text-foreground">{status.data.mode === 'ses' ? 'Envio real através do Amazon SES.' : 'Envio real através do fornecedor de email.'}</p>
               <p className="mt-1 text-muted-foreground">Remetente: <span className="text-foreground">{status.data.from_address}</span></p>
             </div>
           )}
