@@ -9,6 +9,12 @@ variable "domain" {
   default     = "app.flowspace.pt"
 }
 
+variable "email_domain" {
+  description = "E20: the domain the application sends email from (EMAIL_FROM_ADDRESS must be on it), verified in SES through the DNS records in the email_dns_records output."
+  type        = string
+  default     = "flowspace.pt"
+}
+
 variable "media_domain" {
   description = "E18: the public name of the photos (media.flowspace.pt), served by CloudFront with a certificate the owner validates in DNS (output media_certificate_validation) and a CNAME to the distribution. Empty = the distribution's own *.cloudfront.net name: no certificate, no DNS."
   type        = string

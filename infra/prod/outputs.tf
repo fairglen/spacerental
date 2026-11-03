@@ -63,3 +63,13 @@ output "ssm_session_command" {
   description = "A shell on the host, no SSH."
   value       = "aws ssm start-session --region ${var.region} --target ${aws_instance.app.id}"
 }
+
+output "email_identity_arn" {
+  description = "E20: the SES identity the instance role may send from."
+  value       = aws_sesv2_email_identity.domain.arn
+}
+
+output "email_dns_records" {
+  description = "E20: add these to the domain's DNS (three DKIM CNAMEs, the MAIL FROM MX and SPF, DMARC); SES then shows the identity as verified."
+  value       = local.email_dns_records
+}
