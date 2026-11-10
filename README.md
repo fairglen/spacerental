@@ -4,6 +4,8 @@
 
 > **Early proof of concept.** Hourly checkout, prepaid packs, admin tools and local email/access-code flows are implemented. The product is not production-ready: payment recovery, durable notifications/access and other outcome gates remain open. See [roadmap.md](roadmap.md) for the agreed outcome order and [TODO.md](TODO.md) for executable tasks; roadmap delivery has resumed with customer enrollment (C01).
 
+> **New here?** [docs/how-it-works.md](docs/how-it-works.md) is a plain-language tour of what the app does and its main flows (booking, packs, payments, cancellations, emails, the admin panel).
+
 ## Stack
 - **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind CSS + NextAuth.js
 - **Backend**: FastAPI (Python) + SQLAlchemy async + PostgreSQL
