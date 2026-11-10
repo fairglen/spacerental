@@ -15,23 +15,32 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: spacerental
-          POSTGRES_PASSWORD: spacerental
-          POSTGRES_DB: spacerental_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U spacerental"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
+    # Postgres is started as a step, not a `services:` block, so it can be
+    # launched with durability off (Q57): a throwaway CI database never needs
+    # to survive a crash, and skipping fsync/WAL sync is a large win when
+    # every test commits. `services:` cannot override the container command,
+    # which is the only way to pass `-c fsync=off` et al. The host job reaches
+    # it on localhost:5432 exactly as before.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start Postgres (durability off — throwaway test database)
+        run: |
+          docker run -d --name postgres \
+            -e POSTGRES_USER=spacerental \
+            -e POSTGRES_PASSWORD=spacerental \
+            -e POSTGRES_DB=spacerental_test \
+            -p 5432:5432 \
+            postgres:18-alpine \
+            postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+          for _ in $(seq 1 30); do
+            docker exec postgres pg_isready -U spacerental && exit 0
+            sleep 1
+          done
+          echo "::error::Postgres did not become ready in 30 s" >&2
+          docker logs postgres
+          exit 1
+
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
