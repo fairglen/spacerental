@@ -3141,7 +3141,7 @@ than the mark). Reverse: rebuild with `s = 0.45 * mark_height / cap`.
 Compose/deploy sets it), else Next's own fallback; Next 14 ignores it in
 `next dev` anyway.
 
-## Stack repair, CI speed and code quality (Q-series, Q40–Q56) — owner assignment 2026-10-05
+## Stack repair, CI speed and code quality (Q-series, Q40–Q57) — owner assignment 2026-10-05
 
 One assignment in THREE sequential parts, each published as its own PR by
 the loop and never merged by it. **Part 0** (Q40) repairs the stacked PRs
@@ -3562,6 +3562,44 @@ observed report: the violations seen during the e2e run under the
 report-only policy, and the directives tightened in response. **Acceptance:**
 the policy enforces with zero violations on the full e2e run and a manual
 pass over the admin and dashboard pages. Not part of this assignment.
+
+### Q57 — Backend `test` job faster without weakening any test
+
+**Priority: P2. State: DONE 2026-11-10** — [PR #170](https://github.com/fairglen/spacerental/pull/170),
+branch `perf/backend-tests-ci`. The `backend / test` job was the whole
+`Checks` critical path (~7 min wall-clock; the job itself 384 s for 1,210
+tests). **Cause:** two per-test fixture costs — `db_session` ran
+`drop_all`+`create_all` (18 tables, ~210 ms) before *every* test, and the
+`user`/`admin`/`customer` fixtures re-hashed the same Argon2id password
+(64 MiB, t=3) every test. **Steps (each a commit, measured on CI):**
+0. `--durations=20` on the workflow's pytest call (not `pytest.ini`) —
+   baseline 384 s. 1. start Postgres as a step with `fsync=off
+   synchronous_commit=off full_page_writes=off` (a `services:` block cannot
+   override the container command) — 376 s. 2. a `functools.cache` helper
+   hashes the shared `"Senha-2026x"` once per xdist worker — 389 s on CI
+   (noise; −17 s locally). 3. a session-scoped `schema` fixture builds the
+   schema once per worker and `db_session` TRUNCATEs per test
+   (`RESTART IDENTITY CASCADE`, ~28 ms vs 212 ms), *before* yielding so a
+   failed test leaves its rows; a new `fresh_schema` marker restores
+   `drop_all`/`create_all` (before and after) for the EXCLUDE-constraint
+   tests in `test_recurrences.py` / `test_room_blocks.py`, and
+   `test_schema_isolation.py` guards that the base schema leaks no EXCLUDE
+   constraint — **144 s**. 4. worker sweep: `-n auto` (=4 on the 4-vCPU
+   runner) 144/192 s, `-n 6` 176 s, `-n 8` 209 s → the suite is CPU-bound
+   after step 3, so oversubscription hurts; **kept `-n auto`**. 5. no
+   sharding — the job is already < 3 min (would only add a `required-checks`
+   dependency for no gain). **Result:** `backend / test` 384 s → ~144 s;
+   `Checks` wall-clock ~7 min → ~3.5 min, bounded now by the e2e shards /
+   `perf-web` / `prod-stack` (~2.2 min each). **DECISIONs:** (a) the EXCLUDE
+   constraints live only in the migrations (§6.5), so the per-test TRUNCATE
+   schema has none — a schema-mutating test must carry `fresh_schema`, which
+   rebuilds after it too so the mutation cannot leak into the next
+   truncate-only test; (b) hashing is cached only for the shared conftest
+   password — tests that need a different one still hash their own literal,
+   and the login/verify tests are untouched. **Validation:** the suite
+   passes unchanged (1,211 → 1,212 tests, one added guard; none skipped) on
+   two consecutive CI runs; before/after per step in the PR body. No
+   `backend/app/` change.
 
 ## Performance (P-series, P1.1–P2.4) — owner assignment 2026-10-05
 
