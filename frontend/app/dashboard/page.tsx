@@ -18,6 +18,7 @@ import { bookingErrorMessage } from '@/lib/bookingErrors'
 import { creditExpiry, creditHoursFor, purchaseLabel } from '@/lib/cancellationCredit'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
+import { AccessCard } from '@/components/dashboard/AccessCard'
 import { PaymentNotice, paymentOutcomeOf, type PaymentOutcome } from '@/components/booking/PaymentNotice'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -121,6 +122,7 @@ export default function DashboardPage() {
         </div>
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
           {paymentNotice && <PaymentNotice outcome={paymentNotice} onClose={() => setPaymentNotice(null)} />}
+          <AccessCard api={api} />
           <section aria-label={t('dashboard.packs_title')} className="mb-8 rounded-xl border border-border bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">

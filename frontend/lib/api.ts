@@ -14,6 +14,7 @@ import type {
   OrganizationSettings, OrganizationSettingsPatch, PublicContact, EmailStatus, EmailTestResult,
   BillingDetails, BillingPeriod, BillingSummary, BillingStatement, InvoicedFilter,
   Invoice, InvoiceFilters, InvoiceCreateBody, InvoiceUpdateBody, MyInvoice,
+  CustomerPin, AdminAccess,
 } from '@/types'
 
 // Relative by default (/backend/api/v1): the browser calls the API through
@@ -248,6 +249,15 @@ export const bookingsApi = {
       booking: normBooking(r.data.booking),
       checkout_url: r.data.checkout_url ?? null,
     })),
+}
+
+// Smart-lock access (L01): the customer's own door PIN.
+export const accessApi = {
+  getMine: (api: Api): Promise<CustomerPin> =>
+    api.get<{ access: CustomerPin }>('/access/me').then(r => r.data.access),
+
+  rotate: (api: Api): Promise<CustomerPin> =>
+    api.post<{ access: CustomerPin }>('/access/me/rotate').then(r => r.data.access),
 }
 
 export const recurrencesApi = {
@@ -549,6 +559,19 @@ export const adminApi = {
     api.delete(`/admin/users/${id}/membership`, { params: { confirm } }).then(() => undefined),
   anonymiseUser: (id: string, body: { confirm: string; reason?: string }, api: Api): Promise<AnonymisedUser> =>
     api.post<{ user: AnonymisedUser }>(`/admin/users/${id}/anonymise`, body).then(r => r.data.user),
+
+  // Smart-lock access (L01): status and the operator actions. org_id is
+  // injected into api.defaults.params by useApi, so none is passed here.
+  getAccess: (id: string, api: Api): Promise<AdminAccess> =>
+    api.get<{ access: AdminAccess }>(`/admin/users/${id}/access`).then(r => r.data.access),
+  rotateAccess: (id: string, api: Api): Promise<AdminAccess> =>
+    api.post<{ access: AdminAccess }>(`/admin/users/${id}/access/rotate`).then(r => r.data.access),
+  revokeAccess: (id: string, api: Api): Promise<AdminAccess> =>
+    api.post<{ access: AdminAccess }>(`/admin/users/${id}/access/revoke`).then(r => r.data.access),
+  reactivateAccess: (id: string, api: Api): Promise<AdminAccess> =>
+    api.post<{ access: AdminAccess }>(`/admin/users/${id}/access/reactivate`).then(r => r.data.access),
+  openDoor: (spaceId: string, api: Api): Promise<{ opened: boolean }> =>
+    api.post<{ opened: boolean }>(`/admin/spaces/${spaceId}/open-door`).then(r => r.data),
 
   // Users (G03/G04).
   createUser: (body: AdminUserCreateBody, api: Api): Promise<OrgUser> =>

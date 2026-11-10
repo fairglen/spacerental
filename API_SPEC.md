@@ -215,6 +215,15 @@ streamed as `application/pdf` with `Content-Disposition: attachment` and
 
 ## User Endpoints (requires auth)
 
+### GET /access/me · POST /access/me/rotate
+
+The customer's own smart-lock PIN (L01). `GET` returns
+`{"access": {status, pin, rotated_at, devices: [{device_id, sync_status, synced_at}]}}`
+— `status` is `active` | `dormant` | `revoked` | `none`; `pin` is the clear
+6-digit code (shown only to its owner) or `null`. `POST …/rotate` replaces the
+PIN with a fresh one (the old is deleted from every lock), throttled on the
+`auth` tier; `404` when there is no code to rotate.
+
 ### GET /bookings/me
 My bookings list.
 Response: `{ bookings: Booking[] }` — **list rows** (P2.2): `room` is a
@@ -446,7 +455,20 @@ reset link is deleted and the membership here is removed. Bookings,
 purchases and help requests keep pointing at the placeholder. 409 for
 yourself, for the organisation's last owner, and for an account that also
 belongs to another organisation (the row is global, the operator's authority
-is not); 404 for a non-member. Audited as `anonymise` with the reason.
+is not); 404 for a non-member. Audited as `anonymise` with the reason. Also
+revokes the customer's smart-lock PIN and queues its removal from every lock.
+
+### Smart-lock access (L01)
+
+`GET /admin/users/:id/access` → `{"access": {status, created_at, rotated_at,
+last_used_at, devices: [{device_id, sync_status, synced_at, last_error}]}}` —
+the operator's view, never the clear PIN; `status` is `null` when the customer
+has no code. `POST …/access/rotate`, `…/access/revoke`, `…/access/reactivate`
+act and return the same shape (rotate does not reveal the new code to the
+operator — the customer sees it). `POST /admin/spaces/:id/open-door` →
+`{"opened": true}` opens the space's lock once (throttled, audited as
+`access.open_door`); `400` when the space has no lock, `502` when the lock
+refuses. All require the operator role in `org_id`.
 
 **Owners are only another owner's to change.** `PUT /admin/users/:id`
 (name, email, suspension), `POST …/set-password`, `POST …/anonymise`,

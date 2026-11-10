@@ -32,8 +32,10 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import clock
+from app.access import reconcile_customer_access
 from app.booking_validity import _expire_lapsed_holds
 from app.config import settings
+from app.locks import get_lock_gateway
 from app.models.package import PurchaseStatus, UserPackagePurchase
 
 logger = logging.getLogger(__name__)
@@ -92,6 +94,30 @@ async def sweep_lapsed_holds_once(session_factory: async_sessionmaker) -> int | 
     return flipped + cancelled
 
 
+async def reconcile_access_once(session_factory: async_sessionmaker) -> bool:
+    """Run the smart-lock reconciliation pass (L01) under the same
+    deployment-wide advisory lock as the hold sweep, in its own transaction so
+    a lock-provider failure can never roll back the hold work. False when
+    another process holds the lock and this tick was skipped."""
+    async with session_factory() as db:
+        try:
+            if not await try_sweep_lock(db):
+                await db.rollback()
+                return False
+            now = clock.utcnow()
+            result = await reconcile_customer_access(db, get_lock_gateway(), now)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+    if result.issued or result.revoked or result.dormant or result.failures:
+        logger.info(
+            "lock reconcile: %d issued, %d revoked, %d dormant, %d failed",
+            result.issued, result.revoked, result.dormant, result.failures,
+        )
+    return True
+
+
 async def run_hold_sweeper(session_factory: async_sessionmaker, interval_seconds: float) -> None:
     """Sweep forever, `interval_seconds` apart; a failed sweep is logged and
     the next one still runs. Cancelled by the lifespan on shutdown."""
@@ -103,3 +129,9 @@ async def run_hold_sweeper(session_factory: async_sessionmaker, interval_seconds
             raise
         except Exception:
             logger.exception("hold sweep failed; retrying after %.0fs", interval_seconds)
+        try:
+            await reconcile_access_once(session_factory)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("lock reconcile failed; retrying after %.0fs", interval_seconds)

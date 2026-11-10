@@ -960,7 +960,7 @@ async def test_package_confirmation_issues_access_and_cancel_revokes_it(
     assert response.status_code == 201, response.text
     booking = response.json()["booking"]
     booking_id = uuid.UUID(booking["id"])
-    assert booking["access_code"] == locks.issued_code_for(booking_id).code
+    # L01: the per-booking code is gone; the field is deprecated and null.
+    assert booking["access_code"] is None
     cancelled = await client.delete(f"/api/v1/bookings/{booking_id}", headers=auth_headers)
     assert cancelled.status_code == 204, cancelled.text
-    assert locks.issued_code_for(booking_id) is None

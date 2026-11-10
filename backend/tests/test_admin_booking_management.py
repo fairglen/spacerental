@@ -375,7 +375,7 @@ class TestManualBooking:
         assert booking["user_id"] == str(test_user.id)
         assert Decimal(booking["total_amount"]) == Decimal("22.00")
         assert booking["admin_note"] == "Pago em dinheiro no balcão"
-        assert booking["access_code"] and len(booking["access_code"]) == 6
+        assert booking["access_code"] is None  # L01: per-booking code deprecated
         [message] = emails.sent
         assert message.to == test_user.email
         assert "confirmada" in message.subject
@@ -478,7 +478,7 @@ class TestMarkPaid:
         assert paid["status"] == "confirmed"
         assert paid["payment_method"] == "manual"
         assert paid["hold_expires_at"] is None
-        assert paid["access_code"]
+        assert paid["access_code"] is None  # L01: per-booking code deprecated
         assert "Pagou por MB WAY" in paid["admin_note"]
         assert len(emails.sent) == 1
         # The open Checkout session was closed at the provider (the stub drops it).

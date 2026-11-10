@@ -176,8 +176,30 @@ class Settings(BaseSettings):
     # correct here — unlike backend-to-backend calls (CLAUDE.md §6.3).
     FRONTEND_URL: str = "http://localhost:3000"
 
-    # Stub codes are process-local. Live startup is gated until durable access
-    # identifiers and retry state exist (roadmap O04).
+    # Smart-lock access (L01). One PIN per customer on the space's lock,
+    # reconciled towards Nuki by the sweeper pass (app/holds.py). `stub` is a
+    # credential-free in-memory lock; `nuki` talks to the Nuki Web API with a
+    # token and an encryption key for the PIN at rest.
+    LOCK_PROVIDER: str = "stub"
+    NUKI_API_TOKEN: str | None = None
+    # JSON object: space id -> Nuki smartlock id (NOT room). A space with no
+    # entry simply has no lock; issuance is skipped and nothing is shown.
+    NUKI_DEVICE_ID_MAP: str | None = None
+    NUKI_TIMEOUT_SECONDS: float = 10.0
+    # 32-byte url-safe base64 key (Fernet). Required when LOCK_PROVIDER=nuki;
+    # the clear PIN is never stored. Never logged.
+    ACCESS_PIN_KEY: str | None = None
+    # Tolerances for access judgements (PR B verdicts) and the lock slot.
+    ACCESS_EARLY_MINUTES: int = 15
+    ACCESS_OVERSTAY_MINUTES: int = 15
+    ACCESS_EVENT_RETENTION_DAYS: int = 90
+    # A customer with no booking in this many days loses the lock slot (the
+    # PIN stays in our database, re-registered on the next confirmed booking).
+    ACCESS_DORMANCY_DAYS: int = 90
+
+    # Deprecated: the per-booking Seam path, never live. `SEAM_MODE=stub` is
+    # accepted as an alias for LOCK_PROVIDER=stub for one release (warned in
+    # app/locks.py); the rest are read no more. Remove after L01 ships.
     SEAM_MODE: str = "stub"
     SEAM_API_KEY: str | None = None
     SEAM_DEVICE_ID_MAP: str | None = None
@@ -257,6 +279,16 @@ def production_problems(current: Settings) -> list[str]:
                 "MEDIA_STORAGE=s3 requires MEDIA_BASE_URL (the CloudFront origin in front of "
                 "the bucket)"
             )
+    if current.LOCK_PROVIDER == "nuki":
+        # The same checks app.locks.validate_lock_settings() makes, listed here
+        # so the operator reads one list (E02). The PIN key and token are
+        # never logged.
+        if not (current.NUKI_API_TOKEN or "").strip():
+            problems.append("LOCK_PROVIDER=nuki requires NUKI_API_TOKEN")
+        if not (current.NUKI_DEVICE_ID_MAP or "").strip():
+            problems.append("LOCK_PROVIDER=nuki requires NUKI_DEVICE_ID_MAP (space id -> lock id)")
+        if not (current.ACCESS_PIN_KEY or "").strip():
+            problems.append("LOCK_PROVIDER=nuki requires ACCESS_PIN_KEY (Fernet key)")
     return problems
 
 

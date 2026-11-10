@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { AxiosError, AxiosHeaders } from 'axios'
-import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, invoicesApi, recurrencesApi, supportApi, createAuthenticatedApi, withSessionRevocation } from '@/lib/api'
+import { authApi, apiClient, spacesApi, bookingsApi, packagesApi, adminApi, invoicesApi, recurrencesApi, supportApi, accessApi, createAuthenticatedApi, withSessionRevocation } from '@/lib/api'
 
 describe('spacesApi.list', () => {
   it('extracts spaces array from wrapped response', async () => {
@@ -1043,5 +1043,51 @@ describe('billing statement and invoice records API contract (I02/I05)', () => {
     const update = put.mock.calls[0][1] as FormData
     expect(update.get('note')).toBe('')
     expect(update.get('remove_pdf')).toBe('true')
+  })
+})
+
+describe('accessApi (L01)', () => {
+  it('getMine unwraps the access object', async () => {
+    const access = { status: 'active', pin: '345678', rotated_at: null, devices: [{ device_id: 'lock-1', sync_status: 'synced', synced_at: null }] }
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { access } }) } as any
+    expect(await accessApi.getMine(mockApi)).toEqual(access)
+    expect(mockApi.get).toHaveBeenCalledWith('/access/me')
+  })
+
+  it('rotate posts and unwraps the new access', async () => {
+    const access = { status: 'active', pin: '987654', rotated_at: '2026-11-10T00:00:00Z', devices: [] }
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { access } }) } as any
+    expect((await accessApi.rotate(mockApi)).pin).toBe('987654')
+    expect(mockApi.post).toHaveBeenCalledWith('/access/me/rotate')
+  })
+})
+
+describe('adminApi access (L01)', () => {
+  it('getAccess unwraps the operator view (no clear PIN)', async () => {
+    const access = { status: 'active', created_at: null, rotated_at: null, last_used_at: null, devices: [{ device_id: 'lock-1', sync_status: 'synced', synced_at: null, last_error: null }] }
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { access } }) } as any
+    const result = await adminApi.getAccess('u-1', mockApi)
+    expect(result).toEqual(access)
+    expect('pin' in result).toBe(false)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/users/u-1/access')
+  })
+
+  it('rotate/revoke/reactivate post to the right paths and unwrap', async () => {
+    const access = { status: 'revoked', created_at: null, rotated_at: null, last_used_at: null, devices: [] }
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { access } }) } as any
+    await adminApi.rotateAccess('u-1', mockApi)
+    await adminApi.revokeAccess('u-1', mockApi)
+    await adminApi.reactivateAccess('u-1', mockApi)
+    expect(mockApi.post.mock.calls.map((c: any[]) => c[0])).toEqual([
+      '/admin/users/u-1/access/rotate',
+      '/admin/users/u-1/access/revoke',
+      '/admin/users/u-1/access/reactivate',
+    ])
+  })
+
+  it('openDoor posts to the space and returns the result', async () => {
+    const mockApi = { post: vi.fn().mockResolvedValue({ data: { opened: true } }) } as any
+    expect(await adminApi.openDoor('s-1', mockApi)).toEqual({ opened: true })
+    expect(mockApi.post).toHaveBeenCalledWith('/admin/spaces/s-1/open-door')
   })
 })

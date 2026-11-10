@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app import clock, email, package_hours
+from app.access import try_ensure_customer_access
 from app.auth import get_current_user
 from app.booking_cancellation import apply_cancellation, validate_cancellation
 from app.booking_validity import (
@@ -24,7 +25,7 @@ from app.booking_validity import (
 from app.config import settings
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
-from app.locks import LockGateway, attach_access_codes, get_lock_gateway, try_issue_access_code
+from app.locks import LockGateway, attach_access_codes, get_lock_gateway
 from app.models.booking import PAID_AT_CHECKOUT, Booking, BookingStatus, PaymentMethod
 from app.models.organization import OrganizationMember
 from app.models.space import Room
@@ -352,13 +353,10 @@ async def create_booking(
             ),
         )
 
-        await try_issue_access_code(
-            lock_gateway,
-            booking_id=booking.id,
-            room_id=booking.room_id,
-            name=f"Reserva {booking.id} — {room.name}",
-            starts_at=booking.start_time,
-            ends_at=booking.end_time,
+        # L01: a confirmed booking gives the customer their one door PIN (the
+        # pass issues it on the lock); never fails the booking.
+        await try_ensure_customer_access(
+            db, user_id=user.id, org_id=booking.org_id, space_id=room.space_id
         )
     attach_access_codes(lock_gateway, booking)
 

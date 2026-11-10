@@ -20,6 +20,7 @@ from app.media import LocalMediaStorage, get_media_storage, is_private_key
 from app.ratelimit import RateLimitMiddleware, limiter
 from app.request_id import RequestIdMiddleware
 from app.routers import (
+    access,
     admin,
     auth,
     bookings,
@@ -131,6 +132,7 @@ API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(spaces.router, prefix=API_PREFIX)
 app.include_router(bookings.router, prefix=API_PREFIX)
+app.include_router(access.router, prefix=API_PREFIX)
 app.include_router(recurrences.router, prefix=API_PREFIX)
 app.include_router(packages.router, prefix=API_PREFIX)
 app.include_router(invoices.router, prefix=API_PREFIX)

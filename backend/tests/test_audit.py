@@ -383,7 +383,36 @@ async def _upload_space(client, w):
     )
 
 
+async def _with_customer_access(client, w):
+    """L01: a committed CustomerAccess for the target customer, so the access
+    rotate/revoke/reactivate scenarios have something to act on. The lock map
+    is set by the class fixture below."""
+    from app import access as access_service
+    from app.database import async_session_factory
+
+    async with async_session_factory() as session:
+        await access_service.ensure_customer_access(
+            session, user_id=w.member.id, org_id=w.org.id, space_id=w.space.id
+        )
+        await session.commit()
+
+
 SCENARIOS: dict[tuple[str, str], Scenario] = {
+    ("POST", f"{API}/admin/users/{{user_id}}/access/rotate"): Scenario(
+        _json("POST", lambda w: f"{API}/admin/users/{w.member.id}/access/rotate"),
+        setup=_with_customer_access,
+    ),
+    ("POST", f"{API}/admin/users/{{user_id}}/access/revoke"): Scenario(
+        _json("POST", lambda w: f"{API}/admin/users/{w.member.id}/access/revoke"),
+        setup=_with_customer_access,
+    ),
+    ("POST", f"{API}/admin/users/{{user_id}}/access/reactivate"): Scenario(
+        _json("POST", lambda w: f"{API}/admin/users/{w.member.id}/access/reactivate"),
+        setup=_with_customer_access,
+    ),
+    ("POST", f"{API}/admin/spaces/{{space_id}}/open-door"): Scenario(
+        _json("POST", lambda w: f"{API}/admin/spaces/{w.space.id}/open-door"),
+    ),
     ("POST", f"{API}/admin/spaces"): Scenario(
         _json("POST", lambda w: f"{API}/admin/spaces", {"name": "Novo espaço"})
     ),
@@ -645,6 +674,14 @@ def _mutation_routes() -> set[tuple[str, str]]:
 
 
 class TestEveryAdminMutationIsAudited:
+    @pytest_asyncio.fixture(autouse=True)
+    def _lock_for_every_space(self, monkeypatch):
+        # L01: one lock for every space, so the access and open-door scenarios
+        # have a device to act on.
+        import json as _json_mod
+
+        monkeypatch.setattr(settings, "NUKI_DEVICE_ID_MAP", _json_mod.dumps({"*": "lock-audit"}))
+
     def test_every_admin_mutation_route_has_a_scenario(self):
         # The safety net: an operator route that can change something and has
         # no happy-path call here has no proof that it writes its row.

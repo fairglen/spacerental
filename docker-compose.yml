@@ -108,12 +108,15 @@ services:
       # address (C09) is a frontend constant and stays geral@flowspace.pt.
       SUPPORT_INBOX_EMAIL: ${SUPPORT_INBOX_EMAIL:-geral+support@flowspace.pt}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      # Local process-memory access codes. Live startup is gated until durable
-      # identifiers and retry state ship (roadmap O04), even with credentials.
-      SEAM_MODE: ${SEAM_MODE:-stub}
-      SEAM_API_KEY: ${SEAM_API_KEY:-}
-      SEAM_DEVICE_ID_MAP: ${SEAM_DEVICE_ID_MAP:-}
-      SEAM_TIMEOUT_SECONDS: ${SEAM_TIMEOUT_SECONDS:-10}
+      # Smart-lock access (L01): one PIN per customer. The stub is in-memory,
+      # credential-free. The `"*"` device map is one lock for every space, so
+      # the local stack (and e2e) exercises the dashboard access card without
+      # knowing the seeded space ids. `nuki` needs a token and ACCESS_PIN_KEY.
+      LOCK_PROVIDER: ${LOCK_PROVIDER:-stub}
+      NUKI_API_TOKEN: ${NUKI_API_TOKEN:-}
+      NUKI_DEVICE_ID_MAP: ${NUKI_DEVICE_ID_MAP:-{"*":"dev-lock"}}
+      NUKI_TIMEOUT_SECONDS: ${NUKI_TIMEOUT_SECONDS:-10}
+      ACCESS_PIN_KEY: ${ACCESS_PIN_KEY:-}
     depends_on:
       db:
         condition: service_healthy

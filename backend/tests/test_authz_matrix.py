@@ -56,6 +56,9 @@ ROUTES: dict[tuple[str, str], str] = {
     ("GET", f"{API}/spaces/{{space_id}}"): PUBLIC,
     ("GET", f"{API}/rooms/{{room_id}}/availability"): PUBLIC,
     ("GET", f"{API}/bookings/me"): CUSTOMER,
+    # Smart-lock access (L01).
+    ("GET", f"{API}/access/me"): CUSTOMER,
+    ("POST", f"{API}/access/me/rotate"): CUSTOMER,
     ("POST", f"{API}/bookings"): CUSTOMER,
     ("DELETE", f"{API}/bookings/{{booking_id}}"): CUSTOMER,
     ("POST", f"{API}/bookings/{{booking_id}}/checkout"): CUSTOMER,
@@ -113,6 +116,12 @@ ROUTES: dict[tuple[str, str], str] = {
     ("DELETE", f"{API}/admin/rooms/{{room_id}}/availability/{{rule_id}}"): OPERATOR,
     ("DELETE", f"{API}/admin/bookings/{{booking_id}}"): OPERATOR,
     ("POST", f"{API}/admin/users/{{user_id}}/anonymise"): OPERATOR,
+    # Smart-lock access (L01).
+    ("GET", f"{API}/admin/users/{{user_id}}/access"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/access/rotate"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/access/revoke"): OPERATOR,
+    ("POST", f"{API}/admin/users/{{user_id}}/access/reactivate"): OPERATOR,
+    ("POST", f"{API}/admin/spaces/{{space_id}}/open-door"): OPERATOR,
     ("DELETE", f"{API}/admin/users/{{user_id}}"): OPERATOR,
     ("DELETE", f"{API}/admin/users/{{user_id}}/membership"): OPERATOR,
     ("DELETE", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
@@ -252,6 +261,8 @@ CUSTOMER_ISOLATION: dict[tuple[str, str], str] = {
     ("GET", f"{API}/invoices/{{invoice_id}}/pdf"): "test_invoices_are_only_my_own",
     ("GET", f"{API}/auth/memberships"): "test_my_lists_contain_only_my_rows",
     ("GET", f"{API}/bookings/me"): "test_my_lists_contain_only_my_rows",
+    ("GET", f"{API}/access/me"): "test_access_is_only_my_own",
+    ("POST", f"{API}/access/me/rotate"): "test_access_is_only_my_own",
     ("POST", f"{API}/bookings"): (
         "test_a_customer_cannot_book_a_room_of_an_org_they_do_not_belong_to"
     ),
@@ -897,6 +908,39 @@ class TestCustomerIsolation:
             assert resp.status_code == 403, f"{other.email} -> {resp.status_code}"
         purchase = await _fresh(db_session, UserPackagePurchase, world.purchase_a.id)
         assert purchase.status is PurchaseStatus.active
+
+    async def test_access_is_only_my_own(self, client, world, db_session, monkeypatch):
+        """L01: a customer sees and rotates only their own door PIN."""
+        import json
+
+        from app import access as access_service
+        from app.config import settings
+
+        space_id = world.room_a.space_id
+        monkeypatch.setattr(settings, "NUKI_DEVICE_ID_MAP", json.dumps({str(space_id): "lock-iso"}))
+        await access_service.ensure_customer_access(
+            db_session, user_id=world.cust_a.id, org_id=world.org_a.id, space_id=space_id
+        )
+        await db_session.commit()
+
+        mine = await client.get(f"{API}/access/me", headers=_as(world.cust_a))
+        assert mine.json()["access"]["status"] == "active"
+        assert mine.json()["access"]["pin"]
+        # A different customer has no access of their own and never sees mine.
+        other = await client.get(f"{API}/access/me", headers=_as(world.cust_a2))
+        assert other.json()["access"] == {
+            "status": "none",
+            "pin": None,
+            "rotated_at": None,
+            "devices": [],
+        }
+        # Rotation only works on the caller's own code.
+        assert (
+            await client.post(f"{API}/access/me/rotate", headers=_as(world.cust_a))
+        ).status_code == 200
+        assert (
+            await client.post(f"{API}/access/me/rotate", headers=_as(world.cust_a2))
+        ).status_code == 404
 
     async def test_my_lists_contain_only_my_rows(self, client, world):
         for user, org, bookings, purchases in (
