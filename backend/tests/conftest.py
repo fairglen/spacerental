@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import json
 import os
 import shutil
@@ -59,6 +60,15 @@ from app.payments import (  # noqa: E402
 from app.ratelimit import limiter  # noqa: E402
 
 TEST_STRIPE_WEBHOOK_SECRET = "whsec_test_not_a_real_secret"
+
+
+@functools.lru_cache(maxsize=None)
+def test_password_hash(plaintext: str = "Senha-2026x") -> str:
+    """Argon2id is deliberately slow (64 MiB, t=3, §3); the user/admin/customer
+    fixtures all stamp the same password, so hash it once per worker and reuse
+    the digest instead of paying it per test. A test that needs a distinct
+    password hashes its own literal (Q57)."""
+    return hash_password(plaintext)
 
 
 def checkout_completed_event(
@@ -283,7 +293,7 @@ async def test_user(db_session) -> User:
     u = User(
         email="user@test.com",
         name="Test User",
-        password_hash=hash_password("Senha-2026x"),
+        password_hash=test_password_hash(),
     )
     db_session.add(u)
     await db_session.commit()
@@ -306,7 +316,7 @@ async def admin_user(db_session, test_org) -> User:
     u = User(
         email="admin@test.com",
         name="Admin",
-        password_hash=hash_password("Senha-2026x"),
+        password_hash=test_password_hash(),
     )
     db_session.add(u)
     await db_session.flush()
@@ -412,7 +422,6 @@ async def ledger(db_session, test_org, test_user, test_member, test_room) -> Sim
     """
     from decimal import Decimal
 
-    from app.auth import hash_password
     from app.models.booking import Booking, BookingStatus, PaymentMethod
     from app.models.organization import MemberRole, OrganizationMember, OrgPlan
     from app.models.package import Package, PurchaseSource, PurchaseStatus, UserPackagePurchase
@@ -422,7 +431,7 @@ async def ledger(db_session, test_org, test_user, test_member, test_room) -> Sim
 
     w = SimpleNamespace(org=test_org, ana=test_user, room=test_room)
     w.bruno = User(
-        email="bruno@test.com", name="Bruno Costa", password_hash=hash_password("Senha-2026x")
+        email="bruno@test.com", name="Bruno Costa", password_hash=test_password_hash()
     )
     w.other_org = Organization(name="Outra", slug="outra-ledger", plan=OrgPlan.starter, settings={})
     db_session.add_all([w.bruno, w.other_org])
