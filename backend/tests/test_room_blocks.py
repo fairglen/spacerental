@@ -368,6 +368,7 @@ async def block_overlap_constraint(engine, db_session):
     yield
 
 
+@pytest.mark.fresh_schema  # adds the room_blocks_no_overlap EXCLUDE constraint (Q57)
 class TestSchema:
     async def test_two_overlapping_blocks_cannot_coexist(
         self, block_overlap_constraint, db_session, test_org, test_room, admin_user
