@@ -480,9 +480,7 @@ async def ledger(db_session, test_org, test_user, test_member, test_room) -> Sim
         return datetime(2026, month, day, hour, minute, tzinfo=UTC)
 
     w = SimpleNamespace(org=test_org, ana=test_user, room=test_room)
-    w.bruno = User(
-        email="bruno@test.com", name="Bruno Costa", password_hash=cached_password_hash()
-    )
+    w.bruno = User(email="bruno@test.com", name="Bruno Costa", password_hash=cached_password_hash())
     w.other_org = Organization(name="Outra", slug="outra-ledger", plan=OrgPlan.starter, settings={})
     db_session.add_all([w.bruno, w.other_org])
     await db_session.flush()
