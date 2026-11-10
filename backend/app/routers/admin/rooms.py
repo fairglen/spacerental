@@ -73,6 +73,12 @@ async def admin_create_room(
     await audit.record(
         db, actor=admin, org_id=org_id, entity=room, action="create", after=audit.snapshot(room)
     )
+    # Commit before responding, not at the get_db teardown that runs *after* the
+    # response is delivered: callers (the admin UI, our e2e setup) act on the
+    # returned id immediately — e.g. POST /rooms/{id}/availability — and a
+    # separate connection must be able to see the room, or that next request
+    # 404s "Room not found" in the window before the deferred commit lands.
+    await db.commit()
     return {"room": RoomOut.model_validate(room)}
 
 
