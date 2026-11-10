@@ -17,7 +17,7 @@ from app.models.audit import AdminAction
 from app.models.booking import Booking, BookingStatus, PaymentMethod
 from app.models.organization import MemberRole, OrganizationMember
 from app.models.package import BookingPackageDebit, PurchaseStatus, UserPackagePurchase
-from app.models.space import AvailabilityRule
+from app.models.space import AvailabilityRule, Room
 from app.models.support import SupportRequest
 from app.models.user import User
 from sqlalchemy import func, select
@@ -85,6 +85,37 @@ class TestRoom:
         assert [b["reason"] for b in body["blocks"]] == ["Obras"]
         assert body["photo_count"] == 0
         assert body["bookings"] == {"total": 2, "upcoming": 2}
+
+    async def test_a_new_room_is_durable_before_its_id_is_returned(self, client, db_session, w):
+        """The read-your-write guarantee behind the e2e 'Room not found' flake:
+        a caller that POSTs availability to the id this returns must find the
+        room. The create commits before responding, not at the get_db teardown
+        that runs *after* the response — otherwise the immediate next request
+        can 404 on a room that isn't committed yet."""
+        create = await client.post(
+            f"{API}/admin/spaces/{w.space.id}/rooms",
+            params=w.params,
+            json={"name": "Sala Nova", "hourly_rate": "12.00"},
+            headers=w.headers,
+        )
+        assert create.status_code == 201, create.text
+        room_id = create.json()["room"]["id"]
+
+        # Visible on a separate session straight away — durable, not pending.
+        in_db = (
+            await db_session.execute(select(Room).where(Room.id == uuid.UUID(room_id)))
+        ).scalar_one_or_none()
+        assert in_db is not None
+
+        # The exact next call the admin UI and the e2e setup make against that id.
+        rules = [{"day_of_week": d, "open_time": "09:00", "close_time": "18:00"} for d in range(7)]
+        availability = await client.post(
+            f"{API}/admin/rooms/{room_id}/availability",
+            params=w.params,
+            json={"rules": rules},
+            headers=w.headers,
+        )
+        assert availability.status_code == 200, availability.text
 
     async def test_duplicate_copies_rules_and_fields_but_not_photos(self, client, db_session, w):
         w.room.description = "Sala luminosa"
