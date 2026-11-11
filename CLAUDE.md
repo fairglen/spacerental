@@ -161,6 +161,13 @@ Fix, and the rule going forward:
 
 `.github/workflows/migrations.yml` runs upgrade → check → downgrade → upgrade against an empty PostgreSQL 18 so this cannot regress silently again.
 
+### 6.6 The test schema is built once per worker and TRUNCATEd per test
+Symptom you must not reintroduce: a test adds a schema object (an EXCLUDE constraint, an index, a column) and the *next* test fails on it.
+
+The schema is created **once per xdist worker** by the session-scoped `schema` fixture in `tests/conftest.py` (Q57). Between tests, `db_session` runs `TRUNCATE … RESTART IDENTITY CASCADE` over every table — it empties data, it does **not** rebuild the schema. The truncate runs *before* the test, not after, so a failed test leaves its rows for inspection and the next test cleans them.
+
+Therefore **a test that alters the schema must be marked `@pytest.mark.fresh_schema`**, which restores `drop_all`/`create_all` for it — rebuilt before *and* after, so the change cannot survive into the next (truncate-only) test. The EXCLUDE-constraint fixtures in `test_recurrences.py` and `test_room_blocks.py` are the examples; `tests/test_schema_isolation.py` guards the invariant (the base schema carries no EXCLUDE constraint). A test that needs a schema object that is not in `Base.metadata` (the EXCLUDE constraints live only in the migrations, §6.5) adds it itself under that marker.
+
 ---
 
 ## 7. Project layout

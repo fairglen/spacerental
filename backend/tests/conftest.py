@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import json
 import os
 import shutil
@@ -59,6 +60,28 @@ from app.payments import (  # noqa: E402
 from app.ratelimit import limiter  # noqa: E402
 
 TEST_STRIPE_WEBHOOK_SECRET = "whsec_test_not_a_real_secret"
+
+
+@functools.cache
+def cached_password_hash(plaintext: str = "Senha-2026x") -> str:
+    """Argon2id is deliberately slow (64 MiB, t=3, §3); the user/admin/customer
+    fixtures all stamp the same password, so hash it once per worker and reuse
+    the digest instead of paying it per test. A test that needs a distinct
+    password hashes its own literal (Q57)."""
+    return hash_password(plaintext)
+
+
+# Every table, children first, so one TRUNCATE … CASCADE empties the lot
+# between tests. The EXCLUDE constraints (bookings_no_overlap,
+# room_blocks_no_overlap) are not tables and are not built by create_all
+# anyway (CLAUDE.md §6.5); a test that adds one asks for `fresh_schema`.
+_ALL_TABLES_SQL = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables))
+_TRUNCATE_ALL_SQL = f"TRUNCATE TABLE {_ALL_TABLES_SQL} RESTART IDENTITY CASCADE"
+
+
+async def _create_schema(conn) -> None:
+    await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+    await conn.run_sync(Base.metadata.create_all)
 
 
 def checkout_completed_event(
@@ -151,17 +174,35 @@ def clean_media_root():
         shutil.rmtree(os.path.join(root, entry), ignore_errors=True)
 
 
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def schema(worker_database):
+    """Build the schema once per worker (Q57), not once per test.
+
+    `db_session` used to run drop_all + create_all (18 tables) before every
+    test — ~210 ms each. Now the schema is created once here, after
+    `worker_database` has made this worker's database, and each test only
+    truncates (~25 ms). Depends on `worker_database` so it runs after it.
+    """
+    eng = create_async_engine(TEST_DATABASE_URL, echo=False, future=True, poolclass=NullPool)
+    async with eng.begin() as conn:
+        # drop_all first so a serial run against a pre-existing database starts
+        # canonical; on a fresh per-worker database it is a no-op.
+        await conn.run_sync(Base.metadata.drop_all)
+        await _create_schema(conn)
+    await eng.dispose()
+    yield
+
+
 @pytest_asyncio.fixture
-async def engine():
+async def engine(schema):
     """Per-test async engine with NullPool so connections never leak across event loops.
 
     asyncpg connections are tied to the loop that created them; reusing them
     from another loop raises "another operation is in progress". NullPool +
     a function-scoped engine sidesteps the issue entirely at a small perf cost.
+    The schema already exists (the session-scoped `schema` fixture built it).
     """
     eng = create_async_engine(TEST_DATABASE_URL, echo=False, future=True, poolclass=NullPool)
-    async with eng.begin() as conn:
-        await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
     yield eng
     await eng.dispose()
 
@@ -173,21 +214,40 @@ async def session_factory(engine):
 
 
 @pytest_asyncio.fixture
-async def db_session(engine, session_factory):
-    """Fresh DB schema for each test; yields a fixture-side session.
+async def db_session(request, engine, session_factory):
+    """Yields a fixture-side session on the per-worker schema, reset per test.
 
-    Fixtures use this session to seed data and commit. The HTTP route
-    handler will use a DIFFERENT session (via session_factory) so it
-    doesn't suffer identity-map staleness on objects already loaded here.
+    Default: TRUNCATE every table (RESTART IDENTITY, CASCADE) *before* the
+    test, not after — a failing test leaves its rows for inspection and the
+    next test cleans them. This replaced a per-test drop_all/create_all (Q57).
+
+    A test marked `fresh_schema` instead gets a real drop_all + create_all —
+    for the few tests that add an EXCLUDE constraint or otherwise mutate the
+    schema. It is rebuilt before *and* after such a test so the mutation
+    cannot leak into the next (truncate-only) test.
+
+    Fixtures use this session to seed data and commit. The HTTP route handler
+    uses a DIFFERENT session (via session_factory) so it doesn't suffer
+    identity-map staleness on objects already loaded here.
     """
+    fresh = request.node.get_closest_marker("fresh_schema") is not None
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        if fresh:
+            await conn.run_sync(Base.metadata.drop_all)
+            await _create_schema(conn)
+        else:
+            await conn.execute(text(_TRUNCATE_ALL_SQL))
 
     async with session_factory() as session:
         yield session
         with suppress(Exception):
             await session.rollback()
+
+    if fresh:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await _create_schema(conn)
 
 
 @pytest_asyncio.fixture
@@ -283,7 +343,7 @@ async def test_user(db_session) -> User:
     u = User(
         email="user@test.com",
         name="Test User",
-        password_hash=hash_password("Senha-2026x"),
+        password_hash=cached_password_hash(),
     )
     db_session.add(u)
     await db_session.commit()
@@ -306,7 +366,7 @@ async def admin_user(db_session, test_org) -> User:
     u = User(
         email="admin@test.com",
         name="Admin",
-        password_hash=hash_password("Senha-2026x"),
+        password_hash=cached_password_hash(),
     )
     db_session.add(u)
     await db_session.flush()
@@ -412,7 +472,6 @@ async def ledger(db_session, test_org, test_user, test_member, test_room) -> Sim
     """
     from decimal import Decimal
 
-    from app.auth import hash_password
     from app.models.booking import Booking, BookingStatus, PaymentMethod
     from app.models.organization import MemberRole, OrganizationMember, OrgPlan
     from app.models.package import Package, PurchaseSource, PurchaseStatus, UserPackagePurchase
@@ -421,9 +480,7 @@ async def ledger(db_session, test_org, test_user, test_member, test_room) -> Sim
         return datetime(2026, month, day, hour, minute, tzinfo=UTC)
 
     w = SimpleNamespace(org=test_org, ana=test_user, room=test_room)
-    w.bruno = User(
-        email="bruno@test.com", name="Bruno Costa", password_hash=hash_password("Senha-2026x")
-    )
+    w.bruno = User(email="bruno@test.com", name="Bruno Costa", password_hash=cached_password_hash())
     w.other_org = Organization(name="Outra", slug="outra-ledger", plan=OrgPlan.starter, settings={})
     db_session.add_all([w.bruno, w.other_org])
     await db_session.flush()

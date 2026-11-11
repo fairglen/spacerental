@@ -730,6 +730,7 @@ class TestEditSeries:
         assert resp.status_code == 400
 
 
+@pytest.mark.fresh_schema  # adds the bookings_no_overlap EXCLUDE constraint (Q57)
 class TestConcurrentSeriesCreation:
     async def test_two_overlapping_series_cannot_both_partially_succeed(
         self, client, auth_headers, db_session, test_room, test_member, overlap_constraint
@@ -1073,6 +1074,7 @@ class TestRecurrenceReviewRegressions:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
+    @pytest.mark.fresh_schema  # uses overlap_constraint (Q57)
     async def test_lost_edit_race_rolls_back_without_cancellation_emails(
         self,
         client,
