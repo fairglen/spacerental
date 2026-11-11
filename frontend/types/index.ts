@@ -640,3 +640,33 @@ export interface AdminAccess {
   last_used_at: string | null
   devices: AdminAccessDevice[]
 }
+
+// L02: the lock trail.
+export interface AccessEvent {
+  occurred_at: string
+  kind: string
+  verdict: string | null
+}
+export interface VerdictRow {
+  verdict: string
+  delta_minutes: number | null
+  entered_at: string
+  departure_estimate_at: string | null
+  departure_confidence: string
+  device_id: string
+  booking_id: string | null
+  customer_name: string | null
+  customer_email: string | null
+}
+export interface AccessReport {
+  week_start: string
+  week_end: string
+  counts: Record<string, number>
+  verdicts: VerdictRow[]
+}
+export interface BookingAccess {
+  verdict: string | null
+  entered_at: string | null
+  departure_estimate_at: string | null
+  departure_confidence: string | null
+}

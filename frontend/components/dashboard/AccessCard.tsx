@@ -2,6 +2,8 @@
 import { useState } from 'react'
 import { KeyRound } from 'lucide-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { format, parseISO } from 'date-fns'
+import { pt } from 'date-fns/locale'
 import { accessApi } from '@/lib/api'
 import type { Api } from '@/lib/api'
 import type { CustomerPin } from '@/types'
@@ -28,7 +30,16 @@ export function AccessCard({ api }: { api: Api }) {
   const query = useQuery({ queryKey: ['access', 'me'], queryFn: () => accessApi.getMine(api) })
   const [revealed, setRevealed] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const history = useQuery({
+    queryKey: ['access', 'me', 'history'],
+    queryFn: () => accessApi.history(api),
+    enabled: showHistory,
+  })
+  const VERDICT_LABEL: Record<string, string> = {
+    on_time: 'A horas', early: 'Antecipado', late: 'Atrasado', overstay: 'Permanência extra', no_booking: 'Sem reserva',
+  }
   const rotate = useMutation({
     mutationFn: () => accessApi.rotate(api),
     onSuccess: () => { setConfirming(false); setRevealed(true); setError(null); void query.refetch() },
@@ -96,6 +107,29 @@ export function AccessCard({ api }: { api: Api }) {
           <Button size="sm" variant="outline" onClick={() => { setError(null); setConfirming(true) }} data-testid="access-rotate">
             Pedir um código novo
           </Button>
+        )}
+      </div>
+
+      <div className="mt-4 border-t border-border pt-3">
+        <button
+          type="button"
+          onClick={() => setShowHistory((v) => !v)}
+          className="text-sm font-medium text-primary hover:underline"
+          data-testid="access-history-toggle"
+        >
+          {showHistory ? 'Ocultar histórico' : 'Ver histórico'}
+        </button>
+        {showHistory && (
+          <ul className="mt-2 space-y-1 text-sm text-muted-foreground" data-testid="access-history">
+            {history.isLoading && <li>A carregar…</li>}
+            {history.data && history.data.length === 0 && <li>Ainda sem utilizações.</li>}
+            {history.data?.map((e, i) => (
+              <li key={i}>
+                {format(parseISO(e.occurred_at), "d MMM, HH:mm", { locale: pt })}
+                {e.verdict && <span> · {VERDICT_LABEL[e.verdict] ?? e.verdict}</span>}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </section>

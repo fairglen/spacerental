@@ -63,3 +63,46 @@ class AdminAccessOut(BaseModel):
     rotated_at: datetime | None = None
     last_used_at: datetime | None = None
     devices: list[AccessDeviceOut]
+
+
+# ─── L02: the trail ──────────────────────────────────────────────────────────
+
+
+class AccessEventOut(BaseModel):
+    """One entry in a customer's own access history."""
+
+    occurred_at: datetime
+    kind: str
+    verdict: str | None = None
+
+
+class VerdictRowOut(BaseModel):
+    """One judged keypad entry for the operator report."""
+
+    verdict: str
+    delta_minutes: int | None = None
+    entered_at: datetime
+    departure_estimate_at: datetime | None = None
+    departure_confidence: str
+    device_id: str
+    booking_id: uuid.UUID | None = None
+    customer_name: str | None = None
+    customer_email: str | None = None
+
+
+class AccessReportOut(BaseModel):
+    """A week of access verdicts and the counts per verdict."""
+
+    week_start: datetime
+    week_end: datetime
+    counts: dict[str, int]
+    verdicts: list[VerdictRowOut]
+
+
+class BookingAccessOut(BaseModel):
+    """The access verdict for one booking, for the admin booking view."""
+
+    verdict: str | None = None
+    entered_at: datetime | None = None
+    departure_estimate_at: datetime | None = None
+    departure_confidence: str | None = None
