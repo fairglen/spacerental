@@ -7,7 +7,6 @@ nests another person's data, or when an unhandled error answers with
 internals.
 """
 
-import uuid
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
@@ -16,7 +15,7 @@ from app.auth import create_access_token, hash_password
 from app.database import get_db
 from app.main import app
 from app.models.booking import Booking, BookingStatus, PaymentMethod
-from app.models.organization import MemberRole, Organization, OrganizationMember, OrgPlan
+from app.models.organization import MemberRole, OrganizationMember
 from app.models.package import Package
 from app.models.space import Room
 from app.models.user import User
@@ -195,85 +194,6 @@ class TestWhatACustomerSees:
         assert resp.json()["bookings"][0].get("user") is None
         for private in (neighbour.email, neighbour.name, str(neighbour.id), "dele"):
             assert private not in resp.text
-
-    async def test_a_door_code_reaches_its_owner_and_that_orgs_operators_only(
-        self,
-        client,
-        db_session,
-        test_org,
-        test_user,
-        test_member,
-        test_room,
-        admin_user,
-        neighbour,
-        locks,
-    ):
-        other_org = Organization(
-            name="Outra", slug=f"outra-{uuid.uuid4().hex[:8]}", plan=OrgPlan.starter, settings={}
-        )
-        outsider = User(
-            email="outsider@test.com", name="Outsider", password_hash=hash_password("Senha-2026x")
-        )
-        # "That org's operators" means both operator roles, not only the owner.
-        manager = User(
-            email="manager@test.com", name="Manager", password_hash=hash_password("Senha-2026x")
-        )
-        db_session.add_all([other_org, outsider, manager])
-        await db_session.flush()
-        db_session.add_all(
-            [
-                OrganizationMember(org_id=other_org.id, user_id=outsider.id, role=MemberRole.owner),
-                OrganizationMember(org_id=test_org.id, user_id=manager.id, role=MemberRole.admin),
-            ]
-        )
-        booking = await _confirmed_booking(
-            db_session, org_id=test_org.id, room=test_room, user=test_user, hour=10, notes="x"
-        )
-        # The neighbour holds a confirmed booking too, with no code issued for
-        # it, so their list is not empty and its row must carry no code.
-        await _confirmed_booking(
-            db_session, org_id=test_org.id, room=test_room, user=neighbour, hour=12, notes="y"
-        )
-        issued = await locks.issue_access_code(
-            booking_id=booking.id,
-            room_id=test_room.id,
-            name="test",
-            starts_at=booking.start_time,
-            ends_at=booking.end_time,
-        )
-        org = {"org_id": str(test_org.id)}
-
-        owner = await client.get(f"{API}/bookings/me", headers=_headers(test_user))
-        operator = await client.get(
-            f"{API}/admin/bookings", params=org, headers=_headers(admin_user, "owner")
-        )
-        assert [b["access_code"] for b in owner.json()["bookings"]] == [issued.code]
-        # The operator sees both bookings of the org, each with its own code or none.
-        seen = {b["id"]: b["access_code"] for b in operator.json()["bookings"]}
-        assert seen.pop(str(booking.id)) == issued.code
-        assert list(seen.values()) == [None]
-        as_admin = await client.get(
-            f"{API}/admin/bookings", params=org, headers=_headers(manager, "admin")
-        )
-        assert as_admin.status_code == 200, as_admin.text
-        assert issued.code in {b["access_code"] for b in as_admin.json()["bookings"]}
-
-        same_org_customer = await client.get(f"{API}/bookings/me", headers=_headers(neighbour))
-        other_operator_here = await client.get(
-            f"{API}/admin/bookings", params=org, headers=_headers(outsider, "owner")
-        )
-        other_operator_home = await client.get(
-            f"{API}/admin/bookings",
-            params={"org_id": str(other_org.id)},
-            headers=_headers(outsider, "owner"),
-        )
-        assert other_operator_here.status_code == 403
-        # Both of these must succeed, or "the code is absent" would prove nothing.
-        assert (same_org_customer.status_code, other_operator_home.status_code) == (200, 200)
-        assert [b["access_code"] for b in same_org_customer.json()["bookings"]] == [None]
-        assert other_operator_home.json()["bookings"] == []
-        for resp in (same_org_customer, other_operator_here, other_operator_home):
-            assert issued.code not in resp.text
 
 
 class TestWhatAnOperatorSees:

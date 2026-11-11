@@ -814,6 +814,13 @@ payment as a distinct category (today a `manual` booking with
 
 ### O04 — Durable and recoverable room access
 
+**Superseded by L01 (owner decision, 2026-11-10).** The per-booking access-code
+scope here is replaced by **one PIN per customer** (L01): a durable,
+DB-backed, encrypted PIN reconciled onto the lock by the sweeper pass, with
+restart-safe status, retry/backoff, never discarding a provider identifier
+before a confirmed delete, and an operator contingency (`open-door`). O04's
+durability and recovery acceptance is met by L01; this entry stays for history.
+
 **Depends on:** O03 and disposition of Q28. **Scope:** `locks.py`, persisted device
 mapping/code identifiers and lifecycle, jobs/recovery, dashboard/admin access UI.
 
@@ -848,6 +855,64 @@ the O04 dependency (lock issuance/revocation outcomes as audited system
 actions). **Depends on:** O04 for the access-code transitions; O02 for refund
 operations. **Validation:** the `tests/test_audit.py` scenario table extended
 to each new transition (committed, rolled back, wrong role/org denied).
+
+### L01 — Per-customer smart-lock PIN (Nuki)
+
+**State: IN REVIEW (PR A `feat/nuki-customer-pins`, 2026-11-10).** Supersedes
+O04's per-booking scope. One PIN per customer, issued on the first confirmed
+booking (every checkout path: Stripe webhook, stub checkout, pack redemption,
+admin confirmation), named on the lock by `fs-<first 12 of uuid>`, no time
+window. `LOCK_PROVIDER=stub|nuki`; `NukiGateway` over the Nuki Web API
+(`issue_for_customer`/`revoke`/`set_enabled`/`open_now`/`read_log`/
+`device_state`), PIN encrypted at rest (`ACCESS_PIN_KEY`, Fernet). Tables
+`customer_access` + `customer_access_devices` (migration 0021); issuance only
+writes DB rows, the reconciliation pass (`app/holds.py`, N01 advisory lock)
+does the Nuki work with backoff and dormancy (`ACCESS_DORMANCY_DAYS`).
+Customer `GET/POST /access/me[/rotate]`; admin status/rotate/revoke/reactivate
++ `POST /admin/spaces/{id}/open-door`; anonymisation revokes. Dashboard access
+card + admin panel. `docs/runbooks/nuki.md`.
+
+**DECISIONS (2026-11-10, unattended — owner may override):**
+- **D-L01a:** PIN uniqueness enforced **org-wide** (excluding every other
+  customer's decrypted PIN when generating), stronger than Nuki's per-keypad
+  rule; this trivially avoids collisions across any shared lock and keeps one
+  PIN per customer. Scale is a POC; decrypting the small set is cheap.
+- **D-L01b:** the per-booking `access_code` field on bookings is kept for one
+  release as deprecated and always `null` (no-op `attach_access_codes` shim),
+  so PR A's frontend is purely additive. Removing the vestigial field (backend
+  schema + dashboard/admin display) is follow-up **L03**.
+- **D-L01c:** admin access endpoints mounted under `/admin/users/{id}/access`
+  (matching the existing customer resource), not `/admin/customers/...`.
+- **D-L01d:** the SmartlockLog action/trigger enum is not statically
+  fetchable (interactive Swagger only); the constants in `app/locks.py` come
+  from the prompt's verified facts + forum confirmation (241 = door closed) and
+  ingestion is tolerant of unknown codes. The owner verifies against the live
+  Swagger (runbook §3). `NUKI_DEVICE_ID_MAP` gained a `"*"` wildcard (one lock
+  for every space) for single-door operators and the local/e2e stack.
+- **D-L01e:** `SEAM_*` deprecated; `SEAM_MODE=stub` accepted as an alias for
+  `LOCK_PROVIDER=stub` for one release (warned). `SeamGateway` deleted (the
+  Seam path was never live).
+
+**Evidence:** `backend/tests/test_customer_access.py` (22), `test_nuki_gateway.py`
+(7, respx), `test_nuki_live.py` (opt-in contract, skipped in CI); authz matrix,
+openapi snapshot and audit-entity tests updated; migration up/check/down clean;
+`alembic check` no drift; ruff clean; frontend `tsc` clean, vitest + the
+`access.spec.ts` Playwright flow.
+
+### L02 — Lock event trail and verdicts (Nuki)
+
+**State: QUEUED (PR B `feat/lock-events`, stacked on PR A).** Poll the lock
+log, store each event once, attribute keypad entries to customers via
+`nuki_auth_id`, reconcile into verdicts (on_time/early/late/overstay/
+no_booking) with a labelled departure estimate; retention of raw events
+(`ACCESS_EVENT_RETENTION_DAYS`, verdicts kept); operator views on the booking
+and a weekly anomaly report; optional `ACCESS_ALERT_EMAIL` on a no-booking
+entry. Tables `lock_events` + `access_verdicts`.
+
+### L03 — Remove the vestigial per-booking `access_code` (follow-up)
+
+**State: QUEUED.** Drop the deprecated always-`null` `access_code` from the
+booking schema and the dashboard/admin booking display (see D-L01b).
 
 ### O99 — Outcome 3 acceptance
 

@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import access as access_service
 from app import audit, clock, deletion, email, package_hours, password_reset
 from app.auth import hash_password, require_admin
 from app.booking_validity import expire_user_holds
@@ -534,6 +535,10 @@ async def admin_anonymise_user(
     user.disabled_at = clock.utcnow()
     user.token_version += 1
     await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
+    # L01: revoke the door PIN and queue its removal from every lock. This
+    # only marks rows; the pass deletes on the lock, so anonymisation never
+    # waits on Nuki.
+    await access_service.revoke_for_anonymisation(db, org_id, user.id)
     await db.delete(member)
     await db.flush()
     await db.refresh(user)

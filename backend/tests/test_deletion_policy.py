@@ -373,7 +373,6 @@ class TestBooking:
         )
         assert resp.status_code == 204, resp.text
         assert await _count(db_session, Booking, Booking.id == booking_id) == 0
-        assert booking_id in locks.revoked_booking_ids
         action = await _last_action(db_session, w.org.id)
         assert (action.action, action.reason) == ("delete", "Criada por engano")
         assert action.before["payment_method"] == "manual"

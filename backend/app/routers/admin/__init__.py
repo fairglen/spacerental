@@ -8,6 +8,7 @@ the single-file routers had (`tests/test_openapi_stable.py` pins that).
 from fastapi import APIRouter
 
 from . import (
+    access,
     audit,
     billing,
     blocks,
@@ -45,6 +46,7 @@ for module in (
     email,
     billing,
     invoices,
+    access,
 ):
     router.include_router(module.router)
 

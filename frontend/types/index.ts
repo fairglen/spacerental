@@ -616,3 +616,27 @@ export type EmailStatus = {
   recent_failures: EmailFailure[]
 }
 export type EmailTestResult = { delivered: boolean; to: string }
+
+// Smart-lock access (L01). The customer sees their own PIN; the operator sees
+// status and per-lock sync, never the clear PIN.
+export interface AccessDevice {
+  device_id: string
+  sync_status: 'pending' | 'synced' | 'failed' | 'revoke_pending'
+  synced_at: string | null
+}
+export interface CustomerPin {
+  status: 'active' | 'dormant' | 'revoked' | 'none'
+  pin: string | null
+  rotated_at: string | null
+  devices: AccessDevice[]
+}
+export interface AdminAccessDevice extends AccessDevice {
+  last_error: string | null
+}
+export interface AdminAccess {
+  status: 'active' | 'dormant' | 'revoked' | null
+  created_at: string | null
+  rotated_at: string | null
+  last_used_at: string | null
+  devices: AdminAccessDevice[]
+}

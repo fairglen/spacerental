@@ -149,11 +149,18 @@ part of a series. On cancellation (`backend/app/booking_cancellation.py`):
 
 ## 8. Access codes (smart locks)
 
-Confirming a booking issues a door **access code**; cancelling revokes it
-(`backend/app/locks.py`). Today this is a local **stub** that holds codes in
-process memory — a foundation, not real door access. Live operation
-(`SEAM_MODE=live`) is deliberately refused until durable identifiers and
-retries ship (roadmap O04).
+Each customer gets **one door PIN**, not a code per booking (L01). It is
+issued on their first **confirmed** booking (every checkout path), named on
+the lock by our customer id, with no time window — freedom at the door, audit
+afterwards. The PIN is encrypted at rest and shown only to the customer, on
+their dashboard; the operator sees its status and can rotate, revoke or open
+the door, never the clear code. Issuance only writes database rows; the
+sweeper pass (`backend/app/holds.py`, under the N01 advisory lock) does the
+lock work, so a lock outage never fails a payment, and a customer idle for
+`ACCESS_DORMANCY_DAYS` is taken off the lock and re-registered on their next
+booking. `LOCK_PROVIDER=stub` is an in-memory lock for local use;
+`LOCK_PROVIDER=nuki` talks to the Nuki Web API (`docs/runbooks/nuki.md`). The
+lock's log becomes the audit trail (L02).
 
 ## 9. Billing and invoices
 
@@ -216,7 +223,7 @@ startup rather than silently running the stub (CLAUDE.md §10.3).
 | Payments | `STRIPE_MODE` | `stub` · `live` |
 | Email | `EMAIL_MODE` | `stub` · `ses` · `live` (Resend) |
 | Media storage | `MEDIA_STORAGE` | `local` · `s3` (CloudFront) |
-| Smart locks | `SEAM_MODE` | `stub` (live gated, O04) |
+| Smart locks | `LOCK_PROVIDER` | `stub` · `nuki` (one PIN per customer, L01) |
 | Rate-limit store | `RATE_LIMIT_STORE` | `memory` · `postgres` (shared) |
 
 The whole test suite runs with zero third-party credentials and never

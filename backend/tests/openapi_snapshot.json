@@ -6,6 +6,16 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/access/me",
+    "operation_id": "get_my_access_api_v1_access_me_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/access/me/rotate",
+    "operation_id": "rotate_my_access_api_v1_access_me_rotate_post"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/admin/audit",
     "operation_id": "admin_list_audit_api_v1_admin_audit_get"
   },
@@ -311,6 +321,11 @@
   },
   {
     "method": "POST",
+    "path": "/api/v1/admin/spaces/{space_id}/open-door",
+    "operation_id": "admin_open_door_api_v1_admin_spaces__space_id__open_door_post"
+  },
+  {
+    "method": "POST",
     "path": "/api/v1/admin/spaces/{space_id}/rooms",
     "operation_id": "admin_create_room_api_v1_admin_spaces__space_id__rooms_post"
   },
@@ -363,6 +378,26 @@
     "method": "PUT",
     "path": "/api/v1/admin/users/{user_id}",
     "operation_id": "admin_update_user_api_v1_admin_users__user_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/users/{user_id}/access",
+    "operation_id": "admin_get_access_api_v1_admin_users__user_id__access_get"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/users/{user_id}/access/reactivate",
+    "operation_id": "admin_reactivate_access_api_v1_admin_users__user_id__access_reactivate_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/users/{user_id}/access/revoke",
+    "operation_id": "admin_revoke_access_api_v1_admin_users__user_id__access_revoke_post"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/users/{user_id}/access/rotate",
+    "operation_id": "admin_rotate_access_api_v1_admin_users__user_id__access_rotate_post"
   },
   {
     "method": "POST",

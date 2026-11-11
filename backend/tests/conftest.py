@@ -314,9 +314,9 @@ async def emails(client) -> StubEmailGateway:
 async def locks(client) -> StubLockGateway:
     """The stub Seam gateway the app under test will use.
 
-    Same StubLockGateway that SEAM_MODE=stub serves in dev — `.issued_code_for`
-    and `.revoked_booking_ids` are the observable side effects tests assert
-    against instead of a Seam dashboard. No network, no credentials required.
+    Same StubLockGateway that LOCK_PROVIDER=stub serves in dev (L01) —
+    `.issued` and `.revoked` are the observable side effects tests assert
+    against instead of a Nuki dashboard. No network, no credentials required.
     """
     gateway = StubLockGateway()
     app.dependency_overrides[get_lock_gateway] = lambda: gateway

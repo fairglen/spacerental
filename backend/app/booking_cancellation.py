@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import cancellation_credit, clock, email, package_hours
 from app.email import EmailGateway
-from app.locks import LockGateway, try_revoke_access_code
+from app.locks import LockGateway
 from app.models.booking import Booking, BookingStatus
 from app.models.user import User
 
@@ -90,6 +90,8 @@ async def apply_cancellation(
         ),
     )
 
-    # Series edits stage these tasks until replacement rows have flushed. A
-    # rolled-back edit must not revoke access to the original valid bookings.
-    background_tasks.add_task(try_revoke_access_code, lock_gateway, booking_id=booking.id)
+    # L01: cancelling a booking no longer revokes any door code — the PIN is
+    # per customer, not per booking (freedom at the door; dormancy and
+    # anonymisation take a customer off the lock). `lock_gateway` is kept in
+    # the signature for the callers and for a future per-space hook.
+    _ = lock_gateway

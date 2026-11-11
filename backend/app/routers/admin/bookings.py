@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app import audit, cancellation_credit, clock, deletion, email, package_hours
+from app.access import try_ensure_customer_access
 from app.auth import require_admin
 from app.booking_validity import (
     MAX_BOOKING_DURATION,
@@ -32,8 +33,6 @@ from app.locks import (
     LockGateway,
     attach_access_codes,
     get_lock_gateway,
-    try_issue_access_code,
-    try_revoke_access_code,
 )
 from app.models.audit import AdminAction
 from app.models.booking import PAID_AT_CHECKOUT, Booking, BookingStatus, PaymentMethod
@@ -244,12 +243,13 @@ def _duration(start: datetime, end: datetime) -> Decimal:
 async def _confirm_side_effects(
     booking: Booking,
     *,
+    db: AsyncSession,
     background_tasks: BackgroundTasks,
     email_gateway: EmailGateway,
     lock_gateway: LockGateway,
     changed: bool = False,
 ) -> None:
-    """What every confirmation does: the email and the access code.
+    """What every confirmation does: the email and the customer's door PIN.
 
     Shared by a customer-paid confirmation (webhook), an operator confirm, a
     manual booking and mark-paid, so none of them can drift.
@@ -266,14 +266,10 @@ async def _confirm_side_effects(
             changed=changed,
         ),
     )
-    # Best-effort — a Seam outage must not block an operator (Epic 3.3).
-    await try_issue_access_code(
-        lock_gateway,
-        booking_id=booking.id,
-        room_id=booking.room_id,
-        name=f"Reserva {booking.id} — {booking.room.name}",
-        starts_at=booking.start_time,
-        ends_at=booking.end_time,
+    # L01: the customer's one door PIN (the pass issues it on the lock).
+    # Best-effort — a lock problem must not block an operator.
+    await try_ensure_customer_access(
+        db, user_id=booking.user_id, org_id=booking.org_id, space_id=booking.room.space_id
     )
 
 
@@ -485,6 +481,7 @@ async def admin_update_booking(
     if new_status != previous_status and new_status is BookingStatus.confirmed:
         await _confirm_side_effects(
             booking,
+            db=db,
             background_tasks=background_tasks,
             email_gateway=email_gateway,
             lock_gateway=lock_gateway,
@@ -526,14 +523,13 @@ async def admin_update_booking(
                 credit_expires_at=credit.expires_at if credit is not None else None,
             ),
         )
-        await try_revoke_access_code(lock_gateway, booking_id=booking.id)
     elif moved and booking.status is BookingStatus.confirmed:
         # A confirmed booking that changed time or room: the confirmation
-        # again, with the new details and one line saying it was altered, and
-        # an access code for the new window.
-        await try_revoke_access_code(lock_gateway, booking_id=booking.id)
+        # again, with the new details and one line saying it was altered. The
+        # customer's door PIN is per-customer, so a move does not change it.
         await _confirm_side_effects(
             booking,
+            db=db,
             background_tasks=background_tasks,
             email_gateway=email_gateway,
             lock_gateway=lock_gateway,
@@ -652,6 +648,7 @@ async def admin_create_booking(
     )
     await _confirm_side_effects(
         booking,
+        db=db,
         background_tasks=background_tasks,
         email_gateway=email_gateway,
         lock_gateway=lock_gateway,
@@ -769,6 +766,7 @@ async def admin_mark_booking_paid(
     )
     await _confirm_side_effects(
         booking,
+        db=db,
         background_tasks=background_tasks,
         email_gateway=email_gateway,
         lock_gateway=lock_gateway,
@@ -843,4 +841,3 @@ async def admin_delete_booking(
         before=before,
         reason=(reason or "").strip() or None,
     )
-    await try_revoke_access_code(lock_gateway, booking_id=booking.id)

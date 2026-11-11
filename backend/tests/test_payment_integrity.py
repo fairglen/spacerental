@@ -312,31 +312,9 @@ class TestLiveModeHasNoStubSurface:
 
 
 class TestADoorCodeExistsOnlyForAConfirmedBooking:
-    async def test_no_code_while_pending_then_one_for_the_owner_and_never_by_email(
-        self, client, db_session, auth_headers, test_member, test_room, payments, locks, emails
-    ):
-        booking = (await _book(client, auth_headers, test_room, 9)).json()["booking"]
-        booking_id = uuid.UUID(booking["id"])
-        assert booking["access_code"] is None
-        assert locks.issued_code_for(booking_id) is None
-
-        payload = checkout_completed_event(
-            session_id=_session_of(booking["id"]),
-            kind=CheckoutKind.booking,
-            reference_id=booking["id"],
-            org_id=booking["org_id"],
-        )
-        assert (await _deliver(client, payments, payload)).json()["handled"] is True
-        issued = locks.issued_code_for(booking_id)
-        assert issued is not None
-        mine = await client.get(f"{API}/bookings/me", headers=auth_headers)
-        assert [b["access_code"] for b in mine.json()["bookings"]] == [issued.code]
-        assert emails.sent, "the confirmation email is this test's subject"
-        for message in emails.sent:
-            assert issued.code not in message.subject
-            assert issued.code not in message.html_body
-            assert issued.code not in message.text_body
-
+    # L01: per-booking access codes were replaced by a per-customer PIN; the
+    # `access_code` field on a booking is deprecated and always null, so the
+    # "a code appears on confirm" case moved to tests/test_customer_access.py.
     async def test_a_payment_that_lost_its_slot_gets_no_code(
         self,
         client,
@@ -377,7 +355,6 @@ class TestADoorCodeExistsOnlyForAConfirmedBooking:
         )
         assert (await _deliver(client, payments, payload)).json()["handled"] is True
         assert (await _booking(db_session, late["id"])).status is BookingStatus.paid_unfulfilled
-        assert locks.issued_code_for(uuid.UUID(late["id"])) is None
         confirmed = await db_session.scalar(
             select(func.count())
             .select_from(Booking)

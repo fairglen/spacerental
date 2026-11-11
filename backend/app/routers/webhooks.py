@@ -7,10 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import clock, email, package_hours
+from app.access import try_ensure_customer_access
 from app.booking_validity import expire_stale_holds, has_conflicting_booking, is_lost_slot_race
 from app.database import get_db
 from app.email import EmailGateway, get_email_gateway
-from app.locks import LockGateway, get_lock_gateway, try_issue_access_code
+from app.locks import LockGateway, get_lock_gateway
 from app.models.booking import Booking, BookingStatus
 from app.models.package import PurchaseStatus, UserPackagePurchase
 from app.models.space import Room
@@ -222,18 +223,11 @@ async def _confirm_booking(
         ),
     )
 
-    # Epic 3.1/3.3: best-effort — a Seam outage must not fail an otherwise
-    # successfully-paid booking. Nothing downstream reads the return value
-    # here because this webhook has no booking-shaped response; a later
-    # GET (dashboard, admin list) picks the code up via
-    # `app.locks.attach_access_codes` reading the same gateway's memory.
-    await try_issue_access_code(
-        lock_gateway,
-        booking_id=booking.id,
-        room_id=booking.room_id,
-        name=f"Reserva {booking.id} — {booking.room.name}",
-        starts_at=booking.start_time,
-        ends_at=booking.end_time,
+    # L01: the paid booking is confirmed — make sure the customer has their
+    # one door PIN (the pass issues it on the lock). Best-effort: a lock
+    # problem never fails an otherwise successfully-paid booking.
+    await try_ensure_customer_access(
+        db, user_id=booking.user_id, org_id=booking.org_id, space_id=booking.room.space_id
     )
     return True
 

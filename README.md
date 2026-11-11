@@ -10,7 +10,7 @@
 - **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind CSS + NextAuth.js
 - **Backend**: FastAPI (Python) + SQLAlchemy async + PostgreSQL
 - **Auth**: Self-hosted — FastAPI issues JWTs after email/password verification (Argon2id password hashing). NextAuth manages the session cookie. No external auth service.
-- **Smart locks**: Local stub access-code lifecycle; live Seam operation gated until durable storage
+- **Smart locks**: One PIN per customer on the space's lock (Nuki), issued on first confirmed booking; stub by default
 
 ## Setup
 
@@ -388,7 +388,7 @@ value stops the backend at startup rather than quietly writing to local disk.
 
 ## Third-party integrations (stub/live)
 
-Stripe, Resend (email), and Seam (smart locks) sit behind credential-free stub
+Stripe, email (SES/Resend), and smart locks (Nuki, L01) sit behind credential-free stub
 interfaces. `STRIPE_MODE`, `EMAIL_MODE` and `SEAM_MODE` default to `stub`; all tests
 run without third-party accounts or network access.
 
@@ -473,14 +473,18 @@ Para enviar emails pelo Resend (o segundo fornecedor, `EMAIL_MODE=live`):
 Sem fila nem repetição: um envio que falha é registado (log e "Últimas
 falhas") e não é tentado de novo — O01 no `TODO.md`.
 
-**Smart locks** (`backend/app/locks.py`): webhook/stub checkout confirmation,
-admin confirmation and prepaid pack redemption issue an access code. Individual,
-admin and recurring-series cancellations revoke it. Failed revocations retain
-the identifier for a retry, and cancelled bookings no longer expose the code.
-A failed series edit keeps the original codes valid. Stub codes are held in
-process memory and disappear on restart. **Live Seam startup is rejected even
-with an API key** until persistent identifiers and retry handling ship (O04).
-This is a locally testable foundation, not production door access.
+**Smart locks** (`backend/app/locks.py`, `backend/app/access.py`, L01): one
+PIN per customer, issued on their first confirmed booking (every checkout
+path) and shown on the dashboard — not a code per booking. The PIN is
+encrypted at rest and reconciled onto the lock by the sweeper pass
+(`backend/app/holds.py`), so a lock outage never fails a payment; an idle
+customer loses the slot after `ACCESS_DORMANCY_DAYS` and gets it back on their
+next booking. `LOCK_PROVIDER=stub` is an in-memory, credential-free lock for
+local use and tests; `LOCK_PROVIDER=nuki` talks to the Nuki Web API (token +
+`ACCESS_PIN_KEY` required, validated at boot). The local stack maps every
+space to one lock (`NUKI_DEVICE_ID_MAP={"*":…}`), so a confirmed booking shows
+the dashboard access card. The operator sees status and can rotate/revoke/open
+the door, never the clear PIN. See `docs/runbooks/nuki.md`.
 
 To exercise the complete lifecycle locally:
 

@@ -15,6 +15,7 @@ import { PASSWORD_HINT, passwordProblems, passwordReasonsOf } from '@/lib/passwo
 import { useCrud } from '@/components/admin/crud/useCrud'
 import { EntityForm, FormField, FormSection } from '@/components/admin/crud/EntityForm'
 import { DangerZone } from '@/components/admin/crud/DangerZone'
+import { AccessPanel } from '@/components/admin/users/AccessPanel'
 import { HistoryPanel } from '@/components/admin/crud/HistoryPanel'
 import { PageHeader } from '@/components/admin/crud/PageHeader'
 import { ReasonDialog } from '@/components/admin/crud/ReasonDialog'
@@ -202,6 +203,8 @@ function UserDetail({ userId }: { userId: string }) {
             )}
           </div>
         </section>
+
+        <AccessPanel userId={userId} api={api} enabled={enabled} />
 
         <section aria-labelledby="reservas" className="rounded-xl border border-border bg-white p-5">
           <h2 id="reservas" className="text-base font-semibold text-foreground mb-3">Reservas</h2>

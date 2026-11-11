@@ -1,5 +1,6 @@
 from app.models.audit import AdminAction
 from app.models.booking import Booking
+from app.models.customer_access import CustomerAccess, CustomerAccessDevice
 from app.models.invoice import Invoice, InvoiceItem
 from app.models.organization import Organization, OrganizationMember
 from app.models.package import BookingPackageDebit, Package, PurchaseSource, UserPackagePurchase
@@ -16,6 +17,8 @@ __all__ = [
     "AvailabilityRule",
     "Booking",
     "BookingPackageDebit",
+    "CustomerAccess",
+    "CustomerAccessDevice",
     "Invoice",
     "InvoiceItem",
     "Organization",
