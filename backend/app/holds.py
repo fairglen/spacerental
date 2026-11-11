@@ -113,7 +113,10 @@ async def reconcile_access_once(session_factory: async_sessionmaker) -> bool:
     if result.issued or result.revoked or result.dormant or result.failures:
         logger.info(
             "lock reconcile: %d issued, %d revoked, %d dormant, %d failed",
-            result.issued, result.revoked, result.dormant, result.failures,
+            result.issued,
+            result.revoked,
+            result.dormant,
+            result.failures,
         )
     return True
 

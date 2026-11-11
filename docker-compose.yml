@@ -114,7 +114,10 @@ services:
       # knowing the seeded space ids. `nuki` needs a token and ACCESS_PIN_KEY.
       LOCK_PROVIDER: ${LOCK_PROVIDER:-stub}
       NUKI_API_TOKEN: ${NUKI_API_TOKEN:-}
-      NUKI_DEVICE_ID_MAP: ${NUKI_DEVICE_ID_MAP:-{"*":"dev-lock"}}
+      # The value comes from .env (copied from .env.example, which defaults it
+      # to {"*":"dev-lock"}). No inline JSON default here: a "}" in a compose
+      # ${VAR:-…} default closes the interpolation early and breaks the stack.
+      NUKI_DEVICE_ID_MAP: ${NUKI_DEVICE_ID_MAP:-}
       NUKI_TIMEOUT_SECONDS: ${NUKI_TIMEOUT_SECONDS:-10}
       ACCESS_PIN_KEY: ${ACCESS_PIN_KEY:-}
     depends_on:

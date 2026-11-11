@@ -157,9 +157,7 @@ async def try_ensure_customer_access(
     SAVEPOINT so a failure here leaves the booking's own changes intact."""
     try:
         async with db.begin_nested():
-            await ensure_customer_access(
-                db, user_id=user_id, org_id=org_id, space_id=space_id
-            )
+            await ensure_customer_access(db, user_id=user_id, org_id=org_id, space_id=space_id)
     except Exception:
         logger.exception(
             "Could not prepare smart-lock access for user %s / space %s", user_id, space_id
@@ -175,9 +173,7 @@ def _mark_pending(device: CustomerAccessDevice) -> None:
 # ─── Customer and admin actions ─────────────────────────────────────────────
 
 
-async def rotate_pin(
-    db: AsyncSession, access: CustomerAccess, *, actor=None
-) -> str:
+async def rotate_pin(db: AsyncSession, access: CustomerAccess, *, actor=None) -> str:
     """Give the customer a fresh PIN; every device re-issues (the pass deletes
     the old authorisation first, keeping its id until the delete succeeds).
     Returns the new clear PIN."""
@@ -193,8 +189,13 @@ async def rotate_pin(
             device.attempts = 0
             device.last_error = None
     await audit.record(
-        db, actor=actor, org_id=access.org_id, entity=access, action="access.rotate",
-        before={"status": access.status}, after={"status": access.status},
+        db,
+        actor=actor,
+        org_id=access.org_id,
+        entity=access,
+        action="access.rotate",
+        before={"status": access.status},
+        after={"status": access.status},
     )
     return new_pin
 
@@ -207,7 +208,11 @@ async def revoke_access(db: AsyncSession, access: CustomerAccess, *, actor=None)
     for device in access.devices:
         device.sync_status = SYNC_REVOKE_PENDING
     await audit.record(
-        db, actor=actor, org_id=access.org_id, entity=access, action="access.revoke",
+        db,
+        actor=actor,
+        org_id=access.org_id,
+        entity=access,
+        action="access.revoke",
         after={"status": ACCESS_REVOKED},
     )
 
@@ -219,7 +224,11 @@ async def reactivate_access(db: AsyncSession, access: CustomerAccess, *, actor=N
     for device in access.devices:
         _mark_pending(device)
     await audit.record(
-        db, actor=actor, org_id=access.org_id, entity=access, action="access.reactivate",
+        db,
+        actor=actor,
+        org_id=access.org_id,
+        entity=access,
+        action="access.reactivate",
         after={"status": ACCESS_ACTIVE},
     )
 
@@ -282,7 +291,9 @@ async def reconcile_customer_access(
             result.failures += 1
             logger.warning(
                 "lock reconcile: device %s (%s) failed attempt %d",
-                device.device_id, device.sync_status, device.attempts,
+                device.device_id,
+                device.sync_status,
+                device.attempts,
             )
     return result
 
@@ -320,7 +331,11 @@ async def _reconcile_issue(
     device.last_error = None
     result.issued += 1
     await audit.record(
-        db, actor=None, org_id=access.org_id, entity=access, action="access.issue",
+        db,
+        actor=None,
+        org_id=access.org_id,
+        entity=access,
+        action="access.issue",
         after={"status": access.status, "device_id": device.device_id},
     )
 
@@ -336,7 +351,11 @@ async def _reconcile_revoke(
     result.revoked += 1
     if access is not None:
         await audit.record(
-            db, actor=None, org_id=access.org_id, entity=access, action="access.revoke_device",
+            db,
+            actor=None,
+            org_id=access.org_id,
+            entity=access,
+            action="access.revoke_device",
             after={"device_id": device.device_id},
         )
 

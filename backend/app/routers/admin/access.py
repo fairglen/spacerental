@@ -161,7 +161,11 @@ async def admin_open_door(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="The lock did not accept the command"
         ) from exc
     await audit.record(
-        db, actor=admin, org_id=org_id, entity=space, action="access.open_door",
+        db,
+        actor=admin,
+        org_id=org_id,
+        entity=space,
+        action="access.open_door",
         after={"device_id": device_id},
     )
     await db.commit()

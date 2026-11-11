@@ -42,6 +42,11 @@ def sql_log(engine):
     event.remove(engine.sync_engine, "before_cursor_execute", record)
 
 
+async def _noop_reconcile(factory):
+    """L01/L02: keep the lock reconcile out of the sweeper-cadence timing tests."""
+    return True
+
+
 class TestSweeper:
     async def test_one_sweep_expires_every_lapsed_hold_and_leaves_the_rest(
         self, db_session, session_factory, test_room, test_user, monkeypatch
@@ -91,6 +96,7 @@ class TestSweeper:
             return 0
 
         monkeypatch.setattr(holds, "sweep_lapsed_holds_once", fake_sweep)
+        monkeypatch.setattr(holds, "reconcile_access_once", _noop_reconcile)
         task = asyncio.create_task(holds.run_hold_sweeper(session_factory, 0.01))
         await asyncio.sleep(0.08)
         task.cancel()
@@ -111,6 +117,7 @@ class TestSweeper:
             return 0
 
         monkeypatch.setattr(holds, "sweep_lapsed_holds_once", flaky)
+        monkeypatch.setattr(holds, "reconcile_access_once", _noop_reconcile)
         task = asyncio.create_task(holds.run_hold_sweeper(session_factory, 0.01))
         await asyncio.sleep(0.06)
         task.cancel()

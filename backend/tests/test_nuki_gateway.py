@@ -29,9 +29,7 @@ async def test_issue_puts_then_confirms_by_name_and_returns_the_auth_id():
     put = respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
         return_value=httpx.Response(204)
     )
-    respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/sync").mock(
-        return_value=httpx.Response(204)
-    )
+    respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/sync").mock(return_value=httpx.Response(204))
     respx.get(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
         return_value=httpx.Response(200, json=[{"id": AUTH_ID, "name": "fs-abc"}])
     )

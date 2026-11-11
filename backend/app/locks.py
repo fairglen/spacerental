@@ -477,17 +477,13 @@ def validate_lock_settings() -> None:
     if not settings.ACCESS_PIN_KEY:
         missing.append("ACCESS_PIN_KEY")
     if missing:
-        raise LockNotConfiguredError(
-            f"LOCK_PROVIDER=nuki requires {', '.join(missing)}"
-        )
+        raise LockNotConfiguredError(f"LOCK_PROVIDER=nuki requires {', '.join(missing)}")
     parse_device_id_map(settings.NUKI_DEVICE_ID_MAP)
     _fernet()  # validate the key shape now, not on first issue.
 
 
 @cache
-def _build_gateway(
-    provider: str, api_token: str | None, timeout_seconds: float
-) -> LockGateway:
+def _build_gateway(provider: str, api_token: str | None, timeout_seconds: float) -> LockGateway:
     if provider == NUKI_PROVIDER:
         return NukiGateway(api_token=api_token, timeout_seconds=timeout_seconds)
     return StubLockGateway()
