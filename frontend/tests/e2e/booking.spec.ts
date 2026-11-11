@@ -256,7 +256,9 @@ async function confirmAndPay(page: Page, api: APIRequestContext, token: string):
   await page.waitForURL(/\/dashboard/, { timeout: 20000 })
   const confirmed = (await myBookings(api, token)).find(b => b.id === booking!.id)
   expect(confirmed?.status).toBe('confirmed')
-  expect(confirmed?.access_code).toMatch(/^\d{6}$/)
+  // L01: the per-booking access_code is deprecated (always null); the PIN is
+  // per customer now, on the dashboard access card.
+  expect(confirmed?.access_code).toBeNull()
   return booking!
 }
 
@@ -334,11 +336,11 @@ test.describe('Reservas — fluxos reais', () => {
     await expect(card).toHaveCount(1, { timeout: 10000 })
     await expect(card).toContainText('33,00')
     await expect(card).toContainText('Confirmado')
-    // B23: the door code the stub lock issued on payment is shown to the customer.
+    // L01: the per-booking access_code is deprecated (always null). The door
+    // PIN is per customer now, shown on the dashboard access card (its own
+    // e2e is access.spec.ts), not on the booking.
     const paid = (await myBookings(api, token)).find((b) => b.id === booking.id)
-    expect(paid?.access_code).toMatch(/^\d{6}$/)
-    await expect(card).toContainText('Código de acesso')
-    await expect(card).toContainText(paid!.access_code!)
+    expect(paid?.access_code).toBeNull()
   })
 
   test('a single click still books exactly one hour, same as before B1 (B1)', async () => {

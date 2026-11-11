@@ -41,7 +41,10 @@ def upgrade() -> None:
         sa.Column("pin_encrypted", sa.Text(), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False, server_default="active"),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column("rotated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
@@ -50,9 +53,7 @@ def upgrade() -> None:
             "status in ('active', 'dormant', 'revoked')", name="ck_customer_access_status"
         ),
     )
-    op.create_index(
-        "ix_customer_access_org_status", "customer_access", ["org_id", "status"]
-    )
+    op.create_index("ix_customer_access_org_status", "customer_access", ["org_id", "status"])
 
     op.create_table(
         "customer_access_devices",
@@ -81,10 +82,16 @@ def upgrade() -> None:
         sa.Column("last_error", sa.Text(), nullable=True),
         sa.Column("synced_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.UniqueConstraint(
             "customer_access_id", "device_id", name="uq_customer_access_devices_access_device"
