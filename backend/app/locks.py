@@ -444,6 +444,16 @@ def device_id_for_space(space_id: uuid.UUID) -> str | None:
     return mapping.get(str(space_id)) or mapping.get("*")
 
 
+def spaces_for_device(device_id: str) -> set[str] | None:
+    """The space ids a device serves, or `None` when it serves every space
+    (the `"*"` wildcard). The inverse of `device_id_for_space`, for L02's
+    verdict reconciliation."""
+    mapping = parse_device_id_map(settings.NUKI_DEVICE_ID_MAP)
+    if mapping.get("*") == device_id:
+        return None
+    return {s for s, d in mapping.items() if d == device_id and s != "*"}
+
+
 def resolve_provider() -> str:
     """The effective lock provider. `SEAM_MODE=stub` is accepted as an alias
     for `LOCK_PROVIDER=stub` for one release (warned), nothing else."""

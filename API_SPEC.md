@@ -470,6 +470,19 @@ operator — the customer sees it). `POST /admin/spaces/:id/open-door` →
 `access.open_door`); `400` when the space has no lock, `502` when the lock
 refuses. All require the operator role in `org_id`.
 
+### The trail (L02)
+
+`GET /access/me/history` (customer) → `{"events": [{occurred_at, kind,
+verdict}]}`, the customer's own door entries, newest first. `GET
+/admin/access/report?week=YYYY-MM-DD` (operator) →
+`{"report": {week_start, week_end, counts, verdicts: [{verdict, delta_minutes,
+entered_at, departure_estimate_at, departure_confidence, device_id,
+booking_id, customer_name, customer_email}]}}` — the week's verdicts
+(`on_time` | `early` | `late` | `overstay` | `no_booking`) and counts; `week`
+is any date in the week, default this week. `GET
+/admin/bookings/:id/access` (operator) → `{"access": {verdict, entered_at,
+departure_estimate_at, departure_confidence}}` for one booking.
+
 **Owners are only another owner's to change.** `PUT /admin/users/:id`
 (name, email, suspension), `POST …/set-password`, `POST …/anonymise`,
 `DELETE /admin/users/:id` and `DELETE …/membership` answer 403 when the

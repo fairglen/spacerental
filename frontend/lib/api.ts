@@ -14,7 +14,7 @@ import type {
   OrganizationSettings, OrganizationSettingsPatch, PublicContact, EmailStatus, EmailTestResult,
   BillingDetails, BillingPeriod, BillingSummary, BillingStatement, InvoicedFilter,
   Invoice, InvoiceFilters, InvoiceCreateBody, InvoiceUpdateBody, MyInvoice,
-  CustomerPin, AdminAccess,
+  CustomerPin, AdminAccess, AccessEvent, AccessReport, BookingAccess,
 } from '@/types'
 
 // Relative by default (/backend/api/v1): the browser calls the API through
@@ -258,6 +258,10 @@ export const accessApi = {
 
   rotate: (api: Api): Promise<CustomerPin> =>
     api.post<{ access: CustomerPin }>('/access/me/rotate').then(r => r.data.access),
+
+  // L02: the customer's own door history.
+  history: (api: Api): Promise<AccessEvent[]> =>
+    api.get<{ events: AccessEvent[] }>('/access/me/history').then(r => r.data.events),
 }
 
 export const recurrencesApi = {
@@ -572,6 +576,12 @@ export const adminApi = {
     api.post<{ access: AdminAccess }>(`/admin/users/${id}/access/reactivate`).then(r => r.data.access),
   openDoor: (spaceId: string, api: Api): Promise<{ opened: boolean }> =>
     api.post<{ opened: boolean }>(`/admin/spaces/${spaceId}/open-door`).then(r => r.data),
+
+  // L02: the week's access verdicts and one booking's verdict.
+  getAccessReport: (week: string | undefined, api: Api): Promise<AccessReport> =>
+    api.get<{ report: AccessReport }>('/admin/access/report', { params: { ...(api.defaults.params || {}), ...(week ? { week } : {}) } }).then(r => r.data.report),
+  getBookingAccess: (bookingId: string, api: Api): Promise<BookingAccess> =>
+    api.get<{ access: BookingAccess }>(`/admin/bookings/${bookingId}/access`).then(r => r.data.access),
 
   // Users (G03/G04).
   createUser: (body: AdminUserCreateBody, api: Api): Promise<OrgUser> =>

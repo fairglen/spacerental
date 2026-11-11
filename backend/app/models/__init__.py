@@ -2,6 +2,7 @@ from app.models.audit import AdminAction
 from app.models.booking import Booking
 from app.models.customer_access import CustomerAccess, CustomerAccessDevice
 from app.models.invoice import Invoice, InvoiceItem
+from app.models.lock_event import AccessVerdict, LockEventRow
 from app.models.organization import Organization, OrganizationMember
 from app.models.package import BookingPackageDebit, Package, PurchaseSource, UserPackagePurchase
 from app.models.password_reset import PasswordResetToken
@@ -13,6 +14,7 @@ from app.models.support import SupportRequest
 from app.models.user import User
 
 __all__ = [
+    "AccessVerdict",
     "AdminAction",
     "AvailabilityRule",
     "Booking",
@@ -21,6 +23,7 @@ __all__ = [
     "CustomerAccessDevice",
     "Invoice",
     "InvoiceItem",
+    "LockEventRow",
     "Organization",
     "OrganizationMember",
     "Package",

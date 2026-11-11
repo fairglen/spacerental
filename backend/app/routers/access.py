@@ -16,9 +16,10 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.locks import LockProviderError, decrypt_pin
 from app.models.customer_access import ACCESS_REVOKED, CustomerAccess
+from app.models.lock_event import AccessVerdict, LockEventRow
 from app.models.user import User
 from app.ratelimit import AUTH_TIER, rate_limit
-from app.schemas.access import CustomerDeviceOut, CustomerPinOut
+from app.schemas.access import AccessEventOut, CustomerDeviceOut, CustomerPinOut
 
 router = APIRouter(tags=["access"])
 
@@ -94,3 +95,31 @@ async def rotate_my_access(
     await db.commit()
     await db.refresh(access)
     return {"access": _customer_view(access)}
+
+
+@router.get("/access/me/history")
+async def get_my_access_history(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+):
+    """The customer's own door history (L02): their lock entries, newest first,
+    with the verdict where one exists."""
+    limit = max(1, min(limit, 100))
+    rows = (
+        await db.execute(
+            select(LockEventRow, AccessVerdict.verdict)
+            .outerjoin(AccessVerdict, AccessVerdict.lock_event_id == LockEventRow.id)
+            .where(LockEventRow.user_id == user.id)
+            .order_by(LockEventRow.occurred_at.desc())
+            .limit(limit)
+            .offset(max(0, offset))
+        )
+    ).all()
+    return {
+        "events": [
+            AccessEventOut(occurred_at=e.occurred_at, kind=e.kind, verdict=verdict)
+            for e, verdict in rows
+        ]
+    }
