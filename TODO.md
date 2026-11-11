@@ -3588,9 +3588,14 @@ tests). **Cause:** two per-test fixture costs — `db_session` ran
    runner) 144/192 s, `-n 6` 176 s, `-n 8` 209 s → the suite is CPU-bound
    after step 3, so oversubscription hurts; **kept `-n auto`**. 5. no
    sharding — the job is already < 3 min (would only add a `required-checks`
-   dependency for no gain). **Result:** `backend / test` 384 s → ~144 s;
-   `Checks` wall-clock ~7 min → ~3.5 min, bounded now by the e2e shards /
-   `perf-web` / `prod-stack` (~2.2 min each). **DECISIONs:** (a) the EXCLUDE
+   dependency for no gain). A follow-up caches the installed packages
+   (`env.pythonLocation`) so a warm run's install is ~1 s not ~20 s.
+   **Result:** the pytest step 334 s → ~150 s and the whole `backend / test`
+   job 391 s → ~166 s on a warm cache (two consecutive runs 166 s/166 s; the
+   ~50 s spread seen across runs — 144/166/182/201 — is GitHub runner-CPU
+   variance on the pytest step, not the fixtures); `Checks` wall-clock
+   ~7 min → ~3.5 min, bounded now by the e2e shards / `perf-web` /
+   `prod-stack` (~2.2 min each). **DECISIONs:** (a) the EXCLUDE
    constraints live only in the migrations (§6.5), so the per-test TRUNCATE
    schema has none — a schema-mutating test must carry `fresh_schema`, which
    rebuilds after it too so the mutation cannot leak into the next
