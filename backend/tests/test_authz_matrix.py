@@ -59,6 +59,7 @@ ROUTES: dict[tuple[str, str], str] = {
     # Smart-lock access (L01).
     ("GET", f"{API}/access/me"): CUSTOMER,
     ("POST", f"{API}/access/me/rotate"): CUSTOMER,
+    ("GET", f"{API}/access/me/history"): CUSTOMER,
     ("POST", f"{API}/bookings"): CUSTOMER,
     ("DELETE", f"{API}/bookings/{{booking_id}}"): CUSTOMER,
     ("POST", f"{API}/bookings/{{booking_id}}/checkout"): CUSTOMER,
@@ -122,6 +123,8 @@ ROUTES: dict[tuple[str, str], str] = {
     ("POST", f"{API}/admin/users/{{user_id}}/access/revoke"): OPERATOR,
     ("POST", f"{API}/admin/users/{{user_id}}/access/reactivate"): OPERATOR,
     ("POST", f"{API}/admin/spaces/{{space_id}}/open-door"): OPERATOR,
+    ("GET", f"{API}/admin/access/report"): OPERATOR,
+    ("GET", f"{API}/admin/bookings/{{booking_id}}/access"): OPERATOR,
     ("DELETE", f"{API}/admin/users/{{user_id}}"): OPERATOR,
     ("DELETE", f"{API}/admin/users/{{user_id}}/membership"): OPERATOR,
     ("DELETE", f"{API}/admin/packages/{{package_id}}"): OPERATOR,
@@ -263,6 +266,7 @@ CUSTOMER_ISOLATION: dict[tuple[str, str], str] = {
     ("GET", f"{API}/bookings/me"): "test_my_lists_contain_only_my_rows",
     ("GET", f"{API}/access/me"): "test_access_is_only_my_own",
     ("POST", f"{API}/access/me/rotate"): "test_access_is_only_my_own",
+    ("GET", f"{API}/access/me/history"): "test_access_history_is_only_mine",
     ("POST", f"{API}/bookings"): (
         "test_a_customer_cannot_book_a_room_of_an_org_they_do_not_belong_to"
     ),
@@ -941,6 +945,29 @@ class TestCustomerIsolation:
         assert (
             await client.post(f"{API}/access/me/rotate", headers=_as(world.cust_a2))
         ).status_code == 404
+
+    async def test_access_history_is_only_mine(self, client, world, db_session):
+        """L02: a customer's door history shows only their own events."""
+        from datetime import UTC, datetime
+
+        from app.models.lock_event import LockEventRow
+
+        db_session.add(
+            LockEventRow(
+                org_id=world.org_a.id,
+                device_id="lock-iso",
+                nuki_event_id=f"evt-{uuid.uuid4().hex}",
+                occurred_at=datetime.now(tz=UTC),
+                kind="keypad_unlock",
+                user_id=world.cust_a.id,
+            )
+        )
+        await db_session.commit()
+        mine = await client.get(f"{API}/access/me/history", headers=_as(world.cust_a))
+        assert mine.status_code == 200
+        assert len(mine.json()["events"]) == 1
+        other = await client.get(f"{API}/access/me/history", headers=_as(world.cust_a2))
+        assert other.json()["events"] == []
 
     async def test_my_lists_contain_only_my_rows(self, client, world):
         for user, org, bookings, purchases in (

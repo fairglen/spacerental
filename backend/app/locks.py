@@ -68,6 +68,10 @@ KIND_UNLATCH = "unlatch"
 KIND_DOOR_OPEN = "door_open"
 KIND_DOOR_CLOSE = "door_close"
 KIND_AUTO_LOCK = "auto_lock"
+# A log entry whose `state` is not 0 (motor blocked, cancelled, low voltage…)
+# is an action that did NOT happen: the spike on the owner's lock showed a
+# keypad unlock with state=1. Stored for the trail, never an arrival.
+KIND_FAILED = "failed"
 KIND_UNKNOWN = "unknown"
 
 # Nuki door states (GET /smartlock state.doorState).
@@ -442,6 +446,16 @@ def device_id_for_space(space_id: uuid.UUID) -> str | None:
     """
     mapping = parse_device_id_map(settings.NUKI_DEVICE_ID_MAP)
     return mapping.get(str(space_id)) or mapping.get("*")
+
+
+def spaces_for_device(device_id: str) -> set[str] | None:
+    """The space ids a device serves, or `None` when it serves every space
+    (the `"*"` wildcard). The inverse of `device_id_for_space`, for L02's
+    verdict reconciliation."""
+    mapping = parse_device_id_map(settings.NUKI_DEVICE_ID_MAP)
+    if mapping.get("*") == device_id:
+        return None
+    return {s for s, d in mapping.items() if d == device_id and s != "*"}
 
 
 def resolve_provider() -> str:

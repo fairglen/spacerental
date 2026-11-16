@@ -35,6 +35,7 @@ from app import clock
 from app.access import reconcile_customer_access
 from app.booking_validity import _expire_lapsed_holds
 from app.config import settings
+from app.lock_events import ingest_and_judge
 from app.locks import get_lock_gateway
 from app.models.package import PurchaseStatus, UserPackagePurchase
 
@@ -105,7 +106,9 @@ async def reconcile_access_once(session_factory: async_sessionmaker) -> bool:
                 await db.rollback()
                 return False
             now = clock.utcnow()
-            result = await reconcile_customer_access(db, get_lock_gateway(), now)
+            gateway = get_lock_gateway()
+            result = await reconcile_customer_access(db, gateway, now)
+            trail = await ingest_and_judge(db, gateway, now)
             await db.commit()
         except Exception:
             await db.rollback()
@@ -117,6 +120,14 @@ async def reconcile_access_once(session_factory: async_sessionmaker) -> bool:
             result.revoked,
             result.dormant,
             result.failures,
+        )
+    if trail.ingested or trail.judged or trail.alerts or trail.pruned:
+        logger.info(
+            "lock trail: %d events, %d verdicts, %d alerts, %d pruned",
+            trail.ingested,
+            trail.judged,
+            trail.alerts,
+            trail.pruned,
         )
     return True
 
