@@ -68,6 +68,10 @@ KIND_UNLATCH = "unlatch"
 KIND_DOOR_OPEN = "door_open"
 KIND_DOOR_CLOSE = "door_close"
 KIND_AUTO_LOCK = "auto_lock"
+# A log entry whose `state` is not 0 (motor blocked, cancelled, low voltage…)
+# is an action that did NOT happen: the spike on the owner's lock showed a
+# keypad unlock with state=1. Stored for the trail, never an arrival.
+KIND_FAILED = "failed"
 KIND_UNKNOWN = "unknown"
 
 # Nuki door states (GET /smartlock state.doorState).

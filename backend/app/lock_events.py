@@ -20,6 +20,7 @@ from app.config import settings
 from app.locks import (
     KIND_AUTO_LOCK,
     KIND_DOOR_CLOSE,
+    KIND_FAILED,
     KIND_KEYPAD_UNLOCK,
     KIND_LOCK,
     LockGateway,
@@ -119,7 +120,10 @@ async def _ingest_device(
         if exists is not None:
             continue
         user_id = auth_to_user.get(event.auth_id) if event.auth_id else None
-        kind = classify_action(event.action, attributed_to_keypad=user_id is not None)
+        if event.state not in (None, 0):
+            kind = KIND_FAILED
+        else:
+            kind = classify_action(event.action, attributed_to_keypad=user_id is not None)
         db.add(
             LockEventRow(
                 org_id=org_id,

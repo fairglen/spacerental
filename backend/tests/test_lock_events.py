@@ -136,6 +136,37 @@ class TestIngestion:
         assert second.ingested == 0
         assert await db_session.scalar(select(func.count()).select_from(LockEventRow)) == 2
 
+    async def test_failed_action_is_stored_but_never_an_arrival(
+        self, db_session, test_org, synced_access
+    ):
+        """The owner's lock logged a keypad unlock with state=1 (motor blocked):
+        the PIN was right, the door did not open. The entry stays in the trail
+        as `failed`, is not a keypad_unlock, gets no verdict and does not bump
+        last_used_at."""
+        gw = StubLockGateway()
+        now = datetime.now(tz=UTC)
+        gw.append_log(
+            LockEvent(
+                external_id="k-blocked",
+                occurred_at=now - timedelta(minutes=5),
+                action=LOG_ACTION_UNLOCK,
+                trigger=255,
+                auth_id=AUTH,
+                state=1,
+            ),
+            device_id=DEVICE,
+        )
+
+        result = await lock_events.ingest_and_judge(db_session, gw, now)
+        await db_session.commit()
+        assert result.ingested == 1
+        row = (await db_session.execute(select(LockEventRow))).scalar_one()
+        assert row.kind == "failed"
+        assert row.nuki_auth_id == AUTH
+        assert await db_session.scalar(select(func.count()).select_from(AccessVerdict)) == 0
+        access = await db_session.get(CustomerAccess, synced_access.customer_access_id)
+        assert access.last_used_at is None
+
 
 class TestVerdicts:
     @pytest.mark.parametrize(

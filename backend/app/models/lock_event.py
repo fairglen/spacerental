@@ -35,6 +35,7 @@ EVENT_KINDS = (
     "door_open",
     "door_close",
     "auto_lock",
+    "failed",
     "unknown",
 )
 
