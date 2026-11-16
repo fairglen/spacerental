@@ -81,7 +81,7 @@ export function AccessCard({ api }: { api: Api }) {
           <p className="mt-1 text-sm text-muted-foreground">
             {settling
               ? 'O seu código fica ativo em instantes.'
-              : 'Na porta, introduza o código no teclado e confirme com ✓.'}
+              : 'Na porta, introduza o código no teclado.'}
           </p>
         </div>
       ) : (
