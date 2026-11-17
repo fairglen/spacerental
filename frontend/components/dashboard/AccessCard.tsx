@@ -1,6 +1,6 @@
 'use client'
-import { useState } from 'react'
-import { KeyRound } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Eye, EyeOff, KeyRound } from 'lucide-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -13,11 +13,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { parseApiError } from '@/components/admin/crud/apiErrors'
 
 /**
- * L01: the customer's one door PIN. Masked until they tap it, with the Keypad
- * hint and a two-step "Pedir um código novo". A customer whose spaces have no
+ * L01: the customer's one door PIN. Masked by default, revealed with the
+ * eye button (or a tap on the dots); the choice is remembered in this browser
+ * so a customer who wants it visible is not asked again (owner, 2026-11-17).
+ * The Keypad hint and a two-step "Pedir um código novo" follow. A customer whose spaces have no
  * lock (or who has no code yet) sees nothing — the card simply does not render.
  * Formal register, Portuguese.
  */
+const REVEAL_KEY = 'access-pin-revealed'
+
 function label(access: CustomerPin): { text: string; variant: 'default' | 'secondary' } {
   if (access.status === 'active') {
     const settling = access.devices.length === 0 || access.devices.some((d) => d.sync_status !== 'synced')
@@ -29,6 +33,23 @@ function label(access: CustomerPin): { text: string; variant: 'default' | 'secon
 export function AccessCard({ api }: { api: Api }) {
   const query = useQuery({ queryKey: ['access', 'me'], queryFn: () => accessApi.getMine(api) })
   const [revealed, setRevealed] = useState(false)
+  // Per-browser convenience only; the PIN itself always comes from the API.
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(REVEAL_KEY) === '1') setRevealed(true)
+    } catch {
+      /* storage unavailable: stay masked */
+    }
+  }, [])
+  const toggleRevealed = () =>
+    setRevealed((v) => {
+      try {
+        window.localStorage.setItem(REVEAL_KEY, v ? '0' : '1')
+      } catch {
+        /* ignore */
+      }
+      return !v
+    })
   const [confirming, setConfirming] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -69,15 +90,28 @@ export function AccessCard({ api }: { api: Api }) {
 
       {access.pin ? (
         <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => setRevealed((v) => !v)}
-            aria-label={revealed ? 'Ocultar o código' : 'Mostrar o código'}
-            data-testid="access-pin"
-            className="font-mono text-2xl font-semibold tracking-[0.3em] text-foreground"
-          >
-            {revealed ? access.pin : '• • • • • •'}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleRevealed}
+              aria-label={revealed ? 'Ocultar o código' : 'Mostrar o código'}
+              data-testid="access-pin"
+              className="font-mono text-2xl font-semibold tracking-[0.3em] text-foreground"
+            >
+              {revealed ? access.pin : '• • • • • •'}
+            </button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={toggleRevealed}
+              data-testid="access-pin-toggle"
+              aria-pressed={revealed}
+            >
+              {revealed ? <EyeOff className="mr-1 h-4 w-4" /> : <Eye className="mr-1 h-4 w-4" />}
+              {revealed ? 'Ocultar' : 'Mostrar'}
+            </Button>
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {settling
               ? 'O seu código fica ativo em instantes.'
