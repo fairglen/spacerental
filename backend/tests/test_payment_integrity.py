@@ -8,6 +8,7 @@ amount is the server's. Live mode has no stub surface. A door code exists only
 for a confirmed booking.
 """
 
+import logging
 import time as clock_time
 import uuid
 from contextlib import contextmanager
@@ -257,7 +258,7 @@ class TestTheAmountIsTheServers:
 
 
 @contextmanager
-def _live_mode(payments):
+def _live_mode(payments, webhook_secret: str = "whsec_live_not_the_stub_secret"):
     """Serve the real gateway with made-up keys for the duration of the block.
 
     Nothing reaches the network: the stub routes refuse before any provider
@@ -265,7 +266,7 @@ def _live_mode(payments):
     """
     gateway = StripeGateway(
         secret_key="sk_test_not_a_real_key",
-        webhook_secret="whsec_live_not_the_stub_secret",
+        webhook_secret=webhook_secret,
         currency="eur",
         success_url="http://test/success",
         cancel_url="http://test/cancel",
@@ -309,6 +310,23 @@ class TestLiveModeHasNoStubSurface:
             resp = await client.post(WEBHOOK, content=payload, headers={"Stripe-Signature": forged})
         assert resp.status_code == 400, resp.text
         assert (await _booking(db_session, booking["id"])).status is BookingStatus.pending
+
+    async def test_a_forged_header_cannot_read_the_signing_secret_back(
+        self, client, payments, caplog
+    ):
+        # Stripe SDK 17 explains a mismatch from optional `secret=`/`payload=`
+        # hints in the Stripe-Signature header. The header is the sender's: a
+        # forger who adds a masked-secret hint gets a message that states the
+        # configured secret's length and last four characters. The gateway's
+        # exception may carry that text; the answer and the logs must not.
+        secret = "whsec_live_made_up_ending_in_Zq7x"
+        header = f"t={int(clock_time.time())},v1={'0' * 64},secret=whsec_{'*' * 8}0000"
+        payload = b'{"id": "evt_forged", "type": "checkout.session.completed"}'
+        with _live_mode(payments, webhook_secret=secret), caplog.at_level(logging.DEBUG):
+            resp = await client.post(WEBHOOK, content=payload, headers={"Stripe-Signature": header})
+        assert resp.status_code == 400, resp.text
+        assert resp.json() == {"detail": "Invalid Stripe signature"}
+        assert "Zq7x" not in caplog.text
 
 
 class TestADoorCodeExistsOnlyForAConfirmedBooking:

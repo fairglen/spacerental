@@ -27,7 +27,11 @@ def gateway() -> StripeGateway:
 
 class TestStripeSdkSurface:
     def test_the_sdk_major_is_the_pinned_one(self):
-        assert stripe.VERSION.split(".")[0] == "16"
+        # Moved by hand on each major, once its changelog has been read against
+        # app/payments.py. 17 (D28): the pinned API version did not move; a
+        # failed signature check is now explained from hints in the header —
+        # see tests/test_payment_integrity.py for what that must not reach.
+        assert stripe.VERSION.split(".")[0] == "17"
 
     def test_the_client_exposes_the_checkout_calls_the_gateway_makes(self, gateway):
         sessions = gateway._client.v1.checkout.sessions
@@ -35,7 +39,7 @@ class TestStripeSdkSurface:
             method = getattr(sessions, name)
             assert inspect.iscoroutinefunction(method), name
         # `retrieve`/`expire` take the id positionally and `create` takes
-        # `params=`; the SDK 16 signatures still accept exactly that.
+        # `params=`; the pinned SDK's signatures still accept exactly that.
         assert "params" in inspect.signature(sessions.create_async).parameters
         for name in ("retrieve_async", "expire_async"):
             first = next(iter(inspect.signature(getattr(sessions, name)).parameters))
