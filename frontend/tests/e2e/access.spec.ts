@@ -53,11 +53,16 @@ test.describe('Código de acesso', () => {
     const card = page.getByTestId('access-card')
     await expect(card).toBeVisible()
 
-    // Masked until tapped, then a 6-digit Keypad code (digits 1-9).
+    // Masked until shown, then a 6-digit Keypad code (digits 1-9); the
+    // choice survives a reload (remembered in this browser).
     const pin = page.getByTestId('access-pin')
     await expect(pin).toHaveText(/•/)
-    await pin.click()
+    await page.getByTestId('access-pin-toggle').click()
     await expect(pin).toHaveText(/^[1-9]{6}$/)
+    await page.reload()
+    await expect(page.getByTestId('access-pin')).toHaveText(/^[1-9]{6}$/)
+    await page.getByTestId('access-pin-toggle').click()
+    await expect(page.getByTestId('access-pin')).toHaveText(/•/)
 
     await context.close()
   })

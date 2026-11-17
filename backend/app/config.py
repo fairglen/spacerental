@@ -282,6 +282,14 @@ def production_problems(current: Settings) -> list[str]:
                 "MEDIA_STORAGE=s3 requires MEDIA_BASE_URL (the CloudFront origin in front of "
                 "the bucket)"
             )
+    if current.LOCK_PROVIDER == "stub" and (current.NUKI_DEVICE_ID_MAP or "").strip():
+        # The stub "issues" PINs that open nothing and records ids Nuki cannot
+        # delete; with a real device map that is a silent fallback (§9). A
+        # rollback to the stub clears the map too (runbook).
+        problems.append(
+            "LOCK_PROVIDER=stub with NUKI_DEVICE_ID_MAP set: the stub would issue codes "
+            "that open nothing — set LOCK_PROVIDER=nuki or clear NUKI_DEVICE_ID_MAP"
+        )
     if current.LOCK_PROVIDER == "nuki":
         # The same checks app.locks.validate_lock_settings() makes, listed here
         # so the operator reads one list (E02). The PIN key and token are

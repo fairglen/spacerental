@@ -42,6 +42,19 @@ class TestEachRule:
     def test_a_complete_production_configuration_has_no_problem(self, tmp_path):
         assert production_problems(production(tmp_path)) == []
 
+    def test_the_lock_stub_with_a_real_device_map_is_refused(self, tmp_path):
+        """2026-11-17: production ran LOCK_PROVIDER=stub with the real map
+        after a rollback; the stub issued a code that opened nothing and
+        recorded an id Nuki could not delete."""
+        [problem] = production_problems(
+            production(tmp_path, LOCK_PROVIDER="stub", NUKI_DEVICE_ID_MAP='{"*": "22831237479"}')
+        )
+        assert "NUKI_DEVICE_ID_MAP" in problem and "stub" in problem
+        assert (
+            production_problems(production(tmp_path, LOCK_PROVIDER="stub", NUKI_DEVICE_ID_MAP=""))
+            == []
+        )
+
     def test_the_development_secret_key_is_refused(self, tmp_path):
         [problem] = production_problems(production(tmp_path, SECRET_KEY=DEV_SECRET_KEY))
         assert problem.startswith("SECRET_KEY must be a generated value of at least 32")

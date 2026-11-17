@@ -19,6 +19,7 @@ import asyncio
 import binascii
 import json
 import logging
+import re
 import secrets
 import uuid
 from abc import ABC, abstractmethod
@@ -141,6 +142,16 @@ def classify_action(action: int, *, attributed_to_keypad: bool, trigger: int | N
     if action == LOG_ACTION_DOOR_CLOSED:
         return KIND_DOOR_CLOSE
     return KIND_UNKNOWN
+
+
+_NUKI_AUTH_ID = re.compile(r"^[0-9a-f]{8,64}$")
+
+
+def is_nuki_auth_id(external_id: str | None) -> bool:
+    """Nuki authorisation ids are hex strings (24 characters as GET /auth
+    returns them today; the check is loose on length so a format change
+    never silently skips a delete). The stub's "stub_auth_…" ids are not."""
+    return bool(external_id) and _NUKI_AUTH_ID.match(external_id) is not None
 
 
 # ─── PIN primitives ─────────────────────────────────────────────────────────
@@ -385,8 +396,24 @@ class NukiGateway(LockGateway):
         )
 
     async def revoke(self, device_id: str, external_id: str) -> None:
+        # An id this provider never minted (the stub's "stub_auth_…", recorded
+        # while production ran LOCK_PROVIDER=stub against a real device map,
+        # 2026-11-17) has nothing to delete: Nuki answers 500 to it forever and
+        # the row would never leave `pending`. Likewise a 404: already gone.
+        if not is_nuki_auth_id(external_id):
+            logger.warning(
+                "nuki revoke: %r on %s is not a Nuki authorisation id; nothing to delete",
+                external_id,
+                device_id,
+            )
+            return
         async with self._client() as client:
-            await self._request(client, "DELETE", f"/smartlock/{device_id}/auth/{external_id}")
+            try:
+                await self._request(client, "DELETE", f"/smartlock/{device_id}/auth/{external_id}")
+            except LockProviderError as exc:
+                if "-> 404" in str(exc):
+                    return
+                raise
 
     async def set_enabled(self, device_id: str, external_id: str, enabled: bool) -> None:
         async with self._client() as client:
