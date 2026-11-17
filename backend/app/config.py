@@ -193,6 +193,9 @@ class Settings(BaseSettings):
     ACCESS_EARLY_MINUTES: int = 15
     ACCESS_OVERSTAY_MINUTES: int = 15
     ACCESS_EVENT_RETENTION_DAYS: int = 90
+    # L02: email the operator when the lock is used with no booking behind it.
+    # Empty = off. Uses the same email gateway (SES/Resend/stub).
+    ACCESS_ALERT_EMAIL: str | None = None
     # A customer with no booking in this many days loses the lock slot (the
     # PIN stays in our database, re-registered on the next confirmed booking).
     ACCESS_DORMANCY_DAYS: int = 90

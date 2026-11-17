@@ -60,7 +60,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X PUT -H "Authorization: Bearer $NUKI_
 sleep 20
 curl -s -H "Authorization: Bearer $NUKI_TOKEN" https://api.nuki.io/smartlock/$ID/auth \
   | python3 -c "import json,sys;[print(a['id'],a['name'],a.get('type'),a.get('enabled')) for a in json.load(sys.stdin)]"
-# type 345678 ✓ on the Keypad, open and close the door by hand, press the lock key, then:
+# type 345678 on the Keypad, open and close the door by hand, press the lock key, then:
 curl -s -H "Authorization: Bearer $NUKI_TOKEN" "https://api.nuki.io/smartlock/$ID/log?limit=10" | python3 -m json.tool
 # delete the test PIN:
 curl -s -o /dev/null -w "%{http_code}\n" -X DELETE -H "Authorization: Bearer $NUKI_TOKEN" https://api.nuki.io/smartlock/$ID/auth/<id>
