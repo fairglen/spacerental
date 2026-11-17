@@ -81,6 +81,16 @@ def _evt(
     )
 
 
+def _tomorrow_at_ten() -> datetime:
+    """A booking at a fixed hour, not "now + 10 h": the matcher looks at the
+    entry's calendar day, so a booking built near midnight sent the +120 min
+    "late" entry into the next day (no_booking) whenever the suite ran between
+    12:00 and 14:00 UTC."""
+    return (datetime.now(tz=UTC) + timedelta(days=1)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    )
+
+
 async def _booking(
     db_session, org, room, user, start, end, status=BookingStatus.confirmed
 ) -> Booking:
@@ -188,7 +198,7 @@ class TestVerdicts:
         minutes_from_start,
         expected,
     ):
-        start = datetime.now(tz=UTC).replace(microsecond=0) + timedelta(days=1, hours=10)
+        start = _tomorrow_at_ten()
         end = start + timedelta(hours=1)
         await _booking(db_session, test_org, test_room, test_user, start, end)
         gw = StubLockGateway()
@@ -214,7 +224,7 @@ class TestVerdicts:
     async def test_a_late_departure_is_an_overstay(
         self, db_session, test_org, test_room, test_user, synced_access
     ):
-        start = datetime.now(tz=UTC).replace(microsecond=0) + timedelta(days=1, hours=10)
+        start = _tomorrow_at_ten()
         end = start + timedelta(hours=1)
         await _booking(db_session, test_org, test_room, test_user, start, end)
         gw = StubLockGateway()
@@ -234,7 +244,7 @@ class TestDepartureConfidence:
     async def test_none_when_no_close_follows(
         self, db_session, test_org, test_room, test_user, synced_access
     ):
-        start = datetime.now(tz=UTC).replace(microsecond=0) + timedelta(days=1, hours=10)
+        start = _tomorrow_at_ten()
         end = start + timedelta(hours=1)
         await _booking(db_session, test_org, test_room, test_user, start, end)
         gw = StubLockGateway()
@@ -250,7 +260,7 @@ class TestDepartureConfidence:
     async def test_low_when_another_keypad_session_overlaps(
         self, db_session, test_org, test_room, test_user, synced_access
     ):
-        start = datetime.now(tz=UTC).replace(microsecond=0) + timedelta(days=1, hours=10)
+        start = _tomorrow_at_ten()
         end = start + timedelta(hours=1)
         await _booking(db_session, test_org, test_room, test_user, start, end)
         gw = StubLockGateway()

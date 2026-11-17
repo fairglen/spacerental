@@ -17,7 +17,7 @@ from app.locks import (
 )
 
 DEVICE = "9999"
-AUTH_ID = "4242"
+AUTH_ID = "6afb79e15be6e7518d9e3ad4"
 
 
 def _gw() -> NukiGateway:
@@ -143,6 +143,34 @@ async def test_revoke_deletes_the_authorisation():
     )
     await _gw().revoke(DEVICE, AUTH_ID)
     assert route.called
+
+
+@respx.mock
+async def test_revoke_of_a_foreign_id_deletes_nothing_and_does_not_raise():
+    """2026-11-17: a row carried the stub's id from a LOCK_PROVIDER=stub run;
+    Nuki answered 500 to its DELETE forever and the row never left pending."""
+    route = respx.delete(url__regex=rf"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth/.*").mock(
+        return_value=httpx.Response(500)
+    )
+    await _gw().revoke(DEVICE, "stub_auth_9999_fs-759bd299fd40")
+    assert not route.called
+
+
+@respx.mock
+async def test_revoke_treats_404_as_already_gone():
+    respx.delete(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth/{AUTH_ID}").mock(
+        return_value=httpx.Response(404)
+    )
+    await _gw().revoke(DEVICE, AUTH_ID)  # no raise
+
+
+def test_is_nuki_auth_id():
+    from app.locks import is_nuki_auth_id
+
+    assert is_nuki_auth_id("6afb79e15be6e7518d9e3ad4")
+    assert not is_nuki_auth_id("stub_auth_22831237479_fs-759bd299fd40")
+    assert not is_nuki_auth_id("")
+    assert not is_nuki_auth_id(None)
 
 
 @respx.mock

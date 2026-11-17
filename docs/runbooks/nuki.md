@@ -157,3 +157,13 @@ lock. The dashboard shows "a ativar" until the lock confirms, then the PIN.
 - **Lock full (100–200 codes):** dormancy frees slots automatically; lower
   `ACCESS_DORMANCY_DAYS` if needed.
 - **Token leaked/rotated:** new token → `put-parameter` → deploy.
+- **Rolling back to the stub:** set `LOCK_PROVIDER=stub` **and clear
+  `NUKI_DEVICE_ID_MAP`** (production refuses the stub with a map set: the
+  stub would hand out codes that open nothing and record ids Nuki cannot
+  delete — the 2026-11-17 incident). Codes already on the lock keep working
+  while the stub runs; switching back to `nuki` adopts them by name.
+- **A device row stuck in `pending` with `stub_auth_…` as its id** (from a
+  stub run before this guard existed): the pass now discards foreign ids on
+  its own; if an old release is running, on the host
+  `update customer_access_devices set nuki_auth_id = null, attempts = 0, last_error = null where nuki_auth_id like 'stub_auth_%';`
+  and the next pass issues.
