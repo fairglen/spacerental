@@ -901,13 +901,20 @@ openapi snapshot and audit-entity tests updated; migration up/check/down clean;
 
 ### L02 — Lock event trail and verdicts (Nuki)
 
-**State: QUEUED (PR B `feat/lock-events`, stacked on PR A).** Poll the lock
-log, store each event once, attribute keypad entries to customers via
-`nuki_auth_id`, reconcile into verdicts (on_time/early/late/overstay/
-no_booking) with a labelled departure estimate; retention of raw events
-(`ACCESS_EVENT_RETENTION_DAYS`, verdicts kept); operator views on the booking
-and a weekly anomaly report; optional `ACCESS_ALERT_EMAIL` on a no-booking
-entry. Tables `lock_events` + `access_verdicts`.
+**State: IN REVIEW (PR B `feat/lock-events`, stacked on PR A).** Poll the lock
+log in the same pass, store each event once (dedupe on `nuki_event_id`),
+attribute keypad entries via `nuki_auth_id`, reconcile into verdicts
+(on_time/early/late/overstay/no_booking) with a labelled departure estimate
+(high/low/none); retention prunes raw events after
+`ACCESS_EVENT_RETENTION_DAYS` while verdicts stay (FK SET NULL); operator
+report `GET /admin/access/report?week=` + an `/admin/access` page, a booking's
+verdict (`GET /admin/bookings/{id}/access`), the customer's history (`GET
+/access/me/history`) on the dashboard card; optional `ACCESS_ALERT_EMAIL` on a
+no-booking entry. Tables `lock_events` + `access_verdicts` (migration 0022).
+Evidence: `tests/test_lock_events.py` (12, verdict branches table-driven,
+departure confidence, retention, report, authz); authz/openapi updated.
+**Lighter follow-up (L04):** the verdict chip on the admin booking *sheet*
+(the endpoint + page exist; the sheet component wiring is pending).
 
 ### L03 — Remove the vestigial per-booking `access_code` (follow-up)
 
