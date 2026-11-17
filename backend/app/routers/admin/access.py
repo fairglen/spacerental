@@ -7,6 +7,7 @@ action is audited; opening the door is throttled like the help form.
 """
 
 import uuid
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -19,11 +20,18 @@ from app.auth import require_admin
 from app.database import get_db
 from app.locks import LockGateway, LockProviderError, device_id_for_space, get_lock_gateway
 from app.models.customer_access import CustomerAccess
+from app.models.lock_event import AccessVerdict, LockEventRow
 from app.models.organization import OrganizationMember
 from app.models.space import Space
 from app.models.user import User
 from app.ratelimit import SUPPORT_TIER, rate_limit
-from app.schemas.access import AccessDeviceOut, AdminAccessOut
+from app.schemas.access import (
+    AccessDeviceOut,
+    AccessReportOut,
+    AdminAccessOut,
+    BookingAccessOut,
+    VerdictRowOut,
+)
 
 router = APIRouter(tags=["admin"])
 
@@ -170,3 +178,89 @@ async def admin_open_door(
     )
     await db.commit()
     return {"opened": True}
+
+
+# ─── L02: the trail ──────────────────────────────────────────────────────────
+
+
+def _week_bounds(week: str | None) -> tuple[datetime, datetime]:
+    """Monday 00:00 to the next Monday, UTC. `week` is any ISO date in the
+    week (YYYY-MM-DD); absent = the current week."""
+    anchor = date.fromisoformat(week) if week else datetime.now(tz=UTC).date()
+    monday = anchor - timedelta(days=anchor.weekday())
+    start = datetime(monday.year, monday.month, monday.day, tzinfo=UTC)
+    return start, start + timedelta(days=7)
+
+
+@router.get("/access/report")
+async def admin_access_report(
+    org_id: uuid.UUID = Query(...),
+    week: str | None = Query(None),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """A week of access verdicts (anomalies stand out) with per-verdict counts."""
+    start, end = _week_bounds(week)
+    rows = (
+        await db.execute(
+            select(AccessVerdict, LockEventRow, User)
+            .join(LockEventRow, LockEventRow.id == AccessVerdict.lock_event_id)
+            .outerjoin(User, User.id == LockEventRow.user_id)
+            .where(
+                AccessVerdict.org_id == org_id,
+                LockEventRow.occurred_at >= start,
+                LockEventRow.occurred_at < end,
+            )
+            .order_by(LockEventRow.occurred_at.desc())
+        )
+    ).all()
+    verdicts = [
+        VerdictRowOut(
+            verdict=v.verdict,
+            delta_minutes=v.delta_minutes,
+            entered_at=e.occurred_at,
+            departure_estimate_at=v.departure_estimate_at,
+            departure_confidence=v.departure_confidence,
+            device_id=e.device_id,
+            booking_id=v.booking_id,
+            customer_name=u.name if u else None,
+            customer_email=u.email if u else None,
+        )
+        for v, e, u in rows
+    ]
+    counts: dict[str, int] = {}
+    for v in verdicts:
+        counts[v.verdict] = counts.get(v.verdict, 0) + 1
+    return {
+        "report": AccessReportOut(week_start=start, week_end=end, counts=counts, verdicts=verdicts)
+    }
+
+
+@router.get("/bookings/{booking_id}/access")
+async def admin_booking_access(
+    booking_id: uuid.UUID,
+    org_id: uuid.UUID = Query(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """The access verdict for one booking (operator booking view)."""
+    row = (
+        await db.execute(
+            select(AccessVerdict, LockEventRow)
+            .join(LockEventRow, LockEventRow.id == AccessVerdict.lock_event_id)
+            .where(AccessVerdict.org_id == org_id, AccessVerdict.booking_id == booking_id)
+            .order_by(LockEventRow.occurred_at)
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return {"access": BookingAccessOut()}
+    verdict, event = row
+    return {
+        "access": BookingAccessOut(
+            verdict=verdict.verdict,
+            entered_at=event.occurred_at,
+            departure_estimate_at=verdict.departure_estimate_at,
+            departure_confidence=verdict.departure_confidence,
+        )
+    }

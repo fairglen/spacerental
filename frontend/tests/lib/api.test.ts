@@ -1091,3 +1091,26 @@ describe('adminApi access (L01)', () => {
     expect(mockApi.post).toHaveBeenCalledWith('/admin/spaces/s-1/open-door')
   })
 })
+
+describe('L02 trail api', () => {
+  it('accessApi.history unwraps events', async () => {
+    const events = [{ occurred_at: '2026-11-11T10:00:00Z', kind: 'keypad_unlock', verdict: 'on_time' }]
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { events } }) } as any
+    expect(await accessApi.history(mockApi)).toEqual(events)
+    expect(mockApi.get).toHaveBeenCalledWith('/access/me/history')
+  })
+
+  it('adminApi.getAccessReport unwraps the report and passes the week with org_id', async () => {
+    const report = { week_start: 'a', week_end: 'b', counts: { no_booking: 1 }, verdicts: [] }
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { report } }), defaults: { params: { org_id: 'o-1' } } } as any
+    expect(await adminApi.getAccessReport('2026-11-09', mockApi)).toEqual(report)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/access/report', { params: { org_id: 'o-1', week: '2026-11-09' } })
+  })
+
+  it('adminApi.getBookingAccess unwraps the verdict', async () => {
+    const access = { verdict: 'on_time', entered_at: 'x', departure_estimate_at: null, departure_confidence: 'high' }
+    const mockApi = { get: vi.fn().mockResolvedValue({ data: { access } }) } as any
+    expect(await adminApi.getBookingAccess('b-1', mockApi)).toEqual(access)
+    expect(mockApi.get).toHaveBeenCalledWith('/admin/bookings/b-1/access')
+  })
+})
