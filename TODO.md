@@ -4844,6 +4844,67 @@ D16 visual gate, Playwright green, the audit clean at `--audit-level=high`.
 When it lands, reopen the Dependabot topics ignored in D21 (#104, #105) by
 bumping the ranges in the same PR.
 
+**Added by D28 (2026-11-17).** More ignores to lift in the same PR: `next`
+16.x (#179) and `eslint-config-next` 15.x (#181; 16.x since #131), next to
+`react-dom` 19 (#129) and `typescript` 7 (#130). Found on those branches:
+(1) `eslint-config-next` ≥ 15 brings `eslint-plugin-react-hooks` 5, whose
+`rules-of-hooks` knows React 19's `use()` and flags Playwright's fixture
+callback `use(...)` in `tests/e2e/fixtures.ts` (three errors) — plan an
+ESLint override for `tests/e2e/**`; `@next/next/no-html-link-for-pages`
+also flags the plain `<a href="/spaces/">` in `app/dashboard/page.tsx` and
+`tests/components/LocaleHydration.test.tsx`. (2) The first thing Next 15+
+breaks is `lib/i18n/server.ts` (`cookies()` is a Promise). (3) **Read
+before scheduling:** Next 15.5.29 and 16.4.5 carry security fixes Vercel
+rates Moderate — GHSA-pc58-hwjq-p385 ("response injection and disclosure in
+self-hosted Next.js applications forwarding fetched responses"; this app is
+self-hosted and forwards `/backend/*`, D20), GHSA-7qx7-33qx-rqx2 (image
+optimisation), GHSA-f3mh-rxg3-f5g2 (Edge runtime cookies). Whether 14.2.35
+is affected was not established: the advisories were not in GitHub's
+database on 2026-11-17 and `npm-audit` is green. If it is, D22 stops being
+P2.
+
+## Dependabot batch #173–#182 (D-series, D28–D29) — owner assignment 2026-11-17
+
+Goal: every open Dependabot PR either fixed, green and **merged** (the owner
+authorised merging for this assignment only), or closed with a reasoned
+comment. Ten were open, #173–#182; a re-list found no others. Production is
+live and every merge to `main` deploys itself (`deploy.yml` after a green
+`Checks`), so merges went one at a time: merge → `Checks` on `main` →
+`Deploy` green → `GET /backend/health` = `{"status":"ok"}` and the homepage
+200 → the next one. No deploy went red; `deploy.sh` never rolled back.
+Fixes go to the Dependabot branch as `D28: <what>` commits with a PR comment
+(cause → fix → evidence); one was needed (#175). `@dependabot recreate` was
+never used. Lockfiles were judged with npm 11.19 / Node 24.21 (D11).
+Production runs `LOCK_PROVIDER=stub` (the owner's call, 2026-11-16), so a
+backend restart has no lock-side effect and nothing was checked there.
+
+D28 is DONE and archived in
+[docs/backlog-archive/2026-11.md](docs/backlog-archive/2026-11.md#dependabot-batch-173182-d-series-d28d29--owner-assignment-2026-11-17);
+D29 stays here.
+
+### D29 — CI tests the backend on Python 3.12; production runs 3.15
+
+**Priority: P2. State: QUEUED (found in D28, #173).** The backend images are
+`python:3.15-slim` (`backend/Dockerfile`, `backend/Dockerfile.test`), but
+every CI job that runs the backend's Python uses `setup-python` with
+`python-version: '3.12'` (`backend-tests.yml`, `migrations.yml`, `perf.yml`,
+`lint.yml`, `security.yml`). So `backend / test` never runs on the
+production interpreter; only `prod-stack` boots the real image, and it runs
+no suite. A base-image bump such as #173 is tested by CI only as far as
+"the image boots", and a dependency whose behaviour differs between 3.12
+and 3.15 would pass CI and fail in production. D28 covered the gap by hand:
+the suite in the test image on Python 3.15.2 passed (1229 passed, 2 skipped
+for #173; 1250 passed, 2 skipped for #175). **Scope:** move those five
+pins to `'3.15'` (Q57's dependency cache key follows the version), fix
+whatever the suite or `pip-audit` then says, and correct the three comments
+that still say `python:3.12-slim` (`backend/Dockerfile`,
+`backend/Dockerfile.test`, the MIME-types note in `backend/app/main.py`).
+`flowspace-site-checks.yml` runs the static site's scripts and can stay.
+**Acceptance:** `backend / test`, `migrations / migrate`, `perf-api`, `lint
+/ python` and `pip-audit` green on 3.15, the test job still within Q57's
+time. **Note:** the PR edits `.github/workflows/`, so merging it needs a
+`gh` token with the `workflow` scope (D27, #132).
+
 ## Production platform follow-ups (E-series, E17–E19) — owner assignment 2026-10-28
 
 Owner's ask, three PRs in order, each merged and deployed before the next
@@ -4986,6 +5047,7 @@ History lives in `docs/backlog-archive/<yyyy-mm>.md`, one file per month of comp
 - **C18** — Cancellations and the contact note route to the help dialog — DONE 2026-09-22 · [2026-09.md](docs/backlog-archive/2026-09.md#c18-cancellations-and-the-contact-note-route-to-the-help-dialog)
 - **C19** — Minimal operator inbox for support requests (`/admin/support`) — DONE 2026-09-22 · [2026-09.md](docs/backlog-archive/2026-09.md#c19-minimal-operator-inbox-for-support-requests-adminsupport)
 - **D27** — Dependabot batch #123–#135: outcomes, evidence, decisions — DONE 2026-10-28 · [2026-10.md](docs/backlog-archive/2026-10.md#d27--dependabot-batch-123135-outcomes-evidence-decisions)
+- **D28** — Dependabot batch #173–#182: outcomes, evidence, decisions — DONE 2026-11-17 · [2026-11.md](docs/backlog-archive/2026-11.md#d28--dependabot-batch-173182-outcomes-evidence-decisions)
 - **E17** — PR plans can run again; no perpetual `rds.force_ssl` diff; runbook fixes — DONE 2026-10-28 · [2026-10.md](docs/backlog-archive/2026-10.md#e17--pr-plans-can-run-again-no-perpetual-rdsforce_ssl-diff-runbook-fixes)
 - **E18** — Photos and private PDFs in S3 behind CloudFront (`MEDIA_STORAGE=s3`) — DONE 2026-10-29 · [2026-10.md](docs/backlog-archive/2026-10.md#e18--photos-and-private-pdfs-in-s3-behind-cloudfront-media_storages3)
 - **G01** — Audit log: `admin_actions` (O05, minimal and mandatory) — DONE 2026-10-05 · [2026-10.md](docs/backlog-archive/2026-10.md#g01-audit-log-admin_actions-o05-minimal-and-mandatory)
