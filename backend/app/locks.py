@@ -15,12 +15,14 @@ module. The gateway never retries and never persists; the pass owns both.
 The PIN is encrypted at rest (Fernet, `ACCESS_PIN_KEY`) and never logged.
 """
 
+import asyncio
 import binascii
 import json
 import logging
 import secrets
 import uuid
 from abc import ABC, abstractmethod
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import cache
@@ -42,6 +44,10 @@ NUKI_API_BASE_URL = "https://api.nuki.io"
 DEV_PIN_KEY = "zGakRnV4t_vZnLaRbW7eSb6u0rBjicew1zkHujt1CoQ="
 # Keypad PIN authorisation (Nuki Web API: PUT /smartlock/{id}/auth type 13).
 NUKI_AUTH_TYPE_KEYPAD = 13
+# How long issue_for_customer waits for a new authorisation to show up in
+# GET /auth before handing the retry to the next pass (which adopts it).
+ISSUE_VISIBILITY_POLLS = 4
+ISSUE_VISIBILITY_INTERVAL_SECONDS = 2.0
 # Nuki names are at most 20 chars; name the slot by our customer id only.
 NUKI_NAME_MAX = 20
 
@@ -68,6 +74,10 @@ KIND_UNLATCH = "unlatch"
 KIND_DOOR_OPEN = "door_open"
 KIND_DOOR_CLOSE = "door_close"
 KIND_AUTO_LOCK = "auto_lock"
+# A log entry whose `state` is not 0 (motor blocked, cancelled, low voltage…)
+# is an action that did NOT happen: the spike on the owner's lock showed a
+# keypad unlock with state=1. Stored for the trail, never an arrival.
+KIND_FAILED = "failed"
 KIND_UNKNOWN = "unknown"
 
 # Nuki door states (GET /smartlock state.doorState).
@@ -311,21 +321,65 @@ class NukiGateway(LockGateway):
         except httpx.HTTPError as exc:
             raise LockProviderError(f"Nuki {method} {path} failed: {exc!r}") from exc
 
+    async def _auths_named(
+        self, client: httpx.AsyncClient, device_id: str, customer_ref: str
+    ) -> list[dict]:
+        auths = (await self._request(client, "GET", f"/smartlock/{device_id}/auth")).json()
+        return [
+            a
+            for a in (auths if isinstance(auths, list) else [])
+            if a.get("name") == customer_ref and (a.get("id") or a.get("authId"))
+        ]
+
+    @staticmethod
+    def _auth_id(auth: dict) -> str:
+        return str(auth.get("id") or auth.get("authId"))
+
     async def issue_for_customer(self, customer_ref: str, device_id: str, pin: str) -> str:
+        """Idempotent: the authorisation named `customer_ref` ends up on the
+        lock with `pin`, exactly once, and its id comes back.
+
+        The first production run (2026-11-16) created a code per minute: PUT
+        returned 204, the sync call failed, the error aborted before the
+        lookup, and the next pass created another code under the same name.
+        So: look up by name FIRST and adopt (re-code) what is there, delete
+        any duplicates, create only when nothing exists, treat the sync as
+        best-effort, and poll for visibility rather than check once.
+        """
         async with self._client() as client:
-            # PUT is async and returns 204; the authorisation then appears in
-            # GET /auth. Confirm it there (force a sync first), and return its id.
+            existing = await self._auths_named(client, device_id, customer_ref)
+            if existing:
+                keep, *extra = existing
+                for dup in extra:
+                    await self._request(
+                        client, "DELETE", f"/smartlock/{device_id}/auth/{self._auth_id(dup)}"
+                    )
+                # Re-code the survivor so the lock matches our record of the PIN.
+                await self._request(
+                    client,
+                    "POST",
+                    f"/smartlock/{device_id}/auth/{self._auth_id(keep)}",
+                    json={"code": int(pin)},
+                )
+                return self._auth_id(keep)
+
             await self._request(
                 client,
                 "PUT",
                 f"/smartlock/{device_id}/auth",
                 json={"name": customer_ref, "type": NUKI_AUTH_TYPE_KEYPAD, "code": int(pin)},
             )
-            await self._request(client, "PUT", f"/smartlock/{device_id}/sync")
-            auths = (await self._request(client, "GET", f"/smartlock/{device_id}/auth")).json()
-            for auth in auths if isinstance(auths, list) else []:
-                if auth.get("name") == customer_ref and str(auth.get("id") or auth.get("authId")):
-                    return str(auth.get("id") or auth.get("authId"))
+            # PUT is asynchronous (204); the authorisation appears in GET /auth
+            # once the lock has it. A sync nudges that along but is not required
+            # (its method varies by API version), so a failure there is ignored.
+            with suppress(LockProviderError):
+                await self._request(client, "POST", f"/smartlock/{device_id}/sync")
+            for attempt in range(ISSUE_VISIBILITY_POLLS):
+                if attempt:
+                    await asyncio.sleep(ISSUE_VISIBILITY_INTERVAL_SECONDS)
+                created = await self._auths_named(client, device_id, customer_ref)
+                if created:
+                    return self._auth_id(created[0])
         raise LockProviderError(
             f"Nuki authorisation {customer_ref!r} not visible yet on {device_id}; will retry"
         )
@@ -442,6 +496,16 @@ def device_id_for_space(space_id: uuid.UUID) -> str | None:
     """
     mapping = parse_device_id_map(settings.NUKI_DEVICE_ID_MAP)
     return mapping.get(str(space_id)) or mapping.get("*")
+
+
+def spaces_for_device(device_id: str) -> set[str] | None:
+    """The space ids a device serves, or `None` when it serves every space
+    (the `"*"` wildcard). The inverse of `device_id_for_space`, for L02's
+    verdict reconciliation."""
+    mapping = parse_device_id_map(settings.NUKI_DEVICE_ID_MAP)
+    if mapping.get("*") == device_id:
+        return None
+    return {s for s, d in mapping.items() if d == device_id and s != "*"}
 
 
 def resolve_provider() -> str:

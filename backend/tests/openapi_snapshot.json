@@ -10,9 +10,19 @@
     "operation_id": "get_my_access_api_v1_access_me_get"
   },
   {
+    "method": "GET",
+    "path": "/api/v1/access/me/history",
+    "operation_id": "get_my_access_history_api_v1_access_me_history_get"
+  },
+  {
     "method": "POST",
     "path": "/api/v1/access/me/rotate",
     "operation_id": "rotate_my_access_api_v1_access_me_rotate_post"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/access/report",
+    "operation_id": "admin_access_report_api_v1_admin_access_report_get"
   },
   {
     "method": "GET",
@@ -88,6 +98,11 @@
     "method": "PUT",
     "path": "/api/v1/admin/bookings/{booking_id}",
     "operation_id": "admin_update_booking_api_v1_admin_bookings__booking_id__put"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/bookings/{booking_id}/access",
+    "operation_id": "admin_booking_access_api_v1_admin_bookings__booking_id__access_get"
   },
   {
     "method": "GET",

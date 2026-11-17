@@ -25,36 +25,108 @@ def _gw() -> NukiGateway:
 
 
 @respx.mock
-async def test_issue_puts_then_confirms_by_name_and_returns_the_auth_id():
+async def test_issue_creates_when_nothing_is_named_and_confirms_by_name():
+    get = respx.get(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
+        side_effect=[
+            httpx.Response(200, json=[{"id": "1", "name": "Entry code"}]),  # lookup before
+            httpx.Response(
+                200, json=[{"id": "1", "name": "Entry code"}, {"id": AUTH_ID, "name": "fs-abc"}]
+            ),
+        ]
+    )
     put = respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
         return_value=httpx.Response(204)
     )
-    respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/sync").mock(return_value=httpx.Response(204))
-    respx.get(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
-        return_value=httpx.Response(200, json=[{"id": AUTH_ID, "name": "fs-abc"}])
+    sync = respx.post(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/sync").mock(
+        return_value=httpx.Response(204)
     )
 
     auth_id = await _gw().issue_for_customer("fs-abc", DEVICE, "345678")
     assert auth_id == AUTH_ID
-    assert put.called
+    assert put.call_count == 1
+    assert sync.called
+    assert get.call_count == 2
     sent = put.calls.last.request
     assert b'"type":13' in sent.content
     assert b'"code":345678' in sent.content
 
 
 @respx.mock
-async def test_issue_raises_when_the_authorisation_is_not_visible_yet():
-    respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(httpx.Response(204))
-    respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/sync").mock(httpx.Response(204))
+async def test_issue_adopts_an_existing_authorisation_and_never_creates_twice():
+    """The 2026-11-16 incident: a code per minute. With one already named
+    after the customer, issue re-codes it and returns its id; no PUT."""
+    respx.get(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
+        return_value=httpx.Response(200, json=[{"id": AUTH_ID, "name": "fs-abc"}])
+    )
+    put = respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
+        return_value=httpx.Response(204)
+    )
+    update = respx.post(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth/{AUTH_ID}").mock(
+        return_value=httpx.Response(204)
+    )
+
+    auth_id = await _gw().issue_for_customer("fs-abc", DEVICE, "345678")
+    assert auth_id == AUTH_ID
+    assert not put.called
+    assert update.called
+    assert b'"code":345678' in update.calls.last.request.content
+
+
+@respx.mock
+async def test_issue_deletes_duplicates_left_by_earlier_failed_passes():
+    respx.get(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": "a1", "name": "fs-abc"},
+                {"id": "a2", "name": "fs-abc"},
+                {"id": "a3", "name": "fs-abc"},
+            ],
+        )
+    )
+    deleted = respx.delete(url__regex=rf"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth/a[23]").mock(
+        return_value=httpx.Response(204)
+    )
+    respx.post(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth/a1").mock(
+        return_value=httpx.Response(204)
+    )
+
+    assert await _gw().issue_for_customer("fs-abc", DEVICE, "345678") == "a1"
+    assert deleted.call_count == 2
+
+
+@respx.mock
+async def test_issue_survives_a_failing_sync_call():
+    respx.get(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
+        side_effect=[
+            httpx.Response(200, json=[]),
+            httpx.Response(200, json=[{"id": AUTH_ID, "name": "fs-abc"}]),
+        ]
+    )
+    respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(return_value=httpx.Response(204))
+    respx.post(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/sync").mock(
+        return_value=httpx.Response(405)
+    )
+    assert await _gw().issue_for_customer("fs-abc", DEVICE, "345678") == AUTH_ID
+
+
+@respx.mock
+async def test_issue_raises_when_the_authorisation_is_not_visible_yet(monkeypatch):
+    monkeypatch.setattr("app.locks.ISSUE_VISIBILITY_INTERVAL_SECONDS", 0.0)
     respx.get(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
         return_value=httpx.Response(200, json=[])
     )
+    respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(httpx.Response(204))
+    respx.post(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/sync").mock(httpx.Response(204))
     with pytest.raises(LockProviderError):
         await _gw().issue_for_customer("fs-abc", DEVICE, "345678")
 
 
 @respx.mock
 async def test_a_non_2xx_becomes_a_provider_error_without_the_body():
+    respx.get(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
+        return_value=httpx.Response(200, json=[])
+    )
     respx.put(f"{NUKI_API_BASE_URL}/smartlock/{DEVICE}/auth").mock(
         return_value=httpx.Response(409, json={"detail": "code 345678 already used"})
     )
