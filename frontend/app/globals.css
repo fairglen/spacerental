@@ -27,7 +27,7 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  --font-sans: Inter, system-ui, sans-serif;
+  --font-sans: Allo, system-ui, sans-serif;
 }
 
 /*
@@ -70,6 +70,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Allo', system-ui, sans-serif;
   }
 }

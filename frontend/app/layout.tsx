@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+import localFont from 'next/font/local'
 import { Providers } from './providers'
 import pt from '@/lib/i18n/pt.json'
 import { getServerCatalog, getServerLocale } from '@/lib/i18n/server'
@@ -8,7 +8,9 @@ import { publicApiOrigin } from '@/lib/backendProxy'
 import { BrandSymbols } from '@/components/brand/BrandSymbols'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
+// Allo (allo.joshpuckett.me), OFL 1.1: AlloVariableFriendly pinned to opsz 14,
+// Latin + Latin-extended (see flowspace-site/assets/css/site.css).
+const allo = localFont({ src: './fonts/allo.woff2', weight: '100 900', display: 'swap' })
 
 // Metadata is rendered on the server before any locale choice exists, so it
 // reads the Portuguese catalog directly: one source for the brand line.
@@ -67,7 +69,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <link rel="preconnect" href={API_ORIGIN} />
         </head>
       )}
-      <body className={inter.className}>
+      <body className={allo.className}>
         {/* B51: the brand mark and wordmark, inlined once for every <use> on the page. */}
         <BrandSymbols />
         {/* B65: the English catalog rides in the HTML only for an English

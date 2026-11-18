@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 
-// The root layout loads Inter through next/font/google, which only the Next
+// The root layout loads Allo through next/font/local, which only the Next
 // compiler can resolve; the metadata is what this test is about.
-vi.mock('next/font/google', () => ({ Inter: () => ({ className: 'inter' }) }))
+vi.mock('next/font/local', () => ({ default: () => ({ className: 'allo' }) }))
 vi.mock('@/lib/auth', () => ({ authOptions: {}, backendAcceptsToken: vi.fn() }))
 // B65: the auth layouts' titles follow the locale cookie, so their metadata
 // is a function over `next/headers`; `cookies()` throws outside a request.
